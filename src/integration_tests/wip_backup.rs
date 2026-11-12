@@ -169,7 +169,11 @@ async fn pipeline_does_not_stack_wip_commits_on_second_gate_failure() {
 
     let ops = CliGitOps;
     let pre_ops: &dyn GitOps = &ops;
-    pre_ops.backup_wip(tmp.path(), 562).expect("seed first WIP");
+    // Seed the prior WIP with uncommitted work — since #1143, a clean
+    // tree no longer produces an `--allow-empty` WIP commit.
+    std::fs::write(tmp.path().join("model_edit.rs"), "fn model_work() {}").unwrap();
+    let created = pre_ops.backup_wip(tmp.path(), 562).expect("seed first WIP");
+    assert!(created, "precondition: dirty tree must seed a WIP commit");
     assert_eq!(
         count_wip_commits(tmp.path()),
         1,

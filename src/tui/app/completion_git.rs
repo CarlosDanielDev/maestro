@@ -29,7 +29,10 @@ impl App {
     ///
     /// Returns whether HEAD is a WIP backup commit after this call —
     /// the pipeline threads the answer into `amend_or_commit_and_push`
-    /// so the post-gate step doesn't re-run detection.
+    /// so the post-gate step doesn't re-run detection. A clean
+    /// worktree (#1143) creates no WIP commit and returns `false`,
+    /// routing the post-gate push through `commit_and_push` instead
+    /// of the amend.
     pub(super) fn backup_wip_before_gates(
         &mut self,
         issue_number: u64,
@@ -61,7 +64,7 @@ impl App {
         }
 
         match self.git_ops.backup_wip(worktree_path, issue_number) {
-            Ok(()) => {
+            Ok(true) => {
                 tracing::info!(issue = issue_number, "WIP backup commit created");
                 self.activity_log.push_simple(
                     format!("#{}", issue_number),
@@ -69,6 +72,21 @@ impl App {
                     LogLevel::Info,
                 );
                 true
+            }
+            Ok(false) => {
+                // #1143: clean worktree — the agent already committed
+                // its own work. No WIP commit exists, so the post-gate
+                // step must push via the legacy path, not amend.
+                tracing::info!(
+                    issue = issue_number,
+                    "Worktree clean; skipped WIP backup commit"
+                );
+                self.activity_log.push_simple(
+                    format!("#{}", issue_number),
+                    "Worktree clean; no WIP backup commit needed".into(),
+                    LogLevel::Info,
+                );
+                false
             }
             Err(e) => {
                 tracing::warn!(issue = issue_number, error = %e, "WIP backup failed");
@@ -217,5 +235,24 @@ mod tests {
         assert_eq!(len, 1);
         assert_eq!(branch, "feat/issue-562");
         assert!(amend_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn backup_wip_before_gates_reports_no_wip_when_backup_skips() {
+        // #1143: clean worktree (the agent already committed its work) →
+        // `backup_wip` creates no commit. The pipeline must treat that
+        // as "no WIP at HEAD" so the post-gate step pushes the agent's
+        // own commits instead of amending an empty backup into them.
+        let ops = MockGitOps::new().with_backup_skips();
+        let backup_calls = Arc::clone(&ops.backup_wip_calls);
+        let mut app = crate::tui::make_test_app("cg-test-6").with_git_ops(Box::new(ops));
+
+        let head_is_wip = app.backup_wip_before_gates(1143, &PathBuf::from("/tmp/fake-wt-1143"));
+
+        assert!(
+            !head_is_wip,
+            "skip must read as not-WIP so amend never runs"
+        );
+        assert_eq!(backup_calls.lock().unwrap().len(), 1);
     }
 }

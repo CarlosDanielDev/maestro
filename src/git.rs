@@ -24,9 +24,9 @@ pub trait GitOps: Send + Sync {
     /// Stage all changes and create an `--allow-empty` WIP backup
     /// commit. Subject embeds `issue_number` via [`WIP_SUBJECT_PREFIX`]
     /// / [`WIP_SUBJECT_SUFFIX`] so [`head_is_wip_backup`] can recognize
-    /// it later. Does NOT push — the WIP lives locally until the
-    /// gate-pass path amends and pushes.
-    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<()>;
+    /// it later. Does NOT push — the gate-pass path amends and pushes.
+    /// Clean tree (#1143) → `Ok(false)`, no commit; otherwise `Ok(true)`.
+    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<bool>;
 
     /// Replace the WIP commit at HEAD with a clean conventional-commit
     /// message and push `branch` to origin. Equivalent to
@@ -172,7 +172,7 @@ impl GitOps for CliGitOps {
         Ok(count > 0)
     }
 
-    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<()> {
+    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<bool> {
         if !worktree_path.exists() {
             anyhow::bail!(
                 "worktree path missing for WIP backup: {}",
@@ -180,10 +180,7 @@ impl GitOps for CliGitOps {
             );
         }
 
-        let subject = format!(
-            "{}{}{}",
-            WIP_SUBJECT_PREFIX, issue_number, WIP_SUBJECT_SUFFIX
-        );
+        let subject = format!("{WIP_SUBJECT_PREFIX}{issue_number}{WIP_SUBJECT_SUFFIX}");
 
         let add = Command::new("git")
             .args(["add", "-A"])
@@ -195,6 +192,15 @@ impl GitOps for CliGitOps {
                 "git add failed (WIP backup): {}",
                 String::from_utf8_lossy(&add.stderr).trim()
             );
+        }
+
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(worktree_path)
+            .output()?;
+        // #1143: clean tree — an empty WIP commit would be pushed as the `feat:` head.
+        if String::from_utf8_lossy(&status.stdout).trim().is_empty() {
+            return Ok(false);
         }
 
         let commit = Command::new("git")
@@ -213,7 +219,7 @@ impl GitOps for CliGitOps {
                 String::from_utf8_lossy(&commit.stderr).trim()
             );
         }
-        Ok(())
+        Ok(true)
     }
 
     fn amend_clean_and_push(
