@@ -2,6 +2,7 @@
 //! Settings → "Reset Settings" action. See issue #505.
 
 pub mod detector;
+pub mod ignore;
 pub mod merge;
 pub mod scaffold;
 pub mod template;
