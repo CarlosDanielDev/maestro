@@ -606,6 +606,24 @@ impl Session {
         }
     }
 
+    /// Re-derive the session role from the user-authored part of the task (#1145).
+    ///
+    /// [`Session::new`] classifies from `prompt`, which for issue-driven spawns
+    /// is maestro's generated prompt — it carries maestro boilerplate
+    /// ("Review your changes") that made every issue session read as
+    /// `Reviewer`. Issue-driven spawn paths chain this builder with the
+    /// user-authored text (issue title + body, plus any custom instructions)
+    /// so [`super::role::derive_role`] sees only user intent. An explicit
+    /// `role_override` still wins.
+    pub fn with_role_from_user_text(
+        mut self,
+        role_override: Option<super::role::Role>,
+        user_text: &str,
+    ) -> Self {
+        self.role = role_override.unwrap_or_else(|| super::role::derive_role(user_text));
+        self
+    }
+
     /// Maximum number of [`CallLogEntry`] entries kept on a session.
     /// Mirrors the activity-log cap but ×5 because one prompt can produce
     /// many tool calls and tool results (#868).
@@ -1028,6 +1046,33 @@ mod tests {
         assert_eq!(s.parent_session_id, None);
         assert!(s.child_session_ids.is_empty());
         assert_eq!(s.fork_depth, 0);
+    }
+
+    // --- Issue #1145: role from user-authored text ---
+
+    #[test]
+    fn with_role_from_user_text_override_wins_over_derivation() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
+            .with_role_from_user_text(
+                Some(crate::session::role::Role::Reviewer),
+                "add a done command",
+            );
+        assert_eq!(s.role, crate::session::role::Role::Reviewer);
+    }
+
+    #[test]
+    fn with_role_from_user_text_derives_from_user_text_when_no_override() {
+        // The stored prompt carries a Reviewer keyword; the user text does not.
+        // Classification must read only the user text.
+        let s = Session::new(
+            "review the PR diff".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        )
+        .with_role_from_user_text(None, "add a done command");
+        assert_eq!(s.role, crate::session::role::Role::Implementer);
     }
 
     #[test]

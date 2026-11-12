@@ -10,6 +10,9 @@ pub struct SessionAssignment {
     pub issue_number: u64,
     pub title: String,
     pub prompt: String,
+    /// User-authored text (issue title + body) for role derivation (#1145) —
+    /// `prompt` is maestro's generated boilerplate and must not be classified.
+    pub user_text: String,
     pub model: String,
     pub mode: String,
     pub mode_config: Option<SessionModeConfig>,
@@ -90,6 +93,11 @@ impl WorkAssignmentTrait for WorkAssignmentService {
                 issue_number: item.issue.number,
                 title: item.issue.title.clone(),
                 prompt,
+                user_text: crate::session::role::user_text_from_issue(
+                    &item.issue.title,
+                    &item.issue.body,
+                    None,
+                ),
                 model,
                 mode,
                 mode_config,
@@ -168,6 +176,7 @@ impl App {
                 Some(assignment.issue_number),
                 None,
             )
+            .with_role_from_user_text(None, &assignment.user_text)
             .with_mode_config(assignment.mode_config)
             .with_agent_id(Some(self.selected_agent_id()));
             session.issue_title = Some(assignment.title);
