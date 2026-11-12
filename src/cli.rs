@@ -84,6 +84,10 @@ pub enum Commands {
         #[arg(short, long)]
         issue: Option<String>,
 
+        /// Run an issue even when its blocked-by dependencies are open (--issue only)
+        #[arg(long)]
+        ignore_deps: bool,
+
         /// Milestone to fetch all issues from
         #[arg(short = 'M', long)]
         milestone: Option<String>,
@@ -552,6 +556,39 @@ mod tests {
     // ------------------------------------------------------------------
     // --once flag parsing
     // ------------------------------------------------------------------
+
+    #[test]
+    fn run_ignore_deps_flag_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--issue", "3"]).unwrap();
+        if let Some(Commands::Run { ignore_deps, .. }) = cli.command {
+            assert!(!ignore_deps, "--ignore-deps must default to false");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_ignore_deps_flag_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--issue", "3", "--ignore-deps"]).unwrap();
+        if let Some(Commands::Run { ignore_deps, .. }) = cli.command {
+            assert!(ignore_deps, "--ignore-deps must be true when provided");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_ignore_deps_is_listed_in_run_help() {
+        let help = <Cli as clap::CommandFactory>::command()
+            .find_subcommand_mut("run")
+            .expect("run subcommand exists")
+            .render_help()
+            .to_string();
+        assert!(
+            help.contains("--ignore-deps"),
+            "--ignore-deps must appear in `maestro run --help`"
+        );
+    }
 
     #[test]
     fn run_once_flag_defaults_to_false() {

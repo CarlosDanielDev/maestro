@@ -8,6 +8,9 @@ use crate::tui::app::work_assigner::WorkAssignmentService;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkItem;
 
+#[path = "run_deps.rs"]
+mod run_deps;
+
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_run(
     prompt: Option<String>,
@@ -28,6 +31,7 @@ pub async fn cmd_run(
     no_splash: bool,
     bypass_review: bool,
     force_quota: bool,
+    ignore_deps: bool,
 ) -> anyhow::Result<()> {
     // `force_quota` is exposed to downstream provider gates via a process
     // -wide flag so it doesn't have to thread through every session spawn
@@ -204,13 +208,15 @@ pub async fn cmd_run(
         let provider_config = config.effective_provider_config();
         let client = create_provider(&provider_config)?;
 
-        for num_str in issue_str.split(',') {
-            let num: u64 = num_str
-                .trim()
-                .parse()
-                .map_err(|_| anyhow::anyhow!("Invalid issue number: {}", num_str.trim()))?;
+        // #1141: every requested issue is fetched and dependency-gated before
+        // anything is enqueued — a blocked issue later in the list must not
+        // abandon agents already spawned for earlier ones. queue reports
+        // blocked-by issues as Blocked; refuse unless explicitly overridden.
+        let requested =
+            run_deps::resolve_issue_list(client.as_ref(), &issue_str, ignore_deps).await?;
 
-            let gh_issue = client.get_issue(num).await?;
+        for gh_issue in requested {
+            let num = gh_issue.number;
             let (issue_mode, mode_config) = crate::modes::resolve_mode_for_labels(
                 &gh_issue.labels,
                 &session_mode,
