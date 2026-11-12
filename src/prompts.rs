@@ -29,54 +29,70 @@ pub fn detect_project_language(dir: &Path) -> ProjectLanguage {
 }
 
 /// Return the default guardrail prompt for a given project language.
-pub fn default_guardrail(lang: ProjectLanguage) -> &'static str {
-    match lang {
-        ProjectLanguage::Rust => {
+///
+/// `test_command` is the project's configured gate command
+/// (`gates.test_command` in maestro.toml). When `None`, nothing is
+/// configured, so the text must not assume specific tools (issue #1152).
+pub fn default_guardrail(lang: ProjectLanguage, test_command: Option<&str>) -> String {
+    match (lang, test_command) {
+        (ProjectLanguage::Rust, _) => {
             "BEFORE completing your work:\n\
              1. Run `cargo fmt` to format all code\n\
              2. Run `cargo clippy -- -D warnings` and fix any warnings\n\
              3. Run `cargo test` and ensure all tests pass\n\
              4. Only commit after all three pass"
+                .to_string()
         }
-        ProjectLanguage::TypeScript => {
+        (ProjectLanguage::TypeScript, _) => {
             "BEFORE completing your work:\n\
              1. Run the project linter (e.g., `npm run lint` or `npx eslint .`) and fix any issues\n\
              2. Run the formatter (e.g., `npm run format` or `npx prettier --write .`)\n\
              3. Run `npm test` and ensure all tests pass\n\
              4. Only commit after all checks pass"
+                .to_string()
         }
-        ProjectLanguage::Python => {
-            "BEFORE completing your work:\n\
-             1. Run the formatter (e.g., `black .` or `ruff format .`)\n\
-             2. Run the linter (e.g., `ruff check .` or `flake8`)\n\
-             3. Run `pytest` and ensure all tests pass\n\
-             4. Only commit after all checks pass"
-        }
-        ProjectLanguage::Go => {
+        (ProjectLanguage::Go, _) => {
             "BEFORE completing your work:\n\
              1. Run `gofmt -w .` to format all code\n\
              2. Run `go vet ./...` and fix any issues\n\
              3. Run `go test ./...` and ensure all tests pass\n\
              4. Only commit after all checks pass"
+                .to_string()
         }
-        ProjectLanguage::Unknown => {
+        (ProjectLanguage::Python, Some(test_command)) => {
+            format!(
+                "BEFORE completing your work:\n\
+                 1. Run the project's formatter and linter if configured\n\
+                 2. Run `{test_command}` and ensure all tests pass\n\
+                 3. Only commit after all checks pass"
+            )
+        }
+        (ProjectLanguage::Python, None) | (ProjectLanguage::Unknown, _) => {
             "BEFORE completing your work:\n\
              1. Run the project's formatter and linter if configured\n\
              2. Run the test suite and ensure all tests pass\n\
              3. Only commit after all checks pass"
+                .to_string()
         }
     }
 }
 
 /// Resolve the guardrail prompt: use custom if configured, otherwise auto-detect.
-pub fn resolve_guardrail(custom: Option<&str>, project_dir: &Path) -> String {
+///
+/// `test_command` is the project's configured gate command. When it is set
+/// (non-empty and different from the serde default), the Python default names
+/// it instead of assuming `pytest` (issue #1152).
+pub fn resolve_guardrail(custom: Option<&str>, test_command: &str, project_dir: &Path) -> String {
     if let Some(prompt) = custom
         && !prompt.is_empty()
     {
         return prompt.to_string();
     }
+    let configured = (!test_command.is_empty()
+        && test_command != crate::config::GatesConfig::default().test_command)
+        .then_some(test_command);
     let lang = detect_project_language(project_dir);
-    default_guardrail(lang).to_string()
+    default_guardrail(lang, configured)
 }
 
 /// Builds structured prompts for Claude sessions based on issue type and config.
@@ -378,7 +394,7 @@ mod tests {
 
     #[test]
     fn default_guardrail_rust_mentions_cargo_fmt() {
-        let g = default_guardrail(ProjectLanguage::Rust);
+        let g = default_guardrail(ProjectLanguage::Rust, None);
         assert!(g.contains("cargo fmt"));
         assert!(g.contains("cargo clippy"));
         assert!(g.contains("cargo test"));
@@ -386,37 +402,62 @@ mod tests {
 
     #[test]
     fn default_guardrail_typescript_mentions_lint() {
-        let g = default_guardrail(ProjectLanguage::TypeScript);
+        let g = default_guardrail(ProjectLanguage::TypeScript, None);
         assert!(g.contains("lint"));
         assert!(g.contains("npm test"));
     }
 
+    // Issue #1152: the Python guardrail follows the project's configured commands.
+
     #[test]
-    fn default_guardrail_python_mentions_pytest() {
-        let g = default_guardrail(ProjectLanguage::Python);
-        assert!(g.contains("pytest"));
+    fn default_guardrail_python_uses_configured_test_command() {
+        let g = default_guardrail(
+            ProjectLanguage::Python,
+            Some("python3 -m unittest discover -s tests -t ."),
+        );
+        assert!(g.contains("python3 -m unittest discover -s tests -t ."));
+        assert!(!g.contains("pytest"));
+    }
+
+    #[test]
+    fn default_guardrail_python_without_commands_names_no_tools() {
+        let g = default_guardrail(ProjectLanguage::Python, None);
+        assert!(!g.contains("pytest"));
+        assert!(!g.contains("black"));
+        assert!(!g.contains("ruff"));
+        assert!(!g.contains("flake8"));
     }
 
     #[test]
     fn default_guardrail_go_mentions_gofmt() {
-        let g = default_guardrail(ProjectLanguage::Go);
+        let g = default_guardrail(ProjectLanguage::Go, None);
         assert!(g.contains("gofmt"));
         assert!(g.contains("go test"));
     }
 
     #[test]
     fn default_guardrail_unknown_is_generic() {
-        let g = default_guardrail(ProjectLanguage::Unknown);
+        let g = default_guardrail(ProjectLanguage::Unknown, None);
         assert!(g.contains("test suite"));
     }
 
     // resolve_guardrail tests
 
+    /// The serde default of `gates.test_command` — what a caller sees when the
+    /// user never set it in maestro.toml.
+    fn gates_default_test_command() -> String {
+        crate::config::GatesConfig::default().test_command
+    }
+
     #[test]
     fn resolve_guardrail_uses_custom_when_provided() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "").unwrap();
-        let result = resolve_guardrail(Some("Run my custom checks"), dir.path());
+        let result = resolve_guardrail(
+            Some("Run my custom checks"),
+            &gates_default_test_command(),
+            dir.path(),
+        );
         assert_eq!(result, "Run my custom checks");
     }
 
@@ -424,7 +465,7 @@ mod tests {
     fn resolve_guardrail_auto_detects_when_none() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "").unwrap();
-        let result = resolve_guardrail(None, dir.path());
+        let result = resolve_guardrail(None, &gates_default_test_command(), dir.path());
         assert!(result.contains("cargo fmt"));
     }
 
@@ -432,8 +473,42 @@ mod tests {
     fn resolve_guardrail_auto_detects_when_empty_string() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("go.mod"), "").unwrap();
-        let result = resolve_guardrail(Some(""), dir.path());
+        let result = resolve_guardrail(Some(""), &gates_default_test_command(), dir.path());
         assert!(result.contains("gofmt"));
+    }
+
+    #[test]
+    fn resolve_guardrail_python_names_configured_test_command() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "").unwrap();
+        let result = resolve_guardrail(
+            None,
+            "python3 -m unittest discover -s tests -t .",
+            dir.path(),
+        );
+        assert!(result.contains("python3 -m unittest discover -s tests -t ."));
+        assert!(!result.contains("pytest"));
+    }
+
+    #[test]
+    fn resolve_guardrail_python_without_explicit_test_command_names_no_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "").unwrap();
+        let result = resolve_guardrail(None, &gates_default_test_command(), dir.path());
+        assert!(!result.contains("pytest"));
+        assert!(!result.contains("black"));
+        assert!(!result.contains("ruff"));
+        assert!(!result.contains("flake8"));
+    }
+
+    /// An explicitly empty `test_command` in maestro.toml counts as
+    /// unconfigured — same rule as an empty custom prompt.
+    #[test]
+    fn resolve_guardrail_python_with_empty_test_command_is_unconfigured() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "").unwrap();
+        let result = resolve_guardrail(None, "", dir.path());
+        assert!(result.contains("test suite"));
     }
 
     // --- Tests for PromptBuilder enrichment (Issue #52) ---
