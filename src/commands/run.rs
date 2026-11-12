@@ -8,6 +8,9 @@ use crate::tui::app::work_assigner::WorkAssignmentService;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkItem;
 
+#[path = "run_deps.rs"]
+mod run_deps;
+
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_run(
     prompt: Option<String>,
@@ -28,6 +31,7 @@ pub async fn cmd_run(
     no_splash: bool,
     bypass_review: bool,
     force_quota: bool,
+    ignore_deps: bool,
 ) -> anyhow::Result<()> {
     // `force_quota` is exposed to downstream provider gates via a process
     // -wide flag so it doesn't have to thread through every session spawn
@@ -211,6 +215,11 @@ pub async fn cmd_run(
                 .map_err(|_| anyhow::anyhow!("Invalid issue number: {}", num_str.trim()))?;
 
             let gh_issue = client.get_issue(num).await?;
+            if !ignore_deps {
+                // #1141: queue reports blocked-by issues as Blocked; refuse to
+                // spawn a wasted agent session unless explicitly overridden.
+                run_deps::ensure_issue_unblocked(client.as_ref(), &gh_issue).await?;
+            }
             let (issue_mode, mode_config) = crate::modes::resolve_mode_for_labels(
                 &gh_issue.labels,
                 &session_mode,

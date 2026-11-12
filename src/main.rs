@@ -248,6 +248,7 @@ async fn main() -> anyhow::Result<()> {
             role,
             no_splash,
             force_quota,
+            ignore_deps,
         }) => {
             cmd_run(
                 prompt,
@@ -268,6 +269,7 @@ async fn main() -> anyhow::Result<()> {
                 no_splash,
                 cli.bypass_review,
                 force_quota,
+                ignore_deps,
             )
             .await
         }
