@@ -195,6 +195,75 @@ fn init_fills_repo_from_github_origin() {
 }
 
 #[test]
+fn init_writes_runtime_gitignore_entries_once() {
+    // Done-when #1151: init writes the five runtime entries; a --reset
+    // re-run must not duplicate them.
+    let dir = TempDir::new().expect("create tempdir");
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let ignore_path = dir.path().join(".gitignore");
+    let first = std::fs::read_to_string(&ignore_path).expect(".gitignore written by init");
+    for entry in crate::init::ignore::RUNTIME_ENTRIES {
+        assert_eq!(
+            first.lines().filter(|line| line == entry).count(),
+            1,
+            "runtime entry {entry} must appear exactly once:\n{first}"
+        );
+    }
+
+    // Re-run through the real path: only --reset reaches the scaffold and
+    // ignore step again (a plain re-run exits early: maestro.toml exists).
+    let code = cmd_init_inner(true, dir.path(), &detector).expect("cmd_init_inner reset");
+    assert_eq!(code, 0);
+    let second = std::fs::read_to_string(&ignore_path).expect(".gitignore still present");
+    assert_eq!(
+        second, first,
+        "--reset re-run must leave .gitignore unchanged"
+    );
+}
+
+#[test]
+fn init_keeps_existing_gitignore_and_adds_only_missing() {
+    // Done-when #1151: an existing .gitignore keeps its content and
+    // receives only the entries it lacked.
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        "__pycache__/\n*.pyc\nmaestro-state.json\n",
+    )
+    .expect("seed .gitignore");
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let content = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read back");
+    assert!(
+        content.starts_with("__pycache__/\n*.pyc\nmaestro-state.json\n"),
+        "user content must survive verbatim:\n{content}"
+    );
+    for entry in [
+        ".maestro/logs/",
+        ".maestro/worktrees/",
+        "maestro-state.json.lock",
+        "maestro.log",
+    ] {
+        assert_eq!(
+            content.lines().filter(|line| *line == entry).count(),
+            1,
+            "missing entry {entry} added exactly once:\n{content}"
+        );
+    }
+    assert_eq!(
+        content
+            .lines()
+            .filter(|line| *line == "maestro-state.json")
+            .count(),
+        1,
+        "already-present entry must not be duplicated:\n{content}"
+    );
+}
+
+#[test]
 fn first_origin_remote_url_prefers_fetch_url() {
     let remote = "upstream\thttps://example.com/upstream.git (fetch)\n\
                   origin\tgit@github.com:owner/repo.git (push)\n\
