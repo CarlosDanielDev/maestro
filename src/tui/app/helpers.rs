@@ -64,6 +64,12 @@ pub(super) fn build_gate_fix_prompt(issue_number: u64, failure_details: &str) ->
 /// of settling `COMPLETED` before the pipeline runs the gates. Single
 /// source of truth for the flag, derived from the same config the
 /// completion pipeline reads (`build_completion_gates`).
+///
+/// The flag means "gates are configured for this session" — the
+/// writer checks config + issue number only. The reader (the stream
+/// handler) additionally requires a worktree and a non-Interactive
+/// session mode before parking, because Interactive sessions never
+/// enter the completion pipeline and the gate block needs a worktree.
 pub(crate) fn mark_gates_pending(session: &mut Session, config: Option<&Config>) {
     session.gates_pending =
         session.issue_number.is_some() && !build_completion_gates(config).is_empty();

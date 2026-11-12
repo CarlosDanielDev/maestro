@@ -249,3 +249,107 @@ async fn add_session_does_not_flag_without_gates() {
     let session = find_session(&app, 1144);
     assert!(!session.gates_pending);
 }
+
+fn find_session_by_id(app: &App, id: uuid::Uuid) -> Session {
+    app.pool
+        .all_sessions()
+        .into_iter()
+        .find(|s| s.id == id)
+        .cloned()
+        .expect("session must remain in the pool")
+}
+
+/// Regression (#1144 fix round): the context-overflow fork child is the
+/// one production enqueue that bypasses `add_session` — it must be
+/// flagged too, or a gated fork child settles COMPLETED at stream
+/// completion and a failing required gate never surfaces as
+/// FAILED_GATES.
+#[tokio::test]
+async fn gated_fork_child_with_failing_gate_ends_in_failed_gates() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    init_git_repo(tmp.path());
+
+    let mut app = make_app_with_gate("issue-1144-fork-child", "false");
+    app.fork_policy = Some(crate::session::fork::ForkPolicy::new(5));
+
+    // Parent at RUNNING with an issue, context above the overflow ratio.
+    let parent = make_session_with_issue(1144);
+    let parent_id = parent.id;
+    app.pool.enqueue(parent);
+    app.pool.try_promote();
+    {
+        let managed = app.pool.get_active_mut(parent_id).expect("active parent");
+        managed
+            .session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        managed
+            .session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+    }
+    app.context_monitor.record_context(parent_id, 0.95);
+
+    app.check_context_overflow(parent_id);
+
+    // Fork happened: the child inherits the issue and must be flagged.
+    let child = app
+        .pool
+        .all_sessions()
+        .into_iter()
+        .find(|s| s.parent_session_id == Some(parent_id))
+        .cloned()
+        .expect("fork child must exist in the pool");
+    assert_eq!(child.issue_number, Some(1144), "child inherits the issue");
+    assert!(
+        child.gates_pending,
+        "fork child bypasses add_session — it must be flagged for gates here (#1144)"
+    );
+
+    // The parent settled Completed by the fork; free its slot for the
+    // child (the pipeline would finalize it later anyway).
+    app.pool.finalize(parent_id);
+
+    // Drive the child through the real completion pipeline.
+    let child_id = child.id;
+    app.pool.try_promote();
+    {
+        let managed = app.pool.get_active_mut(child_id).expect("active child");
+        managed
+            .session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        managed
+            .session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        managed.worktree_path = Some(tmp.path().to_path_buf());
+        managed.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            managed.session.status,
+            SessionStatus::GatesRunning,
+            "gated fork child must park in GATES_RUNNING at stream completion (#1144)"
+        );
+    }
+    app.pending_issue_completions
+        .push(make_completion(1144, "feat/issue-1144", tmp.path()));
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let child = find_session_by_id(&app, child_id);
+    assert_eq!(
+        child.status,
+        SessionStatus::FailedGates,
+        "a failing required gate must settle the gated fork child FAILED_GATES (#1144)"
+    );
+    assert!(
+        history_pair(
+            &child,
+            SessionStatus::GatesRunning,
+            SessionStatus::FailedGates
+        )
+        .is_some(),
+        "history must contain gates_running → failed_gates"
+    );
+}
