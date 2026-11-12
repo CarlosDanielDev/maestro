@@ -45,6 +45,12 @@ const BLOCK_END: &str = "# --- end maestro ---";
 /// before its end marker), maestro's entries come after any user line and
 /// win the last-match comparison.
 ///
+/// An entry also stops counting as covered when a `!entry` negation appears
+/// after its last line inside a maestro block (inside or after the block):
+/// the entry is then re-added after that negation — in the last block when
+/// the negation sits inside it, otherwise in a new block at the end of the
+/// file.
+///
 /// Matching is by exact (trimmed) line, not by gitignore pattern — a user
 /// glob like `*.lock` is not treated as covering `maestro-state.json.lock`.
 ///
@@ -70,22 +76,26 @@ pub fn ensure_runtime_gitignore(root: &Path) -> Result<GitignoreUpdate> {
     };
 
     let lines: Vec<&str> = existing.lines().collect();
-    let start = lines.iter().position(|line| line.trim() == BLOCK_START);
-    let end = lines.iter().position(|line| line.trim() == BLOCK_END);
-    let block_span = match (start, end) {
-        (Some(start), Some(end)) if start < end => Some((start, end)),
-        // No (sane) block: treated as absent below.
-        _ => None,
+    let spans = block_spans(&lines);
+    let in_block = |i: usize| spans.iter().any(|&(start, end)| start < i && i < end);
+    // Last `!entry` negation anywhere in the file (gitignore: last match wins).
+    let last_negation = |entry: &str| {
+        let negated = format!("!{entry}");
+        lines.iter().rposition(|line| line.trim() == negated)
     };
 
     let missing: Vec<&'static str> = RUNTIME_ENTRIES
         .iter()
         .copied()
-        .filter(|entry| match block_span {
-            Some((start, end)) => !lines[start + 1..end]
-                .iter()
-                .any(|line| line.trim() == *entry),
-            None => true,
+        .filter(|entry| {
+            let last_positive = (0..lines.len())
+                .rev()
+                .find(|&i| in_block(i) && lines[i].trim() == *entry);
+            match (last_positive, last_negation(entry)) {
+                (Some(pos), Some(neg)) => neg > pos,
+                (Some(_), None) => false,
+                (None, _) => true,
+            }
         })
         .collect();
     if missing.is_empty() {
@@ -95,7 +105,16 @@ pub fn ensure_runtime_gitignore(root: &Path) -> Result<GitignoreUpdate> {
         });
     }
 
-    let new_content = match block_span {
+    // Refill the last block only when no missing entry is negated after its
+    // end marker; otherwise a new block at the end of the file must follow
+    // that negation to win last-match-wins.
+    let refill_target = spans.last().copied().filter(|&(_, end)| {
+        missing
+            .iter()
+            .all(|entry| last_negation(entry).is_none_or(|neg| neg < end))
+    });
+
+    let new_content = match refill_target {
         // Block already present: insert the missing entries before its
         // end marker so a re-run keeps a single block (#1151).
         Some((_start, end)) => {
@@ -133,6 +152,24 @@ pub fn ensure_runtime_gitignore(root: &Path) -> Result<GitignoreUpdate> {
         created,
         added: missing,
     })
+}
+
+/// Every `(start, end)` line-index pair of a maestro block: a start marker
+/// followed by the next end marker. A start without a later end is ignored.
+fn block_spans(lines: &[&str]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut open = None;
+    for (i, line) in lines.iter().enumerate() {
+        match (line.trim(), open) {
+            (BLOCK_START, None) => open = Some(i),
+            (BLOCK_END, Some(start)) => {
+                spans.push((start, i));
+                open = None;
+            }
+            _ => {}
+        }
+    }
+    spans
 }
 
 #[cfg(test)]

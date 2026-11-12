@@ -296,3 +296,44 @@ fn partial_block_refills_missing_inside_the_block() {
         "user content untouched:\n{content}"
     );
 }
+
+#[test]
+fn negation_after_block_end_re_adds_entry_after_it() {
+    // Security follow-up #1151: a `!entry` negation placed AFTER maestro's
+    // complete block wins under gitignore's last-match-wins, so the block
+    // alone no longer covers that entry. maestro must append a new block at
+    // the end of the file (after the negation) carrying only that entry,
+    // and a re-run must then be a byte-identical no-op.
+    let dir = TempDir::new().expect("create tempdir");
+    let mut seeded = String::from(BLOCK_START);
+    seeded.push('\n');
+    for entry in RUNTIME_ENTRIES {
+        seeded.push_str(entry);
+        seeded.push('\n');
+    }
+    seeded.push_str(BLOCK_END);
+    seeded.push_str("\n!maestro-state.json\n");
+    write_gitignore(&dir, &seeded);
+
+    let update = ensure_runtime_gitignore(dir.path()).expect("ensure_runtime_gitignore");
+    assert_eq!(
+        update.added,
+        vec!["maestro-state.json"],
+        "only the negated entry is re-added"
+    );
+    let content = read_gitignore(&dir);
+    assert!(
+        content.starts_with(&seeded),
+        "existing content (negation included) survives verbatim:\n{content}"
+    );
+    let tail = &content[seeded.len()..];
+    assert_eq!(
+        tail,
+        format!("\n{BLOCK_START}\nmaestro-state.json\n{BLOCK_END}\n"),
+        "re-add lands in a new block after the negation:\n{content}"
+    );
+
+    let rerun = ensure_runtime_gitignore(dir.path()).expect("second run");
+    assert!(rerun.added.is_empty(), "second run adds nothing: {rerun:?}");
+    assert_eq!(read_gitignore(&dir), content, "second run is a no-op");
+}
