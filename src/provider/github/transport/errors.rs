@@ -17,21 +17,32 @@ pub fn is_auth_error(stderr: &str) -> bool {
 
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 pub(super) const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
-const GH_RATE_LIMIT_MAX_ATTEMPTS: u32 = 3;
+const GH_TRANSIENT_MAX_ATTEMPTS: u32 = 3;
 
-pub(super) fn is_rate_limit_error(stderr: &str) -> bool {
+/// Check if a stderr string indicates a transient gh failure worth
+/// retrying: rate limiting, or a network error that fails before the
+/// request's outcome is known (#1154) — TLS handshake timeout,
+/// connection reset, i/o timeout, HTTP 502/503/504. Deliberate
+/// failures (auth, "not found") never match.
+pub(super) fn is_transient_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
     lower.contains("http 429")
         || lower.contains("rate limit exceeded")
         || lower.contains("secondary rate limit")
         || lower.contains("too many requests")
+        || lower.contains("tls handshake timeout")
+        || lower.contains("connection reset")
+        || lower.contains("i/o timeout")
+        || lower.contains("http 502")
+        || lower.contains("http 503")
+        || lower.contains("http 504")
 }
 
-pub(super) fn rate_limit_delay_for_attempt(attempt: u32) -> Duration {
+pub(super) fn transient_delay_for_attempt(attempt: u32) -> Duration {
     Duration::from_millis(250u64.saturating_mul(2u64.saturating_pow(attempt)))
 }
 
-pub(super) async fn with_rate_limit_retries<F, Fut>(
+pub(super) async fn with_transient_retries<F, Fut>(
     mut operation: F,
     sleep_between_attempts: bool,
 ) -> Result<String>
@@ -43,11 +54,11 @@ where
     loop {
         match operation().await {
             Err(err)
-                if attempt + 1 < GH_RATE_LIMIT_MAX_ATTEMPTS
-                    && is_rate_limit_error(&err.to_string()) =>
+                if attempt + 1 < GH_TRANSIENT_MAX_ATTEMPTS
+                    && is_transient_error(&err.to_string()) =>
             {
                 if sleep_between_attempts {
-                    tokio::time::sleep(rate_limit_delay_for_attempt(attempt)).await;
+                    tokio::time::sleep(transient_delay_for_attempt(attempt)).await;
                 }
                 attempt += 1;
             }

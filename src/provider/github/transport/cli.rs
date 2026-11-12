@@ -1,4 +1,4 @@
-use super::{GH_AUTH_ERROR_SENTINEL, is_auth_error, redact_secrets, with_rate_limit_retries};
+use super::{GH_AUTH_ERROR_SENTINEL, is_auth_error, redact_secrets, with_transient_retries};
 use anyhow::{Context, Result};
 
 use crate::util::validate_gh_arg;
@@ -71,7 +71,7 @@ impl GhCliClient {
         args: &[&str],
         stdin_data: Option<&[u8]>,
     ) -> Result<String> {
-        with_rate_limit_retries(|| self.run_gh_with_stdin_once(args, stdin_data), true).await
+        with_transient_retries(|| self.run_gh_with_stdin_once(args, stdin_data), true).await
     }
 
     async fn run_gh_with_stdin_once(
