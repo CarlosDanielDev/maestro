@@ -82,7 +82,9 @@ pub fn ensure_runtime_gitignore(root: &Path) -> Result<GitignoreUpdate> {
         .iter()
         .copied()
         .filter(|entry| match block_span {
-            Some((start, end)) => !lines[start + 1..end].iter().any(|line| line.trim() == *entry),
+            Some((start, end)) => !lines[start + 1..end]
+                .iter()
+                .any(|line| line.trim() == *entry),
             None => true,
         })
         .collect();
@@ -126,8 +128,7 @@ pub fn ensure_runtime_gitignore(root: &Path) -> Result<GitignoreUpdate> {
         }
     };
 
-    write_no_follow(&path, &new_content)
-        .with_context(|| format!("writing {}", path.display()))?;
+    write_no_follow(&path, &new_content).with_context(|| format!("writing {}", path.display()))?;
     Ok(GitignoreUpdate {
         created,
         added: missing,
