@@ -76,41 +76,136 @@ fn rerun_is_idempotent() {
 }
 
 #[test]
-fn preserves_user_content_and_adds_only_missing_entries() {
+fn preserves_user_content_and_adds_all_entries_missing_from_the_block() {
     // Done-when #1151: an existing .gitignore keeps its content and gets
-    // only the entries it lacked (the QA repo already ignored
-    // maestro-state.json).
+    // the entries its maestro block lacked. The user's own exact line
+    // (the QA repo already ignored maestro-state.json) does NOT count as
+    // coverage — only lines inside maestro's block do (security
+    // follow-up: a foreign line may sit before a later negation and lose
+    // last-match-wins) — so the entry is added inside the block too.
     let dir = TempDir::new().expect("create tempdir");
     write_gitignore(&dir, "__pycache__/\n*.pyc\nmaestro-state.json\n");
     let update = ensure_runtime_gitignore(dir.path()).expect("ensure_runtime_gitignore");
     assert!(!update.created);
     assert_eq!(
         update.added,
-        vec![
-            ".maestro/logs/",
-            ".maestro/worktrees/",
-            "maestro-state.json.lock",
-            "maestro.log"
-        ],
-        "only the missing entries are added"
+        RUNTIME_ENTRIES.to_vec(),
+        "every entry missing from the (absent) block is added"
     );
     let content = read_gitignore(&dir);
     assert!(
         content.starts_with("__pycache__/\n*.pyc\nmaestro-state.json\n"),
         "user content must survive verbatim at the top:\n{content}"
     );
-    assert_eq!(
-        count_line(&content, "maestro-state.json"),
-        1,
-        "already-present entry must not be duplicated:\n{content}"
-    );
-    for entry in update.added.iter() {
-        assert_eq!(
-            count_line(&content, entry),
-            1,
-            "missing entry {entry} added once:\n{content}"
+    let inside = block_lines(&content);
+    for entry in RUNTIME_ENTRIES {
+        assert!(
+            inside.contains(entry),
+            "entry {entry} must live inside the appended block:\n{content}"
         );
     }
+    // The user's own line stays; the block's copy lands after it, so the
+    // ignore holds under last-match-wins.
+    assert_eq!(
+        count_line(&content, "maestro-state.json"),
+        2,
+        "user's own line plus maestro's block entry:\n{content}"
+    );
+    assert_eq!(count_line(&content, BLOCK_START), 1, "single block");
+    assert_eq!(count_line(&content, BLOCK_END), 1, "single block");
+}
+
+#[test]
+fn foreign_exact_line_and_negation_outside_block_cannot_suppress_append() {
+    // Security follow-up #1151: outside maestro's block, an exact entry
+    // line can sit before a later `!entry` negation — gitignore's
+    // last-match-wins then re-includes the path while whole-file dedup
+    // would believe it covered. Only lines inside maestro's own block
+    // count as coverage, and the appended block lands after every foreign
+    // line, so maestro's entry wins the last-match comparison.
+    let dir = TempDir::new().expect("create tempdir");
+    write_gitignore(
+        &dir,
+        "__pycache__/\nmaestro-state.json\n!maestro-state.json\n",
+    );
+    let update = ensure_runtime_gitignore(dir.path()).expect("ensure_runtime_gitignore");
+    assert_eq!(
+        update.added,
+        RUNTIME_ENTRIES.to_vec(),
+        "foreign lines are not coverage:\n{update:?}"
+    );
+    let content = read_gitignore(&dir);
+    assert!(
+        content.starts_with("__pycache__/\nmaestro-state.json\n!maestro-state.json\n"),
+        "user content must survive verbatim at the top:\n{content}"
+    );
+    let inside = block_lines(&content);
+    for entry in RUNTIME_ENTRIES {
+        assert!(
+            inside.contains(entry),
+            "entry {entry} must live inside maestro's block:\n{content}"
+        );
+    }
+    assert!(
+        content.ends_with(&format!("{BLOCK_END}\n")),
+        "block must land after the foreign lines:\n{content}"
+    );
+}
+
+#[test]
+fn refuses_symlinked_gitignore_and_leaves_victim_untouched() {
+    // Security follow-up #1151 (CWE-59): a repo-planted `.gitignore`
+    // symlink must be refused, never followed on read or write.
+    let dir = TempDir::new().expect("create tempdir");
+    let victim = dir.path().join("victim.txt");
+    std::fs::write(&victim, "ORIGINAL").expect("write victim");
+    use std::os::unix::fs::symlink;
+    symlink(&victim, dir.path().join(".gitignore")).expect("create symlink");
+
+    let err = ensure_runtime_gitignore(dir.path()).expect_err("symlink must be refused");
+
+    assert!(
+        err.to_string().contains("symlink"),
+        "error should name the symlink refusal, got: {err}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("victim readable"),
+        "ORIGINAL",
+        "victim file must be untouched"
+    );
+    assert!(
+        std::fs::symlink_metadata(dir.path().join(".gitignore"))
+            .expect("link still present")
+            .file_type()
+            .is_symlink(),
+        ".gitignore must still be the symlink"
+    );
+}
+
+#[test]
+fn refuses_dangling_symlink_gitignore() {
+    // `Path::exists` reports a dangling symlink as absent and would let the
+    // create path run; exists_no_follow sees the link and the run refuses
+    // instead of creating the target through it.
+    let dir = TempDir::new().expect("create tempdir");
+    let victim = dir.path().join("victim.txt");
+    use std::os::unix::fs::symlink;
+    symlink(&victim, dir.path().join(".gitignore")).expect("create dangling symlink");
+
+    let err = ensure_runtime_gitignore(dir.path()).expect_err("dangling symlink must be refused");
+
+    assert!(err.to_string().contains("symlink"), "got: {err}");
+    assert!(
+        !victim.exists(),
+        "dangling symlink target must not be created"
+    );
+    assert!(
+        std::fs::symlink_metadata(dir.path().join(".gitignore"))
+            .expect("link still present")
+            .file_type()
+            .is_symlink(),
+        ".gitignore must still be the dangling symlink"
+    );
 }
 
 #[test]
@@ -200,4 +295,45 @@ fn partial_block_refills_missing_inside_the_block() {
         content.starts_with("# runtime\n"),
         "user content untouched:\n{content}"
     );
+}
+
+#[test]
+fn negation_after_block_end_re_adds_entry_after_it() {
+    // Security follow-up #1151: a `!entry` negation placed AFTER maestro's
+    // complete block wins under gitignore's last-match-wins, so the block
+    // alone no longer covers that entry. maestro must append a new block at
+    // the end of the file (after the negation) carrying only that entry,
+    // and a re-run must then be a byte-identical no-op.
+    let dir = TempDir::new().expect("create tempdir");
+    let mut seeded = String::from(BLOCK_START);
+    seeded.push('\n');
+    for entry in RUNTIME_ENTRIES {
+        seeded.push_str(entry);
+        seeded.push('\n');
+    }
+    seeded.push_str(BLOCK_END);
+    seeded.push_str("\n!maestro-state.json\n");
+    write_gitignore(&dir, &seeded);
+
+    let update = ensure_runtime_gitignore(dir.path()).expect("ensure_runtime_gitignore");
+    assert_eq!(
+        update.added,
+        vec!["maestro-state.json"],
+        "only the negated entry is re-added"
+    );
+    let content = read_gitignore(&dir);
+    assert!(
+        content.starts_with(&seeded),
+        "existing content (negation included) survives verbatim:\n{content}"
+    );
+    let tail = &content[seeded.len()..];
+    assert_eq!(
+        tail,
+        format!("\n{BLOCK_START}\nmaestro-state.json\n{BLOCK_END}\n"),
+        "re-add lands in a new block after the negation:\n{content}"
+    );
+
+    let rerun = ensure_runtime_gitignore(dir.path()).expect("second run");
+    assert!(rerun.added.is_empty(), "second run adds nothing: {rerun:?}");
+    assert_eq!(read_gitignore(&dir), content, "second run is a no-op");
 }

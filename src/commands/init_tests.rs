@@ -224,9 +224,12 @@ fn init_writes_runtime_gitignore_entries_once() {
 }
 
 #[test]
-fn init_keeps_existing_gitignore_and_adds_only_missing() {
-    // Done-when #1151: an existing .gitignore keeps its content and
-    // receives only the entries it lacked.
+fn init_keeps_existing_gitignore_and_adds_entries_missing_from_the_block() {
+    // Done-when #1151: an existing .gitignore keeps its content and its
+    // maestro block receives every entry it lacked. The user's own exact
+    // line does not count as coverage (security follow-up: a foreign line
+    // cannot vouch under gitignore's last-match-wins), so maestro-state.json
+    // is added inside the block too, after the user's own line.
     let dir = TempDir::new().expect("create tempdir");
     std::fs::write(
         dir.path().join(".gitignore"),
@@ -250,7 +253,7 @@ fn init_keeps_existing_gitignore_and_adds_only_missing() {
         assert_eq!(
             content.lines().filter(|line| *line == entry).count(),
             1,
-            "missing entry {entry} added exactly once:\n{content}"
+            "entry {entry} added exactly once (inside the block):\n{content}"
         );
     }
     assert_eq!(
@@ -258,8 +261,20 @@ fn init_keeps_existing_gitignore_and_adds_only_missing() {
             .lines()
             .filter(|line| *line == "maestro-state.json")
             .count(),
-        1,
-        "already-present entry must not be duplicated:\n{content}"
+        2,
+        "user's own line plus the block entry:\n{content}"
+    );
+    assert!(
+        content.ends_with(concat!(
+            "# --- maestro ---\n",
+            ".maestro/logs/\n",
+            ".maestro/worktrees/\n",
+            "maestro-state.json\n",
+            "maestro-state.json.lock\n",
+            "maestro.log\n",
+            "# --- end maestro ---\n",
+        )),
+        "the appended block must carry all five entries, after the user's content:\n{content}"
     );
 }
 
