@@ -359,7 +359,12 @@ impl SessionPool {
     }
 
     fn finalize_at(&mut self, idx: usize, retain_worktree: bool) {
-        let managed = self.active.remove(idx);
+        let mut managed = self.active.remove(idx);
+        // Same #1139 family as `kill_all`: a settled session can still have
+        // a live provider child (the result line arrived, the process did
+        // not). Interrupt it before the session leaves `active` — from
+        // `finished`, nothing can reach that child anymore.
+        managed.cancel_inflight_turn();
         let session_id = managed.session.id;
         self.file_claims.release_all(session_id);
         if !retain_worktree {
@@ -2104,6 +2109,40 @@ pub(in crate::session) mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         assert!(gone, "stub child {pid} still alive after kill_all");
+    }
+
+    /// Security-review follow-up to #1139: finalizing a settled session
+    /// (user dismiss, gate retry) must also interrupt its provider child —
+    /// from `finished`, `kill_all` can no longer reach it.
+    #[tokio::test]
+    async fn finalize_reaps_child_of_settled_session() {
+        let (_guard, script) = write_lingering_stub();
+        let mut pool = make_pool(2);
+        let pid = spawn_stub_until_completed(&mut pool, &script).await;
+        let id = pool.active[0].session.id;
+
+        assert!(pool.finalize(id), "session was finalized");
+        assert!(
+            pool.finished.iter().any(|m| m.session.id == id),
+            "session moved to finished"
+        );
+
+        // The child must be gone, not merely un-waited: poll until the pid
+        // answers with ESRCH (a killed-but-unreaped zombie would still
+        // answer `kill(pid, 0)` with 0).
+        let mut gone = false;
+        for _ in 0..60 {
+            // SAFETY: kill(pid, 0) only probes for the process's existence;
+            // the pid is our own stub child's.
+            #[allow(unsafe_code)]
+            let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+            if !alive {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(gone, "stub child {pid} still alive after finalize");
     }
 
     #[cfg(unix)]
