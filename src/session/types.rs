@@ -360,6 +360,16 @@ pub struct Session {
     /// Always `None` for one-shot sessions.
     #[serde(default)]
     pub settled_from: Option<SessionStatus>,
+    /// Completion gates are configured for this session (#1144). Set by
+    /// `App::add_session` from the same config the completion pipeline
+    /// reads, so `ManagedSession::handle_event` can park a finished
+    /// stream in `GATES_RUNNING` instead of settling `COMPLETED` before
+    /// the pipeline runs the gates — `Completed` has no outgoing edges,
+    /// which turned every pipeline transition from it into a silent
+    /// rejection. `serde(default)` so pre-#1144 state files load
+    /// unchanged.
+    #[serde(default)]
+    pub gates_pending: bool,
     /// Turn-level activity inside the kept-alive state (#948) — drives
     /// the chat input lock. In-memory only.
     #[serde(skip)]
@@ -560,6 +570,7 @@ impl Session {
             agent_session_id: None,
             adopted_cwd: None,
             settled_from: None,
+            gates_pending: false,
             turn_state: super::interaction::TurnState::Idle,
             turns: Vec::new(),
             produce_pr: false,

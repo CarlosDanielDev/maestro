@@ -1,0 +1,205 @@
+//! Pipeline-level regression tests for #1144. The stream handler must
+//! park a gated session in `GATES_RUNNING` (`running → gates_running`)
+//! instead of settling `COMPLETED` before the completion pipeline runs
+//! the gates: `Completed` has no outgoing edges, so every pipeline
+//! transition from it was silently rejected and the documented
+//! `RUNNING → GATES_RUNNING → COMPLETED / FAILED_GATES` flow never
+//! showed `GATES_RUNNING`.
+
+use crate::integration_tests::helpers::{
+    init_git_repo, make_app_with_gate, make_session_with_issue,
+};
+use crate::session::transition::TransitionReason;
+use crate::session::types::{Session, SessionStatus, StreamEvent};
+use crate::tui::app::App;
+use crate::tui::app::types::PendingIssueCompletion;
+use std::path::Path;
+
+fn make_completion(issue: u64, branch: &str, wt: &Path) -> PendingIssueCompletion {
+    PendingIssueCompletion {
+        issue_number: issue,
+        issue_numbers: vec![],
+        success: true,
+        cost_usd: 0.0,
+        files_touched: vec![],
+        worktree_branch: Some(branch.to_string()),
+        worktree_path: Some(wt.to_path_buf()),
+        is_ci_fix: false,
+    }
+}
+
+/// Arm a gated session the way production reaches the pipeline: promote
+/// to RUNNING, set the gates flag (as `add_session` does), point
+/// `worktree_path` at a real git repo, then fire the stream-completed
+/// event through `ManagedSession::handle_event`.
+fn arm_gated_session_at_stream_completed(app: &mut App, issue: u64, wt: &Path) {
+    let session = make_session_with_issue(issue);
+    let id = session.id;
+    app.pool.enqueue(session);
+    app.pool.try_promote();
+    let managed = app.pool.get_active_mut(id).expect("active session");
+    managed
+        .session
+        .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+        .unwrap();
+    managed
+        .session
+        .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+        .unwrap();
+    managed.session.gates_pending = true;
+    managed.worktree_path = Some(wt.to_path_buf());
+    managed.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+
+    assert_eq!(
+        managed.session.status,
+        SessionStatus::GatesRunning,
+        "stream completion must park a gated session in GATES_RUNNING, not settle COMPLETED (#1144)"
+    );
+}
+
+/// Grab an owned copy of the session by issue — active or finished
+/// bucket (the pipeline finalizes terminal sessions in the same tick).
+fn find_session(app: &App, issue: u64) -> Session {
+    app.pool
+        .all_sessions()
+        .into_iter()
+        .find(|s| s.issue_number == Some(issue))
+        .cloned()
+        .expect("session must remain in the pool")
+}
+
+fn history_pair(session: &Session, from: SessionStatus, to: SessionStatus) -> Option<usize> {
+    session
+        .transition_history
+        .iter()
+        .position(|t| t.from == from && t.to == to)
+}
+
+/// Done when #1144 (1): with gates configured, `transition_history`
+/// contains `running → gates_running` then `gates_running → completed`.
+#[tokio::test]
+async fn pipeline_records_running_to_gates_running_then_to_completed() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    init_git_repo(tmp.path());
+
+    let mut app = make_app_with_gate("issue-1144-gates-state", "true");
+    arm_gated_session_at_stream_completed(&mut app, 1144, tmp.path());
+
+    app.pending_issue_completions
+        .push(make_completion(1144, "feat/issue-1144", tmp.path()));
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let session = find_session(&app, 1144);
+    let to_gates = history_pair(
+        &session,
+        SessionStatus::Running,
+        SessionStatus::GatesRunning,
+    )
+    .expect("history must contain running → gates_running");
+    let to_completed = history_pair(
+        &session,
+        SessionStatus::GatesRunning,
+        SessionStatus::Completed,
+    )
+    .expect("history must contain gates_running → completed");
+    assert!(
+        to_gates < to_completed,
+        "gates must run between RUNNING and COMPLETED"
+    );
+    assert_eq!(session.status, SessionStatus::Completed);
+
+    assert!(
+        !session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("TRANSITION REJECTED")),
+        "no pipeline transition may be rejected on the happy path (#1144)"
+    );
+}
+
+/// Done when #1144 (2): a failing required gate (command exits 1) ends
+/// in `FAILED_GATES`. Settles the issue's Inferred note — the failure
+/// branch previously started from COMPLETED, so its transition to
+/// `FAILED_GATES` was silently rejected too.
+#[tokio::test]
+async fn failing_required_gate_ends_in_failed_gates() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    init_git_repo(tmp.path());
+
+    let mut app = make_app_with_gate("issue-1144-gates-fail", "false");
+    arm_gated_session_at_stream_completed(&mut app, 1144, tmp.path());
+
+    app.pending_issue_completions
+        .push(make_completion(1144, "feat/issue-1144", tmp.path()));
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let session = find_session(&app, 1144);
+    assert_eq!(
+        session.status,
+        SessionStatus::FailedGates,
+        "a failing required gate must settle FAILED_GATES, not COMPLETED (#1144)"
+    );
+    assert!(
+        history_pair(
+            &session,
+            SessionStatus::GatesRunning,
+            SessionStatus::FailedGates
+        )
+        .is_some(),
+        "history must contain gates_running → failed_gates"
+    );
+    assert!(
+        !session.gate_results.is_empty(),
+        "failing gate results must be retained for recovery"
+    );
+}
+
+/// Pin: a session that arrives at the pipeline still RUNNING (a path
+/// that enqueues the completion without a stream-completed event) is
+/// re-armed into GATES_RUNNING by the pipeline itself before the gates
+/// execute.
+#[tokio::test]
+async fn pipeline_re_arms_running_session_into_gates_running() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    init_git_repo(tmp.path());
+
+    let mut app = make_app_with_gate("issue-1144-gates-rearm", "true");
+    let session = make_session_with_issue(1144);
+    let id = session.id;
+    app.pool.enqueue(session);
+    app.pool.try_promote();
+    {
+        let managed = app.pool.get_active_mut(id).expect("active session");
+        managed
+            .session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        managed
+            .session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        managed.worktree_path = Some(tmp.path().to_path_buf());
+    }
+
+    app.pending_issue_completions
+        .push(make_completion(1144, "feat/issue-1144", tmp.path()));
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let session = find_session(&app, 1144);
+    assert_eq!(session.status, SessionStatus::Completed);
+    assert!(
+        history_pair(
+            &session,
+            SessionStatus::Running,
+            SessionStatus::GatesRunning
+        )
+        .is_some(),
+        "pipeline must enter GATES_RUNNING before the gates run"
+    );
+}

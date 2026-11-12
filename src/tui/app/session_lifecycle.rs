@@ -5,7 +5,11 @@ use crate::session::types::Session;
 use crate::tui::activity_log::LogLevel;
 
 impl App {
-    pub async fn add_session(&mut self, session: Session) -> anyhow::Result<()> {
+    pub async fn add_session(&mut self, mut session: Session) -> anyhow::Result<()> {
+        // #1144: flag gates-configured sessions before enqueue so the
+        // stream handler parks them in GATES_RUNNING at stream
+        // completion (see `mark_gates_pending`).
+        super::helpers::mark_gates_pending(&mut session, self.config.as_ref());
         let label = session_label(&session);
         self.activity_log
             .push_simple(label.clone(), "Enqueuing session...".into(), LogLevel::Info);

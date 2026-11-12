@@ -474,10 +474,27 @@ impl ManagedSession {
                 if *cost_usd > 0.0 {
                     self.session.cost_usd = *cost_usd;
                 }
+                // #1144: park gated sessions in GATES_RUNNING so the
+                // completion pipeline settles the final outcome
+                // (COMPLETED / FAILED_GATES) after the gates run.
+                // Settling COMPLETED first left the pipeline's own
+                // transitions illegal (Completed has no outgoing
+                // edges), so a failing gate never surfaced as
+                // FAILED_GATES. Interactive sessions are excluded:
+                // they never enter the completion pipeline (#947) and
+                // would strand in GATES_RUNNING.
+                let enter_gates = self.session.gates_pending
+                    && self.session.session_mode != crate::session::types::SessionMode::Interactive
+                    && self.worktree_path.is_some();
+                let target = if enter_gates {
+                    SessionStatus::GatesRunning
+                } else {
+                    SessionStatus::Completed
+                };
                 if self
                     .session
                     .transition_to(
-                        SessionStatus::Completed,
+                        target,
                         crate::session::transition::TransitionReason::StreamCompleted,
                     )
                     .is_ok()
@@ -600,6 +617,7 @@ mod tests {
             agent_session_id: None,
             adopted_cwd: None,
             settled_from: None,
+            gates_pending: false,
             turn_state: crate::session::interaction::TurnState::Idle,
             turns: vec![],
             produce_pr: false,
@@ -1284,5 +1302,69 @@ mod tests {
             subagent_name: None,
         });
         assert_eq!(ms.session.files_touched.len(), 1);
+    }
+
+    // --- #1144: gated stream completion parks in GATES_RUNNING ---
+
+    fn make_gated_running_managed() -> ManagedSession {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_managed("gated work");
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        ms.session.gates_pending = true;
+        ms.worktree_path = Some(std::path::PathBuf::from("/tmp/wt-1144"));
+        ms
+    }
+
+    #[test]
+    fn gated_stream_completion_parks_in_gates_running() {
+        let mut ms = make_gated_running_managed();
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::GatesRunning,
+            "gates pending: stream completion must park GATES_RUNNING (#1144)"
+        );
+    }
+
+    #[test]
+    fn ungated_stream_completion_still_settles_completed() {
+        let mut ms = make_gated_running_managed();
+        ms.session.gates_pending = false;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+    }
+
+    #[test]
+    fn gated_session_without_worktree_settles_completed() {
+        let mut ms = make_gated_running_managed();
+        ms.worktree_path = None;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Completed,
+            "no worktree: the pipeline gate block cannot run — must settle COMPLETED, not strand GATES_RUNNING"
+        );
+    }
+
+    #[test]
+    fn gated_interactive_session_settles_interactive() {
+        let mut ms = make_gated_running_managed();
+        ms.session.session_mode = crate::session::types::SessionMode::Interactive;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Interactive,
+            "Interactive sessions never enter the completion pipeline — #948 settle must still fire"
+        );
+        assert_eq!(
+            ms.session.settled_from,
+            Some(SessionStatus::Completed),
+            "settled_from records the intercepted outcome"
+        );
     }
 }
