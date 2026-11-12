@@ -110,6 +110,11 @@ CI defends three layers:
   scaffolder embeds the mirror via `include_bytes!`; the test asserts the
   mirror is byte-equal to the canonical `.maestro/templates/`. Fix with
   `cp -a .maestro/templates/. template/.maestro/templates/`.
+  **Trap:** `sync-templates --check` does NOT verify this mirror — a PR that
+  edits `.maestro/templates/` and updates the rendered files passes
+  `--check` locally and still fails CI in `template_mirror_byte_equal`
+  (seen in PR #1133). Every change to `.maestro/templates/` must also be
+  copied into `template/.maestro/templates/` in the same PR.
 
 ---
 
