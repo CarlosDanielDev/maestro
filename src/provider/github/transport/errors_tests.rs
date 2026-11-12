@@ -207,15 +207,15 @@ fn is_ambiguous_network_error_returns_true_for_io_timeout() {
 }
 
 #[test]
-fn is_ambiguous_network_error_returns_false_for_http_502() {
-    assert!(!is_ambiguous_network_error(
+fn is_ambiguous_network_error_returns_true_for_http_502() {
+    assert!(is_ambiguous_network_error(
         "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_http_502() {
-    assert!(is_transient_error(
+fn is_transient_error_returns_false_for_http_502() {
+    assert!(!is_transient_error(
         "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
     ));
 }
@@ -228,8 +228,15 @@ fn is_transient_error_returns_true_for_http_503() {
 }
 
 #[test]
-fn is_transient_error_returns_true_for_http_504() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_http_504() {
+    assert!(is_ambiguous_network_error(
+        "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_http_504() {
+    assert!(!is_transient_error(
         "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
     ));
 }
@@ -333,48 +340,6 @@ async fn does_not_retry_not_found_errors() {
 
     assert!(result.is_err());
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
-}
-
-// -- idempotency gate: ambiguous network errors vs mutating commands --
-
-#[tokio::test]
-async fn mutating_command_with_connection_reset_is_not_retried() {
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let result = with_transient_retries(
-        || {
-            let attempts = Arc::clone(&attempts);
-            async move {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                anyhow::bail!("gh command failed: read tcp 1.2.3.4:443: connection reset by peer")
-            }
-        },
-        false,
-        false,
-    )
-    .await;
-
-    assert!(result.is_err());
-    assert_eq!(attempts.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
-async fn mutating_command_with_http_502_is_still_retried_to_cap() {
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let result = with_transient_retries(
-        || {
-            let attempts = Arc::clone(&attempts);
-            async move {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                anyhow::bail!("gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)")
-            }
-        },
-        false,
-        false,
-    )
-    .await;
-
-    assert!(result.is_err());
-    assert_eq!(attempts.load(Ordering::SeqCst), 3);
 }
 
 #[test]

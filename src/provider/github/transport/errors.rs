@@ -20,30 +20,31 @@ pub(super) const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
 const GH_TRANSIENT_MAX_ATTEMPTS: u32 = 3;
 
 /// Check if a stderr string indicates a gh failure that is always safe
-/// to retry, for any command: rate limiting, or an HTTP status the
-/// server rejected before applying the request (429, 502, 503, 504).
-/// Deliberate failures (auth, "not found") never match.
+/// to retry, for any command: rate limiting, or HTTP 503 (produced
+/// before the request is applied at the backend). Deliberate failures
+/// (auth, "not found") never match.
 pub(super) fn is_transient_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
     lower.contains("http 429")
         || lower.contains("rate limit exceeded")
         || lower.contains("secondary rate limit")
         || lower.contains("too many requests")
-        || lower.contains("http 502")
         || lower.contains("http 503")
-        || lower.contains("http 504")
 }
 
-/// Check if a stderr string indicates a network error whose outcome is
-/// unknown (#1154): the request may have reached the server and been
-/// applied before the connection died. Replaying a mutating command
-/// (create/merge/label/patch) could duplicate the effect, so these are
-/// retried only for idempotent commands.
+/// Check if a stderr string indicates a failure whose outcome is
+/// unknown: a dropped connection (#1154), or HTTP 502/504 — gateway
+/// responses that can arrive after the backend already applied the
+/// request (e.g. over a stale keep-alive connection). Replaying a
+/// mutating command (create/merge/label/patch) could duplicate the
+/// effect, so these are retried only for idempotent commands.
 pub(super) fn is_ambiguous_network_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
     lower.contains("tls handshake timeout")
         || lower.contains("connection reset")
         || lower.contains("i/o timeout")
+        || lower.contains("http 502")
+        || lower.contains("http 504")
 }
 
 /// Retry gate: unconditional patterns for any command, plus the
