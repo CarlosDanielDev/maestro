@@ -758,7 +758,11 @@ impl SessionPool {
     }
 }
 
-fn session_slug(session: &Session) -> String {
+/// Worktree slug for a session — `.maestro/worktrees/<slug>` on branch
+/// `maestro/<slug>`. `pub(crate)` so stale-session cleanup (#1149) derives
+/// the same path from the persisted `Session` record without a second
+/// naming convention drifting apart.
+pub(crate) fn session_slug(session: &Session) -> String {
     if session.issue_numbers.len() >= 2 {
         // Reuse unified_branch_name which returns "maestro/unified-N-M";
         // strip the "maestro/" prefix since the caller adds it.

@@ -1,3 +1,4 @@
+use crate::session::types::SessionStatus;
 use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use std::collections::BTreeMap;
@@ -64,30 +65,61 @@ pub fn cmd_status() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!(
-        "Sessions: {} total, {} active",
+    print!("{}", format_status_report(&state));
+    Ok(())
+}
+
+/// Build the `maestro status` report text. Pure formatter over
+/// `MaestroState` so tests can assert output without touching disk.
+/// Sessions whose owning maestro process is gone (#1149) are shown as
+/// STALE and excluded from the active count, with a pointer to
+/// `maestro clean --stale`; staleness is derived from
+/// `Session::owner_pid`, never stored.
+pub fn format_status_report(state: &MaestroState) -> String {
+    let mut out = String::new();
+    let stale_count = state.sessions.iter().filter(|s| s.is_stale()).count();
+    let active = state
+        .sessions
+        .iter()
+        .filter(|s| !s.status.is_terminal() && !s.is_stale())
+        .count();
+    out.push_str(&format!(
+        "Sessions: {} total, {} active\n",
         state.sessions.len(),
-        state.active_sessions().len()
-    );
-    println!("Total cost: ${:.2}", state.total_cost_usd);
-    println!();
+        active
+    ));
+    out.push_str(&format!("Total cost: ${:.2}\n", state.total_cost_usd));
+    out.push('\n');
 
     for session in &state.sessions {
         let label = match session.issue_number {
             Some(n) => format!("#{}", n),
             None => session.id.to_string()[..8].to_string(),
         };
-        println!(
-            "  {} {} {} ${:.2} {}",
-            session.status.symbol(),
+        let (symbol, status_label) = if session.is_stale() {
+            // Derived staleness (#1149): there is no SessionStatus variant
+            // for it, so the alert glyph doubles as the stale marker.
+            (SessionStatus::Stalled.symbol(), "STALE")
+        } else {
+            (session.status.symbol(), session.status.label())
+        };
+        out.push_str(&format!(
+            "  {} {} {} ${:.2} {}\n",
+            symbol,
             label,
-            session.status.label(),
+            status_label,
             session.cost_usd,
             session.elapsed_display(),
-        );
+        ));
     }
 
-    Ok(())
+    if stale_count > 0 {
+        out.push_str(&format!(
+            "\n{stale_count} stale session(s) — run `maestro clean --stale` to remove their worktrees (preview with --dry-run).\n"
+        ));
+    }
+
+    out
 }
 
 pub fn cmd_cost() -> anyhow::Result<()> {
@@ -188,5 +220,98 @@ mod tests {
             "non-zero cost must NOT show (free) marker; got:\n{}",
             report
         );
+    }
+
+    // --- Issue #1149: STALE display ---
+
+    fn make_status_session(status: SessionStatus, owner_pid: Option<u32>) -> Session {
+        let mut s = Session::new(
+            "stale-check".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            None,
+        );
+        s.status = status;
+        s.owner_pid = owner_pid;
+        s.started_at = Some(chrono::Utc::now() - chrono::Duration::seconds(60));
+        s
+    }
+
+    #[test]
+    fn status_report_marks_dead_owner_running_session_as_stale() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        let mut state = MaestroState::default();
+        state.sessions = vec![make_status_session(SessionStatus::Running, Some(dead))];
+        state.update_total_cost();
+
+        let report = format_status_report(&state);
+
+        assert!(
+            report.contains("STALE"),
+            "dead-owner session must show STALE; got:\n{report}"
+        );
+        assert!(
+            !report.contains("RUNNING"),
+            "dead-owner session must not show RUNNING; got:\n{report}"
+        );
+        assert!(
+            report.contains("0 active"),
+            "stale session must not count as active; got:\n{report}"
+        );
+        assert!(
+            report.contains("clean --stale"),
+            "report must tell the user how to clean up; got:\n{report}"
+        );
+    }
+
+    #[test]
+    fn status_report_live_owner_session_still_runs() {
+        let mut state = MaestroState::default();
+        state.sessions = vec![make_status_session(
+            SessionStatus::Running,
+            Some(std::process::id()),
+        )];
+        state.update_total_cost();
+
+        let report = format_status_report(&state);
+
+        assert!(report.contains("RUNNING"));
+        assert!(!report.contains("STALE"));
+        assert!(report.contains("1 active"));
+        assert!(
+            !report.contains("clean --stale"),
+            "no cleanup hint without stale sessions; got:\n{report}"
+        );
+    }
+
+    #[test]
+    fn status_report_legacy_session_without_owner_shows_running() {
+        let mut state = MaestroState::default();
+        state.sessions = vec![make_status_session(SessionStatus::Running, None)];
+        state.update_total_cost();
+
+        let report = format_status_report(&state);
+
+        assert!(
+            report.contains("RUNNING"),
+            "pre-#1149 session without owner_pid keeps its label"
+        );
+        assert!(report.contains("1 active"));
+        assert!(!report.contains("STALE"));
+    }
+
+    #[test]
+    fn status_report_terminal_session_with_dead_owner_stays_completed() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        let mut state = MaestroState::default();
+        state.sessions = vec![make_status_session(SessionStatus::Completed, Some(dead))];
+        state.update_total_cost();
+
+        let report = format_status_report(&state);
+
+        assert!(report.contains("COMPLETED"));
+        assert!(!report.contains("STALE"));
+        assert!(!report.contains("clean --stale"));
     }
 }

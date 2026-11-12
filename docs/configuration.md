@@ -901,6 +901,7 @@ Initialize `maestro.toml` in the current directory.
 | Flag | Config equivalent | Notes |
 | --- | --- | --- |
 | `--dry-run` | — | Show what would be cleaned without acting. |
+| `--stale` | — | Remove worktrees of stale sessions (runs whose maestro process died mid-run) and close them out as `KILLED`; skips slugs now owned by a live session; with `--dry-run`, list only. |
 
 ### `maestro logs`
 

@@ -1,8 +1,18 @@
-use crate::session;
+use crate::session::cleanup::CleanupManager;
+use crate::state::store::StateStore;
 
-pub fn cmd_clean(dry_run: bool) -> anyhow::Result<()> {
+use super::clean_stale::{clean_stale, print_stale_clean_summary};
+
+pub fn cmd_clean(dry_run: bool, stale: bool) -> anyhow::Result<()> {
     let repo_root = std::env::current_dir()?;
-    let mgr = session::cleanup::CleanupManager::new(&repo_root);
+
+    if stale {
+        let report = clean_stale(&repo_root, &StateStore::default_path(), dry_run)?;
+        print_stale_clean_summary(&report, dry_run);
+        return Ok(());
+    }
+
+    let mgr = CleanupManager::new(&repo_root);
     let orphans = mgr.scan_orphans()?;
 
     if orphans.is_empty() {

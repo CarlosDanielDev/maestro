@@ -635,6 +635,7 @@ mod tests {
             files_touched: vec![],
             files_touched_previous: 0,
             pid: None,
+            owner_pid: Some(std::process::id()),
             issue_title: None,
             retry_count: 0,
             last_retry_at: None,

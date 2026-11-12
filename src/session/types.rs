@@ -411,6 +411,14 @@ pub struct Session {
     #[serde(default)]
     pub files_touched_previous: usize,
     pub pid: Option<u32>,
+    /// PID of the maestro process that created this run (#1149). Stamped in
+    /// [`Session::new`]; `maestro status` derives STALE and `maestro clean
+    /// --stale` closes the session out when this process is gone while the
+    /// session still claims in-flight work. Distinct from `pid`, which is
+    /// the agent child process. `serde(default)` so state files written
+    /// before #1149 load unchanged — `None` is never stale.
+    #[serde(default)]
+    pub owner_pid: Option<u32>,
     /// Issue title for display in TUI panels.
     #[serde(default)]
     pub issue_title: Option<String>,
@@ -588,6 +596,7 @@ impl Session {
             files_touched: Vec::new(),
             files_touched_previous: 0,
             pid: None,
+            owner_pid: Some(std::process::id()),
             issue_title: None,
             retry_count: 0,
             last_retry_at: None,
@@ -764,6 +773,35 @@ impl Session {
         if self.activity_log.len() > 100 {
             self.activity_log.drain(..self.activity_log.len() - 100);
         }
+    }
+
+    /// True when this session still claims in-flight work but the maestro
+    /// process that owned it (#1149) is gone. Derived at read time —
+    /// nothing mutates the stored status; `maestro clean --stale` performs
+    /// the user-initiated terminal move to `Killed`.
+    ///
+    /// Scope: only spawn-bearing states (queued / spawning / running /
+    /// retrying / ci-fix / conflict-fix). Paused, Stalled and Interactive
+    /// stay resumable in a new maestro run; GatesRunning, NeedsPr and
+    /// NeedsReview have no in-flight agent work to orphan and carry their
+    /// own worktree-retention rules. Legacy sessions without `owner_pid`
+    /// are never stale.
+    pub fn is_stale(&self) -> bool {
+        let Some(owner) = self.owner_pid else {
+            return false;
+        };
+        if self.status.is_terminal() {
+            return false;
+        }
+        matches!(
+            self.status,
+            SessionStatus::Queued
+                | SessionStatus::Spawning
+                | SessionStatus::Running
+                | SessionStatus::Retrying
+                | SessionStatus::CiFix
+                | SessionStatus::ConflictFix
+        ) && !crate::system::process::is_process_alive(owner)
     }
 
     /// Threshold in seconds below which a zero-cost, zero-file session is suspicious.
@@ -2516,6 +2554,102 @@ mod tests {
             assert_eq!(code, "token_count_clamped");
         } else {
             panic!("expected Warning");
+        }
+    }
+
+    // --- Issue #1149: owner_pid + staleness ---
+
+    fn session_with_owner(status: SessionStatus, owner: Option<u32>) -> Session {
+        let mut s = fresh_session();
+        s.status = status;
+        s.owner_pid = owner;
+        s
+    }
+
+    #[test]
+    fn session_new_stamps_owner_pid() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        assert_eq!(s.owner_pid, Some(std::process::id()));
+    }
+
+    #[test]
+    fn owner_pid_absent_from_json_deserializes_as_none() {
+        // Pre-#1149 state files carry no `owner_pid` key.
+        let mut json = serde_json::to_value(fresh_session()).unwrap();
+        json.as_object_mut().unwrap().remove("owner_pid");
+        let s: Session = serde_json::from_value(json).unwrap();
+        assert!(s.owner_pid.is_none());
+    }
+
+    #[test]
+    fn owner_pid_round_trips_via_serde() {
+        let mut s = fresh_session();
+        s.owner_pid = Some(987654);
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.owner_pid, Some(987654));
+    }
+
+    #[test]
+    fn running_session_with_dead_owner_is_stale() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        let s = session_with_owner(SessionStatus::Running, Some(dead));
+        assert!(
+            s.is_stale(),
+            "Running session owned by dead pid {dead} must be stale"
+        );
+    }
+
+    #[test]
+    fn running_session_with_live_owner_is_not_stale() {
+        let s = session_with_owner(SessionStatus::Running, Some(std::process::id()));
+        assert!(!s.is_stale());
+    }
+
+    #[test]
+    fn legacy_session_without_owner_pid_is_never_stale() {
+        let s = session_with_owner(SessionStatus::Running, None);
+        assert!(!s.is_stale());
+    }
+
+    #[test]
+    fn terminal_session_with_dead_owner_is_not_stale() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        let s = session_with_owner(SessionStatus::Completed, Some(dead));
+        assert!(!s.is_stale());
+    }
+
+    #[test]
+    fn resumable_and_gate_states_with_dead_owner_are_not_stale() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        for status in [
+            SessionStatus::Paused,
+            SessionStatus::Stalled,
+            SessionStatus::Interactive,
+            SessionStatus::GatesRunning,
+            SessionStatus::NeedsPr,
+            SessionStatus::NeedsReview,
+        ] {
+            let s = session_with_owner(status, Some(dead));
+            assert!(
+                !s.is_stale(),
+                "{status:?} with dead owner must not be stale"
+            );
+        }
+    }
+
+    #[test]
+    fn all_spawn_bearing_states_with_dead_owner_are_stale() {
+        let dead = crate::system::process::testing::dead_process_pid();
+        for status in [
+            SessionStatus::Queued,
+            SessionStatus::Spawning,
+            SessionStatus::Retrying,
+            SessionStatus::CiFix,
+            SessionStatus::ConflictFix,
+        ] {
+            let s = session_with_owner(status, Some(dead));
+            assert!(s.is_stale(), "{status:?} with dead owner must be stale");
         }
     }
 
