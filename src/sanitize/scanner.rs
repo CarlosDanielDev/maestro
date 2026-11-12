@@ -71,7 +71,7 @@ fn scan_directory(root: &Path) -> anyhow::Result<ScanResult> {
         findings.extend(check_heuristics(&syntax, &relative_path, &source));
 
         // Collect declarations and references
-        let mut visitor = ItemVisitor::new(relative_path.clone(), &source);
+        let mut visitor = ItemVisitor::new(relative_path, &source);
         visitor.visit_file(&syntax);
 
         for decl in visitor.declarations {
