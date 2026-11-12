@@ -1,4 +1,4 @@
-use super::errors::is_transient_error;
+use super::errors::{is_ambiguous_network_error, is_transient_error};
 use super::*;
 
 // -- is_auth_error --
@@ -174,6 +174,7 @@ async fn retries_once_after_rate_limit_error() {
             }
         },
         false,
+        false,
     )
     .await
     .unwrap();
@@ -185,23 +186,30 @@ async fn retries_once_after_rate_limit_error() {
 // -- transient network retry predicate (#1154) --
 
 #[test]
-fn is_transient_error_returns_true_for_tls_handshake_timeout() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_tls_handshake_timeout() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_connection_reset() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_connection_reset() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: read tcp 1.2.3.4:443: connection reset by peer"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_io_timeout() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_io_timeout() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: dial tcp: i/o timeout"
+    ));
+}
+
+#[test]
+fn is_ambiguous_network_error_returns_false_for_http_502() {
+    assert!(!is_ambiguous_network_error(
+        "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
     ));
 }
 
@@ -258,6 +266,7 @@ async fn retries_twice_after_transient_network_errors_then_succeeds() {
             }
         },
         false,
+        true,
     )
     .await
     .unwrap();
@@ -278,6 +287,7 @@ async fn transient_retry_stops_at_attempt_cap() {
             }
         },
         false,
+        true,
     )
     .await;
 
@@ -297,6 +307,7 @@ async fn does_not_retry_auth_errors() {
             }
         },
         false,
+        true,
     )
     .await;
 
@@ -316,11 +327,54 @@ async fn does_not_retry_not_found_errors() {
             }
         },
         false,
+        true,
     )
     .await;
 
     assert!(result.is_err());
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+// -- idempotency gate: ambiguous network errors vs mutating commands --
+
+#[tokio::test]
+async fn mutating_command_with_connection_reset_is_not_retried() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("gh command failed: read tcp 1.2.3.4:443: connection reset by peer")
+            }
+        },
+        false,
+        false,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn mutating_command_with_http_502_is_still_retried_to_cap() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)")
+            }
+        },
+        false,
+        false,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
 }
 
 #[test]
