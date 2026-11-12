@@ -1,4 +1,4 @@
-use super::errors::is_transient_error;
+use super::errors::{is_ambiguous_network_error, is_transient_error};
 use super::*;
 
 // -- is_auth_error --
@@ -174,6 +174,7 @@ async fn retries_once_after_rate_limit_error() {
             }
         },
         false,
+        false,
     )
     .await
     .unwrap();
@@ -185,29 +186,36 @@ async fn retries_once_after_rate_limit_error() {
 // -- transient network retry predicate (#1154) --
 
 #[test]
-fn is_transient_error_returns_true_for_tls_handshake_timeout() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_tls_handshake_timeout() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_connection_reset() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_connection_reset() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: read tcp 1.2.3.4:443: connection reset by peer"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_io_timeout() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_io_timeout() {
+    assert!(is_ambiguous_network_error(
         "gh command failed: dial tcp: i/o timeout"
     ));
 }
 
 #[test]
-fn is_transient_error_returns_true_for_http_502() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_http_502() {
+    assert!(is_ambiguous_network_error(
+        "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_http_502() {
+    assert!(!is_transient_error(
         "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
     ));
 }
@@ -220,8 +228,15 @@ fn is_transient_error_returns_true_for_http_503() {
 }
 
 #[test]
-fn is_transient_error_returns_true_for_http_504() {
-    assert!(is_transient_error(
+fn is_ambiguous_network_error_returns_true_for_http_504() {
+    assert!(is_ambiguous_network_error(
+        "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_http_504() {
+    assert!(!is_transient_error(
         "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
     ));
 }
@@ -258,6 +273,7 @@ async fn retries_twice_after_transient_network_errors_then_succeeds() {
             }
         },
         false,
+        true,
     )
     .await
     .unwrap();
@@ -278,6 +294,7 @@ async fn transient_retry_stops_at_attempt_cap() {
             }
         },
         false,
+        true,
     )
     .await;
 
@@ -297,6 +314,7 @@ async fn does_not_retry_auth_errors() {
             }
         },
         false,
+        true,
     )
     .await;
 
@@ -316,6 +334,7 @@ async fn does_not_retry_not_found_errors() {
             }
         },
         false,
+        true,
     )
     .await;
 

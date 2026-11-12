@@ -62,16 +62,27 @@ impl GhCliClient {
         self.repo.as_deref()
     }
 
-    pub(super) async fn run_gh(&self, args: &[&str]) -> Result<String> {
-        self.run_gh_with_stdin(args, None).await
+    /// Shell out to `gh`. `idempotent` classifies the command: `true`
+    /// for reads (list/view/checks) and effect-no-op replays
+    /// (remove_label), `false` for mutating commands (create/merge/
+    /// label-add/patch/review) — those never retry ambiguous network
+    /// errors, only unconditional ones (rate limits, 502/503/504).
+    pub(super) async fn run_gh(&self, args: &[&str], idempotent: bool) -> Result<String> {
+        self.run_gh_with_stdin(args, None, idempotent).await
     }
 
     pub(super) async fn run_gh_with_stdin(
         &self,
         args: &[&str],
         stdin_data: Option<&[u8]>,
+        idempotent: bool,
     ) -> Result<String> {
-        with_transient_retries(|| self.run_gh_with_stdin_once(args, stdin_data), true).await
+        with_transient_retries(
+            || self.run_gh_with_stdin_once(args, stdin_data),
+            true,
+            idempotent,
+        )
+        .await
     }
 
     async fn run_gh_with_stdin_once(

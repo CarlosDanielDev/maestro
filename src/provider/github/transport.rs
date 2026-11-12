@@ -17,6 +17,8 @@ pub mod mock;
 mod cli_tests;
 #[cfg(test)]
 mod errors_tests;
+#[cfg(test)]
+mod retry_gate_tests;
 
 pub use cli::GhCliClient;
 pub(crate) use errors::parse_pr_number_from_create_output;
