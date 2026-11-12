@@ -60,6 +60,9 @@ impl App {
                 );
             }
             PrPhaseOutcome::SkippedNotSuccess | PrPhaseOutcome::AlreadyAttempted => {}
+            PrPhaseOutcome::AuthSkippedNoBranch => {
+                self.log_gh_auth_skip(ctx.issue_number, "PR creation");
+            }
             PrPhaseOutcome::AuthDeferred { branch, diff_files } => {
                 self.apply_auth_deferred_pr(
                     ctx.issue_number,

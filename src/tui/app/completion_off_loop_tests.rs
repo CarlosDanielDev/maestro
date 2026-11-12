@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-fn config_with_gate_command(command: &str) -> crate::config::Config {
+pub(super) fn config_with_gate_command(command: &str) -> crate::config::Config {
     let toml_str = format!(
         r#"
 [project]
@@ -43,7 +43,7 @@ alert_threshold_pct = 80
     toml::from_str(&toml_str).expect("test config parse")
 }
 
-fn config_auto_pr_disabled() -> crate::config::Config {
+pub(super) fn config_auto_pr_disabled() -> crate::config::Config {
     let toml_str = r#"
 [project]
 repo = "owner/repo"
@@ -61,14 +61,19 @@ auto_pr = false
     toml::from_str(toml_str).expect("test config parse")
 }
 
-fn make_app_with(config: crate::config::Config, git: MockGitOps) -> App {
+pub(super) fn make_app_with(config: crate::config::Config, git: MockGitOps) -> App {
     let app = crate::tui::make_test_app("completion-off-loop-test");
     let mut app = app.with_git_ops(Box::new(git));
     app.config = Some(config);
     app
 }
 
-fn enqueue_pending_completion(app: &mut App, issue: u64, branch: &str, worktree: PathBuf) {
+pub(super) fn enqueue_pending_completion(
+    app: &mut App,
+    issue: u64,
+    branch: &str,
+    worktree: PathBuf,
+) {
     let session = Session::new(
         "p".into(),
         "opus".into(),
@@ -93,7 +98,7 @@ fn enqueue_pending_completion(app: &mut App, issue: u64, branch: &str, worktree:
 
 /// Spawn a ticker that emulates the render loop's per-draw clock tick
 /// (header clock = now - start_time, computed once per draw).
-async fn spawn_clock_ticker() -> (tokio::task::JoinHandle<()>, Arc<AtomicUsize>) {
+pub(super) async fn spawn_clock_ticker() -> (tokio::task::JoinHandle<()>, Arc<AtomicUsize>) {
     let ticks = Arc::new(AtomicUsize::new(0));
     let t = Arc::clone(&ticks);
     let handle = tokio::spawn(async move {
@@ -106,6 +111,20 @@ async fn spawn_clock_ticker() -> (tokio::task::JoinHandle<()>, Arc<AtomicUsize>)
     // only the window under test.
     tokio::time::sleep(Duration::from_millis(50)).await;
     (handle, ticks)
+}
+
+/// Tick `check_completions` every 20 ms until no completion job is in
+/// flight (bounded at 10 s).
+pub(super) async fn drive_until_applied(app: &mut App) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.completions_in_flight.is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "completion job not applied within 10s"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        app.check_completions().await.unwrap();
+    }
 }
 
 /// The issue's literal acceptance scenario: a gate command `sleep 5`
@@ -127,10 +146,10 @@ async fn issue_1153_gate_sleep5_does_not_block_clock() {
         "check_completions must not run gates on the caller thread; took {first_call:?}"
     );
 
-    // Give the 5 s gate time to finish, then drain the outcome.
-    tokio::time::sleep(Duration::from_secs(6)).await;
-    app.check_completions().await.unwrap();
-
+    // Ticks counted only while the job is in flight: read at the
+    // moment its outcome is applied. Inline work leaves nothing in
+    // flight, so the loop exits at once with the ticker starved.
+    drive_until_applied(&mut app).await;
     let advanced = ticks.load(Ordering::Relaxed);
     assert!(
         advanced >= 4,
@@ -165,9 +184,10 @@ async fn issue_1153_slow_push_does_not_block_clock() {
         "check_completions must not run the push on the caller thread; took {first_call:?}"
     );
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    app.check_completions().await.unwrap();
-
+    // Ticks counted only while the job is in flight: read at the
+    // moment its outcome is applied. Inline work leaves nothing in
+    // flight, so the loop exits at once with the ticker starved.
+    drive_until_applied(&mut app).await;
     let advanced = ticks.load(Ordering::Relaxed);
     assert!(
         advanced >= 3,
@@ -205,9 +225,10 @@ async fn issue_1153_slow_label_call_does_not_block_clock() {
         "check_completions must not await GitHub calls on the caller thread; took {first_call:?}"
     );
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    app.check_completions().await.unwrap();
-
+    // Ticks counted only while the job is in flight: read at the
+    // moment its outcome is applied. Inline work leaves nothing in
+    // flight, so the loop exits at once with the ticker starved.
+    drive_until_applied(&mut app).await;
     let advanced = ticks.load(Ordering::Relaxed);
     assert!(
         advanced >= 3,

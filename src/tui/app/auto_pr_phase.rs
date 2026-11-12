@@ -43,6 +43,8 @@ pub(super) enum PrPhaseOutcome {
     NoBranch,
     /// No GitHub client initialized.
     NoClient,
+    /// Auth lost and no branch — nothing to defer; log the auth skip.
+    AuthSkippedNoBranch,
     /// Auth lost — PR deferred to the Shift+P recovery queue (#521).
     AuthDeferred {
         branch: String,
@@ -108,25 +110,17 @@ async fn pr_phase_inner(
     git: Arc<dyn GitOps>,
     attempted: Arc<Mutex<HashSet<u64>>>,
 ) -> PrPhaseOutcome {
-    if !input.auto_pr {
-        return PrPhaseOutcome::Disabled {
-            branch: input.branch,
-        };
-    }
-    let Some(branch) = input.branch.clone() else {
-        return PrPhaseOutcome::NoBranch;
-    };
-    let Some(client) = client else {
-        return PrPhaseOutcome::NoClient;
-    };
-
-    // Auth lost — defer to the Shift+P recovery queue instead of
-    // attempting a doomed network call (#521). Matches the pre-split
-    // order: the auth check ran before every other auto-PR gate.
+    // Same order as before #1153 (`on_issue_session_completed` then
+    // `run_auto_pr`): auth lost first — defer to the Shift+P recovery
+    // queue (#521) before the `auto_pr` / branch / client checks —
+    // then the success check, then the auto-PR gates.
     if !input.gh_auth_ok {
         if !input.success {
             return PrPhaseOutcome::SkippedNotSuccess;
         }
+        let Some(branch) = input.branch.clone() else {
+            return PrPhaseOutcome::AuthSkippedNoBranch;
+        };
         let diff_files = diff_files_for_pr(
             input.worktree_path.clone(),
             &input.base_branch,
@@ -139,6 +133,17 @@ async fn pr_phase_inner(
     if !input.success {
         return PrPhaseOutcome::SkippedNotSuccess;
     }
+    if !input.auto_pr {
+        return PrPhaseOutcome::Disabled {
+            branch: input.branch,
+        };
+    }
+    let Some(branch) = input.branch.clone() else {
+        return PrPhaseOutcome::NoBranch;
+    };
+    let Some(client) = client else {
+        return PrPhaseOutcome::NoClient;
+    };
 
     if attempted
         .lock()

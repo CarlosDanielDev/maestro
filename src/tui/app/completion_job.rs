@@ -100,7 +100,7 @@ impl CompletionJob {
             let _span =
                 tracing::info_span!("completion.sync_phases", issue = issue_for_sync).entered();
 
-            let (head_is_wip, deferred_logs) = match worktree.as_ref() {
+            let (head_is_wip, deferred_logs) = match worktree.as_ref().filter(|_| gates_ran) {
                 Some(wt) => {
                     let _span =
                         tracing::info_span!("completion.backup_wip", issue = issue_for_sync)

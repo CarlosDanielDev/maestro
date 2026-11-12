@@ -47,9 +47,16 @@ impl App {
         // Dispatch new completions to background jobs. Gates, git push,
         // label updates and PR creation run off the render loop; the
         // outcome lands in `completion_jobs` for a later tick.
+        // One job per issue at a time: a second completion for an issue
+        // already in flight waits here, so two jobs never run git in
+        // the same worktree at once.
         let pending = std::mem::take(&mut self.pending_issue_completions);
         for completion in pending {
-            self.dispatch_completion_job(completion);
+            if self.is_completion_in_flight(completion.issue_number) {
+                self.pending_issue_completions.push(completion);
+            } else {
+                self.dispatch_completion_job(completion);
+            }
         }
 
         // Stall detection: check for sessions that haven't produced events
@@ -244,6 +251,10 @@ impl App {
             .all_sessions()
             .iter()
             .filter(|s| s.status.is_terminal() || s.status == SessionStatus::Retrying)
+            // #1153: finalize tears COMPLETED worktrees down. Wait until
+            // the session's completion job (backup, push, PR) is applied;
+            // this same sweep finalizes it on that tick.
+            .filter(|s| !s.issue_number.is_some_and(|n| self.is_completion_in_flight(n)))
             .map(|s| s.id)
             .collect();
 
@@ -326,6 +337,14 @@ impl App {
 
         self.sync_state();
         Ok(())
+    }
+
+    /// Whether a #1153 completion job for `issue_number` has not been
+    /// applied yet.
+    fn is_completion_in_flight(&self, issue_number: u64) -> bool {
+        self.completions_in_flight
+            .iter()
+            .any(|c| c.issue_number == issue_number)
     }
 
     /// Dispatch one pending completion to a background job (#1153).
@@ -413,6 +432,10 @@ pub(super) fn checked_transition(
 #[cfg(test)]
 #[path = "completion_off_loop_tests.rs"]
 mod completion_off_loop_tests;
+
+#[cfg(test)]
+#[path = "completion_job_race_tests.rs"]
+mod completion_job_race_tests;
 
 #[cfg(test)]
 mod tests {
