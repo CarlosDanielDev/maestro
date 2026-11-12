@@ -670,7 +670,13 @@ impl SessionPool {
 
     pub async fn kill_all(&mut self) {
         for managed in &mut self.active {
-            if !managed.session.status.is_terminal() {
+            if managed.session.status.is_terminal() {
+                // A settled session may still have a live provider child:
+                // the result line marks COMPLETED before the child exits
+                // (#1139). Interrupt the in-flight provider task without
+                // flipping the recorded outcome to Killed.
+                managed.cancel_inflight_turn();
+            } else {
                 let _ = managed.kill().await;
             }
         }
@@ -2016,5 +2022,205 @@ pub(in crate::session) mod tests {
         let r = pool.interaction_appendix(Some(&mode)).unwrap();
         assert!(r.contains("GUARDRAIL_ONLY"));
         assert!(!r.starts_with("   "), "blank mode prompt not injected");
+    }
+
+    // --- Issue #1139: agent children that outlive their settled session ---
+
+    /// Stub in the shape of the epic's `stub-agent.sh` linger variant
+    /// (#1138): emits the init and result lines, then keeps the process
+    /// alive — the state a real agent is in when its `result` line already
+    /// marked the session COMPLETED but a background task is still running.
+    /// Returns the tempdir guard so the script outlives the spawn.
+    #[cfg(test)]
+    fn write_lingering_stub() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let script = dir.path().join("stub-linger-1139.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--version\" ]; then echo \"stub-agent 1.0.0\"; exit 0; fi\n\
+             echo '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"e2e00000-0000-0000-0000-000000000002\"}'\n\
+             echo '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"stub reply\",\"session_id\":\"e2e00000-0000-0000-0000-000000000002\",\"cost_usd\":0.01}'\n\
+             sleep 15\n",
+        )
+        .expect("write stub");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod stub");
+        }
+        (dir, script)
+    }
+
+    /// Run the linger stub through the real provider pipeline and return
+    /// once the session is COMPLETED while the child is still alive.
+    /// Returns the child's pid.
+    #[cfg(test)]
+    async fn spawn_stub_until_completed(pool: &mut SessionPool, script: &std::path::Path) -> u32 {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut managed = ManagedSession::new(make_session("stub linger check"));
+        managed.set_provider(Arc::new(ClaudeProvider::new(
+            script.to_string_lossy().into_owned(),
+        )));
+        pool.active.push(managed);
+
+        pool.active[0].spawn(tx).await.expect("spawn stub provider");
+        while pool.active[0].session.status != SessionStatus::Completed {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(15), rx.recv())
+                .await
+                .expect("timed out waiting for provider events")
+                .expect("event channel closed");
+            pool.active[0].handle_event(&event.event);
+        }
+        pool.active[0]
+            .session
+            .pid
+            .expect("provider pid stamped on session")
+    }
+
+    #[tokio::test]
+    async fn kill_all_reaps_child_of_settled_session() {
+        let (_guard, script) = write_lingering_stub();
+        let mut pool = make_pool(2);
+        let pid = spawn_stub_until_completed(&mut pool, &script).await;
+        assert_eq!(pool.active[0].session.status, SessionStatus::Completed);
+
+        pool.kill_all().await;
+
+        // The child must be gone, not merely un-waited: poll until the pid
+        // answers with ESRCH (a killed-but-unreaped zombie would still
+        // answer `kill(pid, 0)` with 0).
+        let mut gone = false;
+        for _ in 0..60 {
+            // SAFETY: kill(pid, 0) only probes for the process's existence;
+            // the pid is our own stub child's.
+            #[allow(unsafe_code)]
+            let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+            if !alive {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(gone, "stub child {pid} still alive after kill_all");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_child_runs_in_its_own_process_group() {
+        let (_guard, script) = write_lingering_stub();
+        let mut pool = make_pool(2);
+        let pid = spawn_stub_until_completed(&mut pool, &script).await;
+
+        // SAFETY: getpgid on our own stub child's pid; the call only reads
+        // the process's group and cannot affect this process.
+        #[allow(unsafe_code)]
+        let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+        assert_eq!(
+            pgid, pid as libc::pid_t,
+            "agent child must lead its own process group (#1139)"
+        );
+
+        // Cleanup: SIGKILL only our stub child — never the group it may
+        // still share with us on a failing build.
+        // SAFETY: kill targets our own stub child's pid.
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGKILL);
+        }
+    }
+
+    /// Runtime proof of the `PR_SET_PDEATHSIG` half of #1139 (Linux only):
+    /// a re-exec'd copy of this test harness plays maestro, spawns the
+    /// stub through the real provider pipeline, then SIGKILLs itself the
+    /// way `kill -9 maestro` would. The kernel must take the agent down.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pdeathsig_kills_agent_child_when_maestro_process_is_killed() {
+        let (guard, script) = write_lingering_stub();
+        let pid_file = guard.path().join("stub-pid-1139");
+        let exe = std::env::current_exe().expect("test exe");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "pdeathsig_mode_a_stub_spawner", "--nocapture"])
+            .env("MAESTRO_1139_STUB", &script)
+            .env("MAESTRO_1139_PID_FILE", &pid_file)
+            .status()
+            .expect("re-exec test harness");
+        assert!(
+            pid_file.exists(),
+            "mode A never wrote the stub pid (re-exec status: {status})"
+        );
+        let stub_pid: libc::pid_t = std::fs::read_to_string(&pid_file)
+            .expect("read stub pid file")
+            .trim()
+            .parse()
+            .expect("parse stub pid");
+
+        // The spawner is gone by now (it exited by signal); the kernel
+        // must have delivered PDEATHSIG(SIGKILL) to the agent.
+        let mut gone = false;
+        for _ in 0..40 {
+            // SAFETY: kill(pid, 0) only probes the existence of our own
+            // stub child.
+            #[allow(unsafe_code)]
+            let alive = unsafe { libc::kill(stub_pid, 0) } == 0;
+            if !alive {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            gone,
+            "stub child {stub_pid} survived its parent's death (status: {status})"
+        );
+    }
+
+    /// Helper mode for
+    /// [`pdeathsig_kills_agent_child_when_maestro_process_is_killed`]:
+    /// spawn the stub, publish its pid, then die by SIGKILL. Does nothing
+    /// when run as part of a normal test pass (no env set).
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn pdeathsig_mode_a_stub_spawner() {
+        let Ok(script) = std::env::var("MAESTRO_1139_STUB") else {
+            return; // plain `cargo test` pass: helper mode is inert
+        };
+        let Ok(pid_file) = std::env::var("MAESTRO_1139_PID_FILE") else {
+            return; // plain `cargo test` pass: helper mode is inert
+        };
+        let script = std::path::PathBuf::from(script);
+
+        // Kill while the session is still RUNNING — repro step 3's slow
+        // variant, not the linger variant.
+        let mut pool = make_pool(2);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut managed = ManagedSession::new(make_session("stub slow check"));
+        managed.set_provider(Arc::new(ClaudeProvider::new(
+            script.to_string_lossy().into_owned(),
+        )));
+        pool.active.push(managed);
+        pool.active[0].spawn(tx).await.expect("spawn stub provider");
+
+        // Mirror the TUI event loop until the provider pid is stamped.
+        let pid = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(15), rx.recv())
+                .await
+                .expect("timed out waiting for provider events")
+                .expect("event channel closed");
+            pool.active[0].handle_event(&event.event);
+            if let Some(pid) = pool.active[0].session.pid {
+                break pid;
+            }
+        };
+        std::fs::write(&pid_file, pid.to_string()).expect("write pid file");
+
+        // SAFETY: raises SIGKILL to this test process itself — the abrupt
+        // maestro death whose effect on the agent child is under test.
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::kill(std::process::id() as libc::pid_t, libc::SIGKILL);
+        }
     }
 }
