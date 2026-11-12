@@ -1,5 +1,6 @@
 use crate::config::{LoadedConfig, NotificationsConfig};
 use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::review::bypass::BypassSource;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
 
@@ -82,7 +83,12 @@ pub fn setup_app_from_config_with_trust(
     //   - Config (`[sessions].permission_mode = "bypassPermissions"`)
     //   - TUI toggle (Ctrl+B at runtime)
     if bypass_review || permission_mode == "bypassPermissions" {
-        app.activate_bypass_from_cli();
+        let source = if bypass_review {
+            BypassSource::Cli
+        } else {
+            BypassSource::Config
+        };
+        app.activate_bypass(source);
     }
 
     app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
@@ -154,4 +160,78 @@ pub fn build_notification_dispatcher(cfg: &NotificationsConfig) -> NotificationD
         }
     }
     dispatcher
+}
+
+#[cfg(test)]
+mod bypass_source_tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::tui::app::App;
+    use tempfile::TempDir;
+
+    fn config_with_permission_mode(mode: &str) -> crate::config::Config {
+        let toml_body = format!(
+            r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+permission_mode = "{mode}"
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "claude"
+"#
+        );
+        toml::from_str(&toml_body).unwrap()
+    }
+
+    fn build_app(bypass_review: bool, mode: &str) -> (App, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config: config_with_permission_mode(mode),
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state-bypass-source.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            bypass_review,
+            true,
+        );
+        (app, dir)
+    }
+
+    fn bypass_log_message(app: &App) -> String {
+        app.activity_log
+            .entries()
+            .iter()
+            .rev()
+            .find(|e| e.message.contains("Bypass mode enabled"))
+            .unwrap_or_else(|| panic!("no bypass activation entry logged"))
+            .message
+            .clone()
+    }
+
+    #[test]
+    fn bypass_source_is_cli_for_flag_and_config_for_config_value() {
+        let (app, _dir) = build_app(true, "default");
+        let message = bypass_log_message(&app);
+        assert!(
+            message.contains("(cli)"),
+            "flag path must log (cli), got: {message}"
+        );
+
+        let (app, _dir) = build_app(false, "bypassPermissions");
+        let message = bypass_log_message(&app);
+        assert!(
+            message.contains("(config)"),
+            "config path must log (config), got: {message}"
+        );
+    }
 }

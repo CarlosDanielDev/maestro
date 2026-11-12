@@ -3,20 +3,26 @@
 
 #![deny(clippy::unwrap_used)]
 
+use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::App;
 
 impl App {
-    /// Mark bypass mode active (CLI path) and audit-log it. The CLI flag is
-    /// session-only by construction — the warning screen is acknowledged by
-    /// virtue of the user having explicitly typed `--bypass-review`.
-    pub fn activate_bypass_from_cli(&mut self) {
+    /// Mark bypass mode active and audit-log it with the real activation
+    /// source (#1148): the `--bypass-review` CLI flag or the
+    /// `[sessions].permission_mode` config value. Both are session-only by
+    /// construction — the warning screen is acknowledged by virtue of the
+    /// source being explicit (a typed flag or an authored config file).
+    pub fn activate_bypass(&mut self, source: BypassSource) {
         self.bypass_active = true;
         self.bypass_warning_acknowledged = true;
         self.session_config.permission_mode = "bypassPermissions".to_string();
         self.activity_log.push_simple(
             "BYPASS".into(),
-            "Bypass mode enabled (cli) — auto-accepting review corrections".into(),
+            format!(
+                "Bypass mode enabled ({}) — auto-accepting review corrections",
+                source.label()
+            ),
             LogLevel::Warn,
         );
     }
@@ -90,7 +96,7 @@ mod tests {
     #[test]
     fn cli_activation_sets_active_and_acknowledged() {
         let mut app = make_app();
-        app.activate_bypass_from_cli();
+        app.activate_bypass(BypassSource::Cli);
         assert!(app.bypass_active);
         assert!(app.bypass_warning_acknowledged);
     }
@@ -105,7 +111,7 @@ mod tests {
     #[test]
     fn deactivate_when_active_clears_flag_and_logs() {
         let mut app = make_app();
-        app.activate_bypass_from_cli();
+        app.activate_bypass(BypassSource::Cli);
         let before = app.activity_log.entries().len();
         app.deactivate_bypass("test");
         assert!(!app.bypass_active);
@@ -133,7 +139,7 @@ mod tests {
     #[test]
     fn request_toggle_when_active_disables() {
         let mut app = make_app();
-        app.activate_bypass_from_cli();
+        app.activate_bypass(BypassSource::Cli);
         let pushed = app.request_bypass_toggle();
         assert!(!pushed);
         assert!(!app.bypass_active);
@@ -146,5 +152,36 @@ mod tests {
         assert!(app.bypass_active);
         // We can't easily inspect the pool's permission_mode, but the call
         // not panicking and bypass_active flipping is the contract test.
+    }
+
+    #[test]
+    fn activation_logs_real_source_config_and_cli() {
+        let mut app = make_app();
+        app.activate_bypass(BypassSource::Config);
+        let entries = app.activity_log.entries();
+        let last = &entries[entries.len() - 1];
+        assert!(
+            last.message.contains("(config)"),
+            "config activation must log the config source, got: {}",
+            last.message
+        );
+
+        let mut app = make_app();
+        app.activate_bypass(BypassSource::Cli);
+        let entries = app.activity_log.entries();
+        let last = &entries[entries.len() - 1];
+        assert!(
+            last.message.contains("(cli)"),
+            "cli activation must log the cli source, got: {}",
+            last.message
+        );
+    }
+
+    #[test]
+    fn config_activation_keeps_bypass_header_active() {
+        let mut app = make_app();
+        app.activate_bypass(BypassSource::Config);
+        assert!(app.bypass_active);
+        assert!(app.bypass_warning_acknowledged);
     }
 }
