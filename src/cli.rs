@@ -152,6 +152,10 @@ pub enum Commands {
         force_quota: bool,
     },
     /// Show queued/pending issues from GitHub
+    ///
+    /// Rows are listed in scheduling order: priority (P0 first), then
+    /// dependency order, then issue number. The summary counts an issue
+    /// as ready only when all of its `blocked-by` issues are done.
     Queue,
     /// Add an issue to the work queue manually
     Add {
@@ -386,6 +390,23 @@ mod tests {
     #[test]
     fn cli_debug_assert() {
         <Cli as clap::CommandFactory>::command().debug_assert();
+    }
+
+    #[test]
+    fn queue_help_documents_row_order() {
+        let cmd = <Cli as clap::CommandFactory>::command();
+        let queue = cmd
+            .find_subcommand("queue")
+            .expect("queue subcommand exists");
+        let help = queue
+            .get_long_about()
+            .or_else(|| queue.get_about())
+            .expect("queue has help text")
+            .to_string();
+        assert!(
+            help.contains("P0 first") && help.contains("dependency order"),
+            "queue --help should document row ordering, got: {help}"
+        );
     }
 
     // ------------------------------------------------------------------

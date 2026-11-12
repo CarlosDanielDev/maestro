@@ -25,6 +25,7 @@ pub async fn cmd_queue() -> anyhow::Result<()> {
 
     let items: Vec<WorkItem> = issues.into_iter().map(WorkItem::from_issue).collect();
     let assigner = WorkAssigner::new(items);
+    let no_completed = std::collections::HashSet::new();
 
     println!(
         "{:<10} {:<8} {:<50} {:<10} {:<15}",
@@ -32,7 +33,7 @@ pub async fn cmd_queue() -> anyhow::Result<()> {
     );
     println!("{}", "-".repeat(93));
 
-    for item in assigner.all_items() {
+    for item in assigner.scheduled_items() {
         let blocked_str = if item.blocked_by.is_empty() {
             "-".to_string()
         } else {
@@ -48,7 +49,6 @@ pub async fn cmd_queue() -> anyhow::Result<()> {
         } else {
             item.title().to_string()
         };
-        let no_completed = std::collections::HashSet::new();
         let ready_str = if item.is_ready(&no_completed) {
             "Ready"
         } else {
@@ -64,15 +64,26 @@ pub async fn cmd_queue() -> anyhow::Result<()> {
         );
     }
 
-    let counts = assigner.count_by_status();
-    println!(
-        "\nTotal: {} issues ({} ready, {} blocked)",
-        assigner.total(),
-        counts.pending,
-        assigner.total() - counts.pending
-    );
+    println!("\n{}", summary_line(assigner.all_items()));
 
     Ok(())
+}
+
+/// One-line queue summary. Readiness uses the same `WorkItem::is_ready`
+/// predicate as the rows above — an issue counts as ready only when all of
+/// its blockers are done, not merely because its status is Pending.
+fn summary_line(items: &[WorkItem]) -> String {
+    let no_completed = std::collections::HashSet::new();
+    let ready = items
+        .iter()
+        .filter(|item| item.is_ready(&no_completed))
+        .count();
+    format!(
+        "Total: {} issues ({} ready, {} blocked)",
+        items.len(),
+        ready,
+        items.len() - ready
+    )
 }
 
 pub async fn cmd_add(issue_number: u64) -> anyhow::Result<()> {
@@ -82,4 +93,44 @@ pub async fn cmd_add(issue_number: u64) -> anyhow::Result<()> {
     client.add_label(issue_number, "maestro:ready").await?;
     println!("Added 'maestro:ready' label to issue #{}", issue_number);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::types::{Issue, Priority};
+
+    fn make_issue(number: u64, priority: Priority, blocked_by: &[u64]) -> Issue {
+        let mut labels: Vec<String> = blocked_by
+            .iter()
+            .map(|b| format!("blocked-by:#{}", b))
+            .collect();
+        labels.push(format!("priority:{:?}", priority));
+        labels.push("maestro:ready".to_string());
+        Issue {
+            number,
+            title: format!("Issue #{}", number),
+            body: String::new(),
+            labels,
+            state: "open".to_string(),
+            html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
+        }
+    }
+
+    #[test]
+    fn summary_line_counts_blocked_by_dependencies_not_status() {
+        // Fixture from #1146: one P1, two P2, one of them blocked by the P1.
+        let items: Vec<WorkItem> = vec![
+            make_issue(1, Priority::P1, &[]),
+            make_issue(2, Priority::P2, &[]),
+            make_issue(3, Priority::P2, &[1]),
+        ]
+        .into_iter()
+        .map(WorkItem::from_issue)
+        .collect();
+
+        assert_eq!(summary_line(&items), "Total: 3 issues (2 ready, 1 blocked)");
+    }
 }

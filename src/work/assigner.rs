@@ -60,13 +60,19 @@ impl WorkAssigner {
     /// Get the next batch of ready work items (up to `count`),
     /// sorted by priority (P0 first), then by topo order, then by issue number.
     pub fn next_ready(&self, count: usize) -> Vec<&WorkItem> {
-        let mut ready: Vec<&WorkItem> = self
-            .items
-            .iter()
+        self.scheduled_items()
+            .into_iter()
             .filter(|item| item.is_ready(&self.completed_issues))
-            .collect();
+            .take(count)
+            .collect()
+    }
 
-        ready.sort_by(|a, b| {
+    /// Get all work items in scheduling order: priority (P0 first), then
+    /// topological (dependency) order, then issue number. This is the order
+    /// `next_ready` draws from and the order `maestro queue` displays.
+    pub fn scheduled_items(&self) -> Vec<&WorkItem> {
+        let mut all: Vec<&WorkItem> = self.items.iter().collect();
+        all.sort_by(|a, b| {
             a.priority.cmp(&b.priority).then_with(|| {
                 let a_topo = self
                     .topo_order
@@ -83,8 +89,7 @@ impl WorkAssigner {
                     .then_with(|| a.number().cmp(&b.number()))
             })
         });
-
-        ready.into_iter().take(count).collect()
+        all
     }
 
     /// Build a partial topological order, skipping cycle nodes.
@@ -302,6 +307,25 @@ mod tests {
             make_item(2, Priority::P1, &[]),
         ]);
         assert_eq!(assigner.total(), 2);
+    }
+
+    // scheduled_items — display ordering
+
+    #[test]
+    fn scheduled_items_orders_p1_before_p2_for_independent_items() {
+        // Repro from #1146: GitHub returns issues out of priority order,
+        // so a P1 issue printed last while P2 rows printed first.
+        let assigner = assigner_from(vec![
+            make_item(3, Priority::P2, &[1]),
+            make_item(2, Priority::P2, &[]),
+            make_item(1, Priority::P1, &[]),
+        ]);
+        let order: Vec<u64> = assigner
+            .scheduled_items()
+            .iter()
+            .map(|item| item.number())
+            .collect();
+        assert_eq!(order, vec![1, 2, 3]);
     }
 
     // next_ready — priority ordering
