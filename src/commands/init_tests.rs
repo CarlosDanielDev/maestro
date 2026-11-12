@@ -195,6 +195,90 @@ fn init_fills_repo_from_github_origin() {
 }
 
 #[test]
+fn init_writes_runtime_gitignore_entries_once() {
+    // Done-when #1151: init writes the five runtime entries; a --reset
+    // re-run must not duplicate them.
+    let dir = TempDir::new().expect("create tempdir");
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let ignore_path = dir.path().join(".gitignore");
+    let first = std::fs::read_to_string(&ignore_path).expect(".gitignore written by init");
+    for entry in crate::init::ignore::RUNTIME_ENTRIES {
+        assert_eq!(
+            first.lines().filter(|line| line == entry).count(),
+            1,
+            "runtime entry {entry} must appear exactly once:\n{first}"
+        );
+    }
+
+    // Re-run through the real path: only --reset reaches the scaffold and
+    // ignore step again (a plain re-run exits early: maestro.toml exists).
+    let code = cmd_init_inner(true, dir.path(), &detector).expect("cmd_init_inner reset");
+    assert_eq!(code, 0);
+    let second = std::fs::read_to_string(&ignore_path).expect(".gitignore still present");
+    assert_eq!(
+        second, first,
+        "--reset re-run must leave .gitignore unchanged"
+    );
+}
+
+#[test]
+fn init_keeps_existing_gitignore_and_adds_entries_missing_from_the_block() {
+    // Done-when #1151: an existing .gitignore keeps its content and its
+    // maestro block receives every entry it lacked. The user's own exact
+    // line does not count as coverage (security follow-up: a foreign line
+    // cannot vouch under gitignore's last-match-wins), so maestro-state.json
+    // is added inside the block too, after the user's own line.
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        "__pycache__/\n*.pyc\nmaestro-state.json\n",
+    )
+    .expect("seed .gitignore");
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let content = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read back");
+    assert!(
+        content.starts_with("__pycache__/\n*.pyc\nmaestro-state.json\n"),
+        "user content must survive verbatim:\n{content}"
+    );
+    for entry in [
+        ".maestro/logs/",
+        ".maestro/worktrees/",
+        "maestro-state.json.lock",
+        "maestro.log",
+    ] {
+        assert_eq!(
+            content.lines().filter(|line| *line == entry).count(),
+            1,
+            "entry {entry} added exactly once (inside the block):\n{content}"
+        );
+    }
+    assert_eq!(
+        content
+            .lines()
+            .filter(|line| *line == "maestro-state.json")
+            .count(),
+        2,
+        "user's own line plus the block entry:\n{content}"
+    );
+    assert!(
+        content.ends_with(concat!(
+            "# --- maestro ---\n",
+            ".maestro/logs/\n",
+            ".maestro/worktrees/\n",
+            "maestro-state.json\n",
+            "maestro-state.json.lock\n",
+            "maestro.log\n",
+            "# --- end maestro ---\n",
+        )),
+        "the appended block must carry all five entries, after the user's content:\n{content}"
+    );
+}
+
+#[test]
 fn first_origin_remote_url_prefers_fetch_url() {
     let remote = "upstream\thttps://example.com/upstream.git (fetch)\n\
                   origin\tgit@github.com:owner/repo.git (push)\n\

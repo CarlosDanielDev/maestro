@@ -123,7 +123,7 @@ maestro/
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard; wires MinimaxQuota into App best-effort via App::with_minimax_quota  [Issue #769]
 │   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report; `pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck>` library entry point for orchestration pre-flight  [Issue #663]
-│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag; calls scaffold_templates_and_report(project_root) after Fresh and Merged writes to drop .maestro/templates/ mirror  [Issue #505, #708]
+│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag; calls scaffold_templates_and_report(project_root) and ensure_gitignore_and_report() after Fresh and Merged writes to drop .maestro/templates/ mirror and the .gitignore runtime block  [Issue #505, #708, #1151]
 │   │   ├── logs.rs                        # cmd_logs(): stream or tail session log files
 │   │   ├── queue.rs                       # cmd_queue(): interactive work-queue management
 │   │   ├── resume.rs                      # cmd_resume(): re-attach to a paused session
@@ -249,6 +249,8 @@ maestro/
 │   │   ├── mod.rs                         # Module facade; RenderOutcome enum (Fresh | Merged); render_or_merge() top-level orchestration used by CLI and TUI; re-exports scaffold_templates_and_report()  [Issue #505, #708]
 │   │   ├── detector.rs                    # DetectedStack enum (Rust, Node, Python, Go); ProjectDetector trait; FsProjectDetector probes marker files (Cargo.toml, package.json, pyproject.toml/requirements.txt/setup.py, go.mod); FakeProjectDetector for tests
 │   │   ├── walk.rs                        # find_project_root(): walks ancestors looking for known marker files
+│   │   ├── ignore.rs                      # ensure_runtime_gitignore(): keeps maestro's five runtime paths out of the user's .gitignore status noise; appends only missing entries inside a marked # --- maestro --- block, refill-in-place on partial re-run; idempotent  [Issue #1151]
+│   │   ├── ignore_tests.rs                # Sibling unit tests for ignore.rs (attached via #[cfg(test)] #[path]); covers create, per-line dedup, user-content preservation, unterminated last line, byte-identical no-op, and partial-block refill  [Issue #1151]
 │   │   ├── template.rs                    # StackDefaults per stack (language, build_command, test_command, run_command); render_template() produces a complete maestro.toml string including [views]\nagent_graph_enabled = true (default-on since v0.25.1 #710)  [Issue #505, #710]
 │   │   ├── template_tests.rs              # Sibling test module extracted from template.rs to stay under the 400-LOC cap (attached via #[cfg(test)] #[path]); covers render_template output for all DetectedStack variants  [Issue #710]
 │   │   ├── scaffold.rs                    # Scaffolder trait + FsScaffolder impl; scaffold_templates_dir() writes template/.maestro/templates/ mirror into the project root; template_relative_paths() enumerates embedded paths; files embedded via include_bytes! at build time — works for `cargo install` binaries; idempotent: reports Created / Skipped per file; path-traversal hardening rejects any relative path escaping the target dir  [Issue #708]

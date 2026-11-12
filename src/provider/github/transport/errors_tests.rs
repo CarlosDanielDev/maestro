@@ -1,3 +1,4 @@
+use super::errors::{is_ambiguous_network_error, is_transient_error};
 use super::*;
 
 // -- is_auth_error --
@@ -161,7 +162,7 @@ fn picks_last_pull_url_when_multiple_present() {
 #[tokio::test]
 async fn retries_once_after_rate_limit_error() {
     let attempts = Arc::new(AtomicUsize::new(0));
-    let result = with_rate_limit_retries(
+    let result = with_transient_retries(
         || {
             let attempts = Arc::clone(&attempts);
             async move {
@@ -173,12 +174,172 @@ async fn retries_once_after_rate_limit_error() {
             }
         },
         false,
+        false,
     )
     .await
     .unwrap();
 
     assert_eq!(result, "ok");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+// -- transient network retry predicate (#1154) --
+
+#[test]
+fn is_ambiguous_network_error_returns_true_for_tls_handshake_timeout() {
+    assert!(is_ambiguous_network_error(
+        "gh command failed: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout"
+    ));
+}
+
+#[test]
+fn is_ambiguous_network_error_returns_true_for_connection_reset() {
+    assert!(is_ambiguous_network_error(
+        "gh command failed: read tcp 1.2.3.4:443: connection reset by peer"
+    ));
+}
+
+#[test]
+fn is_ambiguous_network_error_returns_true_for_io_timeout() {
+    assert!(is_ambiguous_network_error(
+        "gh command failed: dial tcp: i/o timeout"
+    ));
+}
+
+#[test]
+fn is_ambiguous_network_error_returns_true_for_http_502() {
+    assert!(is_ambiguous_network_error(
+        "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_http_502() {
+    assert!(!is_transient_error(
+        "gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_true_for_http_503() {
+    assert!(is_transient_error(
+        "gh: HTTP 503: Service Unavailable (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_ambiguous_network_error_returns_true_for_http_504() {
+    assert!(is_ambiguous_network_error(
+        "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_http_504() {
+    assert!(!is_transient_error(
+        "gh: HTTP 504: Gateway Timeout (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_auth_error() {
+    assert!(!is_transient_error(
+        "gh: HTTP 401: Unauthorized (https://api.github.com/graphql)"
+    ));
+}
+
+#[test]
+fn is_transient_error_returns_false_for_not_found() {
+    assert!(!is_transient_error(
+        "GraphQL: Could not resolve to an Issue with the number of 42."
+    ));
+}
+
+#[tokio::test]
+async fn retries_twice_after_transient_network_errors_then_succeeds() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    anyhow::bail!("gh command failed: net/http: TLS handshake timeout");
+                }
+                if attempt == 1 {
+                    anyhow::bail!("gh command failed: read tcp: connection reset by peer");
+                }
+                Ok("ok".to_string())
+            }
+        },
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "ok");
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn transient_retry_stops_at_attempt_cap() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("gh command failed: net/http: TLS handshake timeout")
+            }
+        },
+        false,
+        true,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn does_not_retry_auth_errors() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("gh: HTTP 401: Unauthorized (https://api.github.com/graphql)")
+            }
+        },
+        false,
+        true,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn does_not_retry_not_found_errors() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = with_transient_retries(
+        || {
+            let attempts = Arc::clone(&attempts);
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("GraphQL: Could not resolve to an Issue with the number of 42.")
+            }
+        },
+        false,
+        true,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[test]

@@ -17,23 +17,51 @@ pub fn is_auth_error(stderr: &str) -> bool {
 
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 pub(super) const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
-const GH_RATE_LIMIT_MAX_ATTEMPTS: u32 = 3;
+const GH_TRANSIENT_MAX_ATTEMPTS: u32 = 3;
 
-pub(super) fn is_rate_limit_error(stderr: &str) -> bool {
+/// Check if a stderr string indicates a gh failure that is always safe
+/// to retry, for any command: rate limiting, or HTTP 503 (produced
+/// before the request is applied at the backend). Deliberate failures
+/// (auth, "not found") never match.
+pub(super) fn is_transient_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
     lower.contains("http 429")
         || lower.contains("rate limit exceeded")
         || lower.contains("secondary rate limit")
         || lower.contains("too many requests")
+        || lower.contains("http 503")
 }
 
-pub(super) fn rate_limit_delay_for_attempt(attempt: u32) -> Duration {
+/// Check if a stderr string indicates a failure whose outcome is
+/// unknown: a dropped connection (#1154), or HTTP 502/504 — gateway
+/// responses that can arrive after the backend already applied the
+/// request (e.g. over a stale keep-alive connection). Replaying a
+/// mutating command (create/merge/label/patch) could duplicate the
+/// effect, so these are retried only for idempotent commands.
+pub(super) fn is_ambiguous_network_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("tls handshake timeout")
+        || lower.contains("connection reset")
+        || lower.contains("i/o timeout")
+        || lower.contains("http 502")
+        || lower.contains("http 504")
+}
+
+/// Retry gate: unconditional patterns for any command, plus the
+/// ambiguous network errors for idempotent commands only (review fix
+/// for #1154 — unsafe retry of non-idempotent operations).
+pub(super) fn is_retryable(stderr: &str, idempotent: bool) -> bool {
+    is_transient_error(stderr) || (idempotent && is_ambiguous_network_error(stderr))
+}
+
+pub(super) fn transient_delay_for_attempt(attempt: u32) -> Duration {
     Duration::from_millis(250u64.saturating_mul(2u64.saturating_pow(attempt)))
 }
 
-pub(super) async fn with_rate_limit_retries<F, Fut>(
+pub(super) async fn with_transient_retries<F, Fut>(
     mut operation: F,
     sleep_between_attempts: bool,
+    idempotent: bool,
 ) -> Result<String>
 where
     F: FnMut() -> Fut,
@@ -43,11 +71,11 @@ where
     loop {
         match operation().await {
             Err(err)
-                if attempt + 1 < GH_RATE_LIMIT_MAX_ATTEMPTS
-                    && is_rate_limit_error(&err.to_string()) =>
+                if attempt + 1 < GH_TRANSIENT_MAX_ATTEMPTS
+                    && is_retryable(&err.to_string(), idempotent) =>
             {
                 if sleep_between_attempts {
-                    tokio::time::sleep(rate_limit_delay_for_attempt(attempt)).await;
+                    tokio::time::sleep(transient_delay_for_attempt(attempt)).await;
                 }
                 attempt += 1;
             }

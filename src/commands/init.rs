@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::init::{
     FsProjectDetector, ProjectDetector, RenderOutcome, first_origin_remote_url, git_remote_verbose,
+    ignore::ensure_runtime_gitignore,
     render_or_merge, render_or_merge_with_provider,
     scaffold::{FsScaffolder, ScaffoldAction, scaffold_templates_dir},
     template::ProviderTemplate,
@@ -188,7 +189,28 @@ pub fn cmd_init_inner_with_options(
         }
     }
 
+    ensure_gitignore_and_report(project_root)?;
+
     Ok(0)
+}
+
+/// Keep maestro's runtime files out of the user's `git status` (#1151):
+/// create or update `.gitignore` with the five runtime entries and print
+/// a one-line summary of what changed. Silent when nothing was missing.
+fn ensure_gitignore_and_report(project_root: &Path) -> Result<()> {
+    let update = ensure_runtime_gitignore(project_root)?;
+    if update.created {
+        println!(
+            "Created .gitignore with maestro runtime entries ({}).",
+            update.added.len()
+        );
+    } else if !update.added.is_empty() {
+        println!(
+            "Added {} missing maestro runtime entries to .gitignore.",
+            update.added.len()
+        );
+    }
+    Ok(())
 }
 
 /// Scaffold `.maestro/templates/` next to the project root and print a

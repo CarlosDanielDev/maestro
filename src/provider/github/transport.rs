@@ -17,6 +17,8 @@ pub mod mock;
 mod cli_tests;
 #[cfg(test)]
 mod errors_tests;
+#[cfg(test)]
+mod retry_gate_tests;
 
 pub use cli::GhCliClient;
 pub(crate) use errors::parse_pr_number_from_create_output;
@@ -26,7 +28,7 @@ pub use parsing::{parse_issues_json, parse_milestones_json, parse_prs_json};
 use cli::argv_refs;
 use errors::{
     GH_AUTH_ERROR_SENTINEL, is_label_not_found_error, normalize_paginated_json_arrays,
-    with_rate_limit_retries,
+    with_transient_retries,
 };
 
 /// JSON fields requested from `gh pr list/view`.
