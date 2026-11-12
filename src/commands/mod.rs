@@ -1,5 +1,6 @@
 pub(crate) mod agent_provider_map;
 mod clean;
+mod clean_stale;
 mod dashboard;
 pub mod doctor;
 mod init;
