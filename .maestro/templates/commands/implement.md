@@ -90,7 +90,7 @@ Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verba
 {{HOOK_GATE script="implement-gates.sh" args="$ISSUE_NUMBER ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}"}}
 ```
 
-The hook creates the gate log dir with `mktemp -d "${SENTINEL_DIR}/maestro-${n}-XXXXXX"` (mode 0700, unpredictable name) under the sentinel dir resolved by `sentinel-path.sh`, and prints `gate log dir: <path>` on success. On success it also writes the same path to the sentinel file. The sentinel allows subsequent shell calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each fresh shell loses `export`).
+The hook creates the gate log dir with `mktemp -d "${SENTINEL_DIR}/maestro-${issue_number}-XXXXXX"` (mode 0700, unpredictable name) under the sentinel dir resolved by `sentinel-path.sh`, and prints `gate log dir: <path>` on success. On success it also writes the same path to the sentinel file. The sentinel allows subsequent shell calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each fresh shell loses `export`).
 
 The resolution chain (symlink-attack hardening on multi-user Linux) is `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The hook prints the chosen path as `sentinel: <path>` on stdout.
 
