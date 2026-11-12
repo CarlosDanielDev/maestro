@@ -26,7 +26,7 @@ pub use parsing::{parse_issues_json, parse_milestones_json, parse_prs_json};
 use cli::argv_refs;
 use errors::{
     GH_AUTH_ERROR_SENTINEL, is_label_not_found_error, normalize_paginated_json_arrays,
-    with_rate_limit_retries,
+    with_transient_retries,
 };
 
 /// JSON fields requested from `gh pr list/view`.
