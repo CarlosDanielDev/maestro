@@ -58,3 +58,78 @@ pub(super) fn build_gate_fix_prompt(issue_number: u64, failure_details: &str) ->
          Keep the fix minimal — do NOT refactor unrelated code. Only fix the gate failures."
     )
 }
+
+/// #1144: flag sessions that will run completion gates, so the stream
+/// handler parks them in `GATES_RUNNING` at stream completion instead
+/// of settling `COMPLETED` before the pipeline runs the gates. Single
+/// source of truth for the flag, derived from the same config the
+/// completion pipeline reads (`build_completion_gates`).
+///
+/// The flag means "gates are configured for this session" — the
+/// writer checks config + issue number only. The reader (the stream
+/// handler) additionally requires a worktree and a non-Interactive
+/// session mode before parking, because Interactive sessions never
+/// enter the completion pipeline and the gate block needs a worktree.
+pub(crate) fn mark_gates_pending(session: &mut Session, config: Option<&Config>) {
+    session.gates_pending =
+        session.issue_number.is_some() && !build_completion_gates(config).is_empty();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gated_config() -> Option<Config> {
+        let toml = "[project]\nrepo = \"owner/repo\"\n\
+                    [sessions]\n\
+                    [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                    [github]\n[notifications]\n\
+                    [gates]\nenabled = true\ntest_command = \"true\"\n";
+        Some(toml::from_str(toml).expect("test config parse"))
+    }
+
+    #[test]
+    fn marks_gated_issue_sessions() {
+        let mut s = Session::new(
+            "work".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1144),
+            None,
+        );
+        mark_gates_pending(&mut s, gated_config().as_ref());
+        assert!(s.gates_pending, "issue session with gates must be flagged");
+    }
+
+    #[test]
+    fn does_not_mark_without_gates() {
+        let mut s = Session::new(
+            "work".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1144),
+            None,
+        );
+        mark_gates_pending(&mut s, None);
+        assert!(
+            !s.gates_pending,
+            "no config → no gates → session must not be flagged"
+        );
+    }
+
+    #[test]
+    fn does_not_mark_sessions_without_issue() {
+        let mut s = Session::new(
+            "chat".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        mark_gates_pending(&mut s, gated_config().as_ref());
+        assert!(
+            !s.gates_pending,
+            "sessions without an issue never enter the completion pipeline — must not be flagged"
+        );
+    }
+}

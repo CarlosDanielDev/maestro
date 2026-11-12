@@ -44,9 +44,18 @@ impl App {
                 && let Some(wt_path) = &completion.worktree_path
             {
                 if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
-                    let _ = managed
-                        .session
-                        .transition_to(SessionStatus::GatesRunning, TransitionReason::GatesStarted);
+                    // #1144: gated sessions normally arrive here already
+                    // parked in GATES_RUNNING by the stream handler;
+                    // re-arm only when the session still sits in
+                    // RUNNING (paths that enqueue the completion
+                    // without a stream-completed event).
+                    if managed.session.status == SessionStatus::Running {
+                        checked_transition(
+                            &mut managed.session,
+                            SessionStatus::GatesRunning,
+                            TransitionReason::GatesStarted,
+                        );
+                    }
                 }
 
                 // WIP backup commit before gates run, so model edits
@@ -110,7 +119,8 @@ impl App {
                         // surface it for [s] / [g] / [r] without piping it
                         // through the activity log.
                         managed.session.worktree_path = completion.worktree_path.clone();
-                        let _ = managed.session.transition_to(
+                        checked_transition(
+                            &mut managed.session,
                             SessionStatus::FailedGates,
                             TransitionReason::GatesFailed,
                         );
@@ -150,6 +160,19 @@ impl App {
                         "All required gates passed".into(),
                         LogLevel::Info,
                     );
+                    // #1144: settle COMPLETED only now — the gates ran
+                    // with the session parked in GATES_RUNNING, so
+                    // history records the documented
+                    // RUNNING → GATES_RUNNING → COMPLETED flow.
+                    if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number)
+                        && managed.session.status == SessionStatus::GatesRunning
+                    {
+                        checked_transition(
+                            &mut managed.session,
+                            SessionStatus::Completed,
+                            TransitionReason::GatesPassed,
+                        );
+                    }
                     let session_id = self
                         .pool
                         .find_by_issue_mut(completion.issue_number)
@@ -229,9 +252,11 @@ impl App {
             if let Some(managed) = self.pool.get_active_mut(*id)
                 && managed.session.status == SessionStatus::Running
             {
-                let _ = managed
-                    .session
-                    .transition_to(SessionStatus::Stalled, TransitionReason::HealthStall);
+                checked_transition(
+                    &mut managed.session,
+                    SessionStatus::Stalled,
+                    TransitionReason::HealthStall,
+                );
                 let label = session_label(&managed.session);
                 self.activity_log.push_simple(
                     label,
@@ -315,9 +340,11 @@ impl App {
                     "stalled/errored"
                 };
                 let max = policy.effective_max(&managed.session);
-                let _ = managed
-                    .session
-                    .transition_to(SessionStatus::Retrying, TransitionReason::RetryTriggered);
+                checked_transition(
+                    &mut managed.session,
+                    SessionStatus::Retrying,
+                    TransitionReason::RetryTriggered,
+                );
                 self.activity_log.push_simple(
                     label,
                     format!(
@@ -491,6 +518,35 @@ impl App {
 
         self.sync_state();
         Ok(())
+    }
+}
+
+/// #1144: run a pipeline transition through the state machine and
+/// record rejections instead of dropping the result. A rejection means
+/// the documented pipeline flow broke (e.g. the session settled
+/// COMPLETED before the gates ran); it is logged at warn with the
+/// from/to states — in structured logs and in the session's own
+/// activity log — instead of vanishing.
+fn checked_transition(
+    session: &mut crate::session::types::Session,
+    target: SessionStatus,
+    reason: TransitionReason,
+) -> bool {
+    match session.transition_to(target, reason) {
+        Ok(()) => true,
+        Err(rejected) => {
+            tracing::warn!(
+                from = %rejected.from.label(),
+                to = %rejected.to.label(),
+                "session transition rejected in completion pipeline"
+            );
+            session.log_activity(format!(
+                "TRANSITION REJECTED: {} \u{2192} {}",
+                rejected.from.label(),
+                rejected.to.label()
+            ));
+            false
+        }
     }
 }
 
@@ -759,6 +815,42 @@ mod tests {
         } else {
             panic!("session must still be findable after hook fires");
         }
+    }
+
+    /// #1144: a rejected pipeline transition must be recorded, not
+    /// dropped — the session activity log entry carries from → to and
+    /// `tracing` receives the warn with the same states.
+    #[test]
+    fn rejected_pipeline_transition_is_logged_with_from_and_to() {
+        use crate::session::transition::TransitionReason;
+        use crate::session::types::SessionStatus;
+
+        let mut session = crate::session::types::Session::new(
+            "s".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1144),
+            None,
+        );
+        session.status = SessionStatus::Completed;
+
+        let settled = super::checked_transition(
+            &mut session,
+            SessionStatus::GatesRunning,
+            TransitionReason::GatesStarted,
+        );
+
+        assert!(
+            !settled,
+            "Completed has no outgoing edges — the transition must be rejected"
+        );
+        assert!(
+            session
+                .activity_log
+                .iter()
+                .any(|e| e.message == "TRANSITION REJECTED: COMPLETED \u{2192} GATES_RUNNING"),
+            "rejection must be logged with the from → to states"
+        );
     }
 }
 

@@ -30,6 +30,8 @@ mod fleet_board_route;
 #[cfg(test)]
 mod gate_failure_retention;
 #[cfg(test)]
+mod gates_running_state;
+#[cfg(test)]
 mod init;
 #[cfg(test)]
 mod interaction_terminator;

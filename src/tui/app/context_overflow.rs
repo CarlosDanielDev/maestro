@@ -8,7 +8,7 @@ use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 
 impl App {
-    pub(super) fn check_context_overflow(&mut self, session_id: uuid::Uuid) {
+    pub(crate) fn check_context_overflow(&mut self, session_id: uuid::Uuid) {
         let Some(ref config) = self.config else {
             return;
         };
@@ -63,7 +63,7 @@ impl App {
 
         match fork_result {
             ForkResult::Forked {
-                child,
+                mut child,
                 handoff_metrics,
                 ..
             } => {
@@ -92,6 +92,12 @@ impl App {
                     }
                 }
                 self.state.record_fork(session_id, child_id);
+                // #1144 (judge fix round): the fork child is the one
+                // production enqueue that bypasses `add_session`, so it
+                // must derive `gates_pending` here — otherwise a gated
+                // child settles COMPLETED at stream completion and a
+                // failing gate never surfaces as FAILED_GATES.
+                super::helpers::mark_gates_pending(&mut child, self.config.as_ref());
                 self.pool.enqueue(*child);
 
                 self.pending_hooks.push(PendingHook {

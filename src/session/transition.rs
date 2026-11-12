@@ -18,6 +18,8 @@ pub enum TransitionReason {
     RetryTriggered,
     GatesStarted,
     GatesFailed,
+    /// Pipeline settled the final outcome after the gates ran (#1144).
+    GatesPassed,
     CiFixStarted,
     ConflictPolicy,
     ContextOverflow,
