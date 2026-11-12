@@ -82,7 +82,7 @@ impl App {
                     Err(e) => {
                         let err_str = e.to_string().trim_end().to_string();
                         let pending = &mut self.pending_prs[idx];
-                        record_error_for_correlation(pending, err_str.clone());
+                        record_error_for_correlation(pending, err_str);
 
                         if errors_match_threshold(pending) {
                             transition_to_permanently_failed(

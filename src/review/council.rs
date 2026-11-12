@@ -86,9 +86,9 @@ impl ReviewCouncil {
             match result {
                 Ok(review_result) => {
                     if review_result.success {
-                        approvals.push(name.clone());
+                        approvals.push(name);
                     } else {
-                        rejections.push(name.clone());
+                        rejections.push(name);
                         if required {
                             required_rejected = true;
                         }
