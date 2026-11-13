@@ -302,8 +302,8 @@ fn negation_after_block_end_re_adds_entry_after_it() {
     // Security follow-up #1151: a `!entry` negation placed AFTER maestro's
     // complete block wins under gitignore's last-match-wins, so the block
     // alone no longer covers that entry. maestro must append a new block at
-    // the end of the file (after the negation) carrying only that entry,
-    // and a re-run must then be a byte-identical no-op.
+    // the end of the file (after the negation) carrying that entry, and a
+    // re-run must then be a byte-identical no-op.
     let dir = TempDir::new().expect("create tempdir");
     let mut seeded = String::from(BLOCK_START);
     seeded.push('\n');
@@ -318,8 +318,8 @@ fn negation_after_block_end_re_adds_entry_after_it() {
     let update = ensure_runtime_gitignore(dir.path()).expect("ensure_runtime_gitignore");
     assert_eq!(
         update.added,
-        vec!["maestro-state.json"],
-        "only the negated entry is re-added"
+        RUNTIME_ENTRIES.to_vec(),
+        "any negation after the block voids coverage (globs are not parsed, #1196)"
     );
     let content = read_gitignore(&dir);
     assert!(
@@ -327,10 +327,14 @@ fn negation_after_block_end_re_adds_entry_after_it() {
         "existing content (negation included) survives verbatim:\n{content}"
     );
     let tail = &content[seeded.len()..];
-    assert_eq!(
-        tail,
-        format!("\n{BLOCK_START}\nmaestro-state.json\n{BLOCK_END}\n"),
+    assert!(
+        tail.starts_with(&format!("\n{BLOCK_START}\n"))
+            && tail.ends_with(&format!("{BLOCK_END}\n")),
         "re-add lands in a new block after the negation:\n{content}"
+    );
+    assert!(
+        tail.lines().any(|line| line == "maestro-state.json"),
+        "the negated entry is in the new block:\n{content}"
     );
 
     let rerun = ensure_runtime_gitignore(dir.path()).expect("second run");
