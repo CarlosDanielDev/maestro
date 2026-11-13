@@ -57,11 +57,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // beneath the main status line. Non-bypass layouts stay at 3 rows so
     // existing snapshots remain stable.
     let status_bar_height: u16 = if app.bypass_active { 4 } else { 3 };
+    // #1157: on short terminals the main area's minimum would otherwise eat
+    // every activity-log row; shrink it so a visible log keeps one content
+    // row (3 rows with borders).
+    let log_floor = log_height.min(3);
+    let main_min = f
+        .area()
+        .height
+        .saturating_sub(status_bar_height + log_floor + 1)
+        .min(10);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(status_bar_height), // status bar (includes inline hints)
-            Constraint::Min(10),                   // main content
+            Constraint::Min(main_min),             // main content
             Constraint::Length(log_height),        // activity log
             Constraint::Length(1),                 // F-key bar
         ])
