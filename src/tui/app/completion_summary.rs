@@ -115,6 +115,13 @@ impl App {
     pub fn open_completion_summary(&mut self) {
         let summary = self.build_completion_summary();
         self.completion_summary = Some(summary);
+        // #1158: an open "Exit anyway?" keeps the focus, so the user's `y`
+        // still quits. The summary goes under the dialog; `n` lands on it.
+        if self.tui_mode == crate::tui::app::TuiMode::ConfirmExit {
+            self.nav_stack
+                .push(crate::tui::app::TuiMode::CompletionSummary);
+            return;
+        }
         self.navigate_to(crate::tui::app::TuiMode::CompletionSummary);
     }
 
