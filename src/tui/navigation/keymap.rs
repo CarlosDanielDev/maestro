@@ -67,8 +67,12 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Token dashboard view",
                     },
                     KeyBinding {
-                        key: "Tab / F6",
-                        description: "Cycle view mode",
+                        key: "F6",
+                        description: "Dependency graph view (Deps)",
+                    },
+                    KeyBinding {
+                        key: "Tab",
+                        description: "Cycle view mode (session overview)",
                     },
                 ],
             },
@@ -545,5 +549,29 @@ mod tests {
         let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 0);
         assert!(fitted.is_empty());
+    }
+
+    /// #1160: the help overlay and the bottom bar (`F6 Deps`) must describe
+    /// F6 the same way, and Tab must not be listed as both pane focus and
+    /// an F6 alias.
+    #[test]
+    fn global_keybindings_views_group_describes_f6_as_deps() {
+        let views = global_keybindings()
+            .iter()
+            .find(|g| g.title == "Views")
+            .expect("Views group");
+        let text: String = views
+            .bindings
+            .iter()
+            .map(|b| format!("{:<16}{}\n", b.key, b.description))
+            .collect();
+        insta::assert_snapshot!(text);
+        let f6 = views
+            .bindings
+            .iter()
+            .find(|b| b.key.split(" / ").any(|k| k == "F6"))
+            .expect("F6 binding");
+        assert!(f6.description.contains("Deps"), "{}", f6.description);
+        assert!(!f6.key.contains("Tab"), "{}", f6.key);
     }
 }

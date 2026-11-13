@@ -11,6 +11,7 @@ mod completion_overlay;
 mod copy_keybinding_hint;
 mod cost_dashboard;
 mod dashboard;
+mod dep_graph;
 mod detail;
 mod fullscreen;
 mod home_small_terminal;

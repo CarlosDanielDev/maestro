@@ -12,6 +12,10 @@ use super::agents::{AgentKind, AgentsConfig};
 /// 2026-05-15T00:00:00Z — the date the warning starts firing.
 pub const TRANSPORT_WARN_EPOCH: u64 = 1_778_803_200;
 
+/// 2026-06-15T00:00:00Z — the date subscription billing for headless
+/// `claude --print` ends; from here on the warning speaks in past tense.
+pub const HEADLESS_BILLING_CUTOFF: u64 = 1_781_481_600;
+
 /// Clock seam so tests can pin the date (RUST-GUARDRAILS.md §7).
 pub trait Clock {
     fn epoch_secs(&self) -> u64;
@@ -64,8 +68,13 @@ pub fn headless_cutoff_warning(
         return None;
     }
 
+    let billing = if clock.epoch_secs() < HEADLESS_BILLING_CUTOFF {
+        "ends"
+    } else {
+        "ended"
+    };
     Some(format!(
-        "headless claude transport ({}): subscription billing ends 2026-06-15 — consider transport=\"interactive\" in maestro.toml (silence with MAESTRO_SILENCE_TRANSPORT_WARN=1)",
+        "headless claude transport ({}): subscription billing {billing} 2026-06-15 — consider transport=\"interactive\" in maestro.toml (silence with MAESTRO_SILENCE_TRANSPORT_WARN=1)",
         headless_ids.join(", ")
     ))
 }
@@ -85,6 +94,7 @@ mod tests {
 
     const BEFORE: MockClock = MockClock(TRANSPORT_WARN_EPOCH - 1);
     const AFTER: MockClock = MockClock(TRANSPORT_WARN_EPOCH + 1);
+    const PAST_CUTOFF: MockClock = MockClock(HEADLESS_BILLING_CUTOFF + 1);
 
     fn agents_with(transport: Option<&str>) -> AgentsConfig {
         let mut claude = AgentConfig::builtin_claude("opus", "default", Vec::new());
@@ -103,6 +113,21 @@ mod tests {
         let msg = msg.expect("warning must fire for default transport after warn date");
         assert!(msg.contains("2026-06-15"));
         assert!(msg.contains("claude"), "must name the agent id: {msg}");
+        assert!(msg.contains("MAESTRO_SILENCE_TRANSPORT_WARN"));
+    }
+
+    #[test]
+    fn says_billing_ends_before_cutoff() {
+        let msg = headless_cutoff_warning(&agents_with(None), &AFTER, false).unwrap_or_default();
+        assert!(msg.contains("billing ends 2026-06-15"), "{msg}");
+    }
+
+    #[test]
+    fn says_billing_ended_after_cutoff() {
+        let msg = headless_cutoff_warning(&agents_with(None), &PAST_CUTOFF, false);
+        let msg = msg.expect("warning must still fire after the cutoff");
+        assert!(msg.contains("billing ended 2026-06-15"), "{msg}");
+        assert!(!msg.contains("billing ends"), "{msg}");
         assert!(msg.contains("MAESTRO_SILENCE_TRANSPORT_WARN"));
     }
 

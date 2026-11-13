@@ -60,7 +60,7 @@ fn render_log_with_mode(log: &ActivityLog, use_nerd_font: bool) -> Terminal<Test
     let mut terminal = Terminal::new(TestBackend::new(TERM_WIDTH, TERM_HEIGHT)).unwrap();
     terminal
         .draw(|f| {
-            log.draw(f, f.area(), &theme, use_nerd_font);
+            log.draw_in_zone(f, f.area(), &theme, use_nerd_font, &chrono::Utc);
         })
         .unwrap();
     terminal

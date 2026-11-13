@@ -15,7 +15,7 @@ pub fn draw_dep_graph(f: &mut Frame, assigner: Option<&WorkAssigner>, area: Rect
     let lines = match assigner {
         Some(assigner) => build_graph_lines(assigner, theme),
         None => vec![Line::from(Span::styled(
-            " No work assigner active (prompt-only mode)",
+            " No dependencies to show — only --milestone and label runs track them",
             Style::default().fg(theme.text_secondary),
         ))],
     };
