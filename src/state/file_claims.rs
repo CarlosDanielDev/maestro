@@ -2,6 +2,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use uuid::Uuid;
 
 /// Sentinel string that Claude must emit when it detects a file conflict.
@@ -30,6 +31,11 @@ pub struct FileClaimManager {
     /// History of detected conflicts.
     #[serde(default)]
     conflict_history: Vec<ConflictRecord>,
+    /// Repo-relative changed files per PR opened by this process (#1156),
+    /// so PRs from the same run that touch the same files are reported
+    /// even when their sessions never ran at the same moment.
+    #[serde(default)]
+    pr_files: Vec<(u64, Vec<String>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +46,17 @@ pub enum ClaimResult {
     AlreadyOwned,
     /// File is claimed by a different session.
     Conflict { owner: Uuid },
+}
+
+/// Claim key for a tool path (#1156): the path relative to the session's
+/// worktree root, so the same repo file maps to one key across sessions
+/// that each write inside their own worktree. Paths outside the worktree,
+/// or already relative, are kept as given.
+pub fn repo_relative_key(path: &str, worktree: Option<&Path>) -> String {
+    worktree
+        .and_then(|wt| Path::new(path).strip_prefix(wt).ok())
+        .map(|rel| rel.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
 }
 
 impl FileClaimManager {
@@ -145,6 +162,26 @@ impl FileClaimManager {
             offender_session_id,
             detected_at: Utc::now(),
         });
+    }
+
+    /// Record the changed files of a newly opened PR and return, for each
+    /// earlier PR that shares any of them, `(earlier_pr, shared_paths)`.
+    pub fn record_pr_files(&mut self, pr: u64, files: &[String]) -> Vec<(u64, Vec<String>)> {
+        self.pr_files.retain(|(n, _)| *n != pr);
+        let shared = self
+            .pr_files
+            .iter()
+            .filter_map(|(other, other_files)| {
+                let common: Vec<String> = files
+                    .iter()
+                    .filter(|f| other_files.contains(f))
+                    .cloned()
+                    .collect();
+                (!common.is_empty()).then_some((*other, common))
+            })
+            .collect();
+        self.pr_files.push((pr, files.to_vec()));
+        shared
     }
 
     /// Get the full conflict history.
@@ -465,6 +502,46 @@ mod tests {
         mgr.record_conflict("src/main.rs", owner, offender);
         // Owner is not an offender
         assert!(!mgr.has_active_conflict(owner));
+    }
+
+    #[test]
+    fn same_relative_path_in_two_worktrees_conflicts() {
+        // #1156: each session writes inside its own worktree, so the raw
+        // tool path differs per session for the same repo file.
+        let mut mgr = FileClaimManager::new();
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        let wt1 = std::path::Path::new("/repo/.maestro/worktrees/issue-1");
+        let wt2 = std::path::Path::new("/repo/.maestro/worktrees/issue-2");
+        let k1 = repo_relative_key(
+            "/repo/.maestro/worktrees/issue-1/tests/test_todo.py",
+            Some(wt1),
+        );
+        let k2 = repo_relative_key(
+            "/repo/.maestro/worktrees/issue-2/tests/test_todo.py",
+            Some(wt2),
+        );
+        assert_eq!(k1, "tests/test_todo.py");
+        mgr.claim(&k1, a);
+        assert_eq!(mgr.claim(&k2, b), ClaimResult::Conflict { owner: a });
+    }
+
+    #[test]
+    fn repo_relative_key_keeps_paths_outside_the_worktree() {
+        let wt = std::path::Path::new("/repo/.maestro/worktrees/issue-1");
+        assert_eq!(repo_relative_key("/etc/hosts", Some(wt)), "/etc/hosts");
+        assert_eq!(repo_relative_key("src/a.rs", Some(wt)), "src/a.rs");
+        assert_eq!(repo_relative_key("/x/src/a.rs", None), "/x/src/a.rs");
+    }
+
+    #[test]
+    fn record_pr_files_reports_earlier_prs_sharing_paths() {
+        let mut mgr = FileClaimManager::new();
+        let first = mgr.record_pr_files(101, &["tests/test_todo.py".into(), "a.rs".into()]);
+        assert!(first.is_empty());
+        let second = mgr.record_pr_files(102, &["b.rs".into(), "tests/test_todo.py".into()]);
+        assert_eq!(second, vec![(101, vec!["tests/test_todo.py".to_string()])]);
+        let third = mgr.record_pr_files(103, &["c.rs".into()]);
+        assert!(third.is_empty());
     }
 
     #[test]

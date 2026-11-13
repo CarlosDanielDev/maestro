@@ -85,6 +85,54 @@ pub(crate) async fn resolve_issue_list(
     Ok(resolved)
 }
 
+/// Pre-launch overlap warning for `run --issue a,b` (#1156). That path
+/// skips the QueueConfirmation screen, so it reports the same prediction
+/// here: files declared by 2+ issues, and issues with no
+/// `## Files to Modify` section (unknown scope). `None` when safe or
+/// when only one issue is launched.
+pub(crate) fn launch_scope_warning(issues: &[Issue]) -> Option<String> {
+    use crate::work::conflicts::{IssueWithFiles, files_to_modify_from_body, predict_conflicts};
+    if issues.len() < 2 {
+        return None;
+    }
+    let scoped: Vec<IssueWithFiles> = issues
+        .iter()
+        .map(|i| IssueWithFiles {
+            issue_number: i.number,
+            files_to_modify: files_to_modify_from_body(&i.body),
+        })
+        .collect();
+    let report = predict_conflicts(&scoped);
+    if report.is_safe {
+        return None;
+    }
+    let refs = |nums: &[u64]| {
+        nums.iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut conflicts = report.conflicts;
+    conflicts.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    let mut parts: Vec<String> = conflicts
+        .iter()
+        .map(|c| {
+            format!(
+                "Conflict: {} — shared by {}",
+                c.file_path,
+                refs(&c.issue_numbers)
+            )
+        })
+        .collect();
+    if !report.unknown_scope_issues.is_empty() {
+        parts.push(format!(
+            "Unknown scope: {}",
+            refs(&report.unknown_scope_issues)
+        ));
+    }
+    Some(parts.join("; "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +335,47 @@ mod tests {
             .await
             .expect_err("fetch failure must fail the list");
         assert!(err.to_string().contains("gh: boom"), "message was: {err}");
+    }
+
+    #[test]
+    fn launch_warning_flags_issues_without_files_to_modify() {
+        // #1156: `run --issue 1,2` skips the QueueConfirmation screen, so
+        // it must print the same unknown-scope warning itself.
+        let issues = vec![
+            issue(1, "## Overview\nx", vec![], "open"),
+            issue(2, "", vec![], "open"),
+        ];
+        let warning = launch_scope_warning(&issues).expect("unknown scope must warn");
+        assert!(warning.contains("Unknown scope: #1, #2"), "got: {warning}");
+    }
+
+    #[test]
+    fn launch_warning_lists_shared_files() {
+        let body = "## Files to Modify\n- `tests/test_todo.py`\n- src/a.rs";
+        let issues = vec![
+            issue(1, body, vec![], "open"),
+            issue(
+                2,
+                "## Files to Modify\n- tests/test_todo.py",
+                vec![],
+                "open",
+            ),
+        ];
+        let warning = launch_scope_warning(&issues).expect("shared file must warn");
+        assert!(
+            warning.contains("tests/test_todo.py — shared by #1, #2"),
+            "got: {warning}"
+        );
+        assert!(!warning.contains("Unknown scope"), "got: {warning}");
+    }
+
+    #[test]
+    fn launch_warning_silent_for_single_or_disjoint_issues() {
+        assert_eq!(launch_scope_warning(&[issue(1, "", vec![], "open")]), None);
+        let issues = vec![
+            issue(1, "## Files to Modify\n- a.rs", vec![], "open"),
+            issue(2, "## Files to Modify\n- b.rs", vec![], "open"),
+        ];
+        assert_eq!(launch_scope_warning(&issues), None);
     }
 }

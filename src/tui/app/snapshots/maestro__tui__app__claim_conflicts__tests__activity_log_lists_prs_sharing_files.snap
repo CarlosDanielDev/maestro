@@ -1,0 +1,8 @@
+---
+source: src/tui/app/claim_conflicts_tests.rs
+expression: terminal.backend()
+---
+"╔═══════════════════════════════[ Activity Log ]═══════════════════════════════╗"
+"║10:00:00 [#2] PRs #101 and #102 both change tests/test_todo.py                ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
