@@ -155,7 +155,9 @@ fn render_checks(report: &DoctorReport, color: bool) -> String {
         let status = paint(&format!("{word:<6}"), code, color);
         out.push_str(&format!(
             "  {:<16} {} {}\n",
-            check.name, status, check.message
+            sanitize(&check.name),
+            status,
+            sanitize_lines(&check.message)
         ));
     }
 
@@ -177,10 +179,10 @@ fn render_closing(report: &DoctorReport, color: bool) -> String {
             color,
         )
     } else if report.has_warnings() {
-        let warned: Vec<&str> = report
+        let warned: Vec<String> = report
             .failed_checks()
             .iter()
-            .map(|check| check.name.as_str())
+            .map(|check| sanitize(&check.name))
             .collect();
         paint(
             &format!(
@@ -204,6 +206,12 @@ fn sanitize(s: &str) -> String {
 /// Agent rows are `agent <id>`; the `agent config` schema row is not an agent.
 fn is_agent_row(check: &CheckResult) -> bool {
     check.name.starts_with("agent ") && check.name != "agent config"
+}
+
+/// `sanitize` per line, keeping the line breaks of multi-line messages
+/// (e.g. the TOML error snippet, which echoes untrusted config bytes).
+fn sanitize_lines(s: &str) -> String {
+    s.lines().map(sanitize).collect::<Vec<_>>().join("\n")
 }
 
 fn agent_health_counts(report: &DoctorReport) -> Option<(usize, usize)> {
@@ -1404,6 +1412,41 @@ mod tests {
         assert!(out.contains("some optional checks warned"), "{out}");
         assert!(out.contains("agent config"), "{out}");
         assert!(!out.contains("optional tools are missing"), "{out}");
+    }
+
+    #[test]
+    fn config_error_with_escape_bytes_renders_without_esc() {
+        // An untrusted repo's maestro.toml is echoed in the TOML error
+        // snippet; its control bytes must not reach the terminal.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("maestro.toml");
+        std::fs::write(&path, "[project]\nrepo = \"a/b\"\n[sessions\x1b[31m\n").unwrap();
+        let result = build_config_result(crate::config::Config::load(&path).map(|_| ()));
+        assert!(result.message.contains('\x1b'), "precondition: {result:?}");
+
+        let report = DoctorReport {
+            checks: vec![result],
+        };
+        let out = render_checks(&report, false);
+        assert!(!out.contains('\x1b'), "{out:?}");
+        assert!(out.contains("line 3, column"), "{out}");
+    }
+
+    #[test]
+    fn check_names_with_escape_bytes_render_without_esc() {
+        let report = DoctorReport {
+            checks: vec![CheckResult::fail(
+                "agent x\x1b]0;pwned\x07",
+                "down",
+                CheckSeverity::Optional,
+            )],
+        };
+        let out = format!(
+            "{}{}",
+            render_checks(&report, false),
+            render_closing(&report, false)
+        );
+        assert!(!out.contains('\x1b') && !out.contains('\x07'), "{out:?}");
     }
 
     #[test]
