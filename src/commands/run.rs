@@ -214,6 +214,12 @@ pub async fn cmd_run(
         // blocked-by issues as Blocked; refuse unless explicitly overridden.
         let requested =
             run_deps::resolve_issue_list(client.as_ref(), &issue_str, ignore_deps).await?;
+        // #1156: this path skips the QueueConfirmation review, so warn here.
+        if let Some(warning) = run_deps::launch_scope_warning(&requested) {
+            eprintln!("warning: {warning}");
+            let level = crate::tui::activity_log::LogLevel::Warn;
+            app.activity_log.push_simple("run".into(), warning, level);
+        }
 
         for gh_issue in requested {
             let num = gh_issue.number;

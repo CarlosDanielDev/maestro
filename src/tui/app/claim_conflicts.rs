@@ -9,7 +9,7 @@ use crate::notifications::slack::SlackEvent;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::transition::TransitionReason;
 use crate::session::types::{SessionStatus, StreamEvent};
-use crate::state::file_claims::ClaimResult;
+use crate::state::file_claims::{ClaimResult, repo_relative_key};
 use crate::tui::activity_log::LogLevel;
 
 impl App {
@@ -29,6 +29,14 @@ impl App {
             return;
         }
 
+        // #1156: key on the repo-relative path — each session writes inside
+        // its own worktree, so raw paths never collide across sessions.
+        let worktree = self
+            .pool
+            .get_active_mut(session_id)
+            .and_then(|m| m.worktree_path.clone());
+        let key = repo_relative_key(path, worktree.as_deref());
+        let path = key.as_str();
         let result = self.pool.file_claims.claim(path, session_id);
         if let ClaimResult::Conflict { owner } = result {
             let label = format!("S-{}", &session_id.to_string()[..8]);
@@ -111,4 +119,30 @@ impl App {
             });
         }
     }
+
+    /// Log one line per earlier PR from this run that changes any of the
+    /// same files as the newly opened `pr_number` (#1156).
+    pub(super) fn report_prs_sharing_files(
+        &mut self,
+        issue: u64,
+        pr_number: u64,
+        files: &[String],
+    ) {
+        for (earlier, shared) in self.pool.file_claims.record_pr_files(pr_number, files) {
+            self.activity_log.push_simple(
+                format!("#{}", issue),
+                format!(
+                    "PRs #{} and #{} both change {}",
+                    earlier,
+                    pr_number,
+                    shared.join(", ")
+                ),
+                LogLevel::Warn,
+            );
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "claim_conflicts_tests.rs"]
+mod tests;

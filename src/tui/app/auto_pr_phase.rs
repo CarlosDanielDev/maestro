@@ -69,6 +69,8 @@ pub(super) enum PrPhaseOutcome {
         pr_number: u64,
         url: String,
         branch: String,
+        /// Repo-relative PR files, for the same-run overlap report (#1156).
+        diff_files: Vec<String>,
     },
     /// PR creation failed — retry machinery takes over.
     Failed {
@@ -306,6 +308,7 @@ async fn pr_phase_inner(
                 pr_number: pr_num,
                 url,
                 branch,
+                diff_files,
             }
         }
         Err(e) => PrPhaseOutcome::Failed {

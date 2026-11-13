@@ -134,12 +134,14 @@ impl App {
                 pr_number,
                 url,
                 branch,
+                diff_files,
             } => {
                 self.activity_log.push_simple(
                     format!("#{}", ctx.issue_number),
                     format!("PR #{} created: {}", pr_number, url),
                     LogLevel::Info,
                 );
+                self.report_prs_sharing_files(ctx.issue_number, pr_number, &diff_files);
                 self.ci_poller.add_check(PendingPrCheck {
                     pr_number,
                     issue_number: ctx.issue_number,
