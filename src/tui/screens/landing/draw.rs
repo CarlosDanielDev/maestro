@@ -1040,7 +1040,7 @@ fn render_text(f: &mut Frame, x: u16, y: u16, width: u16, text: &str, style: Sty
     f.render_widget(Paragraph::new(Line::from(Span::styled(text, style))), rect);
 }
 
-fn ellipsize(text: &str, max_width: usize) -> String {
+pub(crate) fn ellipsize(text: &str, max_width: usize) -> String {
     if text.width() <= max_width {
         return text.to_string();
     }

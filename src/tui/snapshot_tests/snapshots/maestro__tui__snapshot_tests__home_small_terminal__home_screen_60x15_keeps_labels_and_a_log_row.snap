@@ -1,0 +1,19 @@
+---
+source: src/tui/snapshot_tests/home_small_terminal.rs
+expression: t.backend()
+---
+"╔══════════════════════════════════════════════════════════╗"
+"║ MAESTRO v0.31.5  ══ Dashboard ══ 󰙍 0 agents (0 active) ══║"
+"╚══════════════════════════════════════════════════════════╝"
+"╔[ Quick Actions ╗╔══[ Suggestions ]══╗╔[ Recent Activity ]╗"
+"║  [i]  Browse I…║║  󰝦 3 issues labele║║   #2 Start the wo║"
+"║  [m]  Browse M…║║                   ║║                   ║"
+"║  [M]  Review M…║║                   ║║                   ║"
+"║  [r]  Run Prom…║║                   ║║                   ║"
+"║  [a]  Adapt Pr…║║                   ║║                   ║"
+"║  [p]  Review P…║║                   ║║                   ║"
+"╚════════════════╝╚═══════════════════╝╚═══════════════════╝"
+"╔═════════════════════[ Activity Log ]═════════════════════╗"
+"║10:00:00 [S-1] home-log-row-1157                          ║"
+"╚══════════════════════════════════════════════════════════╝"
+"F1 Help F4 Costs F5 Tokens F6 Deps ^X Exit                  "

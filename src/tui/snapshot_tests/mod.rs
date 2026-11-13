@@ -13,6 +13,7 @@ mod cost_dashboard;
 mod dashboard;
 mod detail;
 mod fullscreen;
+mod home_small_terminal;
 mod interaction;
 mod interaction_diff_review;
 mod interaction_log;

@@ -2,6 +2,7 @@ use super::types::{Suggestion, SuggestionKind};
 use super::{HomeScreen, QUICK_ACTIONS};
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
+use crate::tui::screens::landing::draw::ellipsize;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 use crate::tui::widgets::{EmptyState, focused_selection_style};
@@ -140,6 +141,7 @@ impl HomeScreen {
             .bg(theme.selection_bg)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED);
 
+        let inner_width = block.inner(area).width as usize;
         let mut lines = Vec::new();
         for (idx, (label, key, _)) in QUICK_ACTIONS.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_action;
@@ -153,9 +155,11 @@ impl HomeScreen {
             } else {
                 Style::default().fg(theme.text_secondary)
             };
+            let prefix = format!("  [{}]  ", key);
+            let label = ellipsize(label, inner_width.saturating_sub(prefix.width()));
             lines.push(Line::from(vec![
-                Span::styled(format!("  [{}]  ", key), key_style),
-                Span::styled(*label, style),
+                Span::styled(prefix, key_style),
+                Span::styled(label, style),
             ]));
         }
 
