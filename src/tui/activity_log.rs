@@ -1,7 +1,7 @@
 use crate::session::role::role_for_subagent_name;
 use crate::tui::agent_graph::personalities::{chip_glyph_for_role, role_abbrev, role_color};
 use crate::tui::theme::Theme;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,6 +9,15 @@ use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem, Paragraph},
 };
+
+/// Format an entry's `HH:MM:SS` stamp in `zone` (#1160: the log stores UTC,
+/// the user reads wall-clock time).
+fn format_entry_time<Tz: TimeZone>(timestamp: &DateTime<Utc>, zone: &Tz) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    timestamp.with_timezone(zone).format("%H:%M:%S").to_string()
+}
 
 #[derive(Debug, Clone)]
 pub struct ToolMeta {
@@ -177,6 +186,21 @@ impl ActivityLog {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, use_nerd_font: bool) {
+        self.draw_in_zone(f, area, theme, use_nerd_font, &Local);
+    }
+
+    /// [`Self::draw`] with an explicit time zone, so snapshots stay stable
+    /// whatever `TZ` the test machine has.
+    pub fn draw_in_zone<Tz: TimeZone>(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        use_nerd_font: bool,
+        zone: &Tz,
+    ) where
+        Tz::Offset: std::fmt::Display,
+    {
         let block = theme.styled_block("Activity Log", false);
 
         let inner_height = area.height.saturating_sub(2) as usize;
@@ -196,7 +220,7 @@ impl ActivityLog {
         let items: Vec<ListItem> = self.entries[start..end]
             .iter()
             .map(|entry| {
-                let time = entry.timestamp.format("%H:%M:%S");
+                let time = format_entry_time(&entry.timestamp, zone);
                 let mut spans = vec![
                     Span::styled(
                         format!("{} ", time),
@@ -525,5 +549,41 @@ mod tests {
         let span = role_chip_span(&meta("Agent", Some("subagent-qa")), false).unwrap();
         assert_eq!(span.content, "REV ");
         assert_eq!(span.style.fg, Some(Color::Magenta));
+    }
+
+    fn render_text(log: &ActivityLog) -> String {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut terminal = Terminal::new(TestBackend::new(60, 4)).unwrap();
+        terminal
+            .draw(|f| log.draw(f, f.area(), &Theme::dark(), false))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn entry_time_formats_in_the_given_zone() {
+        use chrono::FixedOffset;
+        let ts = Utc.with_ymd_and_hms(2026, 11, 12, 1, 36, 49).unwrap();
+        let utc_minus_3 = FixedOffset::west_opt(3 * 3600).unwrap();
+        assert_eq!(format_entry_time(&ts, &utc_minus_3), "22:36:49");
+        assert_eq!(format_entry_time(&ts, &Utc), "01:36:49");
+    }
+
+    #[test]
+    fn draw_renders_entry_time_in_local_zone() {
+        let ts = Utc.with_ymd_and_hms(2026, 11, 12, 1, 36, 49).unwrap();
+        let mut log = ActivityLog::new(10);
+        let mut entry = make_entry("gates passed");
+        entry.timestamp = ts;
+        log.push(entry);
+        let local = ts.with_timezone(&Local).format("%H:%M:%S").to_string();
+        let text = render_text(&log);
+        assert!(text.contains(&format!("{local} [S-test]")), "{text}");
     }
 }

@@ -1,0 +1,9 @@
+---
+source: src/tui/navigation/keymap.rs
+expression: text
+---
+f / F3          Full-screen view for selected session
+$ / F4          Cost dashboard view
+t / F5          Token dashboard view
+F6              Dependency graph view (Deps)
+Tab             Cycle view mode (session overview)
