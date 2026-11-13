@@ -139,11 +139,14 @@ Maestro checks for new versions on startup and shows an in-TUI banner — press 
 maestro init                                              # interactive maestro.toml setup
 maestro init --non-interactive                            # headless GitHub defaults
 maestro doctor                                            # verify gh/az/agent CLI/git
+maestro trust                                             # allow this repo's config to run commands
 maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
 maestro run --issue 42                                    # session for a GitHub issue
 maestro run --milestone "v1.0"                            # all open issues in a milestone
 maestro                                                   # open the TUI dashboard
 ```
+
+Custom commands in a repo's `maestro.toml` (a `test_command`, an agent `command`, plugins, review commands) do not run until you trust the workspace; see [docs/workspace-trust.md](docs/workspace-trust.md).
 
 For the full command catalogue see [Wiki › CLI Reference](https://github.com/CarlosDanielDev/maestro/wiki/CLI-Reference) or run `maestro --help`.
 
@@ -301,7 +304,7 @@ When you run the Claude provider, Maestro wraps — not replaces — your existi
 
 ## Roadmap
 
-[`ROADMAP.md`](ROADMAP.md) is the single source of truth for shipped and upcoming work; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The latest release is **v0.30.0** (interactive iteration sessions — kept-alive chat over the real session pipeline, multi-provider follow-up turns, native in-session diff reviewer). Browse open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones); the latest released binary is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
+[`ROADMAP.md`](ROADMAP.md) is the single source of truth for shipped and upcoming work; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. Browse open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones); the latest released binary is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
 
 ## Contributing
 
