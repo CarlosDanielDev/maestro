@@ -53,17 +53,30 @@ fn price_for(model: &str) -> Option<ClaudeModelPrice> {
     }
 }
 
-/// USD cost for a single `usage` snapshot. Unknown models return 0.0.
-pub fn compute_cost(model: &str, usage: &TokenUsage) -> f64 {
-    let Some(p) = price_for(model) else {
-        return 0.0;
-    };
+/// `StreamEvent::Warning.code` the parser emits when a usage frame comes
+/// from a model this table cannot price (#1155). `ManagedSession` marks the
+/// session `cost_unknown`; the TUI surfaces the warning once per session.
+pub const UNPRICED_MODEL_CODE: &str = "unpriced_model";
+
+/// Operator-facing text for [`UNPRICED_MODEL_CODE`].
+pub fn unpriced_model_warning(model: &str) -> String {
+    format!(
+        "maestro has no price for model `{model}`: cost is unknown and budget limits do not apply to it"
+    )
+}
+
+/// USD cost for a single `usage` snapshot. `None` when the model is not in
+/// the price table — the cost is unknown, not zero (#1155).
+pub fn compute_cost(model: &str, usage: &TokenUsage) -> Option<f64> {
+    let p = price_for(model)?;
     let per_mtok = 1_000_000.0;
-    (usage.input_tokens as f64 * p.input_per_mtok
-        + usage.output_tokens as f64 * p.output_per_mtok
-        + usage.cache_read_tokens as f64 * p.cache_read_per_mtok
-        + usage.cache_creation_tokens as f64 * p.cache_write_per_mtok)
-        / per_mtok
+    Some(
+        (usage.input_tokens as f64 * p.input_per_mtok
+            + usage.output_tokens as f64 * p.output_per_mtok
+            + usage.cache_read_tokens as f64 * p.cache_read_per_mtok
+            + usage.cache_creation_tokens as f64 * p.cache_write_per_mtok)
+            / per_mtok,
+    )
 }
 
 #[cfg(test)]
@@ -79,6 +92,10 @@ mod tests {
         }
     }
 
+    fn priced(model: &str, usage: &TokenUsage) -> f64 {
+        compute_cost(model, usage).expect("model must be priced")
+    }
+
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
     }
@@ -86,21 +103,21 @@ mod tests {
     #[test]
     fn opus_pricing_matches_published_rates() {
         // 1M input + 1M output → 15 + 75 = $90 for Opus 4.x.
-        let cost = compute_cost("claude-opus-4-7", &usage(1_000_000, 1_000_000, 0, 0));
+        let cost = priced("claude-opus-4-7", &usage(1_000_000, 1_000_000, 0, 0));
         assert!(approx_eq(cost, 90.0), "opus baseline cost: {cost}");
     }
 
     #[test]
     fn sonnet_pricing_matches_published_rates() {
         // 1M input + 1M output → 3 + 15 = $18 for Sonnet 4.x.
-        let cost = compute_cost("claude-sonnet-4-6", &usage(1_000_000, 1_000_000, 0, 0));
+        let cost = priced("claude-sonnet-4-6", &usage(1_000_000, 1_000_000, 0, 0));
         assert!(approx_eq(cost, 18.0), "sonnet baseline cost: {cost}");
     }
 
     #[test]
     fn haiku_pricing_matches_published_rates() {
         // 1M input + 1M output → 0.8 + 4.0 = $4.80 for Haiku 4.x.
-        let cost = compute_cost(
+        let cost = priced(
             "claude-haiku-4-5-20251001",
             &usage(1_000_000, 1_000_000, 0, 0),
         );
@@ -110,7 +127,7 @@ mod tests {
     #[test]
     fn cache_read_uses_10pct_of_input_rate_for_sonnet() {
         // 1M cache-read tokens at Sonnet rate → 0.30 = 10% of 3.00.
-        let cost = compute_cost("claude-sonnet-4-6", &usage(0, 0, 1_000_000, 0));
+        let cost = priced("claude-sonnet-4-6", &usage(0, 0, 1_000_000, 0));
         assert!(
             approx_eq(cost, 0.30),
             "sonnet cache-read should be 10% of input: {cost}"
@@ -120,7 +137,7 @@ mod tests {
     #[test]
     fn cache_read_uses_10pct_of_input_rate_for_opus() {
         // 1M cache-read tokens at Opus rate → 1.50 = 10% of 15.00.
-        let cost = compute_cost("claude-opus-4-7", &usage(0, 0, 1_000_000, 0));
+        let cost = priced("claude-opus-4-7", &usage(0, 0, 1_000_000, 0));
         assert!(
             approx_eq(cost, 1.50),
             "opus cache-read should be 10% of input: {cost}"
@@ -130,7 +147,7 @@ mod tests {
     #[test]
     fn cache_write_uses_125pct_of_input_rate_for_sonnet() {
         // 1M cache-write tokens at Sonnet rate → 3.75 = 125% of 3.00.
-        let cost = compute_cost("claude-sonnet-4-6", &usage(0, 0, 0, 1_000_000));
+        let cost = priced("claude-sonnet-4-6", &usage(0, 0, 0, 1_000_000));
         assert!(
             approx_eq(cost, 3.75),
             "sonnet cache-write should be 125% of input: {cost}"
@@ -138,14 +155,26 @@ mod tests {
     }
 
     #[test]
-    fn unknown_model_returns_zero() {
-        let cost = compute_cost("gpt-9000-imaginary", &usage(1_000_000, 1_000_000, 0, 0));
-        assert!(approx_eq(cost, 0.0));
+    fn unpriced_model_returns_none_not_zero() {
+        // #1155: a model maestro cannot price (Claude Code routed to z.ai)
+        // must surface as "unknown", never as a free $0.00.
+        assert_eq!(
+            compute_cost("glm-5.3", &usage(1_000_000, 1_000_000, 0, 0)),
+            None
+        );
+        assert_eq!(compute_cost("glm-5.3[1m]", &usage(100, 50, 0, 0)), None);
+    }
+
+    #[test]
+    fn unpriced_model_warning_names_model_and_budget() {
+        let msg = unpriced_model_warning("glm-5.3");
+        assert!(msg.contains("glm-5.3"), "must name the model: {msg}");
+        assert!(msg.contains("budget"), "must mention budget limits: {msg}");
     }
 
     #[test]
     fn zero_usage_returns_zero() {
-        let cost = compute_cost("claude-sonnet-4-6", &usage(0, 0, 0, 0));
+        let cost = priced("claude-sonnet-4-6", &usage(0, 0, 0, 0));
         assert!(approx_eq(cost, 0.0));
     }
 
@@ -159,7 +188,7 @@ mod tests {
         //   cache_read   5_000   × 0.30  / 1e6 = 0.0015
         //   cache_write  1_000   × 3.75  / 1e6 = 0.00375
         //   total                              = 0.01185
-        let cost = compute_cost(
+        let cost = priced(
             "claude-sonnet-4-6",
             &TokenUsage {
                 input_tokens: 200,

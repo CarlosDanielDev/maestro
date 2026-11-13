@@ -454,7 +454,7 @@ fn draw_single_panel(
             ),
             Span::raw("  "),
             Span::styled(
-                format!("${:.2}", session.cost_usd),
+                session.cost_display(),
                 Style::default().fg(theme.accent_warning),
             ),
         ]);
@@ -536,7 +536,7 @@ fn draw_single_panel(
         ));
         header_spans.push(Span::raw("  "));
         header_spans.push(Span::styled(
-            format!("${:.2}", session.cost_usd),
+            session.cost_display(),
             Style::default().fg(theme.accent_warning),
         ));
         f.render_widget(Paragraph::new(Line::from(header_spans)), chunks[0]);

@@ -17,18 +17,22 @@ pub fn format_cost_report(state: &MaestroState) -> String {
         return out;
     }
 
-    let mut by_provider: BTreeMap<String, (f64, u32)> = BTreeMap::new();
+    let mut by_provider: BTreeMap<String, (f64, u32, bool)> = BTreeMap::new();
     for s in &state.sessions {
         let key = s.agent_id.clone().unwrap_or_else(|| "unknown".to_string());
-        let entry = by_provider.entry(key).or_insert((0.0, 0));
+        let entry = by_provider.entry(key).or_insert((0.0, 0, false));
         entry.0 += s.cost_usd;
         entry.1 += 1;
+        entry.2 |= s.cost_unknown;
     }
 
     out.push_str("=== Per-provider breakdown ===\n");
-    for (provider, (cost, count)) in &by_provider {
+    for (provider, (cost, count, unknown)) in &by_provider {
         let session_word = if *count == 1 { "session" } else { "sessions" };
-        let free_marker = if cost.abs() < f64::EPSILON {
+        // #1155: an unpriced model is not free — its cost is unknown.
+        let free_marker = if *unknown {
+            " (cost unknown)"
+        } else if cost.abs() < f64::EPSILON {
             " (free)"
         } else {
             ""
@@ -46,9 +50,9 @@ pub fn format_cost_report(state: &MaestroState) -> String {
             None => session.id.to_string()[..8].to_string(),
         };
         out.push_str(&format!(
-            "  {} ${:.2} ({})\n",
+            "  {} {} ({})\n",
             label,
-            session.cost_usd,
+            session.cost_display(),
             session.status.label(),
         ));
     }
@@ -104,11 +108,11 @@ pub fn format_status_report(state: &MaestroState) -> String {
             (session.status.symbol(), session.status.label())
         };
         out.push_str(&format!(
-            "  {} {} {} ${:.2} {}\n",
+            "  {} {} {} {} {}\n",
             symbol,
             label,
             status_label,
-            session.cost_usd,
+            session.cost_display(),
             session.elapsed_display(),
         ));
     }
@@ -220,6 +224,35 @@ mod tests {
             "non-zero cost must NOT show (free) marker; got:\n{}",
             report
         );
+    }
+
+    // --- Issue #1155: unknown cost is not $0.00 and not (free) ---
+
+    #[test]
+    fn format_cost_report_unpriced_session_shows_unknown_not_free() {
+        let mut s = make_cost_session(Some("claude"), Some(1155), 0.0);
+        s.cost_unknown = true;
+        let mut state = MaestroState::default();
+        state.sessions = vec![s];
+        state.update_total_cost();
+        let report = format_cost_report(&state);
+        assert!(
+            !report.contains("(free)"),
+            "unpriced provider must not be marked free; got:\n{report}"
+        );
+        assert!(report.contains("(cost unknown)"), "got:\n{report}");
+        assert!(report.contains("#1155   $?"), "got:\n{report}");
+    }
+
+    #[test]
+    fn format_status_report_unpriced_session_shows_unknown_cost() {
+        let mut s = make_cost_session(Some("claude"), Some(1155), 0.0);
+        s.cost_unknown = true;
+        let mut state = MaestroState::default();
+        state.sessions = vec![s];
+        let report = format_status_report(&state);
+        assert!(report.contains("#1155 COMPLETED $?"), "got:\n{report}");
+        assert!(!report.contains("COMPLETED $0.00"), "got:\n{report}");
     }
 
     // --- Issue #1149: STALE display ---

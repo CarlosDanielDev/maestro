@@ -567,6 +567,9 @@ impl ManagedSession {
             }
             StreamEvent::Unknown { .. } => {}
             StreamEvent::Warning { code, message } => {
+                if code == crate::agent_provider::claude_pricing::UNPRICED_MODEL_CODE {
+                    self.session.cost_unknown = true;
+                }
                 self.session
                     .log_activity(format!("WARNING [{code}]: {message}"));
             }
@@ -627,6 +630,7 @@ mod tests {
             started_at: None,
             finished_at: None,
             cost_usd: 0.0,
+            cost_unknown: false,
             context_pct: 0.0,
             token_usage: crate::session::types::TokenUsage::default(),
             current_activity: String::new(),
@@ -664,6 +668,19 @@ mod tests {
             hollow_dismissed: false,
         };
         ManagedSession::new(session)
+    }
+
+    #[test]
+    fn unpriced_model_warning_marks_session_cost_unknown() {
+        // #1155: the parser flags a model maestro cannot price; the session
+        // must remember it so every cost view renders `$?`, not `$0.00`.
+        let mut ms = make_managed("p");
+        assert!(!ms.session.cost_unknown);
+        ms.handle_event(&StreamEvent::Warning {
+            code: crate::agent_provider::claude_pricing::UNPRICED_MODEL_CODE.to_string(),
+            message: crate::agent_provider::claude_pricing::unpriced_model_warning("glm-5.3"),
+        });
+        assert!(ms.session.cost_unknown);
     }
 
     // --- Issue #947: SESSION_BOUND sentinel binds the provider session id ---

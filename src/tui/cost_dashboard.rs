@@ -187,7 +187,7 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
                 Style::default().fg(theme.text_primary),
             ),
             Span::styled(
-                format!("{:>10}", format!("${:.2}", session.cost_usd)),
+                format!("{:>10}", session.cost_display()),
                 Style::default().fg(theme.accent_warning),
             ),
             Span::styled(

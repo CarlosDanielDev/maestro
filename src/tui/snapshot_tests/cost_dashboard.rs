@@ -110,3 +110,27 @@ fn cost_dashboard_multiple_sessions_sorted_by_cost() {
     );
     assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn cost_dashboard_unpriced_session_shows_unknown_cost() {
+    // #1155: a session on a model maestro cannot price renders `$?`,
+    // distinct from the priced `$0.00` row next to it.
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut s1 = make_session(SessionStatus::Completed, Some(1));
+    s1.issue_title = Some("Routed to an unpriced model".to_string());
+    s1.cost_usd = 0.0;
+    s1.cost_unknown = true;
+    let mut s2 = make_session(SessionStatus::Completed, Some(2));
+    s2.id = uuid::Uuid::from_u128(2);
+    s2.issue_title = Some("Priced but free".to_string());
+    s2.cost_usd = 0.0;
+
+    terminal
+        .draw(|f| {
+            draw_cost_dashboard(f, &[&s1, &s2], 0.0, None, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}

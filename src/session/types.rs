@@ -399,6 +399,11 @@ pub struct Session {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
     pub cost_usd: f64,
+    /// Set when a usage frame came from a model maestro cannot price
+    /// (#1155). `cost_usd` then undercounts; views render `$?` unless the
+    /// agent reported its own total. `serde(default)` for older state files.
+    #[serde(default)]
+    pub cost_unknown: bool,
     pub context_pct: f64,
     /// Accumulated token usage from Claude CLI stream-json.
     #[serde(default)]
@@ -588,6 +593,7 @@ impl Session {
             started_at: None,
             finished_at: None,
             cost_usd: 0.0,
+            cost_unknown: false,
             context_pct: 0.0,
             token_usage: TokenUsage::default(),
             current_activity: String::new(),
@@ -842,6 +848,16 @@ impl Session {
             let end = self.finished_at.unwrap_or_else(Utc::now);
             end - start
         })
+    }
+
+    /// `$1.23`, or `$?` when the model was unpriced and the agent never
+    /// reported a total (#1155) — distinct from a real `$0.00`.
+    pub fn cost_display(&self) -> String {
+        if self.cost_unknown && self.cost_usd <= 0.0 {
+            "$?".to_string()
+        } else {
+            format!("${:.2}", self.cost_usd)
+        }
     }
 
     pub fn elapsed_display(&self) -> String {
@@ -1960,6 +1976,29 @@ mod tests {
         let mut s = make_session_for_hollow();
         s.log_activity("Read: src/main.rs".into());
         assert!(s.has_tool_calls());
+    }
+
+    // --- #1155: unknown cost renders distinctly from $0.00 ---
+
+    #[test]
+    fn cost_display_shows_unknown_for_unpriced_session_with_no_reported_cost() {
+        let mut s = make_session_for_hollow();
+        s.cost_unknown = true;
+        assert_eq!(s.cost_display(), "$?");
+    }
+
+    #[test]
+    fn cost_display_uses_agent_reported_total_for_unpriced_session() {
+        let mut s = make_session_for_hollow();
+        s.cost_unknown = true;
+        s.cost_usd = 1.5;
+        assert_eq!(s.cost_display(), "$1.50");
+    }
+
+    #[test]
+    fn cost_display_shows_zero_for_priced_session() {
+        let s = make_session_for_hollow();
+        assert_eq!(s.cost_display(), "$0.00");
     }
 
     #[test]

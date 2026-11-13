@@ -20,6 +20,19 @@ impl App {
     pub fn handle_session_event(&mut self, evt: SessionEvent) {
         let session_id = evt.session_id;
 
+        // #1155: every usage frame of an unpriced model carries this
+        // warning; once the session is marked, drop repeats before any sink
+        // so the operator sees it once per session.
+        if let StreamEvent::Warning { code, .. } = &evt.event
+            && code == crate::agent_provider::claude_pricing::UNPRICED_MODEL_CODE
+            && self
+                .pool
+                .get_active_mut(session_id)
+                .is_some_and(|m| m.session.cost_unknown)
+        {
+            return;
+        }
+
         let _ = self.session_logger.log_event(session_id, &evt.event);
         self.health_monitor.record_activity(session_id);
 
