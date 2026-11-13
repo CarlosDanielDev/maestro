@@ -36,6 +36,25 @@ fn panel_view_single_running_session() {
 }
 
 #[test]
+fn panel_view_unpriced_session_shows_unknown_cost() {
+    // #1155: the session panel header renders `$?` for an unpriced model.
+    let mut terminal = test_terminal();
+    let panel = PanelView::new();
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.cost_usd = 0.0;
+    session.cost_unknown = true;
+
+    terminal
+        .draw(|f| {
+            panel.draw(f, &[&session], f.area(), &theme, 0);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
 fn panel_view_multiple_sessions() {
     let mut terminal = test_terminal();
     let panel = PanelView::new();

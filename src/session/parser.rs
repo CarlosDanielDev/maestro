@@ -147,10 +147,19 @@ pub(crate) fn usage_events(msg: &Value) -> Vec<StreamEvent> {
     let model = msg.get("model").and_then(|m| m.as_str()).unwrap_or("");
 
     if let Some(token_usage) = extract_token_usage(usage, &mut events) {
-        let cost_usd = claude_pricing::compute_cost(model, &token_usage);
+        let cost = claude_pricing::compute_cost(model, &token_usage);
         events.push(StreamEvent::TokenUpdate { usage: token_usage });
-        if cost_usd.is_finite() && cost_usd > 0.0 {
-            events.push(StreamEvent::CostUpdate { cost_usd });
+        match cost {
+            Some(cost_usd) if cost_usd.is_finite() && cost_usd > 0.0 => {
+                events.push(StreamEvent::CostUpdate { cost_usd });
+            }
+            Some(_) => {}
+            // #1155: unknown cost, not $0.00 — flag it so the session can
+            // render `$?` and the operator learns budgets do not apply.
+            None => events.push(StreamEvent::Warning {
+                code: claude_pricing::UNPRICED_MODEL_CODE.to_string(),
+                message: claude_pricing::unpriced_model_warning(model),
+            }),
         }
     }
 
@@ -1273,7 +1282,7 @@ mod tests {
 
     #[test]
     fn parse_assistant_event_unknown_model_emits_token_update_but_no_cost_update() {
-        // Unknown model → pricing returns 0.0 → no CostUpdate emitted.
+        // Unknown model → pricing returns None → no CostUpdate emitted.
         let line = r#"{"type":"assistant","message":{"model":"future-model","type":"text","text":"hi","usage":{"input_tokens":100,"output_tokens":50}}}"#;
         let events = parse_stream_line(line);
 
@@ -1287,7 +1296,42 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e, StreamEvent::CostUpdate { .. })),
-            "unknown model should not emit CostUpdate (cost would be 0.0)"
+            "unknown model should not emit CostUpdate (cost is unknown)"
+        );
+    }
+
+    #[test]
+    fn parse_assistant_event_unpriced_model_emits_unpriced_warning() {
+        // #1155: Claude Code routed to z.ai reports `glm-5.3`; maestro has
+        // no price for it, so the cost is unknown — flag it, never $0.00.
+        let line = r#"{"type":"assistant","message":{"model":"glm-5.3","type":"text","text":"hi","usage":{"input_tokens":100,"output_tokens":50}}}"#;
+        let events = parse_stream_line(line);
+
+        let warning = events.iter().find_map(|e| match e {
+            StreamEvent::Warning { code, message }
+                if code == claude_pricing::UNPRICED_MODEL_CODE =>
+            {
+                Some(message.clone())
+            }
+            _ => None,
+        });
+        let message = warning.expect("unpriced model must emit the unpriced_model warning");
+        assert!(
+            message.contains("glm-5.3"),
+            "warning must name the model: {message}"
+        );
+    }
+
+    #[test]
+    fn parse_assistant_event_priced_model_emits_no_unpriced_warning() {
+        let line = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","type":"text","text":"hi","usage":{"input_tokens":100,"output_tokens":50}}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                StreamEvent::Warning { code, .. } if code == claude_pricing::UNPRICED_MODEL_CODE
+            )),
+            "a priced model must not be flagged as unpriced"
         );
     }
 

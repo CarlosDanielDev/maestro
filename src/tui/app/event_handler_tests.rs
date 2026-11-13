@@ -154,3 +154,40 @@ fn tick_notify_error_logs_permission_denied_warning_then_drains() {
         "second tick must not push another log entry"
     );
 }
+
+#[test]
+fn unpriced_model_warning_is_logged_once_per_session() {
+    // #1155: the parser flags every usage frame of an unpriced model;
+    // the operator must see that warning once, not once per message.
+    use crate::agent_provider::claude_pricing::{UNPRICED_MODEL_CODE, unpriced_model_warning};
+    let mut app = make_test_app("unpriced-model-once");
+    let session_id = promote_session(&mut app, session_with_issue(1155));
+
+    for _ in 0..3 {
+        app.handle_session_event(SessionEvent {
+            session_id,
+            event: StreamEvent::Warning {
+                code: UNPRICED_MODEL_CODE.to_string(),
+                message: unpriced_model_warning("glm-5.3"),
+            },
+        });
+    }
+
+    let operator_lines = app
+        .activity_log
+        .entries()
+        .iter()
+        .filter(|e| e.message.contains("glm-5.3"))
+        .count();
+    assert_eq!(operator_lines, 1, "operator activity log must warn once");
+
+    let managed = app.pool.get_active_mut(session_id).expect("active session");
+    assert!(managed.session.cost_unknown);
+    let session_lines = managed
+        .session
+        .activity_log
+        .iter()
+        .filter(|e| e.message.contains("glm-5.3"))
+        .count();
+    assert_eq!(session_lines, 1, "session activity log must warn once");
+}
