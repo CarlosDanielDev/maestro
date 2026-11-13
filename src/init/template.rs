@@ -118,12 +118,13 @@ default_model = "opus"
 default_mode = "orchestrator"
 permission_mode = "default"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
-# [agents]
-# default = "claude"
-# [agents.claude]
-# kind = "claude"
-# enabled = true
-# command = "claude"
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+# model, permission_mode and allowed_tools fall back to [sessions].
 # model = "opus"
 # permission_mode = "bypassPermissions"
 # allowed_tools = []
