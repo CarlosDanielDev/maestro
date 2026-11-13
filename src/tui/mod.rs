@@ -38,6 +38,8 @@ pub mod ui;
 pub mod widgets;
 
 #[cfg(test)]
+mod confirm_exit_race_tests;
+#[cfg(test)]
 mod snapshot_tests;
 
 use crate::config::ProviderConfig;
