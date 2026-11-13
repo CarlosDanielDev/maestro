@@ -115,39 +115,87 @@ pub fn run_all_checks_with(
 
 /// Print a formatted report to stdout.
 pub fn print_report(report: &DoctorReport) {
-    println!();
-    let header = format!("  {:<16} {:<8} {}", "Check", "Status", "Details");
-    println!("{header}");
-    let separator = format!("  {}", "-".repeat(60));
-    println!("{separator}");
+    use std::io::IsTerminal;
+    let no_color = std::env::var("NO_COLOR").ok();
+    let color = use_color(no_color.as_deref(), std::io::stdout().is_terminal());
+    print!("{}", render_checks(report, color));
+    print_agent_config_upgrade_hint();
+    print!("{}", render_closing(report, color));
+}
+
+/// Color only on a terminal and when `NO_COLOR` is unset or empty
+/// (https://no-color.org).
+fn use_color(no_color: Option<&str>, is_terminal: bool) -> bool {
+    is_terminal && no_color.is_none_or(str::is_empty)
+}
+
+fn paint(text: &str, code: &str, color: bool) -> String {
+    if color {
+        format!("\x1b[{code}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
+/// Header, one row per check, and the agent summary.
+fn render_checks(report: &DoctorReport, color: bool) -> String {
+    let mut out = String::from("\n");
+    out.push_str(&format!(
+        "  {:<16} {:<8} {}\n",
+        "Check", "Status", "Details"
+    ));
+    out.push_str(&format!("  {}\n", "-".repeat(60)));
 
     for check in &report.checks {
-        let status = match (check.passed, check.severity) {
-            (true, _) => "\x1b[32mOK\x1b[0m    ",
-            (false, CheckSeverity::Required) => "\x1b[31mFAIL\x1b[0m  ",
-            (false, CheckSeverity::Optional) => "\x1b[33mWARN\x1b[0m  ",
+        let (word, code) = match (check.passed, check.severity) {
+            (true, _) => ("OK", "32"),
+            (false, CheckSeverity::Required) => ("FAIL", "31"),
+            (false, CheckSeverity::Optional) => ("WARN", "33"),
         };
-        println!("  {:<16} {} {}", check.name, status, check.message);
+        let status = paint(&format!("{word:<6}"), code, color);
+        out.push_str(&format!(
+            "  {:<16} {} {}\n",
+            sanitize(&check.name),
+            status,
+            sanitize_lines(&check.message)
+        ));
     }
 
     if let Some((configured, healthy)) = agent_health_counts(report) {
-        println!();
-        println!("  Summary: {healthy}/{configured} agents healthy ({configured} configured)");
+        out.push('\n');
+        out.push_str(&format!(
+            "  Summary: {healthy}/{configured} agents healthy ({configured} configured)\n"
+        ));
     }
+    out
+}
 
-    print_agent_config_upgrade_hint();
-
-    println!();
-    if report.has_failures() {
-        println!("  \x1b[31mSome required checks failed. Maestro may not work correctly.\x1b[0m");
+/// The closing verdict line.
+fn render_closing(report: &DoctorReport, color: bool) -> String {
+    let line = if report.has_failures() {
+        paint(
+            "Some required checks failed. Maestro may not work correctly.",
+            "31",
+            color,
+        )
     } else if report.has_warnings() {
-        println!(
-            "  \x1b[33mAll required checks passed, but some optional tools are missing.\x1b[0m"
-        );
+        let warned: Vec<String> = report
+            .failed_checks()
+            .iter()
+            .map(|check| sanitize(&check.name))
+            .collect();
+        paint(
+            &format!(
+                "All required checks passed, but some optional checks warned: {}.",
+                warned.join(", ")
+            ),
+            "33",
+            color,
+        )
     } else {
-        println!("  \x1b[32mAll checks passed! Maestro is ready to use.\x1b[0m");
-    }
-    println!();
+        paint("All checks passed! Maestro is ready to use.", "32", color)
+    };
+    format!("\n  {line}\n\n")
 }
 
 /// Strip control characters from subprocess output for safe terminal display.
@@ -155,11 +203,22 @@ fn sanitize(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
 
+/// Agent rows are `agent <id>`; the `agent config` schema row is not an agent.
+fn is_agent_row(check: &CheckResult) -> bool {
+    check.name.starts_with("agent ") && check.name != "agent config"
+}
+
+/// `sanitize` per line, keeping the line breaks of multi-line messages
+/// (e.g. the TOML error snippet, which echoes untrusted config bytes).
+fn sanitize_lines(s: &str) -> String {
+    s.lines().map(sanitize).collect::<Vec<_>>().join("\n")
+}
+
 fn agent_health_counts(report: &DoctorReport) -> Option<(usize, usize)> {
     let configured = report
         .checks
         .iter()
-        .filter(|check| check.name.starts_with("agent "))
+        .filter(|check| is_agent_row(check))
         .count();
     if configured == 0 {
         return None;
@@ -167,7 +226,7 @@ fn agent_health_counts(report: &DoctorReport) -> Option<(usize, usize)> {
     let healthy = report
         .checks
         .iter()
-        .filter(|check| check.name.starts_with("agent ") && check.passed)
+        .filter(|check| is_agent_row(check) && check.passed)
         .count();
     Some((configured, healthy))
 }
@@ -537,14 +596,7 @@ fn check_provider_matches_remote(configured: ProviderKind) -> CheckResult {
 
 fn check_config_exists() -> CheckResult {
     if std::path::Path::new("maestro.toml").exists() {
-        match Config::find_and_load() {
-            Ok(_) => CheckResult::pass("maestro.toml", "found and valid", CheckSeverity::Required),
-            Err(e) => CheckResult::fail(
-                "maestro.toml",
-                format!("found but invalid — {}", e),
-                CheckSeverity::Required,
-            ),
-        }
+        build_config_result(Config::find_and_load().map(|_| ()))
     } else {
         CheckResult::fail(
             "maestro.toml",
@@ -554,8 +606,24 @@ fn check_config_exists() -> CheckResult {
     }
 }
 
+/// Build the `maestro.toml` row from a load attempt.
+fn build_config_result(loaded: anyhow::Result<()>) -> CheckResult {
+    match loaded {
+        Ok(()) => CheckResult::pass("maestro.toml", "found and valid", CheckSeverity::Required),
+        Err(e) => CheckResult::fail(
+            "maestro.toml",
+            format!("found but invalid — {e:#}"),
+            CheckSeverity::Required,
+        ),
+    }
+}
+
 fn check_agent_config_schema() -> CheckResult {
-    let Some(path) = find_config_path(Path::new(".")) else {
+    check_agent_config_schema_in(Path::new("."))
+}
+
+pub(crate) fn check_agent_config_schema_in(base: &Path) -> CheckResult {
+    let Some(path) = find_config_path(base) else {
         return CheckResult::fail(
             "agent config",
             "no config file found; run `maestro init` first",
@@ -1291,10 +1359,111 @@ mod tests {
                 CheckResult::pass("git", "ok", CheckSeverity::Required),
                 CheckResult::pass("agent claude", "ready", CheckSeverity::Required),
                 CheckResult::fail("agent qwen", "not installed", CheckSeverity::Optional),
+                CheckResult::fail("agent config", "legacy schema", CheckSeverity::Optional),
             ],
         };
 
         assert_eq!(agent_health_counts(&report), Some((2, 1)));
+    }
+
+    fn warn_only_report() -> DoctorReport {
+        DoctorReport {
+            checks: vec![
+                CheckResult::pass("git", "ok", CheckSeverity::Required),
+                CheckResult::pass("agent claude", "ready", CheckSeverity::Required),
+                CheckResult::fail("agent config", "legacy schema", CheckSeverity::Optional),
+            ],
+        }
+    }
+
+    #[test]
+    fn render_report_without_color_has_no_escape_codes() {
+        let failing = DoctorReport {
+            checks: vec![CheckResult::fail("git", "missing", CheckSeverity::Required)],
+        };
+        for report in [warn_only_report(), failing] {
+            let out = format!(
+                "{}{}",
+                render_checks(&report, false),
+                render_closing(&report, false)
+            );
+            assert!(!out.contains("\x1b["), "{out:?}");
+        }
+    }
+
+    #[test]
+    fn render_report_with_color_keeps_escape_codes() {
+        let report = warn_only_report();
+        assert!(render_checks(&report, true).contains("\x1b[32mOK"));
+        assert!(render_closing(&report, true).contains("\x1b[33m"));
+    }
+
+    #[test]
+    fn use_color_respects_no_color_and_terminal() {
+        assert!(use_color(None, true));
+        assert!(use_color(Some(""), true));
+        assert!(!use_color(Some("1"), true));
+        assert!(!use_color(None, false));
+    }
+
+    #[test]
+    fn closing_line_names_the_warned_checks() {
+        let out = render_closing(&warn_only_report(), false);
+        assert!(out.contains("some optional checks warned"), "{out}");
+        assert!(out.contains("agent config"), "{out}");
+        assert!(!out.contains("optional tools are missing"), "{out}");
+    }
+
+    #[test]
+    fn config_error_with_escape_bytes_renders_without_esc() {
+        // An untrusted repo's maestro.toml is echoed in the TOML error
+        // snippet; its control bytes must not reach the terminal.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("maestro.toml");
+        std::fs::write(&path, "[project]\nrepo = \"a/b\"\n[sessions\x1b[31m\n").unwrap();
+        let result = build_config_result(crate::config::Config::load(&path).map(|_| ()));
+        assert!(result.message.contains('\x1b'), "precondition: {result:?}");
+
+        let report = DoctorReport {
+            checks: vec![result],
+        };
+        let out = render_checks(&report, false);
+        assert!(!out.contains('\x1b'), "{out:?}");
+        assert!(out.contains("line 3, column"), "{out}");
+    }
+
+    #[test]
+    fn check_names_with_escape_bytes_render_without_esc() {
+        let report = DoctorReport {
+            checks: vec![CheckResult::fail(
+                "agent x\x1b]0;pwned\x07",
+                "down",
+                CheckSeverity::Optional,
+            )],
+        };
+        let out = format!(
+            "{}{}",
+            render_checks(&report, false),
+            render_closing(&report, false)
+        );
+        assert!(!out.contains('\x1b') && !out.contains('\x07'), "{out:?}");
+    }
+
+    #[test]
+    fn invalid_config_row_shows_full_error_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("maestro.toml");
+        std::fs::write(&path, "[project]\nrepo = \"a/b\"\n[sessions\n").unwrap();
+
+        let result = build_config_result(crate::config::Config::load(&path).map(|_| ()));
+
+        assert!(!result.passed);
+        assert!(result.message.contains("parsing"), "{}", result.message);
+        assert!(
+            result.message.contains("line 3, column"),
+            "{}",
+            result.message
+        );
     }
 
     #[test]

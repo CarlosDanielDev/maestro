@@ -152,6 +152,25 @@ fn cmd_init_non_interactive_writes_github_provider_default() {
 }
 
 #[test]
+fn cmd_init_non_interactive_output_passes_doctor_agent_config_check() {
+    // #1159: a fresh config must not be flagged as a legacy schema, and the
+    // explicit claude agent must keep inheriting the safe [sessions] mode.
+    let dir = tempdir().unwrap();
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code =
+        cmd_init_inner_with_options(false, dir.path(), &detector, InitOptions::non_interactive())
+            .expect("non-interactive init ok");
+    assert_eq!(code, 0);
+
+    let check = crate::doctor::check_agent_config_schema_in(dir.path());
+    assert!(check.passed, "{}", check.message);
+
+    let loaded = crate::config::Config::load(&dir.path().join("maestro.toml")).unwrap();
+    let claude = loaded.resolve_agent(None).unwrap();
+    assert_eq!(claude.config.permission_mode.as_deref(), Some("default"));
+}
+
+#[test]
 fn cmd_init_detects_azdo_remote_and_reprompts_invalid_organization() {
     let dir = tempdir().unwrap();
     let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
