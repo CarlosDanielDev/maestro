@@ -194,7 +194,7 @@ Defaults that `maestro init` writes for a new project:
 
 - `permission_mode = "default"` — agents ask for permission. Bypass is opt-in: the Settings toggle, `--bypass-review`, or `permission_mode = "bypassPermissions"`.
 - `[agents]` with `default = "claude"` and an `[agents.claude]` table (`kind`, `enabled = true`, `command`), so `maestro doctor` passes. Model, permission mode and allowed tools still come from `[sessions]`.
-- `[turboquant] enabled = true`. To turn it off, set `enabled = false` under `[turboquant]`, use the TurboQuant toggle in Settings, or press `Ctrl+q`. Existing projects with no `[turboquant]` section keep it off.
+- `[turboquant] enabled = true`. To turn it off, set `enabled = false` under `[turboquant]`, use the TurboQuant toggle in Settings, or press `Ctrl+q`. Existing projects with no `[turboquant]` section keep it off, unless you run `maestro init --reset`, which adds the section (on); an explicit `enabled = false` is kept.
 - Runtime files (`.maestro/logs/`, `.maestro/worktrees/`, `maestro-state.json`, `maestro.log`, …) are added to `.gitignore` inside a `# --- maestro ---` block. Your own rules are not touched.
 
 `[quota]` is off by default. When it is off, maestro reads no credential and sends no quota request. See [`[quota]`](docs/configuration.md#quota).
