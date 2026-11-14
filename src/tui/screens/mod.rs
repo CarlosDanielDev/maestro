@@ -1,3 +1,6 @@
+//! Design system: read `docs/tui-design-system.md` before changing TUI code.
+//! Reuse what it lists; add new tokens/widgets/helpers to it (CI checks it: `tests/tui_design_system.rs`).
+
 pub mod adapt;
 pub mod adapt_follow_up;
 pub mod adopt_picker;

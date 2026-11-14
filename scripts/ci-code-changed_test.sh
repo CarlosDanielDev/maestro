@@ -42,6 +42,7 @@ check "code first, docs in a later push" true src/lib.rs README.md
 check "workflow only" true .github/workflows/ci.yml
 check "CHANGELOG (embedded)" true CHANGELOG.md
 check "generated config doc" true docs/configuration.md
+check "tui design-system doc (read by a Rust test)" true docs/tui-design-system.md
 check "templates md" true .maestro/templates/commands/x.md
 check "claude md" true .claude/CLAUDE.md
 check "test fixture md" true tests/fixtures/x.md

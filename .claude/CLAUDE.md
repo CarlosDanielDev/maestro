@@ -18,7 +18,7 @@ Carlos. Software developer. Background in mobile/hybrid. Strong in TDD and clean
 - Package manager: cargo
 - Database: none — TOML state files via `toml_edit`
 - Testing: `cargo test` + `insta` (snapshots)
-- Styling: ratatui theme system (`src/tui/theme.rs`)
+- Styling: ratatui theme system (`src/tui/theme.rs`). Before any `src/tui/` change, read `docs/tui-design-system.md` and reuse the widgets, tokens, and helpers it lists; add anything new to it in the same PR
 
 If something looks like the wrong tool, flag it before using anything else.
 
@@ -463,6 +463,7 @@ Skills are reusable knowledge bases that subagents consult for best practices an
 | `security-patterns` | 1.0.0 | OWASP Top 10, security best practices | `subagent-security-analyst` |
 | `provider-resilience` | 1.0.0 | Defensive `gh`/`az` CLI patterns, error handling, idempotency | `subagent-architect`, `subagent-qa` |
 | `caveman` | 1.0.0 | Compressed orchestrator prose (opt-in) | Orchestrator (instruction) |
+| `tui-design-system` | 1.0.0 | TUI reuse guide: theme tokens, widgets, screen wiring, global keys | Orchestrator, `subagent-architect`, `subagent-qa` |
 
 ### Caveman Mode
 

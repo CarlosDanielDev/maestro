@@ -24,7 +24,7 @@ Carlos. Software developer. Background in mobile/hybrid. Strong in TDD and clean
 - Package manager: cargo
 - Database: none — TOML state files via `toml_edit`
 - Testing: `cargo test` + `insta` (snapshots)
-- Styling: ratatui theme system (`src/tui/theme.rs`)
+- Styling: ratatui theme system (`src/tui/theme.rs`). Before any `src/tui/` change, read `docs/tui-design-system.md` and reuse the widgets, tokens, and helpers it lists; add anything new to it in the same PR
 
 If something looks like the wrong tool, flag it before using anything else.
 
