@@ -121,7 +121,7 @@ async fn activity_log_lists_prs_sharing_files() {
     });
     let mut terminal = Terminal::new(TestBackend::new(80, 4)).expect("terminal");
     terminal
-        .draw(|f| log.draw(f, f.area(), &Theme::dark(), false))
+        .draw(|f| log.draw_in_zone(f, f.area(), &Theme::dark(), false, &chrono::Utc))
         .expect("draw");
     assert_snapshot!(terminal.backend());
 }
