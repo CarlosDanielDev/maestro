@@ -87,7 +87,7 @@ If any check fails, STOP and report the issue.
 | Snapshot group | Count | Why it drifts |
 |---|---|---|
 | `tui::snapshot_tests::dashboard::home_screen_*` | 4 | "What's New" widget reads top CHANGELOG entry at runtime |
-| `tui::snapshot_tests::landing::landing_welcome_*` | 8 | Welcome screen renders the version string (#582); the Release Console (Small tier from 80x26 up, Medium, Full; below 80x26 the landing shows the menu only) reads the top CHANGELOG entry at runtime (#1218, #1224) |
+| `tui::snapshot_tests::landing::landing_welcome_*` | 8 | Welcome screen renders the version string (#582); the Release Console (Small tier from 80x20 of landing area, so a full 80x27 terminal shows it, plus Medium and Full; at 80+ cols and 20..25 landing rows the big logo becomes a one-line `MAESTRO vX.Y.Z` compact header, #1226; below 80x20 the landing shows the menu only) reads the top CHANGELOG entry at runtime (#1218, #1224) |
 | `tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_*` | 2 | Agent-graph dispatcher view renders the version string |
 | `tui::snapshot_tests::home_small_terminal::home_screen_60x15_keeps_labels_and_a_log_row` | 1 | Header renders the version string (#1197) |
 | `tui::snapshot_tests::init_turboquant_header::header_shows_tq_on_for_freshly_initialised_project` | 1 | Header renders the version string (#1205) |
