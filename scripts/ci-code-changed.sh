@@ -7,7 +7,7 @@ set -uo pipefail
 is_docs_only() {
   case "$1" in
     # Markdown the binary embeds, the drift gates check, or a test reads.
-    CHANGELOG.md | docs/configuration.md | AGENTS.md | GEMINI.md) return 1 ;;
+    CHANGELOG.md | docs/configuration.md | docs/tui-design-system.md | AGENTS.md | GEMINI.md) return 1 ;;
     .maestro/* | .claude/* | .codex/* | template/* | tests/*) return 1 ;;
     # docs/assets: media only. Scripts there (capture.sh) are tested.
     docs/assets/*.gif | docs/assets/*.png | docs/assets/*.svg | docs/assets/*.webm) return 0 ;;

@@ -98,8 +98,7 @@ fn design_system_doc_names_exist_in_code() {
         .filter_map(|p| fs::read_to_string(p).ok())
         .collect::<Vec<_>>()
         .join("\n");
-    let mut known_paths: Vec<String> = files.iter().map(|p| rel(p)).collect();
-    known_paths.extend(["CHANGELOG.md".into(), "docs/RUST-GUARDRAILS.md".into()]);
+    let known_paths: Vec<String> = files.iter().map(|p| rel(p)).collect();
 
     let mut missing = Vec::new();
     for span in inline_code_spans(&doc) {
