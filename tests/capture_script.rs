@@ -2,7 +2,9 @@
 //!
 //! `docs/assets/capture.sh` must stay re-runnable: it names its tooling,
 //! carries install instructions, and writes the capture under `docs/assets/`
-//! for the `gh-pages` hero embed. These assertions pin that contract so a
+//! for the `gh-pages` hero embed, from a scripted agent on a throwaway HOME
+//! (the real ~/.claude must never reach a public capture). These assertions
+//! pin that contract so a
 //! drive-by edit cannot silently drop the reproducibility story.
 
 use std::fs;
@@ -42,8 +44,30 @@ fn capture_script_is_headless_and_writes_under_docs_assets() {
         script.contains("docs/assets/"),
         "capture output must land under docs/assets/ so it can be committed to gh-pages"
     );
+}
+
+#[test]
+fn capture_script_runs_a_scripted_agent_for_deterministic_sessions() {
+    let script = capture_script();
     assert!(
-        script.contains("maestro-state.json"),
-        "script must seed maestro-state.json so the dashboard shows sessions deterministically"
+        script.contains("docs/assets/demo-agent.sh"),
+        "sessions must come from the scripted demo agent so every capture shows the same run"
+    );
+    assert!(
+        Path::new("docs/assets/demo-agent.sh").exists(),
+        "the scripted demo agent must live next to the capture script"
+    );
+}
+
+#[test]
+fn capture_script_never_shows_the_real_home() {
+    let script = capture_script();
+    assert!(
+        script.contains("HOME=\"$fake_home\""),
+        "Fleet Board and Adopt Session read $HOME/.claude; the capture must run on a throwaway HOME"
+    );
+    assert!(
+        script.contains("auto_pr = false") && script.contains("no-push://disabled"),
+        "the capture must not be able to open PRs or push"
     );
 }
