@@ -1,3 +1,6 @@
+//! Design system: read `docs/tui-design-system.md` before changing TUI code.
+//! Reuse what it lists; add new tokens/widgets/helpers to it (CI checks it: `tests/tui_design_system.rs`).
+
 mod braille_spinner;
 pub mod bypass_indicator;
 mod ci_monitor;
