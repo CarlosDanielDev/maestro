@@ -791,8 +791,7 @@ maestro/
 │   ├── assets/                            # README and site media: demo recording and its capture scripts
 │   │   ├── capture.sh                     # vhs recording of the real TUI (three agents fixing real bugs) with a throwaway HOME; writes demo.webm (gh-pages) and demo.gif (README)
 │   │   ├── demo-agent.sh                  # Scripted stand-in for `claude` used by capture.sh; emits stream-json, edits nothing
-│   │   ├── demo.gif                       # README hero recording
-│   │   └── readme-hero.svg                # Legacy hero image; no longer referenced by README
+│   │   └── demo.gif                       # README hero recording
 │   ├── ci-smoke-check.md                  # CI smoke-check test harness guide
 │   ├── configuration.md                   # Authoritative maestro.toml reference — every [table] with field types, defaults, and source pointers; CLI flag → config map; 10 AUTOGEN marker blocks auto-populated from schema by the docs_render system; integrity checked by src/config/tests/configuration_doc.rs and the CI docs-gen job  [Issue #674, #717]
 │   ├── FOLLOW-UPS.md                      # Pending hardening and security follow-up items (non-blocking, filed as issues before next release)
