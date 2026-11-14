@@ -71,18 +71,6 @@ fn has_panel(text: &str, title: &str) -> bool {
     text.contains(&format!("┌{title}"))
 }
 
-/// Every highlight of the current version shows as `  [<Category>] `.
-/// Derived from `whats_new_highlights()`: never hard-code a category, the
-/// next patch release may have no `[Added]` items.
-fn assert_all_highlight_prefixes_present(text: &str) {
-    let items = whats_new_highlights();
-    assert!(!items.is_empty(), "current version must have highlights");
-    for (cat, _) in &items {
-        let prefix = format!("  [{}] ", cat.label());
-        assert!(text.contains(&prefix), "missing {prefix:?}:\n{text}");
-    }
-}
-
 /// Row right under a panel's top border, from the panel's left corner on.
 /// Returns (char column of the corner, rest of that row).
 fn row_below_panel(text: &str, title: &str) -> (usize, String) {
