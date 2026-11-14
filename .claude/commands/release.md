@@ -97,15 +97,12 @@ Skipping this step guarantees CI failure on the release PR.
 1. Run `cargo test --bin maestro` — record the output.
 2. **If all tests pass**: proceed to Step 5.
 3. **If tests fail AND every failure belongs to one of the five known-drift groups above**:
-   a. Run (use the absolute path `~/.cargo/bin/cargo-insta` if `cargo insta` isn't on PATH):
+   a. Accept each failing snapshot by its exact test name, one at a time. Do **not** use `cargo-insta test --accept -- <filter>` or `cargo insta accept`: they accept **every** pending `.snap.new` in the tree, not only the filtered group, so a real regression would be accepted with the drift.
       ```bash
-      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::dashboard
-      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::landing
-      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::agent_graph_dispatcher
-      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::home_small_terminal
-      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::init_turboquant_header
+      # one line per failing test from step 1, e.g.:
+      INSTA_UPDATE=always cargo test --bin maestro -- --exact tui::snapshot_tests::landing::landing_welcome_80x24_ascii
       ```
-      (Skip any group that had no failures — `cargo insta` is a no-op when nothing needs review.)
+      Then check `git diff` on each accepted `.snap`: only the version string and the "What's New" / Release Console text may change. Delete any `*.snap.new` left over from step 1 (`find src -name '*.snap.new'`).
    b. Re-run `cargo test --bin maestro` and confirm it now passes.
    c. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
 4. **If any other tests fail** (anything outside the five groups listed above): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.
@@ -218,5 +215,5 @@ Changelog:
 - Always show the user the changelog before committing
 - Ask for confirmation before pushing the tag
 - ALWAYS run the Step 4b post-bump test gate — this is how we catch the four `dashboard::home_screen_*` insta snapshot failures that happen every release because the "What's New" widget reads CHANGELOG.md at runtime
-- NEVER blanket `cargo insta accept` — only accept the specific `home_screen_*` dashboard snapshots; any other snapshot drift is a real regression
+- NEVER blanket-accept snapshots (`cargo insta accept`, `cargo-insta test --accept`) — accept only the Step 4b known-drift snapshots, one exact test name at a time; any other snapshot drift is a real regression
 - If branch-protection blocks `git push origin main`, do NOT delete or re-push the tag; fall back to a `release/v<version>` PR (see Step 6 fallback)
