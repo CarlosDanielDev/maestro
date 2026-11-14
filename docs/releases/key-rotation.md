@@ -46,8 +46,11 @@ Then:
 
 1. Copy the secret key file contents (the whole `untrusted comment:` block)
    into the GitHub secret `RELEASE_SIGNING_KEY`.
-2. Copy the public key file contents into the GitHub secret
-   `RELEASE_SIGNING_PUBLIC_KEY` (used by the workflow's self-check step).
+2. Copy **only the base64 line** of `maestro-release.pub` (the last line,
+   starting with `RW`) into the GitHub secret `RELEASE_SIGNING_PUBLIC_KEY`
+   (used by the workflow's self-check step). Do not paste the
+   `untrusted comment:` line: the workflow runs `rsign verify -P`, which
+   fails with `base64 conversion failed` on the full file.
 3. Copy the base64 line from `maestro-release.pub` into
    `TRUSTED_RELEASE_PUBLIC_KEYS` in `src/updater/mod.rs` and cut a release.
    From that release on, the updater accepts installs.
