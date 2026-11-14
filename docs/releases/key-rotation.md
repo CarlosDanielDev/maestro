@@ -19,7 +19,7 @@ installing an update (issue #1046, CWE-494).
   signature from an untrusted key, tampered sums, or no trusted keys
   configured → `UpdateError::SignatureInvalid`, no binary replace. An empty
   `TRUSTED_RELEASE_PUBLIC_KEYS` list therefore disables installs entirely
-  until a key is provisioned (this is the state this PR ships in).
+  until a key is provisioned (the first key shipped in v0.31.6).
 - Install-time rollback protection: the version recorded in the
   signature-verified sums file must be strictly newer than the running
   binary, or the install is refused (`UpdateError::DowngradeRejected`).

@@ -3,7 +3,7 @@ source: src/tui/snapshot_tests/home_small_terminal.rs
 expression: t.backend()
 ---
 "╔══════════════════════════════════════════════════════════╗"
-"║ MAESTRO v0.31.5  ══ Dashboard ══ 󰙍 0 agents (0 active) ══║"
+"║ MAESTRO v0.31.6  ══ Dashboard ══ 󰙍 0 agents (0 active) ══║"
 "╚══════════════════════════════════════════════════════════╝"
 "╔[ Quick Actions ╗╔══[ Suggestions ]══╗╔[ Recent Activity ]╗"
 "║  [i]  Browse I…║║  󰝦 3 issues labele║║   #2 Start the wo║"

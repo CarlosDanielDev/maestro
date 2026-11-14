@@ -23,9 +23,10 @@ const TRUSTED_DOWNLOAD_HOSTS: &[&str] = &["github.com", "objects.githubuserconte
 /// it; keep the previous key listed while a rotation is in flight. Rotation
 /// procedure: `docs/releases/key-rotation.md`.
 ///
-/// Empty until the maintainer provisions the first release key — the updater
-/// then fails closed and refuses every install (`SignatureInvalid`).
-pub const TRUSTED_RELEASE_PUBLIC_KEYS: &[&str] = &[];
+/// Holds the first release key, shipped in v0.31.6. Add or retire keys only
+/// per the rotation procedure in `docs/releases/key-rotation.md`.
+pub const TRUSTED_RELEASE_PUBLIC_KEYS: &[&str] =
+    &["RWQTKv8OS9KEYD/DxvXp6xgRf2auA2EQSkr+UTz6sHtLawItGYxjKaFj"];
 
 /// Maximum binary download size (200 MB).
 pub const MAX_DOWNLOAD_SIZE: u64 = 200 * 1024 * 1024;
