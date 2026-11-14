@@ -1,11 +1,10 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
-assertion_line: 64
 expression: terminal.backend()
 ---
 "                                                                                "
 "                                                                                "
-"                                 MAESTRO  v0.31.7                               "
+"                                 MAESTRO  v0.31.8                               "
 "                                                                                "
 "                 [d]  Dashboard           [h]  Milestone Review                 "
 "                 [i]  Create Issue        [t]  Teams                            "
@@ -14,13 +13,13 @@ expression: terminal.backend()
 "                 [p]  PRD                 [q]  Quit                             "
 "                 [r]  Roadmap                                                   "
 "                                                                                "
-"  ╔═══════════════════════[ Release Console v0.31.7 ]════════════════════════╗  "
-"  ║ changes 2   refs 1   categories 2   date 2026-11-14                      ║  "
+"  ╔═══════════════════════[ Release Console v0.31.8 ]════════════════════════╗  "
+"  ║ changes 2   refs 2   categories 1   date 2026-11-14                      ║  "
 "  ║┌Mix────────────────────────────┐┌Ref Trend──────────────────────────────┐║  "
-"  ║│Add 0  Fix 1  Chg 1  Perf 0  D…││   ▁▃▂ ▃  ▃▂▆█▃▁                       │║  "
+"  ║│Add 0  Fix 2  Chg 0  Perf 0  D…││  ▁▃▂ ▃  ▃▂▆█▃▁                        │║  "
 "  ║└───────────────────────────────┘└───────────────────────────────────────┘║  "
 "  ║┌Highlights──────────────────────────────────────────────────────────────┐║  "
-"  ║│  [Fixed] **One landing at every size.** The welcome screen always shows│║  "
+"  ║│  [Fixed] **The Release Console fits common terminals.** On a terminal s│║  "
 "  ║└────────────────────────────────────────────────────────────────────────┘║  "
 "  ╚════════════════════ Press [n] for full release notes ════════════════════╝  "
 "                                                                                "

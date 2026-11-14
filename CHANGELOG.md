@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.8] - 2026-11-14
+
+### Fixed
+- **The Release Console fits common terminals.** On a terminal shorter than 40 rows the landing's activity log shrinks to one line, and at 80+ columns with little height the 6-row logo becomes a one-line `MAESTRO vX.Y.Z` header. A full 80x27 terminal now shows the Release Console; terminals of 40+ rows keep the full log. (#1226)
+- **Small terminals keep the console look.** The smallest Release Console tier now shows thin-bordered Mix, Ref Trend and Highlights panels instead of a loose bullet list. (#1224)
+
 ## [0.31.7] - 2026-11-14
 
 ### Fixed
