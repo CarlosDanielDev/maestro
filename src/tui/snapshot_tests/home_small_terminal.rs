@@ -54,13 +54,25 @@ fn small_home_app() -> crate::tui::app::App {
     app.tui_mode = TuiMode::Dashboard;
 
     app.activity_log.push(LogEntry {
-        timestamp: fixed_start(),
+        timestamp: local_ten_am(),
         session_label: "S-1".to_string(),
         message: LOG_MESSAGE.to_string(),
         level: LogLevel::Info,
         tool_meta: None,
     });
     app
+}
+
+/// `ui::draw` renders the activity log in the machine's zone and has no
+/// zone seam, so anchor the entry at 10:00:00 local time on
+/// [`fixed_start`]'s date: the snapshot reads the same under any `TZ`.
+fn local_ten_am() -> chrono::DateTime<chrono::Utc> {
+    use chrono::TimeZone;
+    chrono::Local
+        .from_local_datetime(&fixed_start().date_naive().and_hms_opt(10, 0, 0).unwrap())
+        .earliest()
+        .unwrap()
+        .with_timezone(&chrono::Utc)
 }
 
 #[test]
