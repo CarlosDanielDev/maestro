@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
-assertion_line: 70
 expression: terminal.backend()
 ---
 "          ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗          "
@@ -9,7 +8,7 @@ expression: terminal.backend()
 "         ██║╚██╔╝██║██╔══██║██╔══╝  ╚════██║   ██║   ██╔══██╗██║   ██║          "
 "         ██║ ╚═╝ ██║██║  ██║███████╗███████║   ██║   ██║  ██║╚██████╔╝          "
 "          ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝          "
-"                                    v0.31.6                                     "
+"                                    v0.31.7                                     "
 "                                                                                "
 "                 [d]  Dashboard           [h]  Milestone Review                 "
 "                 [i]  Create Issue        [t]  Teams                            "
@@ -18,12 +17,12 @@ expression: terminal.backend()
 "                 [p]  PRD                 [q]  Quit                             "
 "                 [r]  Roadmap                                                   "
 "                                                                                "
-"  ╔═══════════════════════[ Release Console v0.31.6 ]════════════════════════╗  "
-"  ║ changes 45   refs 0   categories 4   date 2026-11-14                     ║  "
-"  ║  [Added] **Workspace trust gate** — maestro no longer executes commands …║  "
-"  ║  [Added] **Fleet board** (landing key `f`) — one screen lists maestro po…║  "
-"  ║  [Added] **Adopt external Claude Code sessions.** The new **Adopt Sessio…║  "
-"  ║  [Added] **Quota-aware routing (off by default).** With `[quota] enabled…║  "
+"  ╔═══════════════════════[ Release Console v0.31.7 ]════════════════════════╗  "
+"  ║ changes 2   refs 1   categories 2   date 2026-11-14                      ║  "
+"  ║  [Fixed] **One landing at every size.** The welcome screen always shows …║  "
+"  ║  [Changed] **CI skips the heavy Rust jobs on docs-only pull requests.** …║  "
+"  ║                                                                          ║  "
+"  ║                                                                          ║  "
 "  ╚════════════════════ Press [n] for full release notes ════════════════════╝  "
 "                                                                                "
 "  <q> quit  <n> notes                                                           "
