@@ -24,7 +24,10 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 - Multi-session pool — run up to N concurrent agent sessions with automatic queue promotion
 - Interaction sessions — chat with the agent working your issue in a live transcript, with PR auto-detection ([guide](docs/guides/interaction-sessions.md))
 - Git worktree isolation per session prevents file conflicts
-- File claim registry blocks two sessions from editing the same file simultaneously
+- File claim registry blocks two sessions from editing the same file simultaneously — claims use the repo-relative path, so this also works across worktrees
+- Same-file warnings across PRs — when a PR opens, maestro compares its changed files with earlier PRs from the same run and logs one warning per overlap
+- Adopt Session — turn an outside Claude Code conversation into a maestro Interactive session; it runs in the conversation's own directory and resumes the thread with `claude --resume`
+- `maestro clean --stale` — a session whose maestro process died shows as `STALE` in `maestro status`; `clean --stale` removes its worktree (works with `--dry-run`)
 - Full session state machine (QUEUED → SPAWNING → RUNNING → GATES_RUNNING → COMPLETED / NEEDS_REVIEW / ERRORED / PAUSED / KILLED)
 - State and costs persisted to `maestro-state.json` for recovery and reporting
 
@@ -32,6 +35,8 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 ### TUI dashboard
 - Interactive landing screen with quick-actions menu, contextual work suggestions, and recent activity
+- Fleet board (landing key `f`) — one screen lists maestro sessions and every Claude Code conversation on the machine; sort by last-active or stale-first, filter by repo or title
+- Adopt Session picker (landing key `a`) — pick an external Claude Code conversation to adopt; a conversation active in the last 10 minutes shows a LIVE badge and asks first
 - DOS-style F-key status bar (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Ctrl+X Exit)
 - Rich activity log — file paths, command previews, tool durations, extended-thinking markers
 - Status-transition flash on session state changes
@@ -62,9 +67,10 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 → [Wiki › Doctor and Preflight](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Doctor-and-Preflight) · [Completion Gates](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Completion-Gates) · [Context Overflow and Forking](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Context-Overflow-and-Forking) · [Milestone Mode and Continuous](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Milestone-Mode-and-Continuous)
 
 ### Power features
-- TurboQuant context compression (PolarQuant + QJL residual) with a runtime toggle via `Ctrl+q`
-- Cost and token dashboards with per-session and total spend tracking
-- Self-upgrade with automatic backup and restart confirmation
+- TurboQuant context compression (PolarQuant + QJL residual) with a runtime toggle via `Ctrl+q` — on by default for new projects
+- Cost and token dashboards with per-session and total spend tracking; a model with no known price shows `$?` instead of `$0.00`
+- Quota-aware routing (off by default) — with `[quota] enabled = true`, a new session with no explicit provider goes to the provider with the most headroom, and you get one alert when a usage window reaches 97%
+- Self-upgrade with automatic backup and restart confirmation; from v0.31.6 the updater checks a signed checksum file before it installs
 - Shell completions (bash / zsh / fish) and a man page in every release
 - Desktop and Slack notifications
 
@@ -116,7 +122,7 @@ Download the tarball for your platform from the [latest GitHub Release](https://
 | macOS (Intel) | `maestro-<version>-x86_64-apple-darwin.tar.gz` |
 | Linux (x86_64) | `maestro-<version>-x86_64-unknown-linux-gnu.tar.gz` |
 
-A `sha256sums.txt` file is included for checksum verification.
+A `sha256sums.txt` file is included for checksum verification, with its minisign signature in `sha256sums.txt.minisig`.
 
 ### From source
 
@@ -129,7 +135,7 @@ cargo build --release
 
 ### Updating
 
-Maestro checks for new versions on startup and shows an in-TUI banner — press `[u]` to upgrade with automatic backup and restart confirmation. You can also run `brew upgrade carlosdanieldev/tap/maestro --formula` (Homebrew) or `git pull && cargo build --release` (source).
+Maestro checks for new versions on startup and shows an in-TUI banner — press `[u]` to upgrade with automatic backup and restart confirmation. From v0.31.6 on, the in-app updater first checks the minisign signature of the release's `sha256sums.txt` (`sha256sums.txt.minisig`), then the binary's checksum. If the signature is missing or invalid, it does not install. You can also run `brew upgrade carlosdanieldev/tap/maestro --formula` (Homebrew) or `git pull && cargo build --release` (source).
 
 → [Wiki › Self-Upgrade](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Self-Upgrade)
 
@@ -165,6 +171,7 @@ base_branch = "main"
 max_concurrent = 3            # parallel agent sessions
 default_model  = "opus"       # opus | sonnet | haiku
 default_mode   = "orchestrator"
+permission_mode = "default"   # agents ask before risky actions
 
 [budget]
 per_session_usd     = 5.0
@@ -182,6 +189,15 @@ auto_merge = false
 merge_method = "squash"
 cache_ttl_secs = 300
 ```
+
+Defaults that `maestro init` writes for a new project:
+
+- `permission_mode = "default"` — agents ask for permission. Bypass is opt-in: the Settings toggle, `--bypass-review`, or `permission_mode = "bypassPermissions"`.
+- `[agents]` with `default = "claude"` and an `[agents.claude]` table (`kind`, `enabled = true`, `command`), so `maestro doctor` passes. Model, permission mode and allowed tools still come from `[sessions]`.
+- `[turboquant] enabled = true`. To turn it off, set `enabled = false` under `[turboquant]`, use the TurboQuant toggle in Settings, or press `Ctrl+q`. Existing projects with no `[turboquant]` section keep it off, unless you run `maestro init --reset`, which adds the section (on); an explicit `enabled = false` is kept.
+- Runtime files (`.maestro/logs/`, `.maestro/worktrees/`, `maestro-state.json`, `maestro.log`, …) are added to `.gitignore` inside a `# --- maestro ---` block. Your own rules are not touched.
+
+`[quota]` is off by default. When it is off, maestro reads no credential and sends no quota request. See [`[quota]`](docs/configuration.md#quota).
 
 ### Multi-agent setup
 
@@ -278,6 +294,8 @@ Maestro reads and writes a small set of GitHub labels to coordinate work. All na
 | `blocked-by:#N` | Issue cannot start until #N closes (also accepted in body) |
 
 ## Keyboard Shortcuts
+
+On the landing screen, `a` opens Adopt Session and `f` opens the Fleet board.
 
 The full key map (global, overview, home screen, issue browser, milestone overview, prompt input) is at [Wiki › Keyboard Shortcuts](https://github.com/CarlosDanielDev/maestro/wiki/Keyboard-Shortcuts).
 
