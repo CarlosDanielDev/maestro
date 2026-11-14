@@ -15,8 +15,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    # Docs-only diffs skip the heavy Rust jobs. A job skipped by `if:` reports
+    # success, so required checks stay green — a workflow-level paths-ignore
+    # would leave them pending forever and block the merge.
+    # Fail-safe: any doubt (unknown base, diff error) means code=true.
+    name: Detect Code Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash scripts/ci-code-changed.sh "$BASE" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +58,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +74,8 @@ jobs:
     # Fails the build when rendered command files drift from what
     # `maestro sync-templates` would emit from `.maestro/templates/`.
     name: Templates Drift
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,6 +86,8 @@ jobs:
 
   docs-gen:
     name: Docs Autogen Drift
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,6 +128,8 @@ jobs:
     # Ignore list for transitive-only unmaintained advisories is documented
     # in deny.toml with RUSTSEC links. See docs/RUST-GUARDRAILS.md section 9.
     name: Cargo Deny
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,6 +149,8 @@ jobs:
     # RUSTSEC-2026-0002 (lru "unsound") is gated by ratatui 0.29 → 0.30 bump;
     # see deny.toml for the per-advisory rationale.
     name: Cargo Audit
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -166,6 +196,8 @@ jobs:
     # Activate once baseline reaches the floor for a tier; each tier
     # activation is a dedicated PR.
     name: Coverage Tiers
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -193,6 +225,8 @@ jobs:
     #   cargo dupes check --max-exact-percent <X> --max-near-percent <Y>
     # and remove this comment block. Each threshold activation is a dedicated PR.
     name: Code Duplication
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -209,6 +243,8 @@ jobs:
     # are tolerated via docs/layers-debt.txt until their deadlines;
     # the script fails on new violations or past-deadline debt.
     name: Architecture Layers
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
