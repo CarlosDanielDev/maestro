@@ -152,14 +152,17 @@ F6 Deps  F9 Pause  F10 Kill  Ctrl+X Exit</pre>
 
   <section class="features" id="features">
     <p class="kicker">features</p>
-    <h2>six things it does, plainly</h2>
+    <h2>nine things it does, plainly</h2>
     <ul>
       <li>Multi-session pool — run up to N concurrent agent sessions with automatic queue promotion.</li>
-      <li>Git worktree per session — sessions do not step on each other's files.</li>
+      <li>Git worktree per session — sessions do not step on each other's files. If two sessions or PRs touch the same file anyway, you get a warning.</li>
       <li>Rich activity log — file paths, command previews, tool durations.</li>
       <li>Completion gates — fmt, clippy, test, or any custom command, run after every session.</li>
       <li>Automated PR creation — with a cost report and file list, on session completion.</li>
       <li>Mixed providers — Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax side by side in <code>[agents]</code>.</li>
+      <li>Fleet board — one screen lists your maestro sessions and every Claude Code conversation on the machine. You can adopt an outside conversation into maestro and keep working in it.</li>
+      <li>Workspace trust — a repo's <code>maestro.toml</code> cannot run commands until you trust it. You see the values first, and any change asks again.</li>
+      <li>Signed updates — release checksums are signed, and the in-app updater checks the signature before it installs (from v0.31.6 on).</li>
     </ul>
   </section>
 
@@ -169,6 +172,7 @@ F6 Deps  F9 Pause  F10 Kill  Ctrl+X Exit</pre>
     <pre><code>maestro init                                              # interactive maestro.toml setup
 maestro init --non-interactive                            # headless GitHub defaults
 maestro doctor                                            # verify gh/az/agent CLI/git
+maestro trust                                             # trust this repo's maestro.toml (asks again after edits)
 maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
 maestro run --issue 42                                    # session for a GitHub issue
 maestro run --milestone "v1.0"                            # all open issues in a milestone
@@ -181,7 +185,7 @@ maestro                                                   # open the TUI dashboa
 
     <div class="block">
       <h3>not autonomous by default.</h3>
-      <p>Sessions stop at your configured gates and the PR waits for your review. Continuous mode and auto-merge exist, but both are opt-in.</p>
+      <p>New projects start with <code>permission_mode = "default"</code>, so agents ask for permission instead of skipping every prompt. A repo's config cannot run its own commands until you trust it. Sessions stop at your gates and the PR waits for your review. Bypass mode, continuous mode and auto-merge exist, but all are opt-in.</p>
     </div>
 
     <div class="block">
