@@ -788,6 +788,11 @@ maestro/
 │   │   ├── README.md                      # Convention guide: naming, additionalProperties policy, gatekeeper integration  [Issue #327]
 │   │   ├── minimax-quota.json             # Schema for ~/.maestro/minimax-quota.json — schema_version:1 + requests array of RFC 3339 timestamps; additionalProperties:false  [Issue #775]
 │   │   └── review-comment.json            # Schema for the maestro-review JSON block in /review PR comments; parsed by review::parse and TUI pr_review screen  [Issue #327]
+│   ├── assets/                            # README and site media: demo recording and its capture scripts
+│   │   ├── capture.sh                     # vhs recording of the real TUI (three agents fixing real bugs) with a throwaway HOME; writes demo.webm (gh-pages) and demo.gif (README)
+│   │   ├── demo-agent.sh                  # Scripted stand-in for `claude` used by capture.sh; emits stream-json, edits nothing
+│   │   ├── demo.gif                       # README hero recording
+│   │   └── readme-hero.svg                # Legacy hero image; no longer referenced by README
 │   ├── ci-smoke-check.md                  # CI smoke-check test harness guide
 │   ├── configuration.md                   # Authoritative maestro.toml reference — every [table] with field types, defaults, and source pointers; CLI flag → config map; 10 AUTOGEN marker blocks auto-populated from schema by the docs_render system; integrity checked by src/config/tests/configuration_doc.rs and the CI docs-gen job  [Issue #674, #717]
 │   ├── FOLLOW-UPS.md                      # Pending hardening and security follow-up items (non-blocking, filed as issues before next release)
@@ -867,6 +872,8 @@ maestro/
 │   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
+│   ├── ci-code-changed.sh                 # Prints code=true unless every changed file since the given base is docs-only; used by ci.yml "Detect Code Changes" job to skip heavy Rust jobs on docs-only diffs
+│   ├── ci-code-changed_test.sh            # Self-check for ci-code-changed.sh (mixed docs+code, later pushes, bad base); run by the CI changes job
 │   ├── commit-helper.sh                   # /pushup helper: emits label-derived Conventional Commit draft and writes commit-draft.txt  [Issue #556]
 │   ├── condense-issue.sh                  # Emit deterministic DOR-section issue-summary.md from cached gh issue JSON  [Issue #555]
 │   ├── coverage-tiers.yml                 # Coverage tier definitions
