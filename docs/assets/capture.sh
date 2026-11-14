@@ -23,6 +23,10 @@
 # demo lives under /tmp/maestro-demo.* so no user name or local path shows
 # up on screen. Watch the output end to end before publishing anyway.
 #
+# Size: 1600x1000 at font 14 gives a 171x58 terminal, so the landing area
+# (minus status bar, 25% activity log and F-key bar) is about 171x40 and
+# shows the Full Release Console tier (>=140x34, #1218).
+#
 # Safety: the agent is docs/assets/demo-agent.sh (scripted stream-json, edits
 # nothing). auto_pr is off and origin's push URL is invalid, so nothing can
 # reach GitHub except read-only gh calls for the stats bar.
@@ -96,9 +100,9 @@ Output demo.webm
 Output demo.gif
 Set Shell bash
 Set FontFamily "Hack Nerd Font"
-Set FontSize 16
-Set Width 1280
-Set Height 800
+Set FontSize 14
+Set Width 1600
+Set Height 1000
 Set Framerate 20
 Set TypingSpeed 35ms
 Set Padding 16
@@ -107,10 +111,11 @@ Set Theme {"background": "#0b0e0c", "foreground": "#d8ded9", "cursor": "#45e08a"
 Hide
 Type "export HOME=$fake_home PS1='\$ '; clear"
 Enter
-Show
 Type "./maestro"
 Enter
-Sleep 5500ms
+Sleep 5000ms
+Show
+Sleep 4000ms
 Type "f"
 Sleep 3500ms
 Escape
