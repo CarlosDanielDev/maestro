@@ -87,7 +87,7 @@ If any check fails, STOP and report the issue.
 | Snapshot group | Count | Why it drifts |
 |---|---|---|
 | `tui::snapshot_tests::dashboard::home_screen_*` | 4 | "What's New" widget reads top CHANGELOG entry at runtime |
-| `tui::snapshot_tests::landing::landing_welcome_*` | 6 | Welcome screen renders the version string (#582) |
+| `tui::snapshot_tests::landing::landing_welcome_*` | 6 | Welcome screen renders the version string (#582); the always-on Release Console (all size tiers) reads the top CHANGELOG entry at runtime (#1218) |
 | `tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_*` | 2 | Agent-graph dispatcher view renders the version string |
 | `tui::snapshot_tests::home_small_terminal::home_screen_60x15_keeps_labels_and_a_log_row` | 1 | Header renders the version string (#1197) |
 | `tui::snapshot_tests::init_turboquant_header::header_shows_tq_on_for_freshly_initialised_project` | 1 | Header renders the version string (#1205) |
@@ -102,7 +102,7 @@ Skipping this step guarantees CI failure on the release PR.
       # one line per failing test from step 1, e.g.:
       INSTA_UPDATE=always cargo test --bin maestro -- --exact tui::snapshot_tests::landing::landing_welcome_80x24_ascii
       ```
-      Then check `git diff` on each accepted `.snap`: only the version string and the "What's New" / Release Console text may change. Delete any `*.snap.new` left over from step 1 (`find src -name '*.snap.new'`).
+      Then check `git diff` on each accepted `.snap`: only the version string and the Release Console content (summary, highlights, and the Ref Trend chart, which counts every CHANGELOG version including `[Unreleased]`) may change. Delete any `*.snap.new` left over from step 1 (`find src -name '*.snap.new'`).
    b. Re-run `cargo test --bin maestro` and confirm it now passes.
    c. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
 4. **If any other tests fail** (anything outside the five groups listed above): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.

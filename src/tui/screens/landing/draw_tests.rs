@@ -265,7 +265,8 @@ fn below_80_columns_or_24_rows_has_no_console() {
 fn no_size_renders_the_old_whats_new_box() {
     let edge_w = [20u16, 60, 79, 80, 99, 100, 139, 140, 200];
     let edge_h = [12u16, 15, 23, 24, 29, 30, 33, 34, 60];
-    let mut sizes: Vec<(u16, u16)> = Vec::new();
+    // Degenerate sizes first: they must not panic either.
+    let mut sizes: Vec<(u16, u16)> = vec![(0, 0), (1, 1), (1, 24), (80, 1)];
     for &w in &edge_w {
         for &h in &edge_h {
             sizes.push((w, h));
