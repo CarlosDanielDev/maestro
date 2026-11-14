@@ -22,12 +22,7 @@ const COLUMN_GAP: u16 = 4;
 const MENU_KEY_LABEL_GAP: &str = "  ";
 const FOOTER_HINT: &str = "<q> quit  <n> notes";
 const WIDE_FOOTER_HINT: &str = "<q> quit  <n> notes  <w> net";
-const WHATS_NEW_HEIGHT: u16 = 6;
-const WIDE_SIGNAL_MIN_HEIGHT: u16 = 16;
-const WIDE_SIGNAL_MAX_HEIGHT: u16 = 30;
-const WHATS_NEW_GAP: u16 = 1;
-const MAX_STAGE_WIDTH: u16 = 170;
-const MAX_WHATS_NEW_WIDTH: u16 = 96;
+const CONSOLE_GAP: u16 = 1;
 
 const ASCII_HEADER: &[&str] = &[
     " __  __    _    _____ ____ _____ ____   ___ ",
@@ -55,12 +50,61 @@ pub(crate) struct WelcomeLayout {
     pub right_padding: u16,
     pub columns: u16,
     pub show_header: bool,
-    pub wide_deck: bool,
-    pub whats_new_x: u16,
-    pub whats_new_width: u16,
-    pub whats_new_y: u16,
-    pub whats_new_height: u16,
     pub footer_y: u16,
+    pub console_tier: Option<ConsoleTier>,
+    pub console_x: u16,
+    pub console_width: u16,
+    pub console_y: u16,
+    pub console_height: u16,
+}
+
+/// How much of the Release Console fits (#1218). One landing at every size:
+/// smaller areas drop panels instead of switching to another screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConsoleTier {
+    /// Summary line + highlights.
+    Small,
+    /// Adds the Mix and Ref Trend charts.
+    Medium,
+    /// Adds the Internet and Link panels.
+    Full,
+}
+
+impl ConsoleTier {
+    /// Min and max console height, border included.
+    pub(crate) fn height_bounds(self) -> (u16, u16) {
+        match self {
+            Self::Small => (7, 7),
+            Self::Medium => (13, 18),
+            Self::Full => (16, 30),
+        }
+    }
+}
+
+pub(crate) fn console_tier(area: Rect) -> Option<ConsoleTier> {
+    if area.width < 80 || area.height < 24 {
+        None
+    } else if area.width >= 140 && area.height >= 34 {
+        Some(ConsoleTier::Full)
+    } else if area.width >= 100 && area.height >= 30 {
+        Some(ConsoleTier::Medium)
+    } else {
+        Some(ConsoleTier::Small)
+    }
+}
+
+/// `[summary, network, charts]` row heights inside the console border; the
+/// highlights take what is left.
+pub(crate) fn console_row_heights(tier: ConsoleTier, inner_height: u16) -> [u16; 3] {
+    match tier {
+        ConsoleTier::Full => {
+            let network = inner_height.saturating_sub(14).clamp(6, 10);
+            let charts = inner_height.saturating_sub(network + 8).clamp(5, 9);
+            [2, network, charts]
+        }
+        ConsoleTier::Medium => [1, 0, inner_height.saturating_sub(7).clamp(5, 9)],
+        ConsoleTier::Small => [1, 0, 0],
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -89,38 +133,22 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         0
     };
     let menu_height = menu_rows(columns);
-    let show_whats_new = area.width >= 80 && area.height >= 24;
-    let wide_deck = show_whats_new && area.width >= 140 && area.height >= 34;
-    let whats_new_block_height = if show_whats_new {
-        if wide_deck {
-            wide_signal_height(area.height, header_height, menu_height)
-        } else {
-            WHATS_NEW_HEIGHT
-        }
-    } else {
-        0
-    };
+    let tier = console_tier(area);
+    let console_height = tier.map_or(0, |t| {
+        console_height(t, area.height, header_height, menu_height)
+    });
     let menu_width = base_menu_width;
-    let stage_width = if wide_deck {
-        area.width.max(menu_width)
-    } else if show_whats_new {
-        MAX_WHATS_NEW_WIDTH
-            .min(max_content_width)
-            .max(menu_width)
-            .min(MAX_STAGE_WIDTH)
-    } else {
-        menu_width
+    let stage_width = match tier {
+        Some(ConsoleTier::Full) => area.width.max(menu_width),
+        Some(_) => max_content_width.max(menu_width),
+        None => menu_width,
     };
-    let whats_new_width = if show_whats_new { stage_width } else { 0 };
+    let console_width = if tier.is_some() { stage_width } else { 0 };
+    let console_gap = if tier.is_some() { CONSOLE_GAP } else { 0 };
     let left_padding = area.width.saturating_sub(stage_width) / 2;
     let right_padding = area.width.saturating_sub(stage_width + left_padding);
 
-    let content_height = menu_height
-        + if show_whats_new {
-            WHATS_NEW_GAP + whats_new_block_height
-        } else {
-            0
-        };
+    let content_height = menu_height + console_gap + console_height;
     let total_height = header_height + content_height + 2;
     let slack = area.height.saturating_sub(total_height);
     let top_padding = if area.height >= 30 {
@@ -132,24 +160,15 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
     let menu_y = y_start + header_height;
     let stage_x = area.x + left_padding;
     let menu_x = stage_x + stage_width.saturating_sub(menu_width) / 2;
-    let whats_new_x = if wide_deck {
-        stage_x
-    } else {
-        stage_x + stage_width.saturating_sub(whats_new_width) / 2
-    };
-    let whats_new_y = if wide_deck {
-        menu_y + menu_height + WHATS_NEW_GAP
-    } else {
-        menu_y + menu_height + if show_whats_new { WHATS_NEW_GAP } else { 0 }
-    };
+    let console_y = menu_y + menu_height + console_gap;
     // A blank line separates the footer when it fits. On a short terminal the
     // footer takes that row instead, so the quit and notes hints stay visible.
-    let footer_gap = if whats_new_y + whats_new_block_height + 1 < area.y + area.height {
+    let footer_gap = if console_y + console_height + 1 < area.y + area.height {
         1
     } else {
         0
     };
-    let footer_y = whats_new_y + whats_new_block_height + footer_gap;
+    let footer_y = console_y + console_height + footer_gap;
 
     WelcomeLayout {
         menu_x,
@@ -159,22 +178,28 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         right_padding,
         columns,
         show_header,
-        wide_deck,
-        whats_new_x,
-        whats_new_width,
-        whats_new_y,
-        whats_new_height: whats_new_block_height,
         footer_y,
+        console_tier: tier,
+        console_x: stage_x,
+        console_width,
+        console_y,
+        console_height,
     }
 }
 
-fn wide_signal_height(area_height: u16, header_height: u16, menu_height: u16) -> u16 {
+fn console_height(
+    tier: ConsoleTier,
+    area_height: u16,
+    header_height: u16,
+    menu_height: u16,
+) -> u16 {
+    let (min, max) = tier.height_bounds();
     area_height
         .saturating_sub(header_height)
         .saturating_sub(menu_height)
-        .saturating_sub(WHATS_NEW_GAP)
+        .saturating_sub(CONSOLE_GAP)
         .saturating_sub(2)
-        .clamp(WIDE_SIGNAL_MIN_HEIGHT, WIDE_SIGNAL_MAX_HEIGHT)
+        .clamp(min, max)
 }
 
 impl LandingScreen {
@@ -212,7 +237,7 @@ impl LandingScreen {
             self.draw_header(f, area, &layout, theme, mode);
         }
         self.draw_menu(f, area, &layout, theme, mode);
-        self.draw_whats_new(f, area, &layout, theme, mode);
+        self.draw_release_console(f, area, &layout, theme, mode);
         self.draw_footer(f, area, &layout, theme, mode);
     }
 
@@ -322,19 +347,12 @@ impl LandingScreen {
         } else {
             Style::default()
         };
-        let x = if layout.wide_deck {
-            area.x + layout.left_padding
-        } else {
-            layout.menu_x
-        };
-        let width = if layout.wide_deck {
-            area.width
-                .saturating_sub(layout.left_padding)
-                .saturating_sub(layout.right_padding)
-        } else {
-            layout.menu_width
-        };
-        let hint = if layout.wide_deck {
+        let x = area.x + layout.left_padding;
+        let width = area
+            .width
+            .saturating_sub(layout.left_padding)
+            .saturating_sub(layout.right_padding);
+        let hint = if layout.console_tier == Some(ConsoleTier::Full) {
             WIDE_FOOTER_HINT
         } else {
             FOOTER_HINT
@@ -342,7 +360,7 @@ impl LandingScreen {
         render_text(f, x, layout.footer_y, width, hint, style);
     }
 
-    fn draw_whats_new(
+    fn draw_release_console(
         &self,
         f: &mut Frame,
         area: Rect,
@@ -350,68 +368,23 @@ impl LandingScreen {
         theme: &Theme,
         mode: RenderMode,
     ) {
-        if layout.whats_new_height == 0 || layout.whats_new_y >= area.y + area.height {
+        let Some(tier) = layout.console_tier else {
+            return;
+        };
+        if layout.console_height == 0 || layout.console_y >= area.y + area.height {
             return;
         }
-
         let items = whats_new_highlights();
         if items.is_empty() {
             return;
         }
 
-        if layout.wide_deck {
-            self.draw_signal_dashboard(f, area, layout, theme, mode);
-            return;
-        }
-
-        let block_width = layout.whats_new_width;
-        if block_width < 24 {
-            return;
-        }
-        let rect = Rect::new(
-            layout.whats_new_x,
-            layout.whats_new_y,
-            block_width,
-            layout.whats_new_height,
-        );
-
-        let version = env!("CARGO_PKG_VERSION");
-        let title = format!("What's New in v{version}");
-        let block = if mode.styled {
-            theme
-                .styled_block(&title, false)
-                .title_bottom(Line::from(" Press [n] for full release notes ").centered())
-        } else {
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .title_bottom(Line::from(" Press [n] for full release notes ").centered())
-        };
-        let inner = block.inner(rect);
-        f.render_widget(block, rect);
-
-        let lines = whats_new_lines(&items, inner.width as usize, theme, mode);
-        f.render_widget(Paragraph::new(lines), inner);
-    }
-
-    fn draw_signal_dashboard(
-        &self,
-        f: &mut Frame,
-        area: Rect,
-        layout: &WelcomeLayout,
-        theme: &Theme,
-        mode: RenderMode,
-    ) {
-        if layout.whats_new_height == 0 || layout.whats_new_y >= area.y + area.height {
-            return;
-        }
-
         let version = env!("CARGO_PKG_VERSION");
         let rect = Rect::new(
-            layout.whats_new_x,
-            layout.whats_new_y,
-            layout.whats_new_width,
-            layout.whats_new_height,
+            layout.console_x,
+            layout.console_y,
+            layout.console_width,
+            layout.console_height,
         );
         let title = format!("Release Console v{version}");
         let block = if mode.styled {
@@ -431,14 +404,14 @@ impl LandingScreen {
             return;
         }
 
-        let network_height = inner.height.saturating_sub(14).clamp(6, 10);
-        let release_height = inner.height.saturating_sub(network_height + 8).clamp(5, 9);
+        let [summary_height, network_height, charts_height] =
+            console_row_heights(tier, inner.height);
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2),
+                Constraint::Length(summary_height),
                 Constraint::Length(network_height),
-                Constraint::Length(release_height),
+                Constraint::Length(charts_height),
                 Constraint::Min(3),
             ])
             .split(inner);
@@ -446,27 +419,35 @@ impl LandingScreen {
         let summary = release_summary_line(theme, mode);
         f.render_widget(Paragraph::new(summary), rows[0]);
 
-        draw_internet_monitor(
-            f,
-            rows[1],
-            theme,
-            mode,
-            self.network_measure_state(),
-            self.network_peak_rates(),
-        );
+        if tier == ConsoleTier::Full {
+            draw_internet_monitor(
+                f,
+                rows[1],
+                theme,
+                mode,
+                self.network_measure_state(),
+                self.network_peak_rates(),
+            );
+        }
 
-        let top = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .split(rows[2]);
+        if tier != ConsoleTier::Small {
+            let charts = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+                .split(rows[2]);
+            draw_release_mix(f, charts[0], theme, mode);
+            draw_pr_trace(f, charts[1], theme, mode);
+        }
 
-        draw_release_mix(f, top[0], theme, mode);
-        draw_pr_trace(f, top[1], theme, mode);
-
-        let highlights = whats_new_highlights();
-        let lines = whats_new_lines(&highlights, rows[3].width as usize, theme, mode);
-        let highlights_block = chart_block("Highlights", theme, mode);
-        f.render_widget(Paragraph::new(lines).block(highlights_block), rows[3]);
+        // Small has no room for a boxed panel: unboxed, all highlights fit.
+        let lines = whats_new_lines(&items, rows[3].width as usize, theme, mode);
+        let highlights = Paragraph::new(lines);
+        let highlights = if tier == ConsoleTier::Small {
+            highlights
+        } else {
+            highlights.block(chart_block("Highlights", theme, mode))
+        };
+        f.render_widget(highlights, rows[3]);
     }
 }
 

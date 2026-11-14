@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
+assertion_line: 70
 expression: terminal.backend()
 ---
 "          ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗          "
@@ -17,12 +18,12 @@ expression: terminal.backend()
 "                 [p]  PRD                 [q]  Quit                             "
 "                 [r]  Roadmap                                                   "
 "                                                                                "
-"  ╔════════════════════════[ What's New in v0.31.6 ]═════════════════════════╗  "
+"  ╔═══════════════════════[ Release Console v0.31.6 ]════════════════════════╗  "
+"  ║ changes 45   refs 0   categories 4   date 2026-11-14                     ║  "
 "  ║  [Added] **Workspace trust gate** — maestro no longer executes commands …║  "
 "  ║  [Added] **Fleet board** (landing key `f`) — one screen lists maestro po…║  "
 "  ║  [Added] **Adopt external Claude Code sessions.** The new **Adopt Sessio…║  "
 "  ║  [Added] **Quota-aware routing (off by default).** With `[quota] enabled…║  "
 "  ╚════════════════════ Press [n] for full release notes ════════════════════╝  "
 "                                                                                "
-"                 <q> quit  <n> notes                                            "
-"                                                                                "
+"  <q> quit  <n> notes                                                           "
