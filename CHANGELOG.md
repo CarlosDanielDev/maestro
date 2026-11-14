@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **New projects no longer default to `bypassPermissions`.** `maestro init` now scaffolds `permission_mode = "default"`, and the no-config dashboard fallback and the session-pool built-in default match the serde default (`default_permission_mode()`), so spawned agents ask for permission instead of suppressing every prompt. Bypass stays opt-in via the Settings toggle, `--bypass-review`, or explicit `permission_mode = "bypassPermissions"` in `maestro.toml`. (#1036)
+- **TurboQuant is on by default for new projects.** `maestro init` now writes a `[turboquant]` section with `enabled = true`, `bit_width = 4`, `strategy = "turboquant"`, so a fresh project shows `TQ:ON` in the header. Existing projects are not changed: a `maestro.toml` with no `[turboquant]` section still loads with TurboQuant off, and one that says `enabled = false` keeps it off. `maestro init --reset` adds the new section (on) to a config that has none, like any other new default key, but keeps an existing `enabled = false`. To turn it off, set `enabled = false` under `[turboquant]` in `maestro.toml`, use the TurboQuant toggle in Settings, or press `Ctrl+q`. (#1162)
 
 ## [0.31.5] - 2026-08-15
 

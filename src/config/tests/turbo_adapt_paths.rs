@@ -89,6 +89,33 @@ fn turboquant_config_absent_section_uses_defaults() {
 }
 
 #[test]
+fn turboquant_existing_config_with_enabled_false_loads_as_off() {
+    // #1162 flipped the init template to `enabled = true`; a project that
+    // already opted out on disk must stay off.
+    use std::io::Write;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[turboquant]
+enabled = false
+"#
+    )
+    .unwrap();
+    let cfg = Config::load(f.path()).expect("load failed");
+    assert!(!cfg.turboquant.enabled);
+}
+
+#[test]
 fn turboquant_config_serde_round_trip() {
     let cfg = TurboQuantConfig {
         enabled: true,

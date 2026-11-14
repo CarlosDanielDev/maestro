@@ -156,3 +156,32 @@ fn rendered_template_has_no_uncommented_bypass_permissions() {
     );
     assert!(out.contains("permission_mode = \"default\""), "{out}");
 }
+
+#[test]
+fn template_render_turns_turboquant_on_by_default() {
+    // #1162: new projects run with TurboQuant on, with the same settings
+    // this repo uses. Parse the output so a commented-out section fails.
+    let out = render(&[DetectedStack::Rust]);
+    let cfg: crate::config::Config = toml::from_str(&out).expect("rendered template parses");
+    assert!(cfg.turboquant.enabled, "{out}");
+    assert_eq!(cfg.turboquant.bit_width, 4, "{out}");
+    assert_eq!(
+        cfg.turboquant.strategy,
+        crate::config::QuantStrategy::TurboQuant,
+        "{out}"
+    );
+    assert!(out.contains("[turboquant]\nenabled = true"), "{out}");
+    assert!(out.contains("strategy = \"turboquant\""), "{out}");
+}
+
+#[test]
+fn reinit_merge_keeps_existing_turboquant_opt_out() {
+    // #1162: `maestro init` on a project that already says
+    // `enabled = false` must not flip it on through the merge path.
+    let existing = "[project]\nrepo = \"owner/repo\"\n[turboquant]\nenabled = false\n";
+    let report =
+        crate::init::merge::merge_preserving_user_keys(existing, &render(&[DetectedStack::Rust]))
+            .expect("merge");
+    let cfg: crate::config::Config = toml::from_str(&report.merged_toml).expect("merged parses");
+    assert!(!cfg.turboquant.enabled, "{}", report.merged_toml);
+}

@@ -198,6 +198,11 @@ work_tick_interval_secs = 10
 [views]
 agent_graph_enabled = true
 
+[turboquant]
+enabled = true                          # Context compression. Set to false (or press Ctrl+q) to turn it off
+bit_width = 4
+strategy = "turboquant"                 # Options: turboquant, polarquant, qjl
+
 [flags]
 # continuous_mode = true   # default: true
 # auto_fork = true         # default: true
