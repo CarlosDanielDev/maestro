@@ -23,6 +23,7 @@ mod interaction_terminator;
 mod issue_browser;
 mod issue_wizard;
 mod landing;
+mod landing_full_app;
 mod milestone;
 mod milestone_wizard;
 mod overview;

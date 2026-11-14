@@ -16,6 +16,9 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+mod header;
+use header::uses_compact_header;
+
 const NARROW_WIDTH: u16 = 60;
 const MIN_MENU_PADDING: u16 = 2;
 const COLUMN_GAP: u16 = 4;
@@ -50,6 +53,7 @@ pub(crate) struct WelcomeLayout {
     pub right_padding: u16,
     pub columns: u16,
     pub show_header: bool,
+    pub compact_header: bool,
     pub footer_y: u16,
     pub console_tier: Option<ConsoleTier>,
     pub console_x: u16,
@@ -133,6 +137,7 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         0
     };
     let menu_height = menu_rows(columns);
+    let compact_header = uses_compact_header(area);
     let tier = console_tier(area);
     let console_height = tier.map_or(0, |t| {
         console_height(t, area.height, header_height, menu_height)
@@ -178,6 +183,7 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         right_padding,
         columns,
         show_header,
+        compact_header,
         footer_y,
         console_tier: tier,
         console_x: stage_x,
