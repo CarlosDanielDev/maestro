@@ -12,7 +12,9 @@
 
 Maestro spawns and monitors multiple AI agent sessions working on the same project simultaneously. Mix providers — run Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax side by side, or pick one per session. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
-<img src="docs/assets/readme-hero.svg" alt="Maestro TUI welcome screen" />
+<img src="docs/assets/demo.gif" alt="Maestro running three agents side by side, each fixing a real maestro bug: reproduce with a failing test, edit, then green" />
+
+<sub>Real maestro TUI, scripted agent. Recorded by <a href="docs/assets/capture.sh"><code>docs/assets/capture.sh</code></a>.</sub>
 
 Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/maestro/wiki). This README is the on-ramp.
 
