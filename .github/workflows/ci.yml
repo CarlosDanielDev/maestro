@@ -20,6 +20,8 @@ jobs:
     # success, so required checks stay green — a workflow-level paths-ignore
     # would leave them pending forever and block the merge.
     # Fail-safe: any doubt (unknown base, diff error) means code=true.
+    # Every PR push (synchronize) re-runs this against the whole PR diff
+    # (base.sha..merge commit), never just the newest commit.
     name: Detect Code Changes
     runs-on: ubuntu-latest
     outputs:
@@ -28,6 +30,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # A mixed docs+code PR, or a later push that adds code, must never skip.
+      - name: Self-check detection rules
+        run: bash scripts/ci-code-changed_test.sh
       - id: diff
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
