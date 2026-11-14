@@ -189,3 +189,21 @@ v0.29.5 bundle (user authorized PR-isolation override for context budget): one P
 Rejected: `/design-sync` to Claude Design (needs a React component library; maestro is ratatui). Rejected: doc-only with no tests (rots silently). Rejected: Claude PreToolUse hook (Claude-only, noisy per edit).
 **Follow-up:** when `Input` migrations #964–#974 land, update the doc's text-input table ("not yet adopted").
 **Added same day (owner chose checks 1+2):** `every_widget_is_documented` (modules declared in `widgets/mod.rs` must be cited in the doc's backticks — type token, `mod::`, or `widgets/mod`; prose words don't count, after a side-agent review caught `badge`/`spinner` passing on plain words) + `no_new_hand_rolled_text_input` (`KeyCode::Char(c)` + push/insert into a string outside `widgets/input/`; 13-file allowlist ratchet; known gap: helper-method input like `help.rs` `push_char`). All 4 guards mutation-checked. Rejected: wider color scan over all `src/tui/` (not chosen). Found: `src/tui/widgets/header_brand.rs` is an orphan (not declared in `mod.rs`, unused) — leftover `LOGO` const after f6fc0888 removed dead `HeaderBrand`. Landing agent (#1227) confirmed it never used it. Deleted with owner OK (2026-11-14).
+
+## 2026-11-14 (later) — one Release Console landing, v0.31.7 and v0.31.8
+
+**Worked on / completed:** #1219 (CI docs-only holes), #1218 (one landing), #1224 (Small tier mini-panels), #1226 (console fits common terminals), demo re-record (#1222 main, #1223 gh-pages), releases v0.31.7 (#1221, tag on ea0c9ec) and v0.31.8 (#1228, tag on 6fde565). All merged; both release workflows green.
+
+**Decision — one landing renderer (#1218):** the separate "What's New in vX" box is gone. The Release Console renders at every size and drops panels by `ConsoleTier` (`console_tier(Rect)` in `landing/draw.rs`): Full >=140x34 (unchanged, 180x48 snapshot byte-identical), Medium >=100x30 (no Internet/Link), Small (summary + mini-panels). Rejected: shrinking every panel (unreadable at 80x24); "console or nothing" (small terminals lose the news). `[w]` only measures while the Internet panel is drawn.
+
+**Decision — Small tier keeps the console look (#1224):** owner rejected the loose bullet list ("old aesthetic"). Small = summary + `┌Mix┐` (one text line, `release_mix_text`; a BarChart cannot draw in one row) + `┌Ref Trend┐` sparkline + boxed `┌Highlights┐`; console height 9.
+
+**Decision — console fits common terminals (#1226):** tiers are measured on the landing *area* (terminal minus status bar 3, activity log 25%, F-key bar 1), so before this a terminal needed ~39 rows for any console. Now: (1) landing log = 3 rows only when the terminal is < 40 rows (owner rejected "always 3 rows" so big terminals keep every startup notice; also applies under ConfirmExit); (2) compact one-line header (`landing/draw/header.rs`, branding tokens) at 80+ cols and 20..25 rows, so Small starts at 80x20 of area. Full 80x27 terminal shows the console. Rejected: moving existing header code (needs owner OK).
+
+**Decision — CHANGELOG entries for landing-touching PRs go in the release PR:** the Ref Trend chart counts every CHANGELOG version incl. `[Unreleased]`, so any bullet changes the 180x48 snapshot.
+
+**Decision — docs-only CI skip, tightened (#1219):** `docs/assets/` counts as docs only for media; `AGENTS.md`/`GEMINI.md`/`.codex/` count as code; the self-check fails if `src/`, `tests/` or `build.rs` names a docs-only file. (design-sync later added `docs/tui-design-system.md` as code for #1229's guard test.)
+
+**Demo capture:** `docs/assets/capture.sh` records at 1600x1000 / font 14 (171x58 terminal → Full tier), hides the ~5 s startup, fake HOME + scripted `demo-agent.sh`. OCR every frame before publishing.
+
+**Next-session priorities:** (1) X post draft still says v0.31.7 — refresh to v0.31.8 if posting; (2) Highlights text is sized to the panel's outer width, so the border clips it without `…` (all tiers; fixing changes Medium/Full snapshots); (3) landing at <40 rows with CI checks: the CI box can push the log line out of view; (4) static help entry "w Measure network"; (5) `scripts/render-readme-hero.sh` is dead since the SVG hero was deleted (#1216) — delete needs owner OK; (6) ten merged local branches still need force-deletion by the owner (the guard blocks it for agents).
