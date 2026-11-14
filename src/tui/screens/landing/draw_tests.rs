@@ -1,6 +1,6 @@
 use super::{
-    ConsoleTier, console_row_heights, console_tier, should_emit_styles_from_env, welcome_layout,
-    whats_new_highlights,
+    ConsoleTier, console_row_heights, console_tier, release_category_counts, release_mix_text,
+    should_emit_styles_from_env, welcome_layout, whats_new_highlights,
 };
 use crate::tui::screens::landing::LandingScreen;
 use crate::tui::theme::Theme;
@@ -71,16 +71,20 @@ fn has_panel(text: &str, title: &str) -> bool {
     text.contains(&format!("┌{title}"))
 }
 
-/// Every highlight of the current version shows as `  [<Category>] `.
-/// Derived from `whats_new_highlights()`: never hard-code a category, the
-/// next patch release may have no `[Added]` items.
-fn assert_all_highlight_prefixes_present(text: &str) {
-    let items = whats_new_highlights();
-    assert!(!items.is_empty(), "current version must have highlights");
-    for (cat, _) in &items {
-        let prefix = format!("  [{}] ", cat.label());
-        assert!(text.contains(&prefix), "missing {prefix:?}:\n{text}");
-    }
+/// Row right under a panel's top border, from the panel's left corner on.
+/// Returns (char column of the corner, rest of that row).
+fn row_below_panel(text: &str, title: &str) -> (usize, String) {
+    let lines: Vec<&str> = text.lines().collect();
+    let needle = format!("┌{title}");
+    let (i, line) = lines
+        .iter()
+        .enumerate()
+        .find(|(_, l)| l.contains(&needle))
+        .unwrap_or_else(|| panic!("missing panel {title}:\n{text}"));
+    let byte = line.find(&needle).unwrap();
+    let col = line[..byte].chars().count();
+    let below: String = lines[i + 1].chars().skip(col).collect();
+    (col, below)
 }
 
 #[test]
@@ -89,10 +93,15 @@ fn console_tier_edges() {
         (0, 0, None),
         (60, 15, None),
         (79, 24, None),
+        (79, 26, None),
         (80, 23, None),
+        (80, 24, None),
+        (80, 25, None),
         (200, 23, None),
+        (200, 25, None),
         (79, 60, None),
-        (80, 24, Some(ConsoleTier::Small)),
+        (80, 26, Some(ConsoleTier::Small)),
+        (99, 40, Some(ConsoleTier::Small)),
         (99, 60, Some(ConsoleTier::Small)),
         (100, 29, Some(ConsoleTier::Small)),
         (100, 30, Some(ConsoleTier::Medium)),
@@ -110,7 +119,7 @@ fn console_tier_edges() {
 
 #[test]
 fn console_tier_height_bounds() {
-    assert_eq!(ConsoleTier::Small.height_bounds(), (7, 7));
+    assert_eq!(ConsoleTier::Small.height_bounds(), (9, 9));
     assert_eq!(ConsoleTier::Medium.height_bounds(), (13, 18));
     assert_eq!(ConsoleTier::Full.height_bounds(), (16, 30));
 }
@@ -129,16 +138,17 @@ fn console_row_heights_medium_drops_the_network_row() {
 }
 
 #[test]
-fn console_row_heights_small_is_summary_only() {
-    assert_eq!(console_row_heights(ConsoleTier::Small, 5), [1, 0, 0]);
-    assert_eq!(console_row_heights(ConsoleTier::Small, 20), [1, 0, 0]);
+fn console_row_heights_small_has_summary_and_a_mini_chart_row() {
+    assert_eq!(console_row_heights(ConsoleTier::Small, 7), [1, 0, 3]);
+    assert_eq!(console_row_heights(ConsoleTier::Small, 20), [1, 0, 3]);
 }
 
 #[test]
-fn layout_80x24_console_sits_between_menu_and_footer() {
-    let area = Rect::new(0, 0, 80, 24);
+fn layout_80x26_console_sits_between_menu_and_footer() {
+    let area = Rect::new(0, 0, 80, 26);
     let l = welcome_layout(area);
     assert_eq!(l.console_tier, Some(ConsoleTier::Small));
+    assert_eq!(l.console_height, 9);
     assert!(l.console_y > l.menu_y, "console must be below the menu");
     assert!(
         l.console_y + l.console_height <= l.footer_y,
@@ -184,14 +194,19 @@ fn layout_full_tier_matches_the_old_wide_deck() {
 }
 
 #[test]
-fn layout_below_80x24_has_no_console_tier() {
-    assert_eq!(welcome_layout(Rect::new(0, 0, 79, 40)).console_tier, None);
-    assert_eq!(welcome_layout(Rect::new(0, 0, 120, 23)).console_tier, None);
+fn layout_below_80x26_has_no_console_tier() {
+    for (w, h) in [(79, 40), (120, 23), (80, 24), (80, 25), (120, 25)] {
+        assert_eq!(
+            welcome_layout(Rect::new(0, 0, w, h)).console_tier,
+            None,
+            "{w}x{h}"
+        );
+    }
 }
 
 #[test]
-fn console_title_shows_at_80x24_100x30_and_150x40() {
-    for (w, h) in [(80, 24), (100, 30), (150, 40)] {
+fn console_title_shows_at_80x26_100x30_and_150x40() {
+    for (w, h) in [(80, 26), (100, 30), (150, 40)] {
         let text = render_text(w, h);
         assert!(text.contains("Release Console v"), "{w}x{h}:\n{text}");
     }
@@ -231,30 +246,93 @@ fn medium_110x32_drops_internet_and_link_and_the_net_hint() {
     );
 }
 
+/// #1224: the Small tier keeps the console look (thin-bordered titled
+/// panels), not a loose bullet list inside the console border.
 #[test]
-fn small_80x24_shows_only_summary_and_highlights() {
-    let text = render_text(80, 24);
-    assert!(text.contains("Release Console v"), "{text}");
-    assert_all_highlight_prefixes_present(&text);
-    for title in ["Internet", "Link", "Mix", "Ref Trend"] {
+fn small_tier_draws_mini_panels_not_a_bullet_list() {
+    for (w, h) in [(80, 26), (120, 28)] {
+        let text = render_text(w, h);
+        assert!(text.contains("Release Console v"), "{w}x{h}:\n{text}");
+        for title in ["Mix", "Ref Trend", "Highlights"] {
+            assert!(has_panel(&text, title), "{w}x{h}: missing {title}:\n{text}");
+        }
+        for title in ["Internet", "Link"] {
+            assert!(
+                !has_panel(&text, title),
+                "{w}x{h}: unexpected {title}:\n{text}"
+            );
+        }
+        assert!(!text.contains("<w> net"), "{w}x{h}: <w> net:\n{text}");
+        assert!(text.contains("<q> quit"), "{w}x{h}: footer:\n{text}");
+
+        // As many highlights as fit: one at the minimum height.
+        let (cat, _) = &whats_new_highlights()[0];
+        let prefix = format!("  [{}] ", cat.label());
         assert!(
-            !has_panel(&text, title),
-            "unexpected panel {title}:\n{text}"
+            text.contains(&prefix),
+            "{w}x{h}: missing {prefix:?}:\n{text}"
         );
     }
+}
+
+#[test]
+fn small_mix_panel_shows_category_counts_as_text() {
+    for (w, h) in [(80, 26), (120, 28)] {
+        let text = render_text(w, h);
+        let (label, n) = release_category_counts()[1];
+        let want = format!("{label} {n}");
+        let (mix_col, below) = row_below_panel(&text, "Mix");
+        let (ref_col, _) = row_below_panel(&text, "Ref Trend");
+        let mix_row: String = below.chars().take(ref_col - mix_col).collect();
+        assert!(
+            mix_row.contains(&want),
+            "{w}x{h}: Mix row {mix_row:?} lacks {want:?}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn small_ref_trend_panel_draws_a_sparkline() {
+    for (w, h) in [(80, 26), (120, 28)] {
+        let text = render_text(w, h);
+        let (_, row) = row_below_panel(&text, "Ref Trend");
+        assert!(
+            row.chars().any(|c| "▁▂▃▄▅▆▇█".contains(c)),
+            "{w}x{h}: no sparkline glyph in {row:?}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn small_highlights_are_boxed() {
+    let text = render_text(80, 26);
+    let (_, row) = row_below_panel(&text, "Highlights");
     assert!(
-        !text.contains("<w> net"),
-        "Small footer has <w> net:\n{text}"
-    );
-    assert!(
-        text.contains("<q> quit"),
-        "footer must stay visible:\n{text}"
+        row.starts_with('│'),
+        "highlight row must sit inside the box: {row:?}"
     );
 }
 
 #[test]
-fn below_80_columns_or_24_rows_has_no_console() {
-    for (w, h) in [(79, 40), (120, 23), (60, 20)] {
+fn release_mix_text_lists_all_five_counts_when_wide() {
+    let text = release_mix_text(200);
+    for (label, n) in release_category_counts() {
+        let want = format!("{label} {n}");
+        assert!(text.contains(&want), "{text:?} lacks {want:?}");
+    }
+    assert!(!text.contains('…'), "wide text must not be cut: {text:?}");
+}
+
+#[test]
+fn release_mix_text_is_ellipsized_when_narrow() {
+    let text = release_mix_text(10);
+    assert!(text.ends_with('…'), "{text:?}");
+    assert!(text.chars().count() <= 10, "{text:?}");
+}
+
+#[test]
+fn below_80_columns_or_26_rows_has_no_console() {
+    for (w, h) in [(79, 40), (120, 23), (60, 20), (80, 24), (80, 25), (120, 25)] {
         let text = render_text(w, h);
         assert!(!text.contains("Release Console v"), "{w}x{h}:\n{text}");
     }
@@ -264,7 +342,7 @@ fn below_80_columns_or_24_rows_has_no_console() {
 #[test]
 fn no_size_renders_the_old_whats_new_box() {
     let edge_w = [20u16, 60, 79, 80, 99, 100, 139, 140, 200];
-    let edge_h = [12u16, 15, 23, 24, 29, 30, 33, 34, 60];
+    let edge_h = [12u16, 15, 23, 24, 25, 26, 28, 29, 30, 33, 34, 60];
     // Degenerate sizes first: they must not panic either.
     let mut sizes: Vec<(u16, u16)> = vec![(0, 0), (1, 1), (1, 24), (80, 1)];
     for &w in &edge_w {

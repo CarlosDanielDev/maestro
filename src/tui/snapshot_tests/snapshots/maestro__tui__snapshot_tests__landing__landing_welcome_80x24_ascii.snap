@@ -1,7 +1,12 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
+assertion_line: 64
 expression: terminal.backend()
 ---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
 "                                                                                "
 "                   __  __    _    _____ ____ _____ ____   ___                   "
 "                  |  \/  |  / \  | ____/ ___|_   _|  _ \ / _ \                  "
@@ -17,12 +22,8 @@ expression: terminal.backend()
 "                 [p]  PRD                 [q]  Quit                             "
 "                 [r]  Roadmap                                                   "
 "                                                                                "
-"  ╔═══════════════════════[ Release Console v0.31.7 ]════════════════════════╗  "
-"  ║ changes 2   refs 1   categories 2   date 2026-11-14                      ║  "
-"  ║  [Fixed] **One landing at every size.** The welcome screen always shows …║  "
-"  ║  [Changed] **CI skips the heavy Rust jobs on docs-only pull requests.** …║  "
-"  ║                                                                          ║  "
-"  ║                                                                          ║  "
-"  ╚════════════════════ Press [n] for full release notes ════════════════════╝  "
+"                 <q> quit  <n> notes                                            "
 "                                                                                "
-"  <q> quit  <n> notes                                                           "
+"                                                                                "
+"                                                                                "
+"                                                                                "

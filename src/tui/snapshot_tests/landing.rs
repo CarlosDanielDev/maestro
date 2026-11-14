@@ -65,6 +65,12 @@ fn landing_welcome_80x24_ascii() {
 }
 
 #[test]
+fn landing_welcome_80x26_ascii() {
+    let terminal = render_landing(80, 26, false, true);
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
 fn landing_welcome_80x24_nerd_font() {
     let terminal = render_landing(80, 24, true, true);
     assert_snapshot!(terminal.backend());
@@ -188,24 +194,27 @@ fn landing_resize_rerenders_at_new_dimensions() {
 
 #[test]
 fn landing_plain_mode_emits_no_styles() {
-    let terminal = render_landing(80, 24, true, false);
-    let buffer = terminal.backend().buffer();
-    for y in 0..buffer.area.height {
-        for x in 0..buffer.area.width {
-            let style = buffer[(x, y)].style();
-            let fg_plain = style.fg.is_none_or(|color| color == Color::Reset);
-            let bg_plain = style.bg.is_none_or(|color| color == Color::Reset);
-            let underline_plain = style
-                .underline_color
-                .is_none_or(|color| color == Color::Reset);
-            assert!(
-                fg_plain
-                    && bg_plain
-                    && underline_plain
-                    && style.add_modifier.is_empty()
-                    && style.sub_modifier.is_empty(),
-                "style at ({x},{y}) was {style:?}"
-            );
+    // 80x24 is menu-only (#1224); 80x26 draws the Small Release Console.
+    for (width, height) in [(80, 24), (80, 26)] {
+        let terminal = render_landing(width, height, true, false);
+        let buffer = terminal.backend().buffer();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                let style = buffer[(x, y)].style();
+                let fg_plain = style.fg.is_none_or(|color| color == Color::Reset);
+                let bg_plain = style.bg.is_none_or(|color| color == Color::Reset);
+                let underline_plain = style
+                    .underline_color
+                    .is_none_or(|color| color == Color::Reset);
+                assert!(
+                    fg_plain
+                        && bg_plain
+                        && underline_plain
+                        && style.add_modifier.is_empty()
+                        && style.sub_modifier.is_empty(),
+                    "{width}x{height}: style at ({x},{y}) was {style:?}"
+                );
+            }
         }
     }
 }

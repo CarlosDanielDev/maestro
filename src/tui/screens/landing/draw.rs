@@ -62,7 +62,7 @@ pub(crate) struct WelcomeLayout {
 /// smaller areas drop panels instead of switching to another screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConsoleTier {
-    /// Summary line + highlights.
+    /// Summary line, compact Mix + Ref Trend panels, boxed highlights (#1224).
     Small,
     /// Adds the Mix and Ref Trend charts.
     Medium,
@@ -74,7 +74,7 @@ impl ConsoleTier {
     /// Min and max console height, border included.
     pub(crate) fn height_bounds(self) -> (u16, u16) {
         match self {
-            Self::Small => (7, 7),
+            Self::Small => (9, 9),
             Self::Medium => (13, 18),
             Self::Full => (16, 30),
         }
@@ -82,7 +82,7 @@ impl ConsoleTier {
 }
 
 pub(crate) fn console_tier(area: Rect) -> Option<ConsoleTier> {
-    if area.width < 80 || area.height < 24 {
+    if area.width < 80 || area.height < 26 {
         None
     } else if area.width >= 140 && area.height >= 34 {
         Some(ConsoleTier::Full)
@@ -103,7 +103,7 @@ pub(crate) fn console_row_heights(tier: ConsoleTier, inner_height: u16) -> [u16;
             [2, network, charts]
         }
         ConsoleTier::Medium => [1, 0, inner_height.saturating_sub(7).clamp(5, 9)],
-        ConsoleTier::Small => [1, 0, 0],
+        ConsoleTier::Small => [1, 0, 3],
     }
 }
 
@@ -430,23 +430,19 @@ impl LandingScreen {
             );
         }
 
-        if tier != ConsoleTier::Small {
-            let charts = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-                .split(rows[2]);
-            draw_release_mix(f, charts[0], theme, mode);
-            draw_pr_trace(f, charts[1], theme, mode);
-        }
-
-        // Small has no room for a boxed panel: unboxed, all highlights fit.
-        let lines = whats_new_lines(&items, rows[3].width as usize, theme, mode);
-        let highlights = Paragraph::new(lines);
-        let highlights = if tier == ConsoleTier::Small {
-            highlights
+        let charts = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(rows[2]);
+        if tier == ConsoleTier::Small {
+            draw_release_mix_compact(f, charts[0], theme, mode);
         } else {
-            highlights.block(chart_block("Highlights", theme, mode))
-        };
+            draw_release_mix(f, charts[0], theme, mode);
+        }
+        draw_pr_trace(f, charts[1], theme, mode);
+
+        let lines = whats_new_lines(&items, rows[3].width as usize, theme, mode);
+        let highlights = Paragraph::new(lines).block(chart_block("Highlights", theme, mode));
         f.render_widget(highlights, rows[3]);
     }
 }
@@ -714,6 +710,23 @@ fn draw_release_mix(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) 
         .value_style(value_style)
         .label_style(label_style);
     f.render_widget(chart, area);
+}
+
+/// Small-tier Mix (#1224): one text row; a BarChart needs more rows.
+fn draw_release_mix_compact(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) {
+    let text = release_mix_text(area.width.saturating_sub(2) as usize);
+    f.render_widget(
+        Paragraph::new(text).block(chart_block("Mix", theme, mode)),
+        area,
+    );
+}
+
+fn release_mix_text(width: usize) -> String {
+    let parts: Vec<String> = release_category_counts()
+        .iter()
+        .map(|(label, count)| format!("{label} {count}"))
+        .collect();
+    ellipsize(&parts.join("  "), width)
 }
 
 fn draw_pr_trace(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) {
