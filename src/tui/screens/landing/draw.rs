@@ -1021,6 +1021,12 @@ fn render_text(f: &mut Frame, x: u16, y: u16, width: u16, text: &str, style: Sty
     f.render_widget(Paragraph::new(Line::from(Span::styled(text, style))), rect);
 }
 
+// RED stub (#1224): replaced in GREEN.
+#[allow(dead_code)]
+fn release_mix_text(_width: usize) -> String {
+    String::new()
+}
+
 pub(crate) fn ellipsize(text: &str, max_width: usize) -> String {
     if text.width() <= max_width {
         return text.to_string();
