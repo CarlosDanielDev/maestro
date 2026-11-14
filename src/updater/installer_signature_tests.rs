@@ -304,5 +304,11 @@ fn shipped_trusted_release_keys_all_decode() {
     // every shipped key decodes and at least one ships (first key: v0.31.6).
     let shipped = crate::updater::TRUSTED_RELEASE_PUBLIC_KEYS;
     assert!(!shipped.is_empty(), "no trusted release key shipped");
+    for b64 in shipped {
+        assert!(
+            PublicKey::from_base64(b64).is_ok(),
+            "trusted release key does not decode: {b64}"
+        );
+    }
     assert_eq!(trusted_release_keys().len(), shipped.len());
 }
