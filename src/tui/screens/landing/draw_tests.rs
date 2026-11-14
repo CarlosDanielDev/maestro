@@ -147,7 +147,11 @@ fn layout_80x24_console_sits_between_menu_and_footer() {
         l.console_y + l.console_height,
         l.footer_y
     );
-    assert!(l.footer_y < area.height, "footer off screen: {}", l.footer_y);
+    assert!(
+        l.footer_y < area.height,
+        "footer off screen: {}",
+        l.footer_y
+    );
     assert!(l.console_x + l.console_width <= area.width);
 }
 
@@ -199,7 +203,10 @@ fn full_150x40_draws_every_panel_and_the_net_hint() {
     for title in ["Internet", "Link", "Mix", "Ref Trend", "Highlights"] {
         assert!(has_panel(&text, title), "missing panel {title}:\n{text}");
     }
-    assert!(text.contains("<w> net"), "Full footer needs <w> net:\n{text}");
+    assert!(
+        text.contains("<w> net"),
+        "Full footer needs <w> net:\n{text}"
+    );
 }
 
 #[test]
@@ -209,10 +216,19 @@ fn medium_110x32_drops_internet_and_link_and_the_net_hint() {
         assert!(has_panel(&text, title), "missing panel {title}:\n{text}");
     }
     for title in ["Internet", "Link"] {
-        assert!(!has_panel(&text, title), "unexpected panel {title}:\n{text}");
+        assert!(
+            !has_panel(&text, title),
+            "unexpected panel {title}:\n{text}"
+        );
     }
-    assert!(!text.contains("<w> net"), "Medium footer has <w> net:\n{text}");
-    assert!(text.contains("<q> quit"), "footer must stay visible:\n{text}");
+    assert!(
+        !text.contains("<w> net"),
+        "Medium footer has <w> net:\n{text}"
+    );
+    assert!(
+        text.contains("<q> quit"),
+        "footer must stay visible:\n{text}"
+    );
 }
 
 #[test]
@@ -221,10 +237,19 @@ fn small_80x24_shows_only_summary_and_highlights() {
     assert!(text.contains("Release Console v"), "{text}");
     assert_all_highlight_prefixes_present(&text);
     for title in ["Internet", "Link", "Mix", "Ref Trend"] {
-        assert!(!has_panel(&text, title), "unexpected panel {title}:\n{text}");
+        assert!(
+            !has_panel(&text, title),
+            "unexpected panel {title}:\n{text}"
+        );
     }
-    assert!(!text.contains("<w> net"), "Small footer has <w> net:\n{text}");
-    assert!(text.contains("<q> quit"), "footer must stay visible:\n{text}");
+    assert!(
+        !text.contains("<w> net"),
+        "Small footer has <w> net:\n{text}"
+    );
+    assert!(
+        text.contains("<q> quit"),
+        "footer must stay visible:\n{text}"
+    );
 }
 
 #[test]

@@ -197,7 +197,9 @@ impl Screen for LandingScreen {
             }
 
             if matches!(code, KeyCode::Char('w') | KeyCode::Char('W')) {
-                self.trigger_network_measurement();
+                if self.network_panel_visible {
+                    self.trigger_network_measurement();
+                }
                 return ScreenAction::None;
             }
 
@@ -223,6 +225,7 @@ impl Screen for LandingScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.network_panel_visible = draw::console_tier(area) == Some(draw::ConsoleTier::Full);
         self.draw_impl(f, area, theme);
     }
 
