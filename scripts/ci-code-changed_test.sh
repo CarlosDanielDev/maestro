@@ -45,6 +45,9 @@ check "generated config doc" true docs/configuration.md
 check "templates md" true .maestro/templates/commands/x.md
 check "claude md" true .claude/CLAUDE.md
 check "test fixture md" true tests/fixtures/x.md
+check "golden-rules copies (read by a Rust test)" true AGENTS.md GEMINI.md .codex/AGENTS.md
+check "script under docs/assets (read by a Rust test)" true docs/assets/capture.sh
+check "media under docs/assets" false docs/assets/demo.gif docs/assets/og.png docs/assets/hero.svg docs/assets/demo.webm
 
 for base in "" 0000000000000000000000000000000000000000 deadbeef; do
   got="$(bash "$script" "$base")"
@@ -53,5 +56,20 @@ for base in "" 0000000000000000000000000000000000000000 deadbeef; do
     fails=$((fails + 1))
   fi
 done
+
+# Guard: no tracked docs-only file may be named by code or tests. A test
+# that reads one would be skipped on the very diff that breaks it (#1213
+# broke tests/capture_script.rs this way). README.md is exempt: tests only
+# create their own temp README.md, none reads the repo's.
+repo_root="$(cd "$(dirname "$script")/.." && pwd)"
+while IFS= read -r f; do
+  [ "$f" = README.md ] && continue
+  [ "$(cd "$repo_root" && bash "$script" --classify "$f")" = docs ] || continue
+  if hits="$(cd "$repo_root" && git grep -l -F "\"$f\"" -- src tests build.rs 2>/dev/null)"; then
+    echo "FAIL docs-only file referenced by code/tests: $f <- $(echo "$hits" | tr '\n' ' ')"
+    fails=$((fails + 1))
+  fi
+done < <(cd "$repo_root" && git ls-files)
+echo "ok   no docs-only file is referenced by code/tests"
 
 [ "$fails" -eq 0 ] || { echo "$fails case(s) failed"; exit 1; }
