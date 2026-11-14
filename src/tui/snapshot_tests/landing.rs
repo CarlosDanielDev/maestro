@@ -194,7 +194,8 @@ fn landing_resize_rerenders_at_new_dimensions() {
 
 #[test]
 fn landing_plain_mode_emits_no_styles() {
-    // 80x24 is menu-only (#1224); 80x26 draws the Small Release Console.
+    // 80x24 draws the compact header + Small console (#1226); 80x26 the big
+    // header + Small console.
     for (width, height) in [(80, 24), (80, 26)] {
         let terminal = render_landing(width, height, true, false);
         let buffer = terminal.backend().buffer();

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::tui::screens::landing::LandingScreen;
 use crate::tui::theme::Theme;
-use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 #[test]
 fn styles_are_disabled_when_no_color_is_present() {
@@ -47,15 +47,18 @@ fn footer_stays_inside_the_area_at_60x20_when_the_menu_grows() {
 // shows, dropping panels by tier.
 // ---------------------------------------------------------------------------
 
-/// Draws the landing (ASCII header, styled) and returns the buffer as text.
-fn render_text(width: u16, height: u16) -> String {
+/// Draws the landing and returns the raw buffer.
+fn render_buffer(width: u16, height: u16, nerd: bool, styled: bool) -> Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     let theme = Theme::dark();
     let screen = LandingScreen::new();
     terminal
-        .draw(|f| screen.draw_impl_for_test(f, f.area(), &theme, false, true))
+        .draw(|f| screen.draw_impl_for_test(f, f.area(), &theme, nerd, styled))
         .unwrap();
-    let buf = terminal.backend().buffer().clone();
+    terminal.backend().buffer().clone()
+}
+
+fn buffer_text(buf: &Buffer) -> String {
     (0..buf.area.height)
         .map(|y| {
             (0..buf.area.width)
@@ -64,6 +67,11 @@ fn render_text(width: u16, height: u16) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Draws the landing (ASCII header, styled) and returns the buffer as text.
+fn render_text(width: u16, height: u16) -> String {
+    buffer_text(&render_buffer(width, height, false, true))
 }
 
 /// True when a sub-panel with this title is drawn (`┌Title` border corner).
@@ -94,12 +102,15 @@ fn console_tier_edges() {
         (60, 15, None),
         (79, 24, None),
         (79, 26, None),
-        (80, 23, None),
-        (80, 24, None),
-        (80, 25, None),
-        (200, 23, None),
-        (200, 25, None),
         (79, 60, None),
+        (80, 19, None),
+        (200, 19, None),
+        (80, 20, Some(ConsoleTier::Small)),
+        (80, 23, Some(ConsoleTier::Small)),
+        (80, 24, Some(ConsoleTier::Small)),
+        (80, 25, Some(ConsoleTier::Small)),
+        (200, 23, Some(ConsoleTier::Small)),
+        (200, 25, Some(ConsoleTier::Small)),
         (80, 26, Some(ConsoleTier::Small)),
         (99, 40, Some(ConsoleTier::Small)),
         (99, 60, Some(ConsoleTier::Small)),
@@ -194,8 +205,8 @@ fn layout_full_tier_matches_the_old_wide_deck() {
 }
 
 #[test]
-fn layout_below_80x26_has_no_console_tier() {
-    for (w, h) in [(79, 40), (120, 23), (80, 24), (80, 25), (120, 25)] {
+fn layout_below_80x20_or_79_columns_has_no_console_tier() {
+    for (w, h) in [(79, 40), (80, 19), (120, 19), (200, 19), (79, 22)] {
         assert_eq!(
             welcome_layout(Rect::new(0, 0, w, h)).console_tier,
             None,
@@ -331,8 +342,8 @@ fn release_mix_text_is_ellipsized_when_narrow() {
 }
 
 #[test]
-fn below_80_columns_or_26_rows_has_no_console() {
-    for (w, h) in [(79, 40), (120, 23), (60, 20), (80, 24), (80, 25), (120, 25)] {
+fn below_80_columns_or_20_rows_has_no_console() {
+    for (w, h) in [(79, 40), (60, 20), (80, 19), (120, 19), (79, 24)] {
         let text = render_text(w, h);
         assert!(!text.contains("Release Console v"), "{w}x{h}:\n{text}");
     }
@@ -342,7 +353,7 @@ fn below_80_columns_or_26_rows_has_no_console() {
 #[test]
 fn no_size_renders_the_old_whats_new_box() {
     let edge_w = [20u16, 60, 79, 80, 99, 100, 139, 140, 200];
-    let edge_h = [12u16, 15, 23, 24, 25, 26, 28, 29, 30, 33, 34, 60];
+    let edge_h = [12u16, 15, 19, 20, 23, 24, 25, 26, 28, 29, 30, 33, 34, 60];
     // Degenerate sizes first: they must not panic either.
     let mut sizes: Vec<(u16, u16)> = vec![(0, 0), (1, 1), (1, 24), (80, 1)];
     for &w in &edge_w {

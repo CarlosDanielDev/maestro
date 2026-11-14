@@ -610,7 +610,10 @@ maestro/
 │   │       ├── landing/                   # Landing screen components
 │   │       │   ├── mod.rs                 # LandingScreen struct with Screen trait impl; set_mascot() takes MascotStyle param; 2 wiring tests for Milestone Review menu entry  [Issue #473, #500]
 │   │       │   ├── types.rs               # Landing screen type definitions; LandingMenuItem::push("Milestone Review", 'h', TuiMode::MilestoneHealth) added; `[t] Teams` menu item added emitting PushTeamWizard  [Issue #500, #664]
-│   │       │   └── draw.rs                # ratatui rendering for landing screen; picks MascotWidget style (sprite 32×16 vs ascii 11×6 canvas) based on MascotStyle  [Issue #473]
+│   │       │   ├── draw.rs                # ratatui rendering for landing screen; picks MascotWidget style (sprite 32×16 vs ascii 11×6 canvas) based on MascotStyle  [Issue #473]
+│   │       │   └── draw/                  # Landing draw submodules  [Issue #1226]
+│   │       │       ├── header.rs          # Landing header: big 6-row logo, or one-line `MAESTRO vX.Y.Z` compact header at 80+ cols and 20..25 landing rows  [Issue #1226]
+│   │       │       └── header_tests.rs    # Unit tests for the landing header tiers  [Issue #1226]
 │   │       ├── milestone_wizard/          # Milestone creation wizard screen components  [Issue #447]
 │   │       │   ├── mod.rs                 # MilestoneWizardScreen: three persistent TextAreaFields (goal_field, non_goals_field, doc_buffer_field)  [Issue #447]
 │   │       │   ├── types.rs               # MilestoneWizardStep state machine and form payload types
@@ -1247,6 +1250,9 @@ maestro/
 | `src/tui/screens/landing/mod.rs` | `LandingScreen` struct with `Screen` trait impl; `set_mascot()` takes `MascotStyle` param (Issue #473) |
 | `src/tui/screens/landing/types.rs` | Landing screen type definitions |
 | `src/tui/screens/landing/draw.rs` | ratatui rendering for landing screen; selects sprite (32×16) vs ascii (11×6) canvas based on `MascotStyle` (Issue #473) |
+| `src/tui/screens/landing/draw/header.rs` | Landing header: big 6-row logo, or one-line `MAESTRO vX.Y.Z` compact header at 80+ cols and 20..25 landing rows so the Small Release Console fits (Issue #1226) |
+| `src/tui/screens/landing/draw/header_tests.rs` | Unit tests for the landing header tiers (Issue #1226) |
+| `src/tui/snapshot_tests/landing_full_app.rs` | Full-app `ui::draw` Landing tests: activity log is 3 rows (border + 1 line) below 40 terminal rows, unchanged from 40 rows (Issue #1226) |
 | `src/tui/screens/team_wizard/` | Team Wizard TUI screen: Compose / Launch / Manage flows for orchestration teams (Issue #664) |
 | `src/tui/screens/team_wizard/mod.rs` | `TeamWizardScreen`: step-machine orchestrator for all three flows; owns `ComposePayload`, `LaunchPayload`, `ManageState`, `PreflightCache`; entry via `new()` or `with_entry(mode, preselect)`; async-data setters `apply_resolved_teams()`, `apply_health_check()`, `apply_issue_metas()` are integration points for future dispatcher wiring (Issue #664) |
 | `src/tui/screens/team_wizard/types.rs` | `ComposeStep`, `LaunchStep`, `ManageStep` enums; `ComposePayload`, `LaunchPayload`, `ManageState`, `PreflightCache`, `AgentHealth`, `TeamLaunchInput`, `TeamWizardMode`, `ComposeSource` types (Issue #664) |

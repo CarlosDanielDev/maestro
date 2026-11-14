@@ -26,6 +26,22 @@ use ratatui::{
 };
 
 /// Render the entire TUI.
+/// #1226: on a terminal shorter than this, the landing's activity log
+/// shrinks to one content row so the Release Console fits. Taller terminals
+/// keep the normal log (and every startup notice in view).
+const LANDING_COMPACT_LOG_BELOW_ROWS: u16 = 40;
+/// Border + one content row.
+const LANDING_COMPACT_LOG_HEIGHT: u16 = 3;
+
+/// The landing is on screen, alone or under the quit modal.
+fn shows_landing(app: &App) -> bool {
+    match app.tui_mode {
+        TuiMode::Landing => true,
+        TuiMode::ConfirmExit => matches!(app.nav_stack.peek(), Some(TuiMode::Landing)),
+        _ => false,
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Advance spinner animation on each draw cycle
     app.spinner_tick = app.spinner_tick.wrapping_add(1);
@@ -38,7 +54,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let derived = crate::mascot::derive_dashboard_mascot_state(app.pool.all_statuses());
     app.mascot_animator.set_state(derived, &clock);
 
-    let log_height = if app.show_activity_log {
+    let log_height = if !app.show_activity_log {
+        0
+    } else if shows_landing(app) && f.area().height < LANDING_COMPACT_LOG_BELOW_ROWS {
+        LANDING_COMPACT_LOG_HEIGHT
+    } else {
         app.config
             .as_ref()
             .map(|c| {
@@ -47,8 +67,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 ((total as u32 * pct as u32) / 100).max(4) as u16
             })
             .unwrap_or(10)
-    } else {
-        0
     };
 
     // #893: bypass-mode banner overlays the top status-bar row, eating the

@@ -16,6 +16,11 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+mod header;
+use header::{
+    COMPACT_CONSOLE_MIN_HEIGHT, COMPACT_HEADER_HEIGHT, CONSOLE_MIN_WIDTH, uses_compact_header,
+};
+
 const NARROW_WIDTH: u16 = 60;
 const MIN_MENU_PADDING: u16 = 2;
 const COLUMN_GAP: u16 = 4;
@@ -50,6 +55,7 @@ pub(crate) struct WelcomeLayout {
     pub right_padding: u16,
     pub columns: u16,
     pub show_header: bool,
+    pub compact_header: bool,
     pub footer_y: u16,
     pub console_tier: Option<ConsoleTier>,
     pub console_x: u16,
@@ -82,7 +88,7 @@ impl ConsoleTier {
 }
 
 pub(crate) fn console_tier(area: Rect) -> Option<ConsoleTier> {
-    if area.width < 80 || area.height < 26 {
+    if area.width < CONSOLE_MIN_WIDTH || area.height < COMPACT_CONSOLE_MIN_HEIGHT {
         None
     } else if area.width >= 140 && area.height >= 34 {
         Some(ConsoleTier::Full)
@@ -123,11 +129,14 @@ struct MenuItemRender<'a> {
 }
 
 pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
-    let show_header = area.width >= NARROW_WIDTH;
+    let compact_header = uses_compact_header(area);
+    let show_header = area.width >= NARROW_WIDTH && !compact_header;
     let columns = if area.width >= 80 { 2 } else { 1 };
     let max_content_width = area.width.saturating_sub(MIN_MENU_PADDING * 2).max(1);
     let base_menu_width = menu_block_width(columns).min(max_content_width).max(1);
-    let header_height = if show_header {
+    let header_height = if compact_header {
+        COMPACT_HEADER_HEIGHT
+    } else if show_header {
         NERD_HEADER.len() as u16 + 2
     } else {
         0
@@ -178,6 +187,7 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         right_padding,
         columns,
         show_header,
+        compact_header,
         footer_y,
         console_tier: tier,
         console_x: stage_x,
@@ -235,6 +245,9 @@ impl LandingScreen {
         let layout = welcome_layout(area);
         if layout.show_header {
             self.draw_header(f, area, &layout, theme, mode);
+        }
+        if layout.compact_header {
+            header::draw_compact_header(f, area, layout.menu_y, theme, mode);
         }
         self.draw_menu(f, area, &layout, theme, mode);
         self.draw_release_console(f, area, &layout, theme, mode);
