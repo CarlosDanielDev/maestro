@@ -39,6 +39,8 @@ pub struct LandingScreen {
     pub(super) network_measure_started: Option<usize>,
     pub(super) last_network_measure_tick: Option<usize>,
     pub(super) network_peak_rates: Option<NetworkRates>,
+    /// Set on every draw: `[w]` only measures while the Internet panel shows.
+    pub(super) network_panel_visible: bool,
 }
 
 impl LandingScreen {
@@ -52,6 +54,7 @@ impl LandingScreen {
             network_measure_started: None,
             last_network_measure_tick: None,
             network_peak_rates: None,
+            network_panel_visible: false,
         }
     }
 
@@ -233,6 +236,55 @@ mod tests {
     use super::*;
     use crate::tui::app::TuiMode;
     use crate::tui::screens::test_helpers::key_event;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    /// Drives the real `Screen::draw`, which records whether the Internet
+    /// panel is visible (`draw_impl_for_test` does not).
+    fn draw_at(s: &mut LandingScreen, width: u16, height: u16) {
+        let theme = Theme::dark();
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|f| s.draw(f, f.area(), &theme)).unwrap();
+    }
+
+    fn press_w(s: &mut LandingScreen) -> ScreenAction {
+        s.handle_input(&key_event(KeyCode::Char('w')), InputMode::Normal)
+    }
+
+    #[test]
+    fn w_before_any_draw_is_ignored() {
+        let mut s = LandingScreen::new();
+        assert_eq!(press_w(&mut s), ScreenAction::None);
+        assert_eq!(s.network_measure_state(), NetworkMeasureState::Standby);
+        assert_eq!(s.network_peak_rates(), None);
+    }
+
+    #[test]
+    fn w_is_ignored_at_110x32_where_the_internet_panel_is_hidden() {
+        let mut s = LandingScreen::new();
+        draw_at(&mut s, 110, 32);
+        assert_eq!(press_w(&mut s), ScreenAction::None);
+        assert_eq!(s.network_measure_state(), NetworkMeasureState::Standby);
+    }
+
+    #[test]
+    fn w_starts_measuring_at_150x40_where_the_internet_panel_is_drawn() {
+        let mut s = LandingScreen::new();
+        draw_at(&mut s, 150, 40);
+        assert_eq!(press_w(&mut s), ScreenAction::None);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Measuring { tick: 0 }
+        );
+    }
+
+    #[test]
+    fn w_is_ignored_again_after_shrinking_from_full_to_medium() {
+        let mut s = LandingScreen::new();
+        draw_at(&mut s, 150, 40);
+        draw_at(&mut s, 110, 32);
+        assert_eq!(press_w(&mut s), ScreenAction::None);
+        assert_eq!(s.network_measure_state(), NetworkMeasureState::Standby);
+    }
 
     #[test]
     fn new_starts_with_first_entry_selected() {
@@ -335,6 +387,7 @@ mod tests {
     #[test]
     fn shortcut_w_starts_network_measurement() {
         let mut s = LandingScreen::new();
+        s.network_panel_visible = true; // #1218: [w] only works while the Internet panel shows
         s.set_animation_context(42);
         let action = s.handle_input(&key_event(KeyCode::Char('w')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
@@ -353,6 +406,7 @@ mod tests {
     #[test]
     fn shortcut_uppercase_w_starts_network_measurement() {
         let mut s = LandingScreen::new();
+        s.network_panel_visible = true; // #1218
         let action = s.handle_input(&key_event(KeyCode::Char('W')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert_eq!(

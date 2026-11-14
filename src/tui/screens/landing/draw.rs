@@ -61,6 +61,33 @@ pub(crate) struct WelcomeLayout {
     pub whats_new_y: u16,
     pub whats_new_height: u16,
     pub footer_y: u16,
+    pub console_tier: Option<ConsoleTier>,
+    pub console_x: u16,
+    pub console_width: u16,
+    pub console_y: u16,
+    pub console_height: u16,
+}
+
+// RED stubs (#1218) — replaced in GREEN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConsoleTier {
+    Small,
+    Medium,
+    Full,
+}
+
+impl ConsoleTier {
+    pub(crate) fn height_bounds(self) -> (u16, u16) {
+        (0, 0)
+    }
+}
+
+pub(crate) fn console_tier(_area: Rect) -> Option<ConsoleTier> {
+    None
+}
+
+pub(crate) fn console_row_heights(_tier: ConsoleTier, _inner_height: u16) -> [u16; 3] {
+    [0; 3]
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -165,6 +192,11 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
         whats_new_y,
         whats_new_height: whats_new_block_height,
         footer_y,
+        console_tier: None,
+        console_x: 0,
+        console_width: 0,
+        console_y: 0,
+        console_height: 0,
     }
 }
 
