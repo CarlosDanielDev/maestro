@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Scripted demo capture of the real maestro TUI for the gh-pages hero (#1061).
+# Scripted demo capture of the real maestro TUI (#1061): three agents fix
+# three real, already-shipped maestro bugs side by side.
 #
 # Tooling: vhs (charmbracelet) — https://github.com/charmbracelet/vhs
 # Install: brew install vhs   (vhs brings ttyd and ffmpeg along)
@@ -10,13 +11,21 @@
 #
 # Re-run whenever the TUI changes:
 #   ./docs/assets/capture.sh
-# Output: docs/assets/demo.webm (kept under the 2 MB gh-pages budget).
-# To ship it: commit the file to the gh-pages branch, where index.html
-# embeds it as <video autoplay muted loop playsinline>.
+# Output:
+#   docs/assets/demo.webm — gh-pages hero (2 MB budget). To ship it, commit
+#     it to the gh-pages branch, where index.html embeds it as
+#     <video autoplay muted loop playsinline>.
+#   docs/assets/demo.gif  — README hero and social posts.
 #
-# Deliberately narrow key arc — screens that render local machine state
-# (Fleet Board reads the user's real ~/.claude session history) must never
-# appear in a public capture.
+# Privacy: the whole run uses a throwaway HOME. Fleet Board and Adopt
+# Session read $HOME/.claude/projects, so they only ever see the fake
+# conversations seeded below — never the real ones on this machine. The
+# demo lives under /tmp/maestro-demo.* so no user name or local path shows
+# up on screen. Watch the output end to end before publishing anyway.
+#
+# Safety: the agent is docs/assets/demo-agent.sh (scripted stream-json, edits
+# nothing). auto_pr is off and origin's push URL is invalid, so nothing can
+# reach GitHub except read-only gh calls for the stats bar.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -27,150 +36,126 @@ cd "$repo_root"
 cargo build --release --quiet
 bin="$repo_root/target/release/maestro"
 
-# 2. Stage an isolated demo project so the capture is deterministic and
-#    touches nothing outside its own temp dir.
-demo="$(mktemp -d "${TMPDIR:-/tmp}/maestro-demo-capture.XXXXXX")"
+# gh auth comes from the real environment before HOME is swapped. It lives
+# only in the process env: never in the tape, never on screen.
+GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+export GH_TOKEN
+
+# 2. Isolated demo project + fake HOME.
+demo="$(mktemp -d /tmp/maestro-demo.XXXXXX)"
 trap 'rm -rf "$demo"' EXIT
+fake_home="$demo/home"
+mkdir -p "$fake_home"
 
 cp "$bin" "$demo/maestro"
+cp "$repo_root/docs/assets/demo-agent.sh" "$demo/claude"
 
-# A git repo with the project remote so doctor checks stay green and the
-# stats bar resolves real context.
 git -C "$demo" init -q
+git -C "$demo" config user.name demo
+git -C "$demo" config user.email demo@example.invalid
+git -C "$demo" commit -q --allow-empty -m init
 git -C "$demo" remote add origin https://github.com/CarlosDanielDev/maestro
+git -C "$demo" remote set-url --push origin no-push://disabled
 
-# A valid config via the binary's own initializer, with the permission mode
-# softened off bypass (its red banner would dominate the hero) and the
-# [agents] block doctor's schema check expects.
-(cd "$demo" && ./maestro init --non-interactive >/dev/null 2>&1) || {
+(cd "$demo" && HOME="$fake_home" ./maestro init --non-interactive >/dev/null 2>&1) || {
   echo "maestro init failed in demo dir" >&2
   exit 1
 }
-sed -i '' 's/permission_mode = "bypassPermissions"/permission_mode = "acceptEdits"/' "$demo/maestro.toml"
-cat >> "$demo/maestro.toml" <<'EOF'
-
-[agents]
-default = "claude"
-
-[agents.claude]
-kind = "claude"
-enabled = true
-command = "claude"
-model = "opus"
-permission_mode = "acceptEdits"
-allowed_tools = []
-EOF
-
-# Seeded state: three sessions so the dashboard opens with recent activity.
-cat > "$demo/maestro-state.json" <<'EOF'
-{
-  "version": 1,
-  "sessions": [
-    {
-      "id": "6f1de7a0-2c34-4e11-9a5e-3b1c8d90a101",
-      "status": "running",
-      "prompt": "Wire quota routing behind the [quota] config flag",
-      "issue_number": 1082,
-      "issue_title": "Wire quota routing, dashboard badges and 97% alert behind [quota] enabled",
-      "model": "claude-opus-5-5",
-      "mode": "orchestrator",
-      "started_at": "2026-11-10T12:04:00Z",
-      "finished_at": null,
-      "cost_usd": 1.24,
-      "context_pct": 42.0,
-      "current_activity": "Editing src/tui/app/budget.rs",
-      "last_message": "Wiring quota routing into the dashboard",
-      "activity_log": [
-        { "timestamp": "2026-11-10T12:04:10Z", "message": "Session started" },
-        { "timestamp": "2026-11-10T12:06:30Z", "message": "Reading quota config schema" }
-      ],
-      "files_touched": ["src/tui/app/budget.rs", "src/config/mod.rs"],
-      "pid": null
-    },
-    {
-      "id": "9a42c5e1-7d08-4b62-a3f1-5c2e90bd7f22",
-      "status": "completed",
-      "prompt": "Vendor the setwave guard hooks in-repo",
-      "issue_number": 1086,
-      "issue_title": "Vendor setwave guard hooks in-repo + session memory log",
-      "model": "claude-sonnet-5-5",
-      "mode": "orchestrator",
-      "started_at": "2026-11-10T11:40:00Z",
-      "finished_at": "2026-11-10T11:58:00Z",
-      "cost_usd": 0.87,
-      "context_pct": 88.0,
-      "current_activity": "Finished — gates green",
-      "last_message": "Guard hooks vendored, all five guards pass",
-      "activity_log": [
-        { "timestamp": "2026-11-10T11:40:10Z", "message": "Session started" },
-        { "timestamp": "2026-11-10T11:57:40Z", "message": "Completed" }
-      ],
-      "files_touched": [".maestro/hooks/guards.py"],
-      "pid": null
-    },
-    {
-      "id": "2b8d94f6-1e57-4c93-8a20-d47c6f08ba33",
-      "status": "queued",
-      "prompt": "Wire the sanitize module into the pipeline",
-      "issue_number": 1088,
-      "issue_title": "Sanitize module wiring",
-      "model": "claude-sonnet-5-5",
-      "mode": "vibe",
-      "started_at": null,
-      "finished_at": null,
-      "cost_usd": 0.0,
-      "context_pct": 0.0,
-      "current_activity": "Waiting for a free slot",
-      "last_message": "Queued — sanitize module wiring",
-      "activity_log": [],
-      "files_touched": [],
-      "pid": null
-    }
-  ],
-  "total_cost_usd": 2.11,
-  "file_claims": {},
-  "last_updated": "2026-11-10T12:30:00Z"
-}
-EOF
-
-# 3. Sanity gate: a broken seed would silently render an empty dashboard.
-status_out="$(cd "$demo" && ./maestro status)"
-printf '%s\n' "$status_out" | grep -q "Sessions: 3 total" || {
-  echo "seeded state did not load — aborting before capture" >&2
+sed -i '' \
+  -e 's/^auto_pr = true/auto_pr = false/' \
+  -e 's/^desktop = true/desktop = false/' \
+  -e "s#^command = \"claude\"#command = \"$demo/claude\"\\
+transport = \"headless\"#" \
+  "$demo/maestro.toml"
+grep -q '^auto_pr = true' "$demo/maestro.toml" && {
+  echo "auto_pr still on — refusing to record" >&2
   exit 1
 }
+(cd "$demo" && HOME="$fake_home" ./maestro trust --yes >/dev/null)
 
-# 4. Record the demo: landing menu -> dashboard with the seeded sessions
-#    -> quit. Plain keys only. Project Stats and Fleet Board are left out
-#    on purpose: one needs a >10s network fetch, the other renders the
-#    user's real local session history (never ship that).
-cat > "$demo/demo.tape" <<'EOF'
+# Fake Claude Code conversations for Fleet Board and Adopt Session.
+seed_transcript() { # <n> <cwd> <title> <age, as for date -v->
+  local dir
+  dir="$fake_home/.claude/projects/$(printf %s "$2" | sed 's#[/.]#-#g')"
+  local id="0000000$1-demo-4000-8000-00000000000$1"
+  mkdir -p "$dir"
+  printf '{"type":"user","sessionId":"%s","cwd":"%s","message":{"role":"user","content":"%s"}}\n{"type":"ai-title","sessionId":"%s","aiTitle":"%s"}\n' \
+    "$id" "$2" "$3" "$id" "$3" >"$dir/$id.jsonl"
+  touch -t "$(date -v-"$4" +%Y%m%d%H%M.%S)" "$dir/$id.jsonl"
+}
+seed_transcript 1 /home/dev/acme-api "Fix flaky checkout retry test" 3M
+seed_transcript 2 /home/dev/acme-web "Dark mode tokens for the settings page" 25M
+seed_transcript 3 /home/dev/maestro "Triage v0.32 bug reports" 2H
+seed_transcript 4 /home/dev/infra "Bump Postgres to 17 in staging" 6H
+seed_transcript 5 /home/dev/acme-api "Profile slow /orders endpoint" 1d
+
+# 3. Record. Landing -> Fleet Board -> Adopt Session -> dashboard -> launch
+#    three bug-fix prompts -> watch them run to green -> token report -> back to the all-green overview.
+cat >"$demo/demo.tape" <<EOF
 Output demo.webm
+Output demo.gif
 Set Shell bash
 Set FontFamily "Hack Nerd Font"
 Set FontSize 16
 Set Width 1280
 Set Height 800
-Set TypingSpeed 100ms
+Set Framerate 20
+Set TypingSpeed 35ms
 Set Padding 16
 Set WindowBar Colorful
 Set Theme {"background": "#0b0e0c", "foreground": "#d8ded9", "cursor": "#45e08a", "selectionBackground": "#1d2b22"}
+Hide
+Type "export HOME=$fake_home PS1='\$ '; clear"
+Enter
+Show
 Type "./maestro"
 Enter
-Sleep 4500ms
+Sleep 5500ms
+Type "f"
+Sleep 3500ms
+Escape
+Sleep 600ms
+Type "a"
+Sleep 2500ms
+Escape
+Sleep 600ms
 Type "d"
-Sleep 8500ms
-Ctrl+X
-Sleep 500ms
+Sleep 2500ms
+Type "r"
+Sleep 600ms
+Type "fix #1155: a model maestro cannot price shows \$0.00"
+Enter
+Sleep 1500ms
+Escape
+Sleep 600ms
+Type "r"
+Sleep 600ms
+Type "fix #1154: one network error aborts maestro run"
+Enter
+Sleep 1500ms
+Escape
+Sleep 600ms
+Type "r"
+Sleep 600ms
+Type "fix #1153: the TUI freezes while a session finishes"
+Enter
+Sleep 23000ms
+Escape
+Sleep 1200ms
+Type "t"
+Sleep 3500ms
+Escape
+Sleep 5000ms
 EOF
 (cd "$demo" && vhs demo.tape)
 
-# 5. Land the capture in the repo and enforce the gh-pages size budget.
-mv "$demo/demo.webm" "$repo_root/docs/assets/demo.webm"
-bytes="$(wc -c < "$repo_root/docs/assets/demo.webm" | tr -d ' ')"
+# 4. Land the captures and enforce the gh-pages size budget.
+mv "$demo/demo.webm" "$demo/demo.gif" "$repo_root/docs/assets/"
+bytes="$(wc -c <"$repo_root/docs/assets/demo.webm" | tr -d ' ')"
 max_bytes=$((2 * 1024 * 1024))
 if [ "$bytes" -ge "$max_bytes" ]; then
   echo "docs/assets/demo.webm is $bytes bytes — over the 2 MB budget; shorten the tape" >&2
   exit 1
 fi
 echo "docs/assets/demo.webm written ($bytes bytes, under budget)"
+echo "docs/assets/demo.gif written ($(wc -c <"$repo_root/docs/assets/demo.gif" | tr -d ' ') bytes)"
