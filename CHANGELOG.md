@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.7] - 2026-11-14
+
+### Fixed
+- **One landing at every size.** The welcome screen always shows the Release Console. On smaller terminals it drops panels instead of switching to a separate "What's New" box: below 140x34 the Internet and Link panels go, below 100x30 the Mix and Ref Trend charts go, and the summary line and highlights stay. `[w]` (network measure) only works while the Internet panel shows. (#1218)
+
+### Changed
+- **CI skips the heavy Rust jobs on docs-only pull requests.** A `Detect Code Changes` job lets Markdown-only and media-only diffs skip Test, Clippy, Coverage and the other cargo-backed checks; the required checks still report success. Files that code or tests read by path (`CHANGELOG.md`, `docs/configuration.md`, `AGENTS.md`, scripts under `docs/assets/`, templates) always run the full gate, and a self-check fails CI if a test starts reading a docs-only file. (#1212, #1219)
+
 ## [0.31.6] - 2026-11-14
 
 > **Fleet board, session adoption and a security pass.** One screen now lists
