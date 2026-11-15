@@ -1,5 +1,5 @@
 ---
-source: src/tui/snapshot_tests/landing.rs
+source: crates/maestro-tui/src/tui/snapshot_tests/landing.rs
 expression: terminal.backend()
 ---
 "                                                            "
@@ -8,7 +8,7 @@ expression: terminal.backend()
 "       | |\/| | / _ \ |  _| \___ \ | | | |_) | | | |        "
 "       | |  | |/ ___ \| |___ ___) || | |  _ <| |_| |        "
 "        |_|  |_/_/   \_\_____|____/ |_| |_| \_\\___/        "
-"                          v0.31.8                           "
+"                          v0.33.0                           "
 "                                                            "
 "                   [d]  Dashboard                           "
 "                   [i]  Create Issue                        "

@@ -9,7 +9,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-maestro-core = { path = "../maestro-core", version = "0.31.8" }
+maestro-core = { path = "../maestro-core", version = "0.33.0" }
 anyhow = "1"
 arboard = "3.6.1"
 async-trait = "0.1"
@@ -33,7 +33,7 @@ unicode-width = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
-maestro-core = { path = "../maestro-core", version = "0.31.8", features = ["test-util"] }
+maestro-core = { path = "../maestro-core", version = "0.33.0", features = ["test-util"] }
 
 insta = { version = "1", features = ["filters"] }
 tempfile = "3"
