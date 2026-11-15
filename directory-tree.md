@@ -780,7 +780,8 @@ maestro/
 │   ├── adr/                               # Architecture Decision Records; one file per decision; ADRs that survive a spike are the only artifact merged to main from that spike
 │   │   ├── 001-agent-graph-viz.md         # ADR 001: agent graph visualization — Go/No-Go verdict (concentric/radial bipartite layout, Braille canvas); tracking issue #513
 │   │   ├── 002-agent-personalities.md     # ADR 002: agent personality sprites — 5-role taxonomy, 6×6 ghost sprites, hybrid derive_role, ASCII fallback; Go verdict; tracking issue #536
-│   │   └── 003-minimax-quota-persistence.md # ADR 003: MiniMax quota persistence — fs2 vs fslock vs std::fs::File::lock, ~/.maestro path, sliding-window vs counter, schema_version=1 + deny_unknown_fields; tracking issue #775
+│   │   ├── 003-minimax-quota-persistence.md # ADR 003: MiniMax quota persistence — fs2 vs fslock vs std::fs::File::lock, ~/.maestro path, sliding-window vs counter, schema_version=1 + deny_unknown_fields; tracking issue #775
+│   │   └── 006-core-api-seam.md           # ADR 006: maestro-core public API seam — state reads stay, mutations via a core Action enum, events only where polling forces loops; TUI/CLI consumption tables; tracking issue #1303
 │   ├── agents/                            # Per-provider docs (subprocess + HTTP); each page closes with a "Using <id> in a team binding" subsection that links into docs/teams/  [Issue #676]
 │   │   ├── claude.md                      # Claude subprocess provider — install, configuration, runtime, troubleshooting, team binding
 │   │   ├── codex.md                       # Codex subprocess provider — install, configuration, field behavior, troubleshooting, team binding
@@ -967,6 +968,18 @@ maestro/
 ├── maestro-state.json                     # Runtime state persistence file
 └── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults; [sessions.hollow_retry] section (policy, work_max_retries, consultation_max_retries); [project] gains optional language/languages/build_command/test_command/run_command fields (written by `maestro init --reset`); [views] section with agent_graph_enabled = true (default-on since v0.25.1 #710; older files without this key are migrated automatically on first startup)  [Issue #12, #40, #43, #275, #505, #525, #710]
 ```
+
+## Core API Seam (planned workspace split)
+
+> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). Still one crate today; #1304–#1307 do the move.
+
+| Future crate | Today's paths | May consume |
+|--------------|---------------|-------------|
+| `maestro-core` | every other `src/` module, except the ratatui code outside `src/tui/` (`src/mascot/widget.rs`, `src/sanitize/screen.rs`), which moves to `maestro-tui` | nothing from either frontend |
+| `maestro-tui` | `src/tui/` | core API only: session events (`SessionEvent` / `StreamEvent`), costs, config, the core `Action` enum, `StateStore` reads |
+| `maestro-cli` | `src/main.rs`, `src/cli.rs`, `src/cli_team.rs`, `src/commands/` | core API + one TUI launch entry point (`maestro_tui::run`) |
+
+Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI → TUI internals (`HomeScreen`, `TuiCommand`, `LogLevel`, `strip_ansi`). Full symbol lists live in the ADR.
 
 ## Quick Reference
 
