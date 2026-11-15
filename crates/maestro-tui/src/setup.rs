@@ -1,6 +1,5 @@
 use crate::config::LoadedConfig;
-// Moved to core in #1307; re-exported so the TUI call sites keep resolving.
-pub use crate::notifications::dispatcher::build_notification_dispatcher;
+use crate::notifications::dispatcher::build_notification_dispatcher;
 use crate::review::bypass::BypassSource;
 use crate::state::store::StateStore;
 use crate::tui::app::App;

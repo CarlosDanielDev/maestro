@@ -99,9 +99,9 @@ impl App {
 #[cfg(all(test, unix))]
 mod workspace_trust_tests {
     use super::*;
-    use crate::commands::setup::setup_app_from_config_with_trust;
     use crate::config::{Config, LoadedConfig};
     use crate::session::worktree::MockWorktreeManager;
+    use crate::setup::setup_app_from_config_with_trust;
     use crate::state::store::StateStore;
 
     fn review_app(

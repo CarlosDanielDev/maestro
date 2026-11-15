@@ -5,51 +5,34 @@
 #![warn(clippy::path_buf_push_overwrite)]
 #![warn(clippy::branches_sharing_code)]
 
-// Core modules live in `maestro-core` (ADR 006); these imports keep the
-// `crate::<module>` paths used across the TUI resolving. The headless CLI
-// lives in `maestro-cli` (#1307).
+// Core modules live in `maestro-core` and the TUI in `maestro-tui` (ADR 006);
+// these imports keep the `crate::<module>` paths used by the TUI launchers
+// resolving. The headless CLI lives in `maestro-cli` (#1307).
 pub use maestro_core::agent_provider;
-use maestro_core::budget;
-use maestro_core::changelog;
 mod commands;
 use maestro_core::config;
 use maestro_core::continuous;
 use maestro_core::doctor;
 use maestro_core::flags;
+#[cfg(test)]
 use maestro_core::gates;
-use maestro_core::git;
-use maestro_core::icon_mode;
-use maestro_core::icons;
-use maestro_core::init;
 mod init_prompter;
-use maestro_core::models;
 use maestro_core::modes;
-use maestro_core::notifications;
-use maestro_core::orchestration;
-use maestro_core::plugins;
 use maestro_core::prompts;
 use maestro_core::provider;
-use maestro_core::review;
 use maestro_core::session;
-use maestro_core::settings;
 use maestro_core::state;
 #[cfg(test)]
 use maestro_core::templates;
-mod tui;
+#[cfg(test)]
 use maestro_core::updater;
-use maestro_core::util;
 use maestro_core::work;
-
-use maestro_core::adapt;
-mod mascot;
-use maestro_core::milestone_health;
-use maestro_core::prd;
-use maestro_core::sanitize;
-use maestro_core::system;
-use maestro_core::turboquant;
+use maestro_tui::tui;
 
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+use maestro_core::{adapt, orchestration, turboquant};
 
 use clap::Parser;
 use commands::*;

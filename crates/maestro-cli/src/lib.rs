@@ -19,8 +19,8 @@ pub mod commands;
 #[cfg(test)]
 use maestro_core::system;
 use maestro_core::{
-    adapt, agent_provider, config, doctor, init, insight, notifications, orchestration, provider,
-    sanitize, session, state, templates, turboquant, util, work,
+    adapt, agent_provider, agent_provider_map, config, doctor, init, insight, notifications,
+    orchestration, provider, sanitize, session, state, templates, turboquant, util, work,
 };
 
 #[cfg(test)]

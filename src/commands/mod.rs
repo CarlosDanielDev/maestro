@@ -4,7 +4,7 @@
 mod dashboard;
 mod resume;
 pub(crate) mod run;
-pub(crate) mod setup;
+pub(crate) use maestro_tui::setup;
 
 pub use dashboard::cmd_dashboard;
 pub use resume::cmd_resume;

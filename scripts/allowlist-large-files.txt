@@ -14,10 +14,10 @@
 # back on habitual extensions.
 
 # --- Outliers (> 1500 LOC, immediate priority) ---
-src/tui/screens/settings/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
+crates/maestro-tui/src/tui/screens/settings/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
 crates/maestro-core/src/provider/github/client.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
 src/config.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split maestro.toml parsing from defaults from serialization; move ThemeConfig out to resolve layer debt (see docs/layers-debt.txt)
-src/tui/app/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break into per-scenario test files under tui/app/tests/ (state transitions, event handling, rendering)
+crates/maestro-tui/src/tui/app/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break into per-scenario test files under tui/app/tests/ (state transitions, event handling, rendering)
 
 # --- Core modules (2-month deadline) ---
 crates/maestro-core/src/session/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract state-machine transitions into session/transition.rs (already exists — move matching logic) and split icon/display impls into session/display.rs
@@ -42,29 +42,29 @@ crates/maestro-core/src/doctor.rs # deadline: 2026-12-31, owner: @carlos, ticket
 crates/maestro-core/src/work/assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split assignment-rules from work-item selection
 
 # --- TUI screens and rendering (3-month deadline) ---
-src/tui/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract event-loop into tui/event_loop.rs; mod.rs keeps only re-exports
-src/tui/ui.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split draw-coordinator from per-screen draw dispatch
-src/tui/theme.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split ThemeConfig types (to config layer per layer-debt) from runtime theme application
-src/tui/markdown.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pulldown-cmark wrapping from per-element rendering
-src/tui/panels.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by panel type (left nav / main / status)
-src/tui/marquee.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split scroll-animation from text-source abstraction
-src/tui/input_handler.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split key-event parsing from action-dispatch per screen
-src/tui/navigation/mode_hints.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract per-mode hint tables into data files
-src/tui/navigation/keymap.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split keymap definitions from action resolution
-src/tui/widgets/ci_monitor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split widget state from drawing
-src/tui/screens/home/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split home state-management from draw; move draw into home/draw.rs
-src/tui/screens/issue_browser/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split filter logic from state from actions; move draw-related code to issue_browser/draw.rs (already partially split)
-src/tui/screens/issue_browser/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-section draw helpers
-src/tui/screens/prompt_input.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split input-buffer management from draw from history
-src/tui/screens/milestone.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split milestone-list state from draw
-src/tui/screens/landing/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dashboard widgets, release charts, and layout sections into landing/draw/* modules
-src/tui/screens/landing/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split landing state, project metadata, and suggestion actions into focused submodules
-src/tui/screens/milestone_health/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split health summary, issue list, and footer rendering into milestone_health/draw/* modules
-src/tui/screens/issue_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into issue_wizard/draw/* modules
-src/tui/screens/milestone_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into milestone_wizard/draw/* modules
-src/tui/screens/queue_confirmation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split confirmation-dialog rendering from queue-state summary
-src/tui/screens/adapt/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split adapt-screen state from draw; extract sub-screens (scan-preview, materialize-preview)
-src/tui/screens/pr_review/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split PR-browsing state from diff-rendering; draw already partially split into draw.rs
+crates/maestro-tui/src/tui/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract event-loop into tui/event_loop.rs; mod.rs keeps only re-exports
+crates/maestro-tui/src/tui/ui.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split draw-coordinator from per-screen draw dispatch
+crates/maestro-tui/src/tui/theme.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split ThemeConfig types (to config layer per layer-debt) from runtime theme application
+crates/maestro-tui/src/tui/markdown.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pulldown-cmark wrapping from per-element rendering
+crates/maestro-tui/src/tui/panels.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by panel type (left nav / main / status)
+crates/maestro-tui/src/tui/marquee.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split scroll-animation from text-source abstraction
+crates/maestro-tui/src/tui/input_handler.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split key-event parsing from action-dispatch per screen
+crates/maestro-tui/src/tui/navigation/mode_hints.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract per-mode hint tables into data files
+crates/maestro-tui/src/tui/navigation/keymap.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split keymap definitions from action resolution
+crates/maestro-tui/src/tui/widgets/ci_monitor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split widget state from drawing
+crates/maestro-tui/src/tui/screens/home/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split home state-management from draw; move draw into home/draw.rs
+crates/maestro-tui/src/tui/screens/issue_browser/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split filter logic from state from actions; move draw-related code to issue_browser/draw.rs (already partially split)
+crates/maestro-tui/src/tui/screens/issue_browser/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-section draw helpers
+crates/maestro-tui/src/tui/screens/prompt_input.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split input-buffer management from draw from history
+crates/maestro-tui/src/tui/screens/milestone.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split milestone-list state from draw
+crates/maestro-tui/src/tui/screens/landing/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dashboard widgets, release charts, and layout sections into landing/draw/* modules
+crates/maestro-tui/src/tui/screens/landing/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split landing state, project metadata, and suggestion actions into focused submodules
+crates/maestro-tui/src/tui/screens/milestone_health/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split health summary, issue list, and footer rendering into milestone_health/draw/* modules
+crates/maestro-tui/src/tui/screens/issue_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into issue_wizard/draw/* modules
+crates/maestro-tui/src/tui/screens/milestone_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into milestone_wizard/draw/* modules
+crates/maestro-tui/src/tui/screens/queue_confirmation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split confirmation-dialog rendering from queue-state summary
+crates/maestro-tui/src/tui/screens/adapt/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split adapt-screen state from draw; extract sub-screens (scan-preview, materialize-preview)
+crates/maestro-tui/src/tui/screens/pr_review/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split PR-browsing state from diff-rendering; draw already partially split into draw.rs
 
 # --- Test files (4-month deadline — lower priority, but tracked) ---
 src/integration_tests/stream_parsing.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break by scenario (happy path / error recovery / edge cases) into separate test files
@@ -74,21 +74,21 @@ src/integration_tests/stream_parsing.rs # deadline: 2026-12-31, owner: @carlos, 
 # 400 LOC cap. Triaged using the same Phase 1b heuristic.
 
 # Test files (lower priority, 4 months):
-src/mascot/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break mascot tests by sub-feature; low priority
+crates/maestro-tui/src/mascot/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break mascot tests by sub-feature; low priority
 
 # TUI (3 months):
-src/tui/activity_log.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split log-state from draw
-src/tui/app/completion_pipeline.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pipeline stages into submodules
-src/tui/app/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split action types from event types from state types
-src/tui/screens/settings/validation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-field validation rules into separate modules
-src/tui/turboquant_dashboard.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dashboard-state from per-widget draw
+crates/maestro-tui/src/tui/activity_log.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split log-state from draw
+crates/maestro-tui/src/tui/app/completion_pipeline.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pipeline stages into submodules
+crates/maestro-tui/src/tui/app/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split action types from event types from state types
+crates/maestro-tui/src/tui/screens/settings/validation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-field validation rules into separate modules
+crates/maestro-tui/src/tui/turboquant_dashboard.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dashboard-state from per-widget draw
 
 # Core modules (2 months):
 crates/maestro-core/src/adapt/scaffolder.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split template expansion from directory materialization
 crates/maestro-core/src/notifications/slack.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split webhook-client from message-building
 crates/maestro-core/src/provider/azure_devops/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource type (work-items, PRs, pipelines)
 crates/maestro-core/src/provider/github/pr.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split PR-fetching from PR-mutation verbs
-src/tui/screens/sanitize.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split screen-rendering from match-reporting
+crates/maestro-tui/src/tui/screens/sanitize.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split screen-rendering from match-reporting
 crates/maestro-core/src/sanitize/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern types from match result types
 crates/maestro-core/src/state/file_claims.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split claim-state from lock-file handling
 crates/maestro-core/src/updater/checker.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split version-check from download/install
@@ -100,15 +100,15 @@ src/main.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract 
 # Issue Wizard and Milestone Wizard. Issue #447 migrates the fields to
 # `tui-textarea`, which deletes the manual char/backspace/newline/paste
 # handling and drops these back under the 400-LOC cap.
-src/tui/screen_dispatch.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split Push/Pop/LaunchXxx handlers into separate files (tui-textarea migration in #447 did not compress this file — step-entry hooks are orthogonal)
-src/tui/screens/milestone_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split into lifecycle, materialization, and ai_planning submodules (the #447 tui-textarea migration kept size similar — real reduction comes from the submodule split)
-src/tui/screens/issue_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dep_* state + ai_review state + create_* state into submodules (the #447 tui-textarea migration added sync/rebuild helpers; further reduction comes from the submodule split)
+crates/maestro-tui/src/tui/screen_dispatch.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split Push/Pop/LaunchXxx handlers into separate files (tui-textarea migration in #447 did not compress this file — step-entry hooks are orthogonal)
+crates/maestro-tui/src/tui/screens/milestone_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split into lifecycle, materialization, and ai_planning submodules (the #447 tui-textarea migration kept size similar — real reduction comes from the submodule split)
+crates/maestro-tui/src/tui/screens/issue_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dep_* state + ai_review state + create_* state into submodules (the #447 tui-textarea migration added sync/rebuild helpers; further reduction comes from the submodule split)
 # issue_wizard/draw.rs dropped from 378 → 356 LOC after #447 (under the 400-LOC cap).
 # milestone_wizard/draw.rs dropped from 352 → 345 LOC after #447 (under the 400-LOC cap).
 
 # --- Milestone v0.15.3 dupe-prevention additions (#454/#455) ---
-src/tui/app/data_handler.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract the AdaptScan/Analyze/Consolidate/Plan/Scaffold arms into a dedicated handler module (handle_adapt_event); the dupe-prevention work in #455 added the IssueAlreadyExists arm, pushing the file 6 lines over
-src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321/#327/#328/#329, plan: extract App field initializers and screen-Option declarations into app/state.rs; bypass methods already moved to app/bypass.rs in v0.16.0
+crates/maestro-tui/src/tui/app/data_handler.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract the AdaptScan/Analyze/Consolidate/Plan/Scaffold arms into a dedicated handler module (handle_adapt_event); the dupe-prevention work in #455 added the IssueAlreadyExists arm, pushing the file 6 lines over
+crates/maestro-tui/src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321/#327/#328/#329, plan: extract App field initializers and screen-Option declarations into app/state.rs; bypass methods already moved to app/bypass.rs in v0.16.0
 crates/maestro-core/src/prd/ingest.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split heuristic parser from tests — move parser into prd/ingest/{sections,extract,classify}.rs and convert ingest.rs to ingest/mod.rs once the contract stabilizes; ~250 of the 521 LOC are the markdown-parser test corpus that we want to keep co-located while the heuristics evolve
 crates/maestro-core/src/prd/discover.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split into prd/discover/{github,local,azure,dedup}.rs once the source set stabilizes; currently 411 LOC because the per-source helpers + dedup + tests live together while we iterate on the explore UX
 
@@ -118,17 +118,17 @@ crates/maestro-core/src/prd/discover.rs # deadline: 2026-12-31, owner: @carlos, 
 # post-transition step + side effect. A future cleanup will introduce an
 # `at(step)` helper to compress the arrange phase; deferred to keep the RED→GREEN
 # diff minimal.
-src/tui/screens/milestone_health/state/tests/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #500, plan: introduce at(step) helper to compress HealthScreenState literal in 16 tests, drop 426 → ~360 LOC
+crates/maestro-tui/src/tui/screens/milestone_health/state/tests/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #500, plan: introduce at(step) helper to compress HealthScreenState literal in 16 tests, drop 426 → ~360 LOC
 
 # --- Milestone v0.17.0 zero-commit detection (#520) ---
 # Added two #520 zero-commit tests (~100 LOC) to the existing #514 auto-PR
 # behavior suite. Total now 429 LOC, just over the cap.
-src/tui/app/auto_pr_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #520, plan: extract shared make_issue/make_test_config/make_app_with_mock helpers into auto_pr_test_fixtures.rs and split #514 vs #520 tests into separate files importing those fixtures
+crates/maestro-tui/src/tui/app/auto_pr_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #520, plan: extract shared make_issue/make_test_config/make_app_with_mock helpers into auto_pr_test_fixtures.rs and split #514 vs #520 tests into separate files importing those fixtures
 
 # --- 2026-04-30 emergency auto-PR fix batch (PR #544 follow-up) ---
 # pr_retry.rs gained the Shift+P exit path: error correlation, manual-retry
 # lifetime cap, PermanentlyFailed transition + 6 new tests. 439 LOC.
-src/tui/app/pr_retry.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split retry-policy + correlation logic into pr_retry/policy.rs and keep impl App trigger fns in pr_retry/mod.rs
+crates/maestro-tui/src/tui/app/pr_retry.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split retry-policy + correlation logic into pr_retry/policy.rs and keep impl App trigger fns in pr_retry/mod.rs
 # gh_argv.rs is the new argv-snapshot module. ~250 LOC of pure builders +
 # ~280 LOC of snapshot tests. Splitting builder/test pairs would scatter
 # locking; keeping them co-located is the point. Plan to compact tests with
@@ -174,18 +174,18 @@ crates/maestro-core/src/orchestration/loader.rs # deadline: 2026-12-31, owner: @
 # All 5 files exceed 400 LOC because the wizard implements 6 sub-tasks
 # (5.1–5.6) in a single PR. Split plan per file documented below; deadlines
 # match the existing TUI category at 3 months out.
-src/tui/screens/team_wizard/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: extract step-machine impls into types/{compose_step,launch_step,manage_step}.rs once flow-specific evolutions diverge
-src/tui/screens/team_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: move per-flow draw helpers into compose.rs / launch.rs / manage.rs alongside the transitions; keep draw.rs as the mode dispatcher only
-src/tui/screens/team_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: extract test-only setters into a separate test_setters.rs gated by #[cfg(test)]; move data-ingestion methods into a data.rs sub-module
-src/tui/screens/team_wizard/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split into tests/{state.rs, validation.rs, transitions.rs} once additional flow-specific unit tests land
-src/tui/snapshot_tests/team_wizard.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split into snapshot_tests/team_wizard/{mod.rs, compose.rs, launch.rs, manage.rs} when the snapshot count grows past ~50
+crates/maestro-tui/src/tui/screens/team_wizard/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: extract step-machine impls into types/{compose_step,launch_step,manage_step}.rs once flow-specific evolutions diverge
+crates/maestro-tui/src/tui/screens/team_wizard/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: move per-flow draw helpers into compose.rs / launch.rs / manage.rs alongside the transitions; keep draw.rs as the mode dispatcher only
+crates/maestro-tui/src/tui/screens/team_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: extract test-only setters into a separate test_setters.rs gated by #[cfg(test)]; move data-ingestion methods into a data.rs sub-module
+crates/maestro-tui/src/tui/screens/team_wizard/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split into tests/{state.rs, validation.rs, transitions.rs} once additional flow-specific unit tests land
+crates/maestro-tui/src/tui/snapshot_tests/team_wizard.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split into snapshot_tests/team_wizard/{mod.rs, compose.rs, launch.rs, manage.rs} when the snapshot count grows past ~50
 
 # --- v0.29.0 Settings rework (PR #814) — Providers + sidebar redesign ---
 # All three files grew past 400 LOC bundling kind-aware visibility, sidebar
 # layout, search filter, focus clamp, and tab-level a/d/u routing into one
 # integration PR. Deadlines match the existing TUI category at 3 months out.
-src/tui/screens/settings/schema_tab/widgets/dynamic_map_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #814, plan: split into tests/{state.rs, focus.rs, visibility.rs, modals.rs} grouped by behavior axis
-src/tui/screens/settings/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #814, plan: split sidebar render + horizontal layout (draw_sidebar, draw_screen) into draw/{sidebar.rs, layout.rs} once a fourth top-level draw helper lands
+crates/maestro-tui/src/tui/screens/settings/schema_tab/widgets/dynamic_map_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #814, plan: split into tests/{state.rs, focus.rs, visibility.rs, modals.rs} grouped by behavior axis
+crates/maestro-tui/src/tui/screens/settings/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket: #814, plan: split sidebar render + horizontal layout (draw_sidebar, draw_screen) into draw/{sidebar.rs, layout.rs} once a fourth top-level draw helper lands
 
 # --- v0.29.5 nested role_overrides editor (#901) ---
 # teams_tab.rs (431 LOC) gained the #901 regression test for nested
@@ -194,7 +194,7 @@ src/tui/screens/settings/draw.rs # deadline: 2026-12-31, owner: @carlos, ticket:
 # scatter related chord-routing assertions across files. Plan: split by
 # behavior axis (CRUD, chord routing, validation banner) once a fifth
 # behavior axis lands.
-src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-12-31, owner: @carlos, ticket: #901, plan: split into tests/teams_tab/{crud.rs, chord_routing.rs, validation.rs} once a fifth behavior axis lands
+crates/maestro-tui/src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-12-31, owner: @carlos, ticket: #901, plan: split into tests/teams_tab/{crud.rs, chord_routing.rs, validation.rs} once a fifth behavior axis lands
 
 # --- v0.30.0 interactive-session scaffold (#734) ---
 # store_tests.rs reached 419 LOC after #734 added the end-to-end

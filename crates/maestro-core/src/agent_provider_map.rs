@@ -4,7 +4,7 @@
 //! Single source of truth so both `App::configure`/`apply_agents_config` and
 //! `ProductionSchedulerRunner` build the same `agent_id → provider` map that
 //! `AgentProviderFactory::provider_for_agent_id` consults for L1 per-role
-//! routing. Lives in core (#1307) so both frontends can use it.
+//! routing. Lives in core (#1306) so the TUI and the CLI share it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,8 +55,7 @@ pub fn build_agent_provider_map(config: &Config) -> HashMap<String, Arc<dyn Agen
     providers
 }
 
-/// Build the provider for one resolved agent entry (moved from
-/// `commands::run` in #1307 so both frontends share it).
+/// Build the provider for one resolved agent entry.
 pub fn provider_for_agent(
     resolved: &crate::config::ResolvedAgentConfig,
 ) -> anyhow::Result<std::sync::Arc<dyn crate::agent_provider::AgentProvider>> {

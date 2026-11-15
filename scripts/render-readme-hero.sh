@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SNAPSHOT="$ROOT_DIR/src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__landing__landing_welcome_180x48_nerd_font.snap"
+SNAPSHOT="$ROOT_DIR/crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__landing__landing_welcome_180x48_nerd_font.snap"
 OUTPUT="$ROOT_DIR/docs/assets/readme-hero.svg"
 FONT_FILE="$HOME/Library/Fonts/HackNerdFontMono-Regular.ttf"
 FONT_ARGS=()

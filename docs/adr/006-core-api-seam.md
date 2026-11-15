@@ -201,13 +201,12 @@ frontend code; the TUI may use them later).
 - Interactive `maestro init` prompts (crossterm raw mode) stay in the binary
   (`src/init_prompter.rs`) and reach `cmd_init` through the `InitPrompter`
   trait, so the CLI crate carries no terminal-UI dependency.
-- **Moved to core:** `commands::agent_provider_map` and
-  `commands::run::provider_for_agent` →
-  `agent_provider::provider_map::{enabled_agent_ids, build_agent_provider_map,
-  provider_for_agent}`; `commands::setup::build_notification_dispatcher` →
-  `notifications::dispatcher::build_notification_dispatcher` (re-exported from
-  `commands::setup`); `tui::clipboard::strip_ansi` →
-  `util::sanitize::strip_ansi` (re-exported from `tui::clipboard`).
+- **Moved to core:** `commands::setup::build_notification_dispatcher` →
+  `notifications::dispatcher::build_notification_dispatcher` (its two TUI
+  callers in `maestro-tui` call core directly); `tui::clipboard::strip_ansi`
+  → `util::sanitize::strip_ansi` (re-exported from `tui::clipboard`).
+  `agent_provider_map` (with `provider_for_agent`) went to core in #1306;
+  the CLI's team launch uses it from there.
   `enter_repo_root_for_test` is `pub` behind `test-util` for the CLI's tests.
-- Still in the binary until #1306: `commands::{dashboard, run, resume,
-  setup}` — they build the `App` and call `tui::run`.
+- Still in the binary: `commands::{dashboard, run, resume}` — they build the
+  `App` (via `maestro_tui::setup`) and call `tui::run`.

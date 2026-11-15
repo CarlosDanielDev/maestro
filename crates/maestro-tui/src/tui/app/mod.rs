@@ -79,7 +79,7 @@ use tokio::sync::mpsc;
 pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
 
 fn default_enabled_agent_id(config: &Config) -> String {
-    let ids = crate::agent_provider::provider_map::enabled_agent_ids(config);
+    let ids = crate::agent_provider_map::enabled_agent_ids(config);
     if ids.iter().any(|id| id == &config.agents.default) {
         config.agents.default.clone()
     } else {
@@ -594,9 +594,8 @@ impl App {
     /// this finally honors it).
     pub fn apply_agents_config(&mut self, config: &Config) {
         self.selected_agent_id = default_enabled_agent_id(config);
-        self.pool.set_agent_providers(
-            crate::agent_provider::provider_map::build_agent_provider_map(config),
-        );
+        self.pool
+            .set_agent_providers(crate::agent_provider_map::build_agent_provider_map(config));
     }
 
     pub fn configure(&mut self, config: Config) {
@@ -609,9 +608,8 @@ impl App {
         self.store
             .set_call_log_persist(config.sessions.call_log_persist);
         self.selected_agent_id = default_enabled_agent_id(&config);
-        self.pool.set_agent_providers(
-            crate::agent_provider::provider_map::build_agent_provider_map(&config),
-        );
+        self.pool
+            .set_agent_providers(crate::agent_provider_map::build_agent_provider_map(&config));
         self.quota.enabled = config.quota.enabled;
 
         // Shared adapter so fork and pool observe the same enabled state.
@@ -715,7 +713,7 @@ impl App {
     fn enabled_agent_ids(&self) -> Vec<String> {
         self.config
             .as_ref()
-            .map(crate::agent_provider::provider_map::enabled_agent_ids)
+            .map(crate::agent_provider_map::enabled_agent_ids)
             .unwrap_or_else(|| vec!["claude".to_string()])
     }
 
@@ -1013,7 +1011,7 @@ enabled = false
         .unwrap();
 
         assert_eq!(
-            crate::agent_provider::provider_map::enabled_agent_ids(&config),
+            crate::agent_provider_map::enabled_agent_ids(&config),
             vec!["codex".to_string()]
         );
         assert_eq!(default_enabled_agent_id(&config), "codex");
@@ -1043,7 +1041,7 @@ enabled = true
         .unwrap();
 
         assert_eq!(
-            crate::agent_provider::provider_map::enabled_agent_ids(&config),
+            crate::agent_provider_map::enabled_agent_ids(&config),
             vec!["qwen".to_string()]
         );
         assert_eq!(default_enabled_agent_id(&config), "qwen");

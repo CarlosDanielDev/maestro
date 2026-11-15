@@ -28,7 +28,7 @@ tiers:
   tui:
     floor: 70.0
     paths:
-      - "src/tui/**"
+      - "crates/maestro-tui/src/tui/**"
 
   excluded:
     paths:

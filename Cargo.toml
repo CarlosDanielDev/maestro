@@ -11,16 +11,16 @@ name = "maestro"
 path = "src/main.rs"
 
 # Workspace (#1304, ADR 006). maestro-core holds the core modules (#1305);
-# maestro-tui and maestro-cli stay empty until #1306/#1307. There are no
+# maestro-tui holds the TUI (#1306); maestro-cli stays empty until #1307. There are no
 # default-members, so plain `cargo test`/`clippy` at the root cover only the
 # root package: gates pass `--workspace` to reach maestro-core.
 [workspace]
 members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
 
 [workspace.package]
-# maestro-core inherits this so `env!("CARGO_PKG_VERSION")` in the updater
-# and changelog keeps reporting the binary's version. scripts/release.sh
-# bumps it together with [package].version and the maestro-core dep below.
+# maestro-core and maestro-tui inherit this so `env!("CARGO_PKG_VERSION")` in
+# the updater, changelog and TUI header keeps reporting the binary's version.
+# scripts/release.sh bumps it with [package].version and the core/tui deps below.
 version = "0.31.8"
 edition = "2024"
 rust-version = "1.89"
@@ -28,13 +28,12 @@ license = "MIT"
 
 [dependencies]
 maestro-core = { path = "crates/maestro-core", version = "0.31.8" }
-maestro-tui = { path = "crates/maestro-tui", version = "0.0.0" }
+maestro-tui = { path = "crates/maestro-tui", version = "0.31.8" }
 maestro-cli = { path = "crates/maestro-cli", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.2"
 crossterm = { version = "0.28", features = ["event-stream"] }
-ratatui = "0.29"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }
@@ -54,13 +53,8 @@ regex = "1"
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 sha2 = "0.11"
-arboard = "3.6.1"
 strip-ansi-escapes = "0.2"
 image = { version = "0.25.10", features = ["png"], default-features = false }
-pulldown-cmark = { version = "0.13", default-features = false }
-tui-textarea = { version = "0.7", features = ["crossterm"] }
-unicode-width = "0.2"
-syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 rand = { version = "0.8", features = ["small_rng"] }
 sysinfo = "0.33"
 syn = { version = "3", features = ["full", "visit"] }

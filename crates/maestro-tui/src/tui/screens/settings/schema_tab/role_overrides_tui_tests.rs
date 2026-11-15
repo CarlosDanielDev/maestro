@@ -22,7 +22,7 @@ fn temp_file_with(content: &str) -> tempfile::NamedTempFile {
 }
 
 fn load_fixture(dir: &str, name: &str) -> (String, Config) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join(dir)
         .join(name);
     let text = std::fs::read_to_string(&path)

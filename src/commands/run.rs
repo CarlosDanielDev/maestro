@@ -7,6 +7,7 @@ use crate::state::store::StateStore;
 use crate::tui::app::work_assigner::WorkAssignmentService;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkItem;
+use maestro_core::agent_provider_map::provider_for_agent;
 
 #[path = "run_deps.rs"]
 mod run_deps;
@@ -61,8 +62,7 @@ pub async fn cmd_run(
     }
 
     let resolved_agent = config.resolve_agent(agent.as_deref())?;
-    let selected_provider =
-        crate::agent_provider::provider_map::provider_for_agent(&resolved_agent)?;
+    let selected_provider = provider_for_agent(&resolved_agent)?;
 
     let feature_flags = crate::flags::store::FeatureFlags::new(
         config.flags.entries.clone(),

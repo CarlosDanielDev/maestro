@@ -16,6 +16,7 @@
 
 pub mod adapt;
 pub mod agent_provider;
+pub mod agent_provider_map;
 pub mod budget;
 pub mod changelog;
 pub mod config;

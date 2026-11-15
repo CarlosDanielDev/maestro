@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO="CarlosDanielDev/maestro"
-SNAPSHOTS_DIR="src/tui/snapshot_tests/snapshots"
+SNAPSHOTS_DIR="crates/maestro-tui/src/tui/snapshot_tests/snapshots"
 PR_POLL_INTERVAL=${PR_POLL_INTERVAL:-12}   # seconds between gh pr checks polls
 ALLOW_MILESTONE_CLOSE=false
 PR_MERGE_OUTCOME=""
@@ -360,9 +360,9 @@ confirm "Proceed with this changelog?" || die "Aborted by user."
 info "Updating Cargo.toml..."
 CURRENT_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 sed -i '' "s/^version = \"${CURRENT_VERSION}\"/version = \"${VERSION}\"/" Cargo.toml
-# maestro-core inherits [workspace.package].version (bumped above); its
-# dependents pin that exact version.
-sed -i '' "s/\(maestro-core = { path = \"[^\"]*\", version = \"\)${CURRENT_VERSION}\"/\1${VERSION}\"/" \
+# maestro-core and maestro-tui inherit [workspace.package].version (bumped
+# above); their dependents pin that exact version.
+sed -i '' "s/\(maestro-[a-z]* = { path = \"[^\"]*\", version = \"\)${CURRENT_VERSION}\"/\1${VERSION}\"/" \
   Cargo.toml crates/*/Cargo.toml
 success "Cargo.toml: ${CURRENT_VERSION} → ${VERSION}"
 
@@ -415,7 +415,7 @@ KNOWN_DRIFT_PATTERNS=(
   "tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_"
 )
 
-TEST_OUTPUT=$(cargo test --bin maestro 2>&1 || true)
+TEST_OUTPUT=$(cargo test -p maestro-tui 2>&1 || true)
 
 if echo "$TEST_OUTPUT" | grep -qE "^test result: ok"; then
   success "Post-bump tests pass"
@@ -461,24 +461,24 @@ else
     PATTERN="${KNOWN_DRIFT_PATTERNS[$i]}"
     if echo "$FAILURES" | grep -q "$PATTERN" 2>/dev/null; then
       info "Accepting snapshots for ${GROUP}..."
-      "$CARGO_INSTA" test --accept -- "$GROUP" 2>&1 | tail -3
+      "$CARGO_INSTA" test --accept -p maestro-tui -- "$GROUP" 2>&1 | tail -3
     fi
   done
 
   info "Re-running tests after snapshot acceptance..."
-  cargo test --bin maestro > /dev/null 2>&1 || die "Tests still failing after snapshot acceptance."
+  cargo test -p maestro-tui > /dev/null 2>&1 || die "Tests still failing after snapshot acceptance."
   success "Post-bump tests pass (after snapshot update)"
 fi
 
 # ── Step 5: Commit ──────────────────────────────────────────────────────────────
 info "Staging files..."
-# crates/*/Cargo.toml: the maestro-core pins bumped above; Cargo.lock
+# crates/*/Cargo.toml: the maestro-core/maestro-tui pins bumped above; Cargo.lock
 # records both versions (#1305).
 git add Cargo.toml Cargo.lock crates/*/Cargo.toml CHANGELOG.md
 
-git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
-git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__landing__landing_welcome_"*.snap 2>/dev/null || true
-git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_"*.snap 2>/dev/null || true
+git add "${SNAPSHOTS_DIR}/maestro_tui__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
+git add "${SNAPSHOTS_DIR}/maestro_tui__tui__snapshot_tests__landing__landing_welcome_"*.snap 2>/dev/null || true
+git add "${SNAPSHOTS_DIR}/maestro_tui__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_"*.snap 2>/dev/null || true
 
 SUMMARY=$(echo "$CHANGELOG_SECTION" | grep -E '^- ' | head -3 | sed 's/^- //' | paste -sd '; ' -)
 

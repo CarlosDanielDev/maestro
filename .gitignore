@@ -11,6 +11,8 @@ maestro-prompt-history.json
 .maestro/adapt-cache.json
 .maestro/prd.toml
 .maestro/notifications.conf
+# TUI tests run from crates/maestro-tui (#1306) and write logs/caches there.
+crates/*/.maestro/
 .claude/notifications.conf
 # OS
 .DS_Store
