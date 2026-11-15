@@ -40,6 +40,8 @@ SLACK_USER_ID=U0XXXXXXXX
 
 **Prioridade:** Config do projeto > Config global (`~/.claude/notifications.conf`)
 
+**`SLACK_USER_ID` e so global:** o destino do Slack vem apenas de `~/.claude/notifications.conf` ou `~/.claude/slack_user_id`. Um `SLACK_USER_ID` no conf do projeto e ignorado, para que um repo clonado nao possa redirecionar suas notificacoes (#1102).
+
 ---
 
 ## Como funciona

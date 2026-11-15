@@ -93,21 +93,23 @@ assert_eq "malicious_conf_still_parses_notify_slack" "$v_slack" "false"
 assert_absent "malicious_conf_command_not_executed" "$root/pwned"
 rm -rf "$root"
 
-# Case 2: all five allowlisted keys parse with shape-checked values.
+# Case 2: the four NOTIFY_* keys parse from the project conf; SLACK_USER_ID
+# parses (shape-checked) only from the user-global conf.
 root=$(make_sandbox)
 cat > "$root/.maestro/notifications.conf" <<'EOF'
 NOTIFY_DESKTOP=false
 NOTIFY_SLACK=true
 NOTIFY_PERMISSION_PROMPT=false
 NOTIFY_IDLE_PROMPT=false
-SLACK_USER_ID=user.example@U0123-456
 EOF
+mkdir -p "$root/home/.claude"
+printf 'SLACK_USER_ID=user.example@U0123-456\n' > "$root/home/.claude/notifications.conf"
 parse_values "$(run_load_config "$root")"
 assert_eq "parses_notify_desktop" "$v_desktop" "false"
 assert_eq "parses_notify_slack" "$v_slack" "true"
 assert_eq "parses_notify_permission_prompt" "$v_perm" "false"
 assert_eq "parses_notify_idle_prompt" "$v_idle" "false"
-assert_eq "parses_slack_user_id" "$v_user" "user.example@U0123-456"
+assert_eq "parses_slack_user_id_from_user_global_conf" "$v_user" "user.example@U0123-456"
 rm -rf "$root"
 
 # Case 3: lines outside the allowlist (bad value shape, quoted value, export,
@@ -135,6 +137,37 @@ status=0
 env -i HOME="$root/home" bash "$root/.maestro/hooks/notify.sh" < /dev/null > /dev/null 2>&1 || status=$?
 assert_eq "hook_run_with_hostile_conf_exits_zero" "$status" "0"
 assert_absent "hook_run_with_hostile_conf_not_executed" "$root/pwned"
+rm -rf "$root"
+
+# Case 5 (#1102): a repo conf that sets SLACK_USER_ID and mutes the desktop
+# channel must not redirect Slack. The destination stays the user's own
+# ~/.claude/slack_user_id; NOTIFY_DESKTOP=false is a local preference and is
+# still honored.
+root=$(make_sandbox)
+printf 'SLACK_USER_ID=attacker-channel\nNOTIFY_DESKTOP=false\n' > "$root/.maestro/notifications.conf"
+mkdir -p "$root/home/.claude"
+printf 'U0USERHOME\n' > "$root/home/.claude/slack_user_id"
+parse_values "$(run_load_config "$root")"
+assert_eq "hostile_project_conf_does_not_redirect_slack" "$v_user" "U0USERHOME"
+assert_eq "hostile_project_conf_desktop_pref_still_honored" "$v_desktop" "false"
+rm -rf "$root"
+
+# Case 6 (#1102): with no user-global Slack ID, a repo conf's SLACK_USER_ID
+# leaves the destination empty, so Slack never fires.
+root=$(make_sandbox)
+printf 'SLACK_USER_ID=attacker-channel\nNOTIFY_DESKTOP=false\n' > "$root/.maestro/notifications.conf"
+parse_values "$(run_load_config "$root")"
+assert_eq "hostile_project_conf_without_user_id_leaves_slack_unset" "$v_user" ""
+rm -rf "$root"
+
+# Case 7 (#1102): the legacy project conf (.claude/notifications.conf) is a
+# repo file too, so it cannot override the user-global conf's SLACK_USER_ID.
+root=$(make_sandbox)
+mkdir -p "$root/.claude" "$root/home/.claude"
+printf 'SLACK_USER_ID=attacker-channel\n' > "$root/.claude/notifications.conf"
+printf 'SLACK_USER_ID=U0USERCONF\n' > "$root/home/.claude/notifications.conf"
+parse_values "$(run_load_config "$root")"
+assert_eq "legacy_project_conf_does_not_redirect_slack" "$v_user" "U0USERCONF"
 rm -rf "$root"
 
 echo ""
