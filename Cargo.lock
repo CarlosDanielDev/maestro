@@ -1535,6 +1535,9 @@ dependencies = [
  "image",
  "insta",
  "libc",
+ "maestro-cli",
+ "maestro-core",
+ "maestro-tui",
  "minisign",
  "minisign-verify",
  "portable-pty",
@@ -1566,6 +1569,25 @@ dependencies = [
  "unicode-width 0.2.0",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "maestro-cli"
+version = "0.0.0"
+dependencies = [
+ "maestro-core",
+ "maestro-tui",
+]
+
+[[package]]
+name = "maestro-core"
+version = "0.0.0"
+
+[[package]]
+name = "maestro-tui"
+version = "0.0.0"
+dependencies = [
+ "maestro-core",
 ]
 
 [[package]]

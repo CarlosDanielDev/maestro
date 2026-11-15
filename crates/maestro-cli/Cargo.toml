@@ -1,0 +1,13 @@
+[package]
+name = "maestro-cli"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+maestro-core = { path = "../maestro-core", version = "0.0.0" }
+maestro-tui = { path = "../maestro-tui", version = "0.0.0" }
+
+[lints]
+workspace = true
