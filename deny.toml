@@ -34,37 +34,6 @@ ignore = [
     # known vulnerability. syntect hasn't migrated to yaml-rust2 yet.
     # RUSTSEC-2024-0320: https://rustsec.org/advisories/RUSTSEC-2024-0320
     "RUSTSEC-2024-0320",
-    # Pre-existing before Wave 1 — surfaced during CI chunk-1 verification.
-    # These need a proper triage/upgrade effort, tracked separately from
-    # the CI quality-gate rollout. Ignoring here to unblock main CI; upgrade
-    # when reqwest/tokio-rustls/rand upstream releases land fixes compatible
-    # with maestro's dep chain.
-    #
-    # RUSTSEC-2026-0097: Rand is unsound with custom logger using `rand::rng()`.
-    # Maestro does not use custom loggers with rand — transitive-only risk.
-    "RUSTSEC-2026-0097",
-    # RUSTSEC-2026-0098: Name constraints for URI names were incorrectly accepted
-    # (transitive via reqwest/tokio-rustls/webpki). maestro's TLS peers are NOT
-    # only GitHub: config-driven hosts (Slack webhook, provider endpoints) are
-    # reached through the same stack. Accepted risk: exploiting this needs a
-    # certificate from a name-constrained CA in the shipped root set that
-    # mis-issues outside its constraints — a CA compromise, not something a
-    # peer can do alone. Drop this entry when reqwest's rustls-webpki is bumped.
-    "RUSTSEC-2026-0098",
-    # RUSTSEC-2026-0099: Name constraints accepted for wildcard certs
-    # (same chain as -0098). Same accepted risk and exit condition as -0098.
-    "RUSTSEC-2026-0099",
-    # RUSTSEC-2026-0104: Reachable panic in CRL parsing
-    # (same chain). Maestro does not configure custom CRL handling; stock
-    # rustls defaults are not exercised in the vulnerable code path.
-    "RUSTSEC-2026-0104",
-    # Transitive via `ratatui` 0.29 → `lru` 0.12.5 — IterMut Stacked Borrows
-    # unsoundness, not a known vulnerability. Fixed in lru 0.16.3+. Reachable
-    # only after ratatui 0.30 migration (separate issue: TUI breaking changes
-    # in 0.30 — Alignment rename, List::highlight_symbol signature, layout-cache
-    # feature flag).
-    # RUSTSEC-2026-0002: https://rustsec.org/advisories/RUSTSEC-2026-0002
-    "RUSTSEC-2026-0002",
 ]
 
 [licenses]
