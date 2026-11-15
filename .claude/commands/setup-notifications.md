@@ -11,8 +11,11 @@ NOTIFY_DESKTOP=true
 NOTIFY_SLACK=true
 NOTIFY_PERMISSION_PROMPT=true
 NOTIFY_IDLE_PROMPT=true
-SLACK_USER_ID=U0XXXXXXXX
 ```
+
+O Slack User ID nao fica neste arquivo: ele fica so em `~/.claude/slack_user_id` (veja o passo 4).
+
+Se voce configurou o Slack antes do #1299 e tem uma linha `SLACK_USER_ID=` no conf do projeto, mova o ID para `~/.claude/slack_user_id` e apague a linha — o hook ignora essa linha no conf do projeto.
 
 ## Fluxo do Comando
 
@@ -22,6 +25,7 @@ Primeiro, leia o arquivo de configuracao do projeto (se existir):
 
 ```bash
 cat .claude/notifications.conf 2>/dev/null || echo "Arquivo nao existe ainda"
+cat ~/.claude/slack_user_id 2>/dev/null || echo "Slack User ID nao configurado"
 ```
 
 ### 2. Perguntar ao usuario o que deseja configurar
@@ -54,7 +58,6 @@ NOTIFY_DESKTOP=true|false
 NOTIFY_SLACK=true|false
 NOTIFY_PERMISSION_PROMPT=true|false
 NOTIFY_IDLE_PROMPT=true|false
-SLACK_USER_ID=ID_ATUAL_OU_VAZIO
 EOF
 ```
 
@@ -102,9 +105,8 @@ NOTIFY_DESKTOP=true
 NOTIFY_SLACK=true
 NOTIFY_PERMISSION_PROMPT=true
 NOTIFY_IDLE_PROMPT=true
-SLACK_USER_ID=
 EOF
-echo "Configuracoes resetadas para o padrao (tudo ativado, Slack nao configurado)"
+echo "Configuracoes resetadas para o padrao (tudo ativado). O Slack User ID em ~/.claude/slack_user_id nao foi alterado."
 ```
 
 ### 6. Mostrar resumo final
