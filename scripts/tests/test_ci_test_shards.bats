@@ -21,7 +21,7 @@ job_block() {
   block="$(job_block test-shard)"
   [ -n "$block" ]
   [[ "$block" == *"shard: [1, 2, 3, 4]"* ]] || false
-  [[ "$block" == *'cargo nextest run --locked --partition hash:${{ matrix.shard }}/4'* ]] || false
+  [[ "$block" == *'cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4'* ]] || false
   [[ "$block" == *'INSTA_UPDATE: "no"'* ]] || false
 }
 
@@ -41,7 +41,7 @@ job_block() {
 @test "doctest job keeps doctests and lockfile check" {
   block="$(job_block test-full)"
   [ -n "$block" ]
-  [[ "$block" == *"cargo test --doc --locked"* ]] || false
+  [[ "$block" == *"cargo test --workspace --doc --locked"* ]] || false
   [[ "$block" == *"git diff --exit-code Cargo.lock"* ]] || false
 }
 
@@ -52,6 +52,7 @@ job_block() {
   [ "$status" -eq 1 ]
 }
 
+# --workspace (#1305): maestro-core's tests live in their own crate.
 @test "wave gate runs nextest" {
-  grep -q '"cargo nextest run --locked"' "$REPO_ROOT/.wave.json"
+  grep -q '"cargo nextest run --workspace --locked"' "$REPO_ROOT/.wave.json"
 }

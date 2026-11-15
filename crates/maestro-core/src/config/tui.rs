@@ -1,0 +1,112 @@
+use super::theme::ThemeConfig;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TuiConfig {
+    #[serde(default)]
+    pub theme: ThemeConfig,
+    #[serde(default)]
+    pub layout: LayoutConfig,
+    #[serde(default)]
+    pub ascii_icons: bool,
+    /// Show the Clawd mascot companion in the TUI.
+    #[serde(default = "default_show_mascot")]
+    pub show_mascot: bool,
+    /// Visual style for the mascot: `"sprite"` (pixel art, default) or
+    /// `"ascii"` (legacy Unicode block-character art).
+    #[serde(default)]
+    pub mascot_style: MascotStyle,
+    /// Fire the "Session Complete" modal when all sessions finish.
+    /// Default `true`. Toggled at runtime via the `MOD` header chip
+    /// (Shift+M) and persisted under `[tui] modal_on_complete` (#866).
+    #[serde(default = "default_modal_on_complete")]
+    pub modal_on_complete: bool,
+}
+
+impl Default for TuiConfig {
+    fn default() -> Self {
+        Self {
+            theme: ThemeConfig::default(),
+            layout: LayoutConfig::default(),
+            ascii_icons: false,
+            show_mascot: default_show_mascot(),
+            mascot_style: MascotStyle::default(),
+            modal_on_complete: default_modal_on_complete(),
+        }
+    }
+}
+
+/// Rendering style for the mascot widget. Selects between the legacy Unicode
+/// block-character art and the 1-bit pixel-art sprites rendered via half-block
+/// encoding. Serde variants are lowercase (`"sprite"` / `"ascii"`) for
+/// human-friendly TOML.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotStyle {
+    #[default]
+    Sprite,
+    Ascii,
+}
+
+fn default_show_mascot() -> bool {
+    true
+}
+
+fn default_modal_on_complete() -> bool {
+    true
+}
+
+/// Layout configuration for the Issues screen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayoutConfig {
+    /// Panel arrangement mode.
+    #[serde(default)]
+    pub mode: LayoutMode,
+    /// Information density level.
+    #[serde(default)]
+    pub density: Density,
+    /// Percentage of width (horizontal) or height (vertical) for preview panel.
+    #[serde(default = "default_preview_ratio")]
+    pub preview_ratio: u8,
+    /// Percentage of height for activity log panel.
+    #[serde(default = "default_activity_log_height")]
+    pub activity_log_height: u8,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            mode: LayoutMode::default(),
+            density: Density::default(),
+            preview_ratio: default_preview_ratio(),
+            activity_log_height: default_activity_log_height(),
+        }
+    }
+}
+
+/// Panel arrangement mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutMode {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+/// Information density level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    #[default]
+    Default,
+    Comfortable,
+    Compact,
+}
+
+fn default_preview_ratio() -> u8 {
+    50
+}
+
+fn default_activity_log_height() -> u8 {
+    25
+}

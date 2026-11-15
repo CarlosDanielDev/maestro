@@ -102,7 +102,7 @@ mod tests {
         }
     }
 
-    impl GateCheck for Arc<CapturingGateRunner> {
+    impl GateCheck for CapturingGateRunner {
         fn run_gates(
             &self,
             gates: &[CompletionGate],

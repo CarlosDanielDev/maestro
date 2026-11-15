@@ -92,6 +92,8 @@ fn design_system_doc_names_exist_in_code() {
 
     let mut files = Vec::new();
     rs_files(&root().join("src"), &mut files);
+    // Core modules moved into the workspace crates (#1305).
+    rs_files(&root().join("crates"), &mut files);
     rs_files(&root().join("tests"), &mut files);
     let src: String = files
         .iter()
@@ -127,7 +129,7 @@ fn design_system_doc_names_exist_in_code() {
     missing.dedup();
     assert!(
         missing.is_empty(),
-        "{DOC} cites names that no longer exist in src/ or tests/. Update the doc:\n  {}",
+        "{DOC} cites names that no longer exist in src/, crates/ or tests/. Update the doc:\n  {}",
         missing.join("\n  ")
     );
 }

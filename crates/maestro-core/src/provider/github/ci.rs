@@ -1,0 +1,842 @@
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
+
+pub use crate::provider::types::{
+    CheckConclusion, CheckRun as CheckRunDetail, CheckStatus, CiStatus,
+};
+
+/// Action to take after evaluating CI failure for auto-fix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CiPollAction {
+    /// CI still running or fix session in progress — keep waiting.
+    Wait,
+    /// Spawn a fix session with this failure log.
+    SpawnFix { log: String },
+    /// Retries exhausted or auto-fix disabled — give up.
+    Abandon,
+}
+
+/// Tracks a PR awaiting CI completion.
+#[derive(Debug, Clone)]
+pub struct PendingPrCheck {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub created_at: std::time::Instant,
+    pub check_count: u32,
+    /// Number of CI fix attempts already made for this PR.
+    pub fix_attempt: u32,
+    /// If true, a fix session is running — skip re-processing failures.
+    pub awaiting_fix_ci: bool,
+}
+
+/// Trait for CI status checking. Mockable for tests.
+#[allow(dead_code)] // Reason: superseded by RepoProvider CI methods; kept for API compatibility.
+pub trait CiCheck {
+    /// Check the rollup CI status for a PR (pass/fail/pending).
+    fn check_pr_status(&self, pr_number: u64) -> Result<CiStatus>;
+
+    /// Fetch granular per-check details for a PR.
+    fn check_pr_details(&self, pr_number: u64) -> Result<Vec<CheckRunDetail>>;
+
+    /// Fetch the failed CI run log for a PR branch.
+    fn fetch_failure_log(&self, pr_number: u64, branch: &str) -> Result<String>;
+}
+
+/// Checks CI status for pull requests via `gh` CLI.
+#[allow(dead_code)] // Reason: superseded by GhCliClient's RepoProvider implementation.
+pub struct CiChecker;
+
+#[derive(Deserialize)]
+struct PrStatusJson {
+    #[serde(default)]
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Vec<StatusCheckRollup>,
+    #[serde(default)]
+    #[serde(rename = "mergeStateStatus")]
+    #[allow(dead_code)]
+    merge_state_status: String,
+}
+
+#[derive(Deserialize)]
+struct StatusCheckRollup {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: String,
+}
+
+impl CiChecker {
+    #[allow(dead_code)] // Reason: superseded by GhCliClient's RepoProvider implementation.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl CiCheck for CiChecker {
+    fn check_pr_status(&self, pr_number: u64) -> Result<CiStatus> {
+        let num_str = pr_number.to_string();
+        let output = std::process::Command::new("gh")
+            .args([
+                "pr",
+                "view",
+                &num_str,
+                "--json",
+                "statusCheckRollup,mergeStateStatus",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("gh pr view failed: {}", stderr.trim());
+        }
+
+        let json_str = String::from_utf8_lossy(&output.stdout);
+        parse_ci_json(&json_str)
+    }
+
+    fn check_pr_details(&self, pr_number: u64) -> Result<Vec<CheckRunDetail>> {
+        let num_str = pr_number.to_string();
+        let output = std::process::Command::new("gh")
+            .args([
+                "pr",
+                "checks",
+                &num_str,
+                "--json",
+                "name,status,conclusion,startedAt,completedAt",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("gh pr checks failed: {}", stderr.trim());
+        }
+
+        let json_str = String::from_utf8_lossy(&output.stdout);
+        parse_check_details(&json_str)
+    }
+
+    fn fetch_failure_log(&self, pr_number: u64, branch: &str) -> Result<String> {
+        let output = std::process::Command::new("gh")
+            .args([
+                "run",
+                "list",
+                "--branch",
+                branch,
+                "--status",
+                "failure",
+                "--limit",
+                "1",
+                "--json",
+                "databaseId",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "gh run list failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+
+        let runs: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)?;
+        let run_id = runs
+            .first()
+            .and_then(|r| r.get("databaseId"))
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("No failed run found for PR #{}", pr_number))?;
+
+        let log_output = std::process::Command::new("gh")
+            .args(["run", "view", &run_id.to_string(), "--log-failed"])
+            .output()?;
+
+        if !log_output.status.success() {
+            anyhow::bail!(
+                "gh run view --log-failed failed: {}",
+                String::from_utf8_lossy(&log_output.stderr).trim()
+            );
+        }
+
+        let full_log = String::from_utf8_lossy(&log_output.stdout).to_string();
+        Ok(truncate_log(&full_log, 4000))
+    }
+}
+
+impl Default for CiChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Parse CI status JSON from `gh pr view` output.
+pub(crate) fn parse_ci_json(json: &str) -> Result<CiStatus> {
+    let pr_status: PrStatusJson = serde_json::from_str(json)?;
+
+    if pr_status.status_check_rollup.is_empty() {
+        return Ok(CiStatus::NoneConfigured);
+    }
+
+    let mut pending = false;
+    let mut failures = Vec::new();
+
+    for check in &pr_status.status_check_rollup {
+        match check.conclusion.as_str() {
+            "SUCCESS" | "NEUTRAL" | "SKIPPED" | "success" | "neutral" | "skipped" => {}
+            "" if check.status != "COMPLETED" && check.status != "completed" => {
+                pending = true;
+            }
+            conclusion => {
+                failures.push(format!("{}: {}", check.name, conclusion));
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        Ok(CiStatus::Failed {
+            summary: failures.join("; "),
+        })
+    } else if pending {
+        Ok(CiStatus::Pending)
+    } else {
+        Ok(CiStatus::Passed)
+    }
+}
+
+/// Raw JSON shape from `gh pr checks --json name,status,conclusion,startedAt,completedAt`.
+#[derive(Deserialize)]
+struct CheckRunJson {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: CheckStatus,
+    #[serde(default)]
+    conclusion: CheckConclusion,
+    #[serde(default, rename = "startedAt")]
+    started_at: Option<DateTime<Utc>>,
+    #[serde(default, rename = "completedAt")]
+    completed_at: Option<DateTime<Utc>>,
+}
+
+impl From<CheckRunJson> for CheckRunDetail {
+    fn from(raw: CheckRunJson) -> Self {
+        let elapsed_secs = match (raw.started_at, raw.completed_at) {
+            (Some(start), Some(end)) => {
+                let duration = end.signed_duration_since(start);
+                Some(duration.num_seconds().max(0) as u64)
+            }
+            (Some(start), None) if raw.status == CheckStatus::InProgress => {
+                let duration = Utc::now().signed_duration_since(start);
+                Some(duration.num_seconds().max(0) as u64)
+            }
+            _ => None,
+        };
+
+        Self {
+            name: raw.name,
+            status: raw.status,
+            conclusion: raw.conclusion,
+            started_at: raw.started_at,
+            elapsed_secs,
+        }
+    }
+}
+
+/// Parse check-run details JSON from `gh pr checks --json ...` output.
+pub(crate) fn parse_check_details(json: &str) -> Result<Vec<CheckRunDetail>> {
+    let runs: Vec<CheckRunJson> = serde_json::from_str(json)?;
+    Ok(runs.into_iter().map(CheckRunDetail::from).collect())
+}
+
+/// Truncate a log to the last `max_chars` characters, keeping complete lines.
+pub(crate) fn truncate_log(log: &str, max_chars: usize) -> String {
+    if log.len() <= max_chars {
+        return log.to_string();
+    }
+    let raw_start = log.len() - max_chars;
+    // Walk forward to find a valid UTF-8 char boundary
+    let start = (raw_start..log.len())
+        .find(|&i| log.is_char_boundary(i))
+        .unwrap_or(log.len());
+    // Find the next newline after the cut point to keep lines intact
+    match log[start..].find('\n') {
+        Some(pos) => format!("...(truncated)\n{}", &log[start + pos + 1..]),
+        None => format!("...(truncated)\n{}", &log[start..]),
+    }
+}
+
+/// A deferred CI fix request, collected during polling and processed after the loop.
+pub struct CiFixRequest {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub attempt: u32,
+    pub failure_log: String,
+}
+
+/// Decide what action to take when CI fails for a pending PR check.
+pub fn decide_ci_action(check: &PendingPrCheck, max_retries: u32, error_log: &str) -> CiPollAction {
+    if check.awaiting_fix_ci {
+        return CiPollAction::Wait;
+    }
+    if check.fix_attempt >= max_retries {
+        return CiPollAction::Abandon;
+    }
+    CiPollAction::SpawnFix {
+        log: error_log.to_string(),
+    }
+}
+
+impl CheckRunDetail {
+    /// `Completed` + hard-failure conclusion (`Failure | TimedOut | StartupFailure`).
+    pub fn is_failure(&self) -> bool {
+        use CheckConclusion as C;
+        self.status == CheckStatus::Completed
+            && matches!(
+                self.conclusion,
+                C::Failure | C::TimedOut | C::StartupFailure
+            )
+    }
+}
+
+/// Map a GitHub Actions check name to the local command that mirrors it.
+/// Returns `None` for unknown names — caller falls back to "no gate" and
+/// the agent must use its own judgment. Substring matching is intentional
+/// — workflow names vary (e.g. `"Test (ubuntu-latest)"`, `"clippy / lint"`).
+pub fn local_gate_for_check(name: &str) -> Option<&'static str> {
+    let n = name.to_ascii_lowercase();
+    if n.contains("file size") || n.contains("file-size") {
+        Some("bash scripts/check-file-size.sh")
+    } else if n.contains("actionlint") || n.contains("workflow") {
+        Some("actionlint")
+    } else if n.contains("clippy") || n.contains("lint") {
+        Some("cargo clippy --workspace --all-targets -- -D warnings")
+    } else if n.contains("fmt") || n.contains("format") {
+        Some("cargo fmt --all -- --check")
+    } else if n.contains("audit") || n.contains("deny") {
+        Some("cargo deny check")
+    } else if n.contains("doc") {
+        Some("cargo doc --workspace --no-deps")
+    } else if n.contains("test") {
+        Some("cargo test --workspace")
+    } else if n.contains("build") || n.contains("compile") {
+        Some("cargo build --workspace --all-targets")
+    } else {
+        None
+    }
+}
+
+/// Build a prompt for a CI fix session. When `local_gate_cmd` is `Some`, an
+/// explicit "Before pushing, run `<cmd>`" clause is appended; `None`
+/// preserves the legacy auto-path output exactly.
+pub fn build_ci_fix_prompt(
+    pr_number: u64,
+    issue_number: u64,
+    branch: &str,
+    attempt: u32,
+    failure_log: &str,
+    local_gate_cmd: Option<&str>,
+) -> String {
+    let gate_clause = match local_gate_cmd {
+        Some(cmd) => format!(
+            "\n\nBefore pushing, run `{}` locally and only push if it succeeds.",
+            cmd
+        ),
+        None => String::new(),
+    };
+    format!(
+        "Fix the CI failure for PR #{pr_number} (issue #{issue_number}).\n\n\
+         This is auto-fix attempt {attempt}.\n\n\
+         CI FAILURE LOG:\n```\n{failure_log}\n```\n\n\
+         IMPORTANT: You are running in unattended mode. \
+         Do NOT use AskUserQuestion. \
+         Read the failing code, fix the issue, then commit and push to the branch '{branch}'. \
+         Run the failing command locally first to reproduce, then fix and verify. \
+         Keep the fix minimal — do NOT refactor unrelated code. Only fix the CI failure.{gate_clause}",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ci_status_eq() {
+        assert_eq!(CiStatus::Pending, CiStatus::Pending);
+        assert_eq!(CiStatus::Passed, CiStatus::Passed);
+        assert_eq!(CiStatus::NoneConfigured, CiStatus::NoneConfigured);
+        assert_eq!(
+            CiStatus::Failed {
+                summary: "test".into()
+            },
+            CiStatus::Failed {
+                summary: "test".into()
+            }
+        );
+        assert_ne!(CiStatus::Pending, CiStatus::Passed);
+    }
+
+    #[test]
+    fn pending_pr_check_stores_fields() {
+        let check = PendingPrCheck {
+            pr_number: 42,
+            issue_number: 10,
+            branch: "maestro/issue-10".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        };
+        assert_eq!(check.pr_number, 42);
+        assert_eq!(check.issue_number, 10);
+        assert_eq!(check.branch, "maestro/issue-10");
+        assert_eq!(check.check_count, 0);
+        assert_eq!(check.fix_attempt, 0);
+        assert!(!check.awaiting_fix_ci);
+    }
+
+    #[test]
+    fn ci_poll_action_wait_equals_wait() {
+        assert_eq!(CiPollAction::Wait, CiPollAction::Wait);
+    }
+
+    #[test]
+    fn ci_poll_action_abandon_ne_wait() {
+        assert_ne!(CiPollAction::Abandon, CiPollAction::Wait);
+    }
+
+    #[test]
+    fn truncate_log_returns_full_string_when_under_limit() {
+        let log = "error: type mismatch in assignment".to_string();
+        let result = truncate_log(&log, 4096);
+        assert_eq!(result, log);
+    }
+
+    #[test]
+    fn truncate_log_clips_long_input() {
+        let log = "x".repeat(10_000);
+        let result = truncate_log(&log, 2048);
+        // Result should be roughly max_chars + prefix length
+        assert!(result.len() <= 2048 + 20);
+    }
+
+    #[test]
+    fn truncate_log_preserves_line_boundaries() {
+        let log = "line1\nline2\nline3\nline4\n".repeat(500);
+        let result = truncate_log(&log, 100);
+        // Should start with truncation marker
+        assert!(result.starts_with("...(truncated)\n"));
+    }
+
+    #[test]
+    fn truncate_log_respects_utf8_char_boundaries() {
+        // 'é' is 2 bytes; a 2000-char string is 4000 bytes
+        let log = "é".repeat(2000);
+        let result = truncate_log(&log, 2048);
+        // Must be valid UTF-8 (would panic otherwise)
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn parse_ci_json_all_success_returns_passed() {
+        let json = r#"{
+            "statusCheckRollup": [
+                {"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
+                {"name":"test","status":"COMPLETED","conclusion":"success"}
+            ],
+            "mergeStateStatus": "CLEAN"
+        }"#;
+        assert_eq!(parse_ci_json(json).unwrap(), CiStatus::Passed);
+    }
+
+    #[test]
+    fn parse_ci_json_empty_rollup_returns_none_configured() {
+        let json = r#"{"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}"#;
+        assert_eq!(parse_ci_json(json).unwrap(), CiStatus::NoneConfigured);
+    }
+
+    #[test]
+    fn parse_ci_json_failure_conclusion_returns_failed_with_summary() {
+        let json = r#"{
+            "statusCheckRollup": [
+                {"name":"build","status":"COMPLETED","conclusion":"FAILURE"},
+                {"name":"lint","status":"COMPLETED","conclusion":"TIMED_OUT"}
+            ],
+            "mergeStateStatus": "BLOCKED"
+        }"#;
+        let status = parse_ci_json(json).unwrap();
+        match status {
+            CiStatus::Failed { summary } => {
+                assert!(summary.contains("build"));
+                assert!(summary.contains("lint"));
+            }
+            other => panic!("Expected Failed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_ci_json_in_progress_returns_pending() {
+        let json = r#"{
+            "statusCheckRollup": [
+                {"name":"build","status":"IN_PROGRESS","conclusion":""}
+            ],
+            "mergeStateStatus": "BLOCKED"
+        }"#;
+        assert_eq!(parse_ci_json(json).unwrap(), CiStatus::Pending);
+    }
+
+    #[test]
+    fn parse_ci_json_mixed_success_and_pending_returns_pending() {
+        let json = r#"{
+            "statusCheckRollup": [
+                {"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
+                {"name":"deploy","status":"QUEUED","conclusion":""}
+            ],
+            "mergeStateStatus": "BLOCKED"
+        }"#;
+        assert_eq!(parse_ci_json(json).unwrap(), CiStatus::Pending);
+    }
+
+    #[test]
+    fn decide_ci_action_spawn_fix_when_under_limit() {
+        let check = PendingPrCheck {
+            pr_number: 42,
+            issue_number: 7,
+            branch: "b".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 1,
+            awaiting_fix_ci: false,
+        };
+        let action = decide_ci_action(&check, 3, "CI failed: missing semicolon");
+        assert!(matches!(action, CiPollAction::SpawnFix { .. }));
+    }
+
+    #[test]
+    fn decide_ci_action_abandon_when_at_limit() {
+        let check = PendingPrCheck {
+            pr_number: 42,
+            issue_number: 7,
+            branch: "b".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 3,
+            awaiting_fix_ci: false,
+        };
+        let action = decide_ci_action(&check, 3, "CI failed");
+        assert_eq!(action, CiPollAction::Abandon);
+    }
+
+    #[test]
+    fn decide_ci_action_wait_when_awaiting_fix_ci() {
+        let check = PendingPrCheck {
+            pr_number: 1,
+            issue_number: 1,
+            branch: "b".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: true,
+        };
+        assert_eq!(decide_ci_action(&check, 3, ""), CiPollAction::Wait);
+    }
+
+    #[test]
+    fn decide_ci_action_abandon_when_max_retries_is_zero() {
+        let check = PendingPrCheck {
+            pr_number: 1,
+            issue_number: 1,
+            branch: "b".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        };
+        assert_eq!(decide_ci_action(&check, 0, "error"), CiPollAction::Abandon);
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_contains_pr_number_and_error_log() {
+        let prompt =
+            build_ci_fix_prompt(42, 7, "feat/fix", 1, "error[E0308]: mismatched types", None);
+        assert!(prompt.contains("PR #42"));
+        assert!(prompt.contains("mismatched types"));
+        assert!(prompt.contains("attempt 1"));
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_includes_fix_scope_guard() {
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "test failed", None);
+        let lower = prompt.to_lowercase();
+        assert!(
+            lower.contains("do not") || lower.contains("only fix"),
+            "Expected scope-limiting instruction in prompt, got: {}",
+            prompt
+        );
+    }
+
+    // ── Issue #695 — Area A: local_gate_for_check mapping ──────────────
+
+    #[test]
+    fn local_gate_for_clippy_returns_clippy_command() {
+        assert_eq!(
+            local_gate_for_check("clippy"),
+            Some("cargo clippy --workspace --all-targets -- -D warnings")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_fmt_returns_fmt_command() {
+        assert_eq!(
+            local_gate_for_check("rustfmt"),
+            Some("cargo fmt --all -- --check")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_test_returns_test_command() {
+        assert_eq!(
+            local_gate_for_check("Test (ubuntu-latest)"),
+            Some("cargo test --workspace")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_build_returns_build_command() {
+        assert_eq!(
+            local_gate_for_check("build"),
+            Some("cargo build --workspace --all-targets")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_doc_returns_doc_command() {
+        assert_eq!(
+            local_gate_for_check("docs"),
+            Some("cargo doc --workspace --no-deps")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_audit_returns_deny_command() {
+        assert_eq!(
+            local_gate_for_check("cargo audit"),
+            Some("cargo deny check")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_actionlint_returns_actionlint_command() {
+        assert_eq!(local_gate_for_check("actionlint"), Some("actionlint"));
+    }
+
+    #[test]
+    fn local_gate_for_file_size_returns_file_size_script() {
+        assert_eq!(
+            local_gate_for_check("File Size Lint"),
+            Some("bash scripts/check-file-size.sh")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_unknown_returns_none() {
+        assert_eq!(local_gate_for_check("notacheck"), None);
+    }
+
+    // ── Issue #695 — Area B: build_ci_fix_prompt extension ─────────────
+
+    #[test]
+    fn build_ci_fix_prompt_with_none_gate_omits_gate_clause() {
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "log", None);
+        assert!(
+            !prompt.contains("Before pushing"),
+            "None gate must NOT inject a gate clause; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_with_some_gate_includes_clause_once() {
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "log", Some("cargo test"));
+        let occurrences = prompt.matches("Before pushing").count();
+        assert_eq!(
+            occurrences, 1,
+            "Some gate must inject the clause exactly once; got {} occurrences in: {}",
+            occurrences, prompt
+        );
+        assert!(prompt.contains("cargo test"));
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_some_gate_clause_is_idempotent_across_calls() {
+        let p1 = build_ci_fix_prompt(1, 1, "b", 1, "l", Some("cargo clippy"));
+        let p2 = build_ci_fix_prompt(2, 2, "b", 2, "l", Some("cargo clippy"));
+        assert_eq!(p1.matches("Before pushing").count(), 1);
+        assert_eq!(p2.matches("Before pushing").count(), 1);
+    }
+
+    // ── parse_check_details tests ────────────────────────────────────────
+
+    #[test]
+    fn parse_check_details_all_passing_returns_success_statuses() {
+        let json = r#"[
+            {"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"test","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:02:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].status, CheckStatus::Completed);
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].status, CheckStatus::Completed);
+        assert_eq!(result[1].conclusion, CheckConclusion::Success);
+    }
+
+    #[test]
+    fn parse_check_details_some_pending_returns_queued_and_in_progress() {
+        let json = r#"[
+            {"name":"lint","status":"QUEUED","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].status, CheckStatus::Queued);
+        assert_eq!(result[1].status, CheckStatus::InProgress);
+    }
+
+    #[test]
+    fn parse_check_details_mixed_failure_returns_all_conclusions() {
+        let json = r#"[
+            {"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"integ","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:03:00Z"},
+            {"name":"e2e","status":"COMPLETED","conclusion":"TIMED_OUT","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:10:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].conclusion, CheckConclusion::Failure);
+        assert_eq!(result[2].conclusion, CheckConclusion::TimedOut);
+    }
+
+    #[test]
+    fn parse_check_details_null_started_at_yields_no_elapsed() {
+        let json = r#"[{"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":null,"completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].started_at, None);
+        assert_eq!(result[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_completed_computes_elapsed_from_timestamps() {
+        let json = r#"[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:02:30Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].elapsed_secs, Some(150));
+    }
+
+    #[test]
+    fn parse_check_details_in_progress_elapsed_is_positive() {
+        let json = r#"[{"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":"2020-01-01T00:00:00Z","completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        match result[0].elapsed_secs {
+            Some(n) => assert!(n > 0, "elapsed must be positive for in-progress check"),
+            None => panic!("expected Some(elapsed) for IN_PROGRESS with startedAt set"),
+        }
+    }
+
+    #[test]
+    fn parse_check_details_queued_elapsed_is_none() {
+        let json = r#"[{"name":"deploy","status":"QUEUED","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_empty_array_returns_empty_vec() {
+        let result = parse_check_details("[]");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_check_details_malformed_json_returns_error() {
+        let result = parse_check_details("{broken json");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn parse_check_details_unknown_status_deserializes_as_unknown() {
+        let json = r#"[{"name":"check","status":"SOME_FUTURE_STATUS","conclusion":"SUCCESS","startedAt":null,"completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].status, CheckStatus::Unknown);
+    }
+
+    #[test]
+    fn parse_check_details_unknown_conclusion_uses_serde_other() {
+        let json = r#"[{"name":"check","status":"COMPLETED","conclusion":"BRAND_NEW","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].conclusion, CheckConclusion::None);
+    }
+
+    #[test]
+    fn parse_check_details_all_status_variants() {
+        let json = r#"[
+            {"name":"a","status":"QUEUED","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"b","status":"IN_PROGRESS","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null},
+            {"name":"c","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"d","status":"WAITING","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"e","status":"PENDING","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"f","status":"REQUESTED","conclusion":"","startedAt":null,"completedAt":null}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 6);
+        assert_eq!(result[0].status, CheckStatus::Queued);
+        assert_eq!(result[1].status, CheckStatus::InProgress);
+        assert_eq!(result[2].status, CheckStatus::Completed);
+        assert_eq!(result[3].status, CheckStatus::Waiting);
+        assert_eq!(result[4].status, CheckStatus::Pending);
+        assert_eq!(result[5].status, CheckStatus::Requested);
+    }
+
+    #[test]
+    fn parse_check_details_name_preserved_verbatim() {
+        let json = r#"[{"name":"My Fancy Check / integration","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].name, "My Fancy Check / integration");
+    }
+
+    #[test]
+    fn parse_check_details_missing_completed_at_key() {
+        let json = r#"[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z"}]"#;
+        let result = parse_check_details(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_all_conclusion_variants() {
+        let json = r#"[
+            {"name":"a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"b","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"c","status":"COMPLETED","conclusion":"NEUTRAL","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"d","status":"COMPLETED","conclusion":"CANCELLED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"e","status":"COMPLETED","conclusion":"TIMED_OUT","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"f","status":"COMPLETED","conclusion":"ACTION_REQUIRED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"g","status":"COMPLETED","conclusion":"SKIPPED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"h","status":"COMPLETED","conclusion":"STALE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"i","status":"COMPLETED","conclusion":"STARTUP_FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].conclusion, CheckConclusion::Failure);
+        assert_eq!(result[2].conclusion, CheckConclusion::Neutral);
+        assert_eq!(result[3].conclusion, CheckConclusion::Cancelled);
+        assert_eq!(result[4].conclusion, CheckConclusion::TimedOut);
+        assert_eq!(result[5].conclusion, CheckConclusion::ActionRequired);
+        assert_eq!(result[6].conclusion, CheckConclusion::Skipped);
+        assert_eq!(result[7].conclusion, CheckConclusion::Stale);
+        assert_eq!(result[8].conclusion, CheckConclusion::StartupFailure);
+    }
+}

@@ -1,0 +1,1388 @@
+use super::types::{Session, SessionStatus, StreamEvent};
+use crate::agent_provider::{
+    AgentError, AgentProvider, AgentProviderEvent, AgentRequest, ClaudeProvider,
+};
+use anyhow::Result;
+use chrono::Utc;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+/// Sentinel `StreamEvent::Warning.code` used by the spawn handshake to
+/// carry the "provider started" signal back to the main event loop without
+/// blocking the spawn caller. The optional process id (subprocess
+/// providers only) rides in `message` as a base-10 integer; HTTP providers
+/// send an empty `message`.
+///
+/// Consumers MUST treat this code as a lifecycle marker — NOT as a warning
+/// to surface in the activity log. The handler in
+/// `App::handle_session_event` and `ManagedSession::handle_event`
+/// special-cases it before the generic Warning path runs.
+pub const SESSION_SPAWNED_CODE: &str = "session_spawned";
+
+/// Sentinel `StreamEvent::Warning.code` carrying the provider-side
+/// conversation id (`AgentRunResult.session_id`) back to the main event
+/// loop once a run returns (#947). The id rides in `message` and is bound
+/// via [`Session::bind_agent_session_id`], which enforces the
+/// `is_valid_session_id` allowlist before the id can ever reach a
+/// `--resume` argv. Same lifecycle-marker rules as [`SESSION_SPAWNED_CODE`]:
+/// never surface it as an operator-facing warning.
+pub const SESSION_BOUND_CODE: &str = "session_bound";
+
+/// Events sent from a session back to the coordinator/TUI.
+#[derive(Debug, Clone)]
+pub struct SessionEvent {
+    pub session_id: uuid::Uuid,
+    pub event: StreamEvent,
+}
+
+pub struct ManagedSession {
+    pub session: Session,
+    provider: Arc<dyn AgentProvider>,
+    cancel_token: Option<CancellationToken>,
+    /// Path to the git worktree for this session (Phase 1).
+    pub worktree_path: Option<PathBuf>,
+    /// Branch name for this session's worktree (e.g., "maestro/issue-42").
+    pub branch_name: Option<String>,
+    /// System prompt appendix for file claims injection (Phase 1).
+    pub system_prompt_appendix: Option<String>,
+    /// Permission mode for Claude CLI (e.g., "bypassPermissions").
+    pub permission_mode: Option<String>,
+    /// Allowed tools whitelist.
+    pub allowed_tools: Vec<String>,
+    /// A PR announcement deferred while a turn was streaming (#936/#949).
+    /// `session.pr_linked` is set immediately by
+    /// [`Self::signal_pr_linked`]; only the System-turn announcement
+    /// waits for [`Self::settle_queued_pr_notice`] at the turn boundary.
+    /// In-memory turn-boundary state.
+    pub queued_pr_notice: Option<u64>,
+    last_tool_start: Option<std::time::Instant>,
+    thinking_start: Option<std::time::Instant>,
+}
+
+impl ManagedSession {
+    #[allow(dead_code)] // Reason: constructor for managed session — used by session pool
+    pub fn new(session: Session) -> Self {
+        Self {
+            session,
+            provider: Arc::new(ClaudeProvider::default()),
+            cancel_token: None,
+            worktree_path: None,
+            branch_name: None,
+            system_prompt_appendix: None,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
+            queued_pr_notice: None,
+            last_tool_start: None,
+            thinking_start: None,
+        }
+    }
+
+    /// Create a managed session with worktree and file claims context.
+    pub fn with_worktree(
+        session: Session,
+        worktree_path: Option<PathBuf>,
+        branch_name: Option<String>,
+        system_prompt_appendix: Option<String>,
+    ) -> Self {
+        Self {
+            session,
+            provider: Arc::new(ClaudeProvider::default()),
+            cancel_token: None,
+            worktree_path,
+            branch_name,
+            system_prompt_appendix,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
+            queued_pr_notice: None,
+            last_tool_start: None,
+            thinking_start: None,
+        }
+    }
+
+    pub fn set_provider(&mut self, provider: Arc<dyn AgentProvider>) {
+        self.provider = provider;
+    }
+
+    /// Id of the provider this session's turns run against (#929 routing
+    /// assertions). Reads existing state; gated out of production.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn provider_id(&self) -> &str {
+        self.provider.id()
+    }
+
+    #[cfg(test)]
+    fn set_claude_binary_for_test(&mut self, binary: impl Into<String>) {
+        self.provider = Arc::new(ClaudeProvider::new(binary));
+    }
+
+    fn build_request(&self) -> AgentRequest {
+        let mut request =
+            AgentRequest::stream_json(self.session.prompt.clone(), self.session.model.clone());
+        // Worktree cwd for maestro-spawned sessions; the transcript's
+        // original cwd for adopted ones (#1053) — `claude --resume`
+        // locates the transcript by cwd.
+        request.cwd = self
+            .worktree_path
+            .clone()
+            .or_else(|| self.session.adopted_cwd.clone());
+        request.images.clone_from(&self.session.image_paths);
+        request.permission_mode.clone_from(&self.permission_mode);
+        request.allowed_tools.clone_from(&self.allowed_tools);
+        request
+            .system_prompt_appendix
+            .clone_from(&self.system_prompt_appendix);
+        // #1053: an adopted session arrives pre-bound to an external
+        // conversation — its FIRST turn must resume it (`--resume <id>`).
+        // maestro-spawned sessions are never pre-bound at spawn time, so
+        // this stays None for them and the full first-turn shape
+        // (images + appendix) is preserved either way.
+        request.resume_session_id = self.session.agent_session_id.clone();
+        request
+    }
+
+    /// Start the configured agent provider and stream events back to Maestro.
+    ///
+    /// **Non-blocking.** The call transitions the session to
+    /// [`SessionStatus::Spawning`] synchronously, kicks off two background
+    /// tasks (one for the provider, one to forward events back), and
+    /// returns immediately. The session remains in `Spawning` until the
+    /// provider sends its first event:
+    ///
+    /// * `AgentProviderEvent::Started` → forwarded as
+    ///   `StreamEvent::Warning { code: SESSION_SPAWNED_CODE, message: pid }`.
+    ///   The main thread translates this into the
+    ///   `Spawning → Running` transition and stamps `session.pid`.
+    /// * `AgentProviderEvent::Stream(StreamEvent::Error { .. })` → forwarded
+    ///   verbatim; `ManagedSession::handle_event` runs the
+    ///   `Spawning → Errored` transition.
+    ///
+    /// This was made non-blocking in #803 because providers that perform a
+    /// network handshake before `Started` (currently `minimax`, future
+    /// HTTP-only providers) used to freeze the TUI's main event loop until
+    /// the round-trip completed, then snap the screen to the session view
+    /// with no visible "connecting…" feedback. Now the existing
+    /// `Spawning` animation in `spinner.rs` is visible during the wait.
+    pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
+        use crate::session::transition::TransitionReason;
+        let _ = self
+            .session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted);
+        self.session.started_at = Some(Utc::now());
+
+        let request = self.build_request();
+        self.spawn_provider_tasks(request, tx)
+    }
+
+    /// Build the request for a follow-up turn on the bound conversation
+    /// (#947): same builder as [`Self::build_request`] minus the
+    /// system-prompt appendix (already part of the resumed conversation's
+    /// first turn, #946) and first-turn images, plus
+    /// `resume_session_id`. A session with no bound id degrades to a
+    /// fresh conversation — same semantics the retired
+    /// `interaction_turn` loop had.
+    fn build_followup_request(&self, prompt: &str) -> AgentRequest {
+        let mut request = self.build_request();
+        request.prompt = prompt.to_string();
+        // Follow-ups resume the conversation built in turn 1 (#946/#947):
+        // the appendix already lives in that conversation's first turn and
+        // first-turn images don't re-apply.
+        request.images.clear();
+        request.system_prompt_appendix = None;
+        request
+    }
+
+    /// Run one follow-up turn through the normal pipeline (#947):
+    /// `claude --resume <id>` (or the provider's parked PTY child) with
+    /// events streaming through the same [`SessionEvent`] channel —
+    /// telemetry lands on this [`Session`] exactly like a one-shot turn.
+    ///
+    /// Deliberately NO status transition: the session keeps its settled
+    /// one-shot status (`Completed`/`FailedGates`/…) until #948 adds the
+    /// kept-alive `Interactive` status.
+    pub fn send_followup_turn(
+        &mut self,
+        prompt: String,
+        tx: mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
+        let request = self.build_followup_request(&prompt);
+        self.spawn_provider_tasks(request, tx)
+    }
+
+    /// Cancel the in-flight provider turn, if any (#949 quit path): the
+    /// provider child is interrupted BEFORE the worktree wipe runs, so git
+    /// never races a writing agent.
+    pub fn cancel_inflight_turn(&mut self) {
+        if let Some(cancel) = self.cancel_token.take() {
+            cancel.cancel();
+        }
+    }
+
+    /// Record a `/pushup` PR linked to this session's issue (#739 → #949,
+    /// spec §4.4): the session stays alive. `session.pr_linked` is set
+    /// immediately; the System-turn announcement fires now (turn idle) or
+    /// at the next turn boundary (streaming — #936 deferral, so the
+    /// in-flight transcript is never interleaved).
+    ///
+    /// Returns `Some(pr_number)` when the caller should announce now;
+    /// `None` when deferred or the session is already terminal.
+    pub fn signal_pr_linked(&mut self, pr_number: u64) -> Option<u64> {
+        if self.session.status.is_terminal() {
+            tracing::debug!(
+                issue_number = self.session.issue_number,
+                "pr_linked signal on terminated session; ignoring"
+            );
+            return None;
+        }
+        self.session.pr_linked = Some(pr_number);
+        if self.session.turn_state == crate::session::interaction::TurnState::Streaming {
+            self.queued_pr_notice = Some(pr_number);
+            return None;
+        }
+        Some(pr_number)
+    }
+
+    /// Take a PR announcement deferred while a turn was streaming (#936),
+    /// now that the turn has settled back to `TurnState::Idle` and its
+    /// output is preserved on `session.turns`. `None` without a queued
+    /// notice, while still streaming, or on a terminated session.
+    pub fn settle_queued_pr_notice(&mut self) -> Option<u64> {
+        if self.session.turn_state == crate::session::interaction::TurnState::Streaming {
+            return None;
+        }
+        if self.session.status.is_terminal() {
+            self.queued_pr_notice = None;
+            return None;
+        }
+        self.queued_pr_notice.take()
+    }
+
+    /// Shared engine for [`Self::spawn`] and [`Self::send_followup_turn`]:
+    /// kick off the provider task plus the event-forwarding task, wire the
+    /// cancel token, and return immediately.
+    fn spawn_provider_tasks(
+        &mut self,
+        request: AgentRequest,
+        tx: mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
+        let provider = Arc::clone(&self.provider);
+        let provider_id = provider.id().to_string();
+        let cancel = CancellationToken::new();
+        self.cancel_token = Some(cancel.clone());
+        let (provider_tx, mut provider_rx) = mpsc::unbounded_channel();
+        let session_id = self.session.id;
+
+        tokio::spawn(async move {
+            match provider.run(request, provider_tx.clone(), cancel).await {
+                Ok(result) => {
+                    // Forward the provider-side conversation id so the main
+                    // loop can bind it for `--resume` follow-ups (#947).
+                    if let Some(id) = result.session_id {
+                        let _ =
+                            provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Warning {
+                                code: SESSION_BOUND_CODE.to_string(),
+                                message: id,
+                            }));
+                    }
+                }
+                Err(err) => {
+                    if matches!(err, AgentError::Cancelled { .. }) {
+                        return;
+                    }
+                    let _ = provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Error {
+                        message: err.to_string(),
+                    }));
+                }
+            }
+        });
+
+        tokio::spawn(async move {
+            let mut handshake_done = false;
+            while let Some(event) = provider_rx.recv().await {
+                match event {
+                    AgentProviderEvent::Started(started) => {
+                        if handshake_done {
+                            // Provider should only emit Started once; ignore
+                            // duplicates instead of double-transitioning.
+                            continue;
+                        }
+                        handshake_done = true;
+                        let pid_msg = started
+                            .process_id
+                            .map(|p| p.to_string())
+                            .unwrap_or_default();
+                        let _ = tx.send(SessionEvent {
+                            session_id,
+                            event: StreamEvent::Warning {
+                                code: SESSION_SPAWNED_CODE.to_string(),
+                                message: pid_msg,
+                            },
+                        });
+                    }
+                    AgentProviderEvent::Stream(stream_event) => {
+                        handshake_done =
+                            handshake_done || matches!(stream_event, StreamEvent::Error { .. });
+                        let _ = tx.send(SessionEvent {
+                            session_id,
+                            event: stream_event,
+                        });
+                    }
+                }
+            }
+            if !handshake_done {
+                let _ = tx.send(SessionEvent {
+                    session_id,
+                    event: StreamEvent::Error {
+                        message: format!("{provider_id} provider exited before startup"),
+                    },
+                });
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Send SIGSTOP to pause.
+    #[cfg(unix)]
+    pub fn pause(&self) -> Result<()> {
+        if let Some(pid) = self.session.pid {
+            // SAFETY: libc::kill is an FFI call; the pid comes from a session
+            // we spawned (stored in self.session.pid). Passing SIGSTOP is
+            // side-effect-only and cannot cause UB in this process. Return
+            // value is intentionally ignored — a kill error (e.g. ESRCH for a
+            // child that already exited) is handled by the caller via the
+            // subsequent state transition, not by unwinding here.
+            #[allow(unsafe_code)]
+            unsafe {
+                libc::kill(pid as i32, libc::SIGSTOP);
+            }
+        }
+        Ok(())
+    }
+
+    /// Send SIGCONT to resume.
+    #[cfg(unix)]
+    pub fn resume(&self) -> Result<()> {
+        if let Some(pid) = self.session.pid {
+            // SAFETY: see `pause()` above — same rationale applies.
+            #[allow(unsafe_code)]
+            unsafe {
+                libc::kill(pid as i32, libc::SIGCONT);
+            }
+        }
+        Ok(())
+    }
+
+    /// Kill the child process.
+    pub async fn kill(&mut self) -> Result<()> {
+        if let Some(cancel) = self.cancel_token.take() {
+            cancel.cancel();
+        }
+        let _ = self.session.transition_to(
+            SessionStatus::Killed,
+            crate::session::transition::TransitionReason::UserKill,
+        );
+        self.session.log_activity("Session killed".into());
+        Ok(())
+    }
+
+    /// Update session state from a stream event.
+    pub fn handle_event(&mut self, event: &StreamEvent) {
+        self.session.append_call_log(event);
+        if !matches!(event, StreamEvent::Thinking { .. })
+            && let Some(start) = self.thinking_start.take()
+        {
+            self.session.is_thinking = false;
+            self.session.thinking_started_at = None;
+            self.session
+                .log_activity(format!("Thought for {}", format_elapsed(start.elapsed())));
+        }
+
+        match event {
+            StreamEvent::AssistantMessage { text } => {
+                if !text.is_empty() {
+                    if text.len() > 40 {
+                        let boundary = truncate_at_char_boundary(text, 40);
+                        self.session.current_activity = format!("{}…", &text[..boundary]);
+                    } else {
+                        self.session.current_activity = text.clone();
+                    }
+
+                    if !self.session.last_message.is_empty() {
+                        self.session.last_message.push('\n');
+                    }
+                    self.session.last_message.push_str(text);
+                    if self.session.last_message.len() > 10_000 {
+                        let start = self.session.last_message.len() - 8_000;
+                        let boundary = truncate_at_char_boundary(&self.session.last_message, start);
+                        self.session.last_message =
+                            self.session.last_message[boundary..].to_string();
+                    }
+                }
+            }
+            StreamEvent::ToolUse {
+                tool,
+                file_path,
+                command_preview,
+                ..
+            } => {
+                self.last_tool_start = Some(std::time::Instant::now());
+
+                let (activity, log_msg) = match (
+                    tool.as_str(),
+                    file_path.as_deref(),
+                    command_preview.as_deref(),
+                ) {
+                    ("Bash", _, Some(cmd)) => (format!("$ {}", cmd), format!("Bash: $ {}", cmd)),
+                    (t, Some(path), _) => {
+                        let short = path.rsplit('/').next().unwrap_or(path);
+                        (format!("{}: {}", t, short), format!("{}: {}", t, path))
+                    }
+                    (t, None, _) => (format!("Using {}", t), format!("Tool: {}", t)),
+                };
+                self.session.current_activity = activity;
+                self.session.log_activity(log_msg);
+
+                if let Some(path) = file_path
+                    && is_file_touching_tool(tool.as_str())
+                    && !self.session.files_touched.contains(path)
+                {
+                    self.session.files_touched_previous = self.session.files_touched.len();
+                    self.session.files_touched.push(path.clone());
+                }
+            }
+            StreamEvent::ToolResult { tool, is_error } => {
+                let elapsed_str = self
+                    .last_tool_start
+                    .take()
+                    .map(|start| format!(" ({})", format_elapsed(start.elapsed())))
+                    .unwrap_or_default();
+
+                if *is_error {
+                    self.session
+                        .log_activity(format!("Tool {} errored{}", tool, elapsed_str));
+                } else {
+                    self.session
+                        .log_activity(format!("Tool {} done{}", tool, elapsed_str));
+                }
+            }
+            StreamEvent::CostUpdate { cost_usd } => {
+                self.session.cost_usd = *cost_usd;
+            }
+            StreamEvent::Completed { cost_usd } => {
+                if *cost_usd > 0.0 {
+                    self.session.cost_usd = *cost_usd;
+                }
+                // #1144: park gated sessions in GATES_RUNNING so the
+                // completion pipeline settles the final outcome
+                // (COMPLETED / FAILED_GATES) after the gates run.
+                // Settling COMPLETED first left the pipeline's own
+                // transitions illegal (Completed has no outgoing
+                // edges), so a failing gate never surfaced as
+                // FAILED_GATES. Interactive sessions are excluded:
+                // they never enter the completion pipeline (#947) and
+                // would strand in GATES_RUNNING.
+                let enter_gates = self.session.gates_pending
+                    && self.session.session_mode != crate::session::types::SessionMode::Interactive
+                    && self.worktree_path.is_some();
+                let target = if enter_gates {
+                    SessionStatus::GatesRunning
+                } else {
+                    SessionStatus::Completed
+                };
+                if self
+                    .session
+                    .transition_to(
+                        target,
+                        crate::session::transition::TransitionReason::StreamCompleted,
+                    )
+                    .is_ok()
+                {
+                    self.session.current_activity = "Done".into();
+                    self.session.log_activity("Session completed".into());
+
+                    if self.session.detect_hollow_completion() {
+                        self.session.is_hollow_completion = true;
+                        self.session.log_activity(
+                            "Warning: hollow completion detected — session completed without performing any work".into(),
+                        );
+                    }
+                }
+            }
+            StreamEvent::Error { message } => {
+                let _ = self.session.transition_to(
+                    SessionStatus::Errored,
+                    crate::session::transition::TransitionReason::StreamError,
+                );
+                self.session.current_activity = "Error".into();
+                self.session.log_activity(format!("Error: {}", message));
+            }
+            StreamEvent::Warning { code, message } if code == SESSION_BOUND_CODE => {
+                // Bind the provider conversation id (#947). Validation +
+                // first-bind-wins live in `bind_agent_session_id`; a rejected
+                // id is intentionally silent here (logged nowhere the agent
+                // controls) — the next turn simply re-inits context.
+                let _ = self.session.bind_agent_session_id(message);
+            }
+            StreamEvent::Warning { code, message } if code == SESSION_SPAWNED_CODE => {
+                // Non-blocking spawn handshake (see `spawn` docs): translate
+                // the synthetic Spawned marker into the Spawning → Running
+                // transition + pid stamp that the old blocking code did
+                // inline on the spawn caller.
+                if matches!(self.session.status, SessionStatus::Spawning) {
+                    let pid = message.parse::<u32>().ok();
+                    self.session.pid = pid;
+                    let _ = self.session.transition_to(
+                        SessionStatus::Running,
+                        crate::session::transition::TransitionReason::Spawned,
+                    );
+                    let activity = match pid {
+                        Some(p) => format!("Session spawned (pid: {p})"),
+                        None => "Session spawned".into(),
+                    };
+                    self.session.log_activity(activity);
+                }
+            }
+            StreamEvent::ContextUpdate { context_pct } => {
+                self.session.context_pct = *context_pct;
+                self.session
+                    .log_activity(format!("Context: {:.0}%", context_pct * 100.0));
+            }
+            StreamEvent::TokenUpdate { usage } => {
+                // Claude CLI emits cumulative totals, so we replace rather than accumulate
+                self.session.token_usage = usage.clone();
+            }
+            StreamEvent::Thinking { .. } => {
+                if self.thinking_start.is_none() {
+                    let now = std::time::Instant::now();
+                    self.thinking_start = Some(now);
+                    self.session.is_thinking = true;
+                    self.session.thinking_started_at = Some(now);
+                    self.session.log_activity("Thinking...".into());
+                }
+                if self.session.current_activity != "Thinking..." {
+                    self.session.current_activity = "Thinking...".into();
+                }
+            }
+            StreamEvent::Unknown { .. } => {}
+            StreamEvent::Warning { code, message } => {
+                if code == crate::agent_provider::claude_pricing::UNPRICED_MODEL_CODE {
+                    self.session.cost_unknown = true;
+                }
+                self.session
+                    .log_activity(format!("WARNING [{code}]: {message}"));
+            }
+            // The call-log entry is appended by `append_call_log` before this
+            // match runs; a hook result is not a session-state change (#887).
+            StreamEvent::HookResponse { .. } => {}
+        }
+    }
+}
+
+fn format_elapsed(d: std::time::Duration) -> String {
+    if d.as_secs() >= 1 {
+        format!("{:.1}s", d.as_secs_f64())
+    } else {
+        format!("{}ms", d.as_millis())
+    }
+}
+
+/// Tool names that touch a file and should bump `files_touched`. Matches
+/// both Claude's PascalCase convention (`Read`, `Edit`) and opencode /
+/// other providers' lowercase (`read`, `edit`, `write`, `glob`, `grep`,
+/// `patch`). Case-insensitive comparison; unknown tools are ignored.
+fn is_file_touching_tool(tool: &str) -> bool {
+    matches!(
+        tool.to_ascii_lowercase().as_str(),
+        "read" | "edit" | "write" | "glob" | "grep" | "patch" | "multiedit"
+    )
+}
+
+use crate::util::truncate_at_char_boundary;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::types::Session;
+    use uuid::Uuid;
+
+    fn make_managed(prompt: &str) -> ManagedSession {
+        let session = Session {
+            id: Uuid::new_v4(),
+            prompt: prompt.to_string(),
+            model: "claude-sonnet-4-5-20250514".to_string(),
+            status: SessionStatus::Queued,
+            issue_number: None,
+            issue_numbers: vec![],
+            mode: "print".to_string(),
+            session_mode: crate::session::types::SessionMode::default(),
+            agent_session_id: None,
+            adopted_cwd: None,
+            settled_from: None,
+            gates_pending: false,
+            turn_state: crate::session::interaction::TurnState::Idle,
+            turns: vec![],
+            produce_pr: false,
+            pr_linked: None,
+            agent_id: None,
+            mode_config: None,
+            started_at: None,
+            finished_at: None,
+            cost_usd: 0.0,
+            cost_unknown: false,
+            context_pct: 0.0,
+            token_usage: crate::session::types::TokenUsage::default(),
+            current_activity: String::new(),
+            last_message: String::new(),
+            activity_log: vec![],
+            files_touched: vec![],
+            files_touched_previous: 0,
+            pid: None,
+            owner_pid: Some(std::process::id()),
+            issue_title: None,
+            retry_count: 0,
+            last_retry_at: None,
+            parent_session_id: None,
+            child_session_ids: vec![],
+            fork_depth: 0,
+            ci_fix_context: None,
+            conflict_fix_context: None,
+            image_paths: vec![],
+            gate_results: vec![],
+            is_hollow_completion: false,
+            transition_flash_remaining: 0,
+            is_thinking: false,
+            thinking_started_at: None,
+            tq_handoff_original_tokens: None,
+            tq_handoff_compressed_tokens: None,
+            worktree_path: None,
+            transition_history: vec![],
+            intent: crate::session::intent::SessionIntent::default(),
+            role: crate::session::role::Role::default(),
+            consultation_skip_logged: false,
+            adapt_follow_up_considered: false,
+            origin: crate::session::types::SessionOrigin::default(),
+            active_command: None,
+            call_log: vec![],
+            hollow_dismissed: false,
+        };
+        ManagedSession::new(session)
+    }
+
+    #[test]
+    fn unpriced_model_warning_marks_session_cost_unknown() {
+        // #1155: the parser flags a model maestro cannot price; the session
+        // must remember it so every cost view renders `$?`, not `$0.00`.
+        let mut ms = make_managed("p");
+        assert!(!ms.session.cost_unknown);
+        ms.handle_event(&StreamEvent::Warning {
+            code: crate::agent_provider::claude_pricing::UNPRICED_MODEL_CODE.to_string(),
+            message: crate::agent_provider::claude_pricing::unpriced_model_warning("glm-5.3"),
+        });
+        assert!(ms.session.cost_unknown);
+    }
+
+    // --- Issue #947: SESSION_BOUND sentinel binds the provider session id ---
+
+    #[test]
+    fn handle_event_session_bound_binds_agent_session_id() {
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "abc-123".to_string(),
+        });
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn handle_event_session_bound_rejects_hostile_id() {
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "$(rm -rf /)".to_string(),
+        });
+        assert!(ms.session.agent_session_id.is_none());
+    }
+
+    #[test]
+    fn handle_event_session_bound_does_not_log_warning_noise() {
+        // Lifecycle marker, not operator-facing — mirrors SESSION_SPAWNED.
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "abc-123".to_string(),
+        });
+        assert!(
+            !ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.contains("WARNING")),
+            "sentinel must not surface as a WARNING activity line"
+        );
+    }
+
+    // --- Issue #1053: adopt pipeline — first-turn resume + id survival ---
+
+    #[test]
+    fn first_turn_request_resumes_prebound_conversation() {
+        // ADR (a) in #1053: an adopted session arrives pre-bound — its
+        // first turn reuses the follow-up builder so `--resume` fires from
+        // turn 1 in the transcript's original cwd.
+        let mut ms = make_managed("adopt me");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+
+        let request = ms.build_request();
+
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original"))
+        );
+        assert_eq!(request.prompt, "adopt me");
+    }
+
+    #[test]
+    fn prebound_first_turn_request_keeps_full_first_turn_shape() {
+        // Judge review of #1071: the pre-bound path must not silently drop
+        // first-turn images or the system-prompt appendix — the request
+        // shape is identical to a maestro-spawned first turn, plus resume.
+        let mut ms = make_managed("adopt me");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+        ms.session.image_paths = vec![std::path::PathBuf::from("/img/a.png")];
+        ms.system_prompt_appendix = Some("guardrail appendix".to_string());
+
+        let request = ms.build_request();
+
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+        assert_eq!(request.images, vec![std::path::PathBuf::from("/img/a.png")]);
+        assert_eq!(
+            request.system_prompt_appendix.as_deref(),
+            Some("guardrail appendix")
+        );
+    }
+
+    #[test]
+    fn followup_request_falls_back_to_adopted_cwd_without_worktree() {
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+
+        let request = ms.build_followup_request("next");
+
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original"))
+        );
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+    }
+
+    #[test]
+    fn plain_first_turn_request_keeps_worktree_cwd_and_no_resume() {
+        // Guard the delegation against clobbering the normal spawn path.
+        let mut ms = make_managed("p");
+        ms.worktree_path = Some(std::path::PathBuf::from("/wt/issue-947"));
+
+        let request = ms.build_request();
+
+        assert!(
+            request.resume_session_id.is_none(),
+            "unbound sessions must spawn a fresh conversation"
+        );
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/wt/issue-947"))
+        );
+    }
+
+    #[test]
+    fn handle_event_session_bound_same_id_is_a_noop_on_prebound_session() {
+        // #1053: adopted sessions arrive pre-bound; the first turn's
+        // SESSION_BOUND warning re-binds the identical id. Must not
+        // clobber the binding nor surface an error.
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "ext-conv-1".to_string(),
+        });
+
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("ext-conv-1"));
+    }
+
+    #[test]
+    fn handle_event_session_bound_different_id_keeps_first_bind() {
+        // The existing first-bind-wins rejection, pinned at the
+        // SESSION_BOUND warning path (#1053).
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("first-id"));
+
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "second-id".to_string(),
+        });
+
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("first-id"));
+    }
+
+    #[tokio::test]
+    async fn spawn_forwards_run_result_session_id_as_session_bound_sentinel() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+
+        let mut ms = make_managed("p");
+        ms.set_provider(Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: Some("bound-id-1"),
+            },
+        }])));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        ms.spawn(tx).await.expect("spawn returns immediately");
+
+        let mut bound = None;
+        while let Some(evt) = rx.recv().await {
+            if let StreamEvent::Warning { code, message } = &evt.event
+                && code == SESSION_BOUND_CODE
+            {
+                bound = Some(message.clone());
+            }
+        }
+        assert_eq!(bound.as_deref(), Some("bound-id-1"));
+    }
+
+    // --- Issue #948: interaction terminator on the unified session ---
+
+    fn make_interactive_managed() -> ManagedSession {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_managed("interactive work");
+        ms.session.session_mode = crate::session::types::SessionMode::Interactive;
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        // Settle into the kept-alive tail.
+        ms.session
+            .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(ms.session.status, SessionStatus::Interactive);
+        ms
+    }
+
+    #[test]
+    fn signal_pr_linked_keeps_session_alive_and_announces_when_idle() {
+        let mut ms = make_interactive_managed();
+        let announce = ms.signal_pr_linked(7);
+        assert_eq!(announce, Some(7), "idle turn → announce now");
+        assert_eq!(ms.session.pr_linked, Some(7));
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Interactive,
+            "a linked PR must NOT terminate the session (#949, spec §4.4)"
+        );
+        assert!(ms.queued_pr_notice.is_none());
+    }
+
+    #[test]
+    fn signal_pr_linked_defers_announcement_while_streaming() {
+        let mut ms = make_interactive_managed();
+        ms.session.turn_state = crate::session::interaction::TurnState::Streaming;
+        let announce = ms.signal_pr_linked(7);
+        assert_eq!(announce, None, "mid-turn announcement defers (#936)");
+        assert_eq!(
+            ms.session.pr_linked,
+            Some(7),
+            "the flag itself is set immediately"
+        );
+        assert!(ms.queued_pr_notice.is_some());
+
+        // The turn settles → the queued announcement fires once.
+        ms.session.turn_state = crate::session::interaction::TurnState::Idle;
+        assert_eq!(ms.settle_queued_pr_notice(), Some(7));
+        assert_eq!(ms.settle_queued_pr_notice(), None, "fires exactly once");
+        assert_eq!(ms.session.status, SessionStatus::Interactive);
+    }
+
+    #[test]
+    fn settle_pr_notice_while_still_streaming_stays_queued() {
+        let mut ms = make_interactive_managed();
+        ms.session.turn_state = crate::session::interaction::TurnState::Streaming;
+        ms.signal_pr_linked(7);
+        assert_eq!(ms.settle_queued_pr_notice(), None);
+        assert!(
+            ms.queued_pr_notice.is_some(),
+            "still streaming → still queued"
+        );
+    }
+
+    #[test]
+    fn signal_pr_linked_on_terminated_session_is_a_noop() {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_interactive_managed();
+        ms.session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
+        assert_eq!(ms.signal_pr_linked(7), None);
+        assert_eq!(ms.session.pr_linked, None);
+        assert!(ms.queued_pr_notice.is_none());
+    }
+
+    #[test]
+    fn pr_linked_defaults_to_none_and_survives_missing_key() {
+        let s = make_managed("p").session;
+        assert_eq!(s.pr_linked, None);
+        let mut json = serde_json::to_value(&s).unwrap();
+        json.as_object_mut().unwrap().remove("pr_linked");
+        let rt: Session = serde_json::from_value(json).unwrap();
+        assert_eq!(rt.pr_linked, None);
+    }
+
+    // --- Issue #947: follow-up turns through the normal pipeline ---
+
+    #[test]
+    fn followup_request_carries_resume_id_and_no_appendix() {
+        let mut ms = make_managed("first prompt");
+        ms.system_prompt_appendix = Some("guardrails".to_string());
+        ms.permission_mode = Some("bypassPermissions".to_string());
+        assert!(ms.session.bind_agent_session_id("conv-1"));
+
+        let req = ms.build_followup_request("follow-up prompt");
+
+        assert_eq!(req.prompt, "follow-up prompt");
+        assert_eq!(req.resume_session_id.as_deref(), Some("conv-1"));
+        // Appendix already lives in the resumed conversation's first turn
+        // (#946) — re-sending would duplicate it.
+        assert!(req.system_prompt_appendix.is_none());
+        assert_eq!(req.permission_mode.as_deref(), Some("bypassPermissions"));
+    }
+
+    #[test]
+    fn followup_request_without_bound_id_degrades_to_fresh_conversation() {
+        let ms = make_managed("first prompt");
+        let req = ms.build_followup_request("follow-up");
+        assert!(req.resume_session_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn send_followup_turn_resumes_and_streams_through_session_events() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+
+        let mut ms = make_managed("first prompt");
+        assert!(ms.session.bind_agent_session_id("conv-2"));
+        let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![StreamEvent::AssistantMessage {
+                text: "follow-up answer".to_string(),
+            }],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: Some("conv-2"),
+            },
+        }]));
+        ms.set_provider(provider.clone());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        ms.send_followup_turn("what about edge cases?".to_string(), tx)
+            .expect("follow-up dispatch");
+
+        let mut saw_answer = false;
+        while let Some(evt) = rx.recv().await {
+            if matches!(
+                &evt.event,
+                StreamEvent::AssistantMessage { text } if text == "follow-up answer"
+            ) {
+                saw_answer = true;
+            }
+        }
+        assert!(saw_answer, "assistant text must flow through SessionEvents");
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].resume_session_id.as_deref(), Some("conv-2"));
+    }
+
+    #[tokio::test]
+    async fn send_followup_turn_does_not_change_session_status() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+        use crate::session::transition::TransitionReason;
+
+        let mut ms = make_managed("first prompt");
+        // Drive the one-shot machine to its settled status.
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+
+        ms.set_provider(Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: None,
+            },
+        }])));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        ms.send_followup_turn("retry the gates".to_string(), tx)
+            .expect("follow-up dispatch");
+        while rx.recv().await.is_some() {}
+
+        // No Spawning transition — Completed → Spawning is illegal and the
+        // kept-alive status only arrives with #948.
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+    }
+
+    #[test]
+    fn spawn_args_do_not_include_bare_flag() {
+        let ms = make_managed("do something");
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
+        assert!(
+            !args.iter().any(|a| a == "--bare"),
+            "args must NOT contain --bare (breaks OAuth); got: {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn spawn_args_include_required_base_flags() {
+        let ms = make_managed("test prompt");
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
+        for flag in &["--print", "--verbose", "--output-format", "stream-json"] {
+            assert!(
+                args.iter().any(|a| a == flag),
+                "args must contain {}; got: {:?}",
+                flag,
+                args
+            );
+        }
+    }
+
+    #[test]
+    fn spawn_args_with_permission_mode_includes_permission_flag() {
+        let mut ms = make_managed("test");
+        ms.permission_mode = Some("bypassPermissions".to_string());
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
+        assert!(args.iter().any(|a| a == "--permission-mode"));
+        assert!(args.iter().any(|a| a == "bypassPermissions"));
+    }
+
+    #[test]
+    fn spawn_args_default_permission_mode_is_excluded() {
+        let mut ms = make_managed("test");
+        ms.permission_mode = Some("default".to_string());
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
+        assert!(
+            !args.iter().any(|a| a == "--permission-mode"),
+            "permission_mode=default must not emit --permission-mode flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_invalid_binary_surfaces_error_via_channel() {
+        // Post-#803 semantics: spawn() returns Ok immediately and the
+        // session sits in Spawning until the background drain task
+        // delivers either SESSION_SPAWNED_CODE or StreamEvent::Error.
+        // For an invalid binary the provider fails before sending any
+        // event, so the drain task synthesizes the "exited before
+        // startup" Error.
+        let mut ms = make_managed("test");
+        ms.set_claude_binary_for_test("/definitely/not/a/claude/binary");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        ms.spawn(tx).await.expect("spawn returns immediately");
+        assert_eq!(ms.session.status, SessionStatus::Spawning);
+
+        let evt = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("error event arrives within timeout")
+            .expect("channel still open");
+        assert!(matches!(evt.event, StreamEvent::Error { .. }));
+
+        // Feed the event through handle_event to drive the
+        // Spawning → Errored transition the App would do.
+        ms.handle_event(&evt.event);
+        assert_eq!(ms.session.status, SessionStatus::Errored);
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message.starts_with("Error:")),
+            "spawn failure should be recorded in the session activity log"
+        );
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_transitions_to_running() {
+        // Sentinel `Warning { code = SESSION_SPAWNED_CODE }` is the
+        // lifecycle marker emitted by the non-blocking spawn handshake.
+        // It must transition Spawning → Running and stamp pid; for any
+        // other status it must be a no-op so a stray late-arrival event
+        // can't yank a Completed session back to Running.
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Spawning;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: "12345".to_string(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Running);
+        assert_eq!(ms.session.pid, Some(12345));
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message.contains("Session spawned (pid: 12345)"))
+        );
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_noop_when_not_spawning() {
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Completed;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: "999".to_string(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+        assert_eq!(ms.session.pid, None);
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_handles_empty_pid_message() {
+        // HTTP providers (minimax, ollama) have no pid; the drain task
+        // emits an empty message in that case.
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Spawning;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: String::new(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Running);
+        assert_eq!(ms.session.pid, None);
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message == "Session spawned")
+        );
+    }
+
+    // --- Issue #169: Hollow completion detection (handle_event) ---
+
+    fn make_managed_with_start(prompt: &str, started_secs_ago: i64) -> ManagedSession {
+        let mut ms = make_managed(prompt);
+        ms.session.status = SessionStatus::Running;
+        let now = chrono::Utc::now();
+        ms.session.started_at = Some(now - chrono::Duration::seconds(started_secs_ago));
+        ms
+    }
+
+    #[test]
+    fn handle_event_completed_sets_hollow_flag_when_all_conditions_met() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(ms.session.is_hollow_completion);
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_cost_is_nonzero() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.03 });
+        assert!(!ms.session.is_hollow_completion);
+        assert!((ms.session.cost_usd - 0.03).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_files_were_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.files_touched.push("src/lib.rs".into());
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_tool_calls_present() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.log_activity("Bash: $ cargo test".into());
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn handle_event_completed_logs_hollow_warning_to_activity_log() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.to_lowercase().contains("hollow")),
+            "expected a hollow warning entry in the activity log"
+        );
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_log_hollow_warning_for_real_session() {
+        let mut ms = make_managed_with_start("test", 60);
+        ms.session.cost_usd = 0.05;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.05 });
+        assert!(
+            !ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.to_lowercase().contains("hollow")),
+            "must not log hollow warning for a real session"
+        );
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_mutate_hollow_flag_for_already_terminal_session() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.status = SessionStatus::Killed;
+        ms.session.is_hollow_completion = false;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(ms.session.status, SessionStatus::Killed);
+        assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn is_file_touching_tool_accepts_claude_pascalcase() {
+        assert!(is_file_touching_tool("Read"));
+        assert!(is_file_touching_tool("Edit"));
+        assert!(is_file_touching_tool("Write"));
+        assert!(is_file_touching_tool("Glob"));
+        assert!(is_file_touching_tool("Grep"));
+    }
+
+    #[test]
+    fn is_file_touching_tool_accepts_opencode_lowercase() {
+        assert!(is_file_touching_tool("read"));
+        assert!(is_file_touching_tool("edit"));
+        assert!(is_file_touching_tool("write"));
+        assert!(is_file_touching_tool("glob"));
+        assert!(is_file_touching_tool("grep"));
+        assert!(is_file_touching_tool("patch"));
+        assert!(is_file_touching_tool("multiedit"));
+    }
+
+    #[test]
+    fn is_file_touching_tool_rejects_non_file_tools() {
+        assert!(!is_file_touching_tool("Bash"));
+        assert!(!is_file_touching_tool("bash"));
+        assert!(!is_file_touching_tool("WebSearch"));
+        assert!(!is_file_touching_tool(""));
+        assert!(!is_file_touching_tool("unknown"));
+    }
+
+    #[test]
+    fn opencode_lowercase_read_event_populates_files_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched, vec!["src/main.rs".to_string()]);
+    }
+
+    #[test]
+    fn opencode_lowercase_edit_event_populates_files_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "edit".into(),
+            file_path: Some("src/lib.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched, vec!["src/lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn duplicate_tool_use_does_not_double_count_files() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "Read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched.len(), 1);
+    }
+
+    // --- #1144: gated stream completion parks in GATES_RUNNING ---
+
+    fn make_gated_running_managed() -> ManagedSession {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_managed("gated work");
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        ms.session.gates_pending = true;
+        ms.worktree_path = Some(std::path::PathBuf::from("/tmp/wt-1144"));
+        ms
+    }
+
+    #[test]
+    fn gated_stream_completion_parks_in_gates_running() {
+        let mut ms = make_gated_running_managed();
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::GatesRunning,
+            "gates pending: stream completion must park GATES_RUNNING (#1144)"
+        );
+    }
+
+    #[test]
+    fn ungated_stream_completion_still_settles_completed() {
+        let mut ms = make_gated_running_managed();
+        ms.session.gates_pending = false;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+    }
+
+    #[test]
+    fn gated_session_without_worktree_settles_completed() {
+        let mut ms = make_gated_running_managed();
+        ms.worktree_path = None;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Completed,
+            "no worktree: the pipeline gate block cannot run — must settle COMPLETED, not strand GATES_RUNNING"
+        );
+    }
+
+    #[test]
+    fn gated_interactive_session_settles_interactive() {
+        let mut ms = make_gated_running_managed();
+        ms.session.session_mode = crate::session::types::SessionMode::Interactive;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Interactive,
+            "Interactive sessions never enter the completion pipeline — #948 settle must still fire"
+        );
+        assert_eq!(
+            ms.session.settled_from,
+            Some(SessionStatus::Completed),
+            "settled_from records the intercepted outcome"
+        );
+    }
+}

@@ -16,12 +16,12 @@ tiers:
     floor: 90.0
     aspiration: 96.0
     paths:
-      - "src/session/**"
-      - "src/state/**"
-      - "src/adapt/**"
-      - "src/turboquant/**"
-      - "src/gates/**"
-      - "src/provider/**"
+      - "crates/maestro-core/src/session/**"
+      - "crates/maestro-core/src/state/**"
+      - "crates/maestro-core/src/adapt/**"
+      - "crates/maestro-core/src/turboquant/**"
+      - "crates/maestro-core/src/gates/**"
+      - "crates/maestro-core/src/provider/**"
       - "src/config.rs"
       - "src/cli.rs"
 

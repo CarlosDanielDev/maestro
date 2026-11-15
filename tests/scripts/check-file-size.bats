@@ -72,3 +72,21 @@ teardown() {
   run bash scripts/check-file-size.sh
   [ "$status" -eq 0 ]
 }
+
+@test "oversized file under crates/ fails (#1305: core lives in crates/maestro-core)" {
+  mkdir -p crates/maestro-core/src
+  printf 'line\n%.0s' {1..450} > crates/maestro-core/src/big.rs
+  echo "# empty" > scripts/allowlist-large-files.txt
+  run bash scripts/check-file-size.sh
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"VIOLATION: crates/maestro-core/src/big.rs"* ]]
+}
+
+@test "repo without crates/ still passes (no find error)" {
+  printf 'line\n%.0s' {1..10} > src/small.rs
+  echo "# empty" > scripts/allowlist-large-files.txt
+  run bash scripts/check-file-size.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"No such file"* ]]
+}
+

@@ -2130,7 +2130,7 @@ mod tests {
         struct CountingRunner {
             count: AtomicU32,
         }
-        impl GateCheck for std::sync::Arc<CountingRunner> {
+        impl GateCheck for CountingRunner {
             fn run_gates(&self, _: &[CompletionGate], _: &std::path::Path) -> Vec<GateResult> {
                 self.count.fetch_add(1, Ordering::SeqCst);
                 vec![GateResult::fail("clippy", "still failing on retry")]
@@ -2211,7 +2211,7 @@ mod tests {
         struct CountingRunner {
             count: AtomicU32,
         }
-        impl GateCheck for std::sync::Arc<CountingRunner> {
+        impl GateCheck for CountingRunner {
             fn run_gates(&self, _: &[CompletionGate], _: &std::path::Path) -> Vec<GateResult> {
                 self.count.fetch_add(1, Ordering::SeqCst);
                 vec![]

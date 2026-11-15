@@ -75,3 +75,65 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"DEADLINE PAST"* ]]
 }
+
+# --- maestro-core crate boundary (#1305) ---------------------------------
+
+@test "maestro-core importing the TUI crate fails" {
+  mkdir -p crates/maestro-core/src
+  echo "use maestro_tui::App;" > crates/maestro-core/src/naughty.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CORE-FRONTEND: crates/maestro-core/src/naughty.rs"* ]]
+}
+
+@test "maestro-core naming a frontend module fails" {
+  mkdir -p crates/maestro-core/src/config
+  echo "use crate::tui::theme::ThemeConfig;" > crates/maestro-core/src/config/tui.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CORE-FRONTEND"* ]]
+}
+
+@test "maestro-core using ratatui widgets or crossterm fails" {
+  mkdir -p crates/maestro-core/src
+  echo "use ratatui::widgets::Block;" > crates/maestro-core/src/a.rs
+  echo "use crossterm::event::KeyCode;" > crates/maestro-core/src/b.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"crates/maestro-core/src/a.rs"* ]]
+  [[ "$output" == *"crates/maestro-core/src/b.rs"* ]]
+}
+
+@test "maestro-core using any ratatui path fails, Color included" {
+  mkdir -p crates/maestro-core/src/config
+  echo "use ratatui::style::Color;" > crates/maestro-core/src/config/theme.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CORE-FRONTEND: crates/maestro-core/src/config/theme.rs"* ]]
+}
+
+@test "maestro-core aliasing ratatui fails (use / extern crate ... as)" {
+  mkdir -p crates/maestro-core/src
+  echo "use ratatui as rt;" > crates/maestro-core/src/a.rs
+  echo "extern crate crossterm as ct;" > crates/maestro-core/src/b.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"crates/maestro-core/src/a.rs"* ]]
+  [[ "$output" == *"crates/maestro-core/src/b.rs"* ]]
+}
+
+@test "maestro-core manifest depending on ratatui fails" {
+  mkdir -p crates/maestro-core/src
+  printf '[package]\nname = "maestro-core"\n[dependencies]\nratatui = { version = "0.29", default-features = false }\n' > crates/maestro-core/Cargo.toml
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CORE-FRONTEND: crates/maestro-core/Cargo.toml:4"* ]]
+}
+
+@test "maestro-core clean source, data strings and comments pass" {
+  mkdir -p crates/maestro-core/src
+  printf '[package]\nname = "maestro-core"\n[dependencies]\nserde = "1"\n' > crates/maestro-core/Cargo.toml
+  printf '// ratatui::widgets is the TUI'"'"'s job\nconst KNOWN: &[&str] = &["ratatui", "crossterm"];\n' > crates/maestro-core/src/scanner.rs
+  run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 0 ]
+}

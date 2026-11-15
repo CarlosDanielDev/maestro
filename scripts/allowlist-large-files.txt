@@ -15,31 +15,31 @@
 
 # --- Outliers (> 1500 LOC, immediate priority) ---
 src/tui/screens/settings/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
-src/provider/github/client.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
+crates/maestro-core/src/provider/github/client.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
 src/config.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split maestro.toml parsing from defaults from serialization; move ThemeConfig out to resolve layer debt (see docs/layers-debt.txt)
 src/tui/app/tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: break into per-scenario test files under tui/app/tests/ (state transitions, event handling, rendering)
 
 # --- Core modules (2-month deadline) ---
-src/session/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract state-machine transitions into session/transition.rs (already exists — move matching logic) and split icon/display impls into session/display.rs
-src/session/parser.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split stream-json parser from result-type accumulation
-src/session/manager.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split subprocess lifecycle from command-routing from metrics
-src/session/retry.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split retry-strategy types from retry-loop execution
-src/session/intent.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split intent-parsing from intent-matching
-src/session/transition.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract transition-validation rules into rule modules
-src/session/fork.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split worktree-setup from session-resume
-src/session/pool.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pool-state from scheduling logic
-src/adapt/materializer.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split template expansion from write-to-disk
-src/adapt/scanner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split file-discovery from content-parsing
-src/adapt/knowledge.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split knowledge-base loading from querying
-src/adapt/prompts.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split prompt-templates from invocation
-src/provider/github/ci.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split CI-status parsing from workflow-run fetching
-src/provider/github/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split types by resource (issues/PRs/milestones)
-src/turboquant/adapter.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
-src/sanitize/scanner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern-registry from match-execution
+crates/maestro-core/src/session/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract state-machine transitions into session/transition.rs (already exists — move matching logic) and split icon/display impls into session/display.rs
+crates/maestro-core/src/session/parser.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split stream-json parser from result-type accumulation
+crates/maestro-core/src/session/manager.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split subprocess lifecycle from command-routing from metrics
+crates/maestro-core/src/session/retry.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split retry-strategy types from retry-loop execution
+crates/maestro-core/src/session/intent.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split intent-parsing from intent-matching
+crates/maestro-core/src/session/transition.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract transition-validation rules into rule modules
+crates/maestro-core/src/session/fork.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split worktree-setup from session-resume
+crates/maestro-core/src/session/pool.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pool-state from scheduling logic
+crates/maestro-core/src/adapt/materializer.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split template expansion from write-to-disk
+crates/maestro-core/src/adapt/scanner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split file-discovery from content-parsing
+crates/maestro-core/src/adapt/knowledge.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split knowledge-base loading from querying
+crates/maestro-core/src/adapt/prompts.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split prompt-templates from invocation
+crates/maestro-core/src/provider/github/ci.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split CI-status parsing from workflow-run fetching
+crates/maestro-core/src/provider/github/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split types by resource (issues/PRs/milestones)
+crates/maestro-core/src/turboquant/adapter.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
+crates/maestro-core/src/sanitize/scanner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern-registry from match-execution
 src/cli.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split clap command tree from dispatch logic
-src/prompts.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split content from template-resolution helpers
-src/doctor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-check implementations into doctor/ submodule
-src/work/assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split assignment-rules from work-item selection
+crates/maestro-core/src/prompts.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split content from template-resolution helpers
+crates/maestro-core/src/doctor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-check implementations into doctor/ submodule
+crates/maestro-core/src/work/assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split assignment-rules from work-item selection
 
 # --- TUI screens and rendering (3-month deadline) ---
 src/tui/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract event-loop into tui/event_loop.rs; mod.rs keeps only re-exports
@@ -84,15 +84,15 @@ src/tui/screens/settings/validation.rs # deadline: 2026-12-31, owner: @carlos, t
 src/tui/turboquant_dashboard.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split dashboard-state from per-widget draw
 
 # Core modules (2 months):
-src/adapt/scaffolder.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split template expansion from directory materialization
-src/notifications/slack.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split webhook-client from message-building
-src/provider/azure_devops/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource type (work-items, PRs, pipelines)
-src/provider/github/pr.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split PR-fetching from PR-mutation verbs
-src/sanitize/screen.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split screen-rendering from match-reporting
-src/sanitize/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern types from match result types
-src/state/file_claims.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split claim-state from lock-file handling
-src/updater/checker.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split version-check from download/install
-src/work/executor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split execution loop from retry/backoff
+crates/maestro-core/src/adapt/scaffolder.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split template expansion from directory materialization
+crates/maestro-core/src/notifications/slack.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split webhook-client from message-building
+crates/maestro-core/src/provider/azure_devops/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split by resource type (work-items, PRs, pipelines)
+crates/maestro-core/src/provider/github/pr.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split PR-fetching from PR-mutation verbs
+src/tui/screens/sanitize.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split screen-rendering from match-reporting
+crates/maestro-core/src/sanitize/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern types from match result types
+crates/maestro-core/src/state/file_claims.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split claim-state from lock-file handling
+crates/maestro-core/src/updater/checker.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split version-check from download/install
+crates/maestro-core/src/work/executor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split execution loop from retry/backoff
 src/main.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract dispatch logic into src/cli/dispatch.rs (keep main.rs minimal — crate entry only)
 
 # --- Milestone v0.15.0 Wizard additions (tui-textarea migration will shrink these) ---
@@ -109,8 +109,8 @@ src/tui/screens/issue_wizard/mod.rs # deadline: 2026-12-31, owner: @carlos, tick
 # --- Milestone v0.15.3 dupe-prevention additions (#454/#455) ---
 src/tui/app/data_handler.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: extract the AdaptScan/Analyze/Consolidate/Plan/Scaffold arms into a dedicated handler module (handle_adapt_event); the dupe-prevention work in #455 added the IssueAlreadyExists arm, pushing the file 6 lines over
 src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321/#327/#328/#329, plan: extract App field initializers and screen-Option declarations into app/state.rs; bypass methods already moved to app/bypass.rs in v0.16.0
-src/prd/ingest.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split heuristic parser from tests — move parser into prd/ingest/{sections,extract,classify}.rs and convert ingest.rs to ingest/mod.rs once the contract stabilizes; ~250 of the 521 LOC are the markdown-parser test corpus that we want to keep co-located while the heuristics evolve
-src/prd/discover.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split into prd/discover/{github,local,azure,dedup}.rs once the source set stabilizes; currently 411 LOC because the per-source helpers + dedup + tests live together while we iterate on the explore UX
+crates/maestro-core/src/prd/ingest.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split heuristic parser from tests — move parser into prd/ingest/{sections,extract,classify}.rs and convert ingest.rs to ingest/mod.rs once the contract stabilizes; ~250 of the 521 LOC are the markdown-parser test corpus that we want to keep co-located while the heuristics evolve
+crates/maestro-core/src/prd/discover.rs # deadline: 2026-12-31, owner: @carlos, ticket: #321, plan: split into prd/discover/{github,local,azure,dedup}.rs once the source set stabilizes; currently 411 LOC because the per-source helpers + dedup + tests live together while we iterate on the explore UX
 
 # --- Milestone v0.16.1 milestone-health wizard (#500) ---
 # State-machine reducer test file holds 23 tests for every transition arrow.
@@ -133,7 +133,7 @@ src/tui/app/pr_retry.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, pl
 # ~280 LOC of snapshot tests. Splitting builder/test pairs would scatter
 # locking; keeping them co-located is the point. Plan to compact tests with
 # a #[macro_rules!] argv_eq! once the surface stops shifting.
-src/provider/github/gh_argv.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: introduce an argv_eq! macro to compress the 18 snapshot tests once the gh subcommand surface stabilizes
+crates/maestro-core/src/provider/github/gh_argv.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: introduce an argv_eq! macro to compress the 18 snapshot tests once the gh subcommand surface stabilizes
 
 # --- Issue #538 Role enum + derive_role classifier (lifted from ADR 002 spike) ---
 # 5-variant Role enum + 21-test classifier corpus + serde/clap derives.
@@ -141,34 +141,34 @@ src/provider/github/gh_argv.rs # deadline: 2026-12-31, owner: @carlos, ticket: #
 # §Data Model the corpus is co-located with the classifier so changes are
 # atomic. A future extraction could split classifier vs tests, but the corpus
 # is what makes the classifier trustworthy and splitting risks drift.
-src/session/role.rs # deadline: 2026-12-31, owner: @carlos, ticket: #538, plan: extract test corpus into src/session/role/tests/ once the keyword set stabilizes; classifier itself stays in role.rs
+crates/maestro-core/src/session/role.rs # deadline: 2026-12-31, owner: @carlos, ticket: #538, plan: extract test corpus into src/session/role/tests/ once the keyword set stabilizes; classifier itself stays in role.rs
 
 # state/types.rs is now 401 LOC after #538's Role round-trip test landed on
 # top of #544's PendingPr last_errors/manual_retry_count round-trip tests.
 # Both test additions are deliberate (they prevent silent state-schema
 # regressions). Trimming one would weaken the schema guard.
-src/state/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #538, plan: split per-resource sub-modules (state/sessions.rs, state/pending.rs) once the schema stops shifting
+crates/maestro-core/src/state/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #538, plan: split per-resource sub-modules (state/sessions.rs, state/pending.rs) once the schema stops shifting
 
 # util/validation.rs grew past 400 LOC after #664 added is_windows_reserved_stem
 # (shared filesystem-stem check needed by team_wizard's Compose Save and any
 # future caller that writes user-supplied names to disk). Most of the file is
 # the test corpus.
-src/util/validation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split tests into util/validation/tests/ once another validator lands
+crates/maestro-core/src/util/validation.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split tests into util/validation/tests/ once another validator lands
 
 # --- v0.29.0 dynamic config editing (#792) ---
 # schema_tests.rs grew past 400 LOC after #792 added FlattenedMap / agents /
 # modes / completion_gates entry-field tests on top of the existing dynamic
 # Map/VecOfStruct presentation tests. Most of the new bulk is the per-table
 # entry-key assertions plus an AgentKind round-trip lock.
-src/config/schema_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #792, plan: split presentation tests, dynamic-table registration tests, and AgentKind round-trip lock into schema/tests/{presentation.rs, dynamic.rs, drift.rs}
+crates/maestro-core/src/config/schema_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #792, plan: split presentation tests, dynamic-table registration tests, and AgentKind round-trip lock into schema/tests/{presentation.rs, dynamic.rs, drift.rs}
 # core.rs gained a `[sessions.completion_gates]` NestedTable wrapper plus the
 # VecOfStruct field for the gates command list. Tipped from 396 to ~430 LOC.
-src/config/schema/core.rs # deadline: 2026-12-31, owner: @carlos, ticket: #792, plan: split SESSIONS_FIELDS sub-tables (hollow_retry/context_overflow/conflict/completion_gates) into core/sessions/sub_tables.rs once a third entry-field family lands
+crates/maestro-core/src/config/schema/core.rs # deadline: 2026-12-31, owner: @carlos, ticket: #792, plan: split SESSIONS_FIELDS sub-tables (hollow_retry/context_overflow/conflict/completion_gates) into core/sessions/sub_tables.rs once a third entry-field family lands
 
 # loader.rs grew past 400 LOC after #664 added write_user_preset /
 # write_project_preset / delete_user_preset to centralise filesystem-layout
 # knowledge that was previously duplicated in the wizard layer.
-src/orchestration/loader.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split persistence helpers into loader/persist.rs once a second writer (e.g. project-tier delete) lands
+crates/maestro-core/src/orchestration/loader.rs # deadline: 2026-12-31, owner: @carlos, ticket: #664, plan: split persistence helpers into loader/persist.rs once a second writer (e.g. project-tier delete) lands
 
 # --- Team Wizard (#664) — orchestration-wizard chunk 5 ---
 # All 5 files exceed 400 LOC because the wizard implements 6 sub-tasks
@@ -202,4 +202,4 @@ src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-12-31, owner: @carl
 # test (issue Test Hints required an fs round-trip; QA marked it a RED gate).
 # The coverage is intentional — it proves StateStore::load tolerates legacy
 # state files missing the new `interactions` key.
-src/state/store_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #734, plan: split into state/store_tests/{round_trip.rs, migration.rs, backward_compat.rs} once a fifth schema-guard test family lands
+crates/maestro-core/src/state/store_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #734, plan: split into state/store_tests/{round_trip.rs, migration.rs, backward_compat.rs} once a fifth schema-guard test family lands

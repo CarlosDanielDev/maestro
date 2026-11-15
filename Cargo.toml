@@ -10,19 +10,24 @@ license = "MIT"
 name = "maestro"
 path = "src/main.rs"
 
-# Workspace skeleton (#1304, ADR 006). The crates are empty for now;
-# #1305-#1307 move code out of `src/` into them. The root package stays the
-# default member, so `cargo build`/`test`/`clippy` keep their current scope.
+# Workspace (#1304, ADR 006). maestro-core holds the core modules (#1305);
+# maestro-tui and maestro-cli stay empty until #1306/#1307. There are no
+# default-members, so plain `cargo test`/`clippy` at the root cover only the
+# root package: gates pass `--workspace` to reach maestro-core.
 [workspace]
 members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
 
 [workspace.package]
+# maestro-core inherits this so `env!("CARGO_PKG_VERSION")` in the updater
+# and changelog keeps reporting the binary's version. scripts/release.sh
+# bumps it together with [package].version and the maestro-core dep below.
+version = "0.31.8"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 
 [dependencies]
-maestro-core = { path = "crates/maestro-core", version = "0.0.0" }
+maestro-core = { path = "crates/maestro-core", version = "0.31.8" }
 maestro-tui = { path = "crates/maestro-tui", version = "0.0.0" }
 maestro-cli = { path = "crates/maestro-cli", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
@@ -75,7 +80,7 @@ minisign-verify = "0.3.0"
 # moved slots, preserving per-element comments. With the feature off, reorders
 # fall back to a wholesale rewrite of the array (per-element comments on moved
 # rows are lost; neighbors survive). See docs/configuration.md §dynamic-config.
-dynamic-config-reorder = []
+dynamic-config-reorder = ["maestro-core/dynamic-config-reorder"]
 # Empty stub for a future tmux-based interactive driver (issue #749). The
 # portable-pty driver is the default; this exists so a tmux backend can land
 # without a manifest change.
@@ -88,6 +93,7 @@ clap_mangen = "0.2"
 anyhow = "1"
 
 [dev-dependencies]
+maestro-core = { path = "crates/maestro-core", version = "0.31.8", features = ["test-util"] }
 insta = { version = "1", features = ["filters"] }
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }

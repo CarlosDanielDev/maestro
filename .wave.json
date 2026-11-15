@@ -1,9 +1,9 @@
 {
   "gate": [
     "cargo fmt -- --check",
-    "cargo clippy -- -D warnings -A dead_code",
-    "cargo nextest run --locked",
-    "cargo test --doc --locked",
+    "cargo clippy --workspace -- -D warnings -A dead_code",
+    "cargo nextest run --workspace --locked",
+    "cargo test --workspace --doc --locked",
     "cargo run --quiet -- sync-templates --check",
     "cargo test --quiet docs_gen_no_drift --bin maestro",
     "bash scripts/check-file-size.sh",
