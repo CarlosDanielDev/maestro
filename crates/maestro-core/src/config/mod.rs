@@ -6,7 +6,7 @@ use std::path::Path;
 
 mod adapt;
 mod agents;
-pub(crate) mod agents_remote_auth;
+pub mod agents_remote_auth;
 mod agents_upgrade;
 mod behavior;
 mod budget;
@@ -29,6 +29,7 @@ mod review;
 mod runtime;
 pub mod schema;
 mod sessions;
+pub mod theme;
 mod toml_edit_helpers;
 pub mod transport_warning;
 pub mod trust;
@@ -61,7 +62,7 @@ pub use quota::QuotaConfig;
 pub use review::{ReviewConfig, ReviewerEntry};
 pub use runtime::{ConcurrencyConfig, MonitoringConfig};
 #[allow(unused_imports)]
-pub(crate) use sessions::default_max_prompt_history;
+pub use sessions::default_max_prompt_history;
 #[allow(unused_imports)]
 pub use sessions::{
     CompletionGateEntry, CompletionGatesConfig, ConflictConfig, ConflictPolicy,
@@ -69,7 +70,7 @@ pub use sessions::{
     default_permission_mode,
 };
 #[allow(unused_imports)]
-pub use tui::{Density, LayoutConfig, LayoutMode, TuiConfig};
+pub use tui::{Density, LayoutConfig, LayoutMode, MascotStyle, TuiConfig};
 #[allow(unused_imports)]
 pub use turboquant::{ApplyTarget, QuantStrategy, TurboQuantConfig};
 pub use views::ViewsConfig;

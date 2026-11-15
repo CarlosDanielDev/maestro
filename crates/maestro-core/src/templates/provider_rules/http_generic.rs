@@ -167,6 +167,7 @@ mod tests {
 
     #[test]
     fn skill_link_inlines_existing_skill_body_verbatim() {
+        crate::enter_repo_root_for_test();
         let out = HttpGenericRules.skill_link("project-patterns").expect("ok");
         assert!(
             out.contains("project-patterns") || out.contains("Maestro"),

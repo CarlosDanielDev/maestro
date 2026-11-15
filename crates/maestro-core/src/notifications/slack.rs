@@ -170,7 +170,7 @@ pub(crate) fn http_error(e: reqwest::Error) -> SlackError {
 
 /// Incoming-webhook URLs are bearer credentials for one Slack host; refuse
 /// anything else so a typo or a hostile config cannot redirect the payload.
-pub(crate) fn validate_webhook_url(url: &str) -> Result<(), SlackError> {
+pub fn validate_webhook_url(url: &str) -> Result<(), SlackError> {
     let parsed = reqwest::Url::parse(url).map_err(|e| SlackError::InvalidUrl(e.to_string()))?;
     if parsed.scheme() != "https" || parsed.host_str() != Some("hooks.slack.com") {
         return Err(SlackError::InvalidUrl(

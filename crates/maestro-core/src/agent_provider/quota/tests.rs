@@ -26,7 +26,7 @@ use super::fetch::{HttpResponse, QuotaHttp};
 use super::types::{ProviderWindows, QuotaWindow, TransportError};
 use crate::agent_provider::minimax::quota::Clock;
 
-const FIXTURE: &str = include_str!("../../../tests/fixtures/claude_oauth_usage.json");
+const FIXTURE: &str = include_str!("../../../../../tests/fixtures/claude_oauth_usage.json");
 const SECRET: &str = "sk-ant-oat01-TEST-SECRET-DO-NOT-LEAK";
 
 #[derive(Debug)]

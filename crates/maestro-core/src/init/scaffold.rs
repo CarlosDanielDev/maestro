@@ -114,43 +114,47 @@ struct Embedded {
 const FILES: &[Embedded] = &[
     Embedded {
         rel_path: "README.md",
-        contents: include_bytes!("../../template/.maestro/templates/README.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/README.md"),
     },
     Embedded {
         rel_path: "manifest.toml",
-        contents: include_bytes!("../../template/.maestro/templates/manifest.toml"),
+        contents: include_bytes!("../../../../template/.maestro/templates/manifest.toml"),
     },
     Embedded {
         rel_path: "core/premises.md",
-        contents: include_bytes!("../../template/.maestro/templates/core/premises.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/core/premises.md"),
     },
     Embedded {
         rel_path: "core/tdd-cycle.md",
-        contents: include_bytes!("../../template/.maestro/templates/core/tdd-cycle.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/core/tdd-cycle.md"),
     },
     Embedded {
         rel_path: "core/dependency-graph.md",
-        contents: include_bytes!("../../template/.maestro/templates/core/dependency-graph.md"),
+        contents: include_bytes!(
+            "../../../../template/.maestro/templates/core/dependency-graph.md"
+        ),
     },
     Embedded {
         rel_path: "commands/.gitkeep",
-        contents: include_bytes!("../../template/.maestro/templates/commands/.gitkeep"),
+        contents: include_bytes!("../../../../template/.maestro/templates/commands/.gitkeep"),
     },
     Embedded {
         rel_path: "commands/implement.md",
-        contents: include_bytes!("../../template/.maestro/templates/commands/implement.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/commands/implement.md"),
     },
     Embedded {
         rel_path: "commands/plan-feature.md",
-        contents: include_bytes!("../../template/.maestro/templates/commands/plan-feature.md"),
+        contents: include_bytes!(
+            "../../../../template/.maestro/templates/commands/plan-feature.md"
+        ),
     },
     Embedded {
         rel_path: "commands/pushup.md",
-        contents: include_bytes!("../../template/.maestro/templates/commands/pushup.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/commands/pushup.md"),
     },
     Embedded {
         rel_path: "commands/simplify.md",
-        contents: include_bytes!("../../template/.maestro/templates/commands/simplify.md"),
+        contents: include_bytes!("../../../../template/.maestro/templates/commands/simplify.md"),
     },
 ];
 
@@ -180,7 +184,7 @@ pub fn scaffold_templates_dir(s: &dyn Scaffolder) -> Result<ScaffoldReport> {
 /// Stable list of relative paths (under the project root) that
 /// `scaffold_templates_dir` writes. Test-only — production callers
 /// consume the `ScaffoldReport` returned by `scaffold_templates_dir`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub fn template_relative_paths() -> Vec<PathBuf> {
     FILES
         .iter()

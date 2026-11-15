@@ -112,7 +112,7 @@ fn compact_with_adapter_then_save_persists_collapsed_log() {
 #[test]
 fn load_legacy_state_without_handoff_fields_succeeds() {
     let (_dir, store) = make_store();
-    let legacy_json = include_str!("../../tests/fixtures/state/v0.json");
+    let legacy_json = include_str!("../../../../tests/fixtures/state/v0.json");
     must(
         std::fs::write(&store.path, legacy_json),
         "legacy state should be written",
@@ -284,7 +284,7 @@ fn store_load_migrates_legacy_state_to_current_version() {
 #[test]
 fn store_load_v0_fixture_round_trips_with_version_bump() {
     let (_dir, store) = make_store();
-    let v0_json = include_str!("../../tests/fixtures/state/v0.json");
+    let v0_json = include_str!("../../../../tests/fixtures/state/v0.json");
     must(
         std::fs::write(&store.path, v0_json),
         "v0 fixture should be written",
@@ -387,7 +387,7 @@ fn save_with_call_log_persist_off_does_not_mutate_in_memory_state() {
 #[test]
 fn load_tolerance_session_without_call_log_field_defaults_to_empty() {
     let (_dir, store) = make_store();
-    let legacy_json = include_str!("../../tests/fixtures/state/v0.json");
+    let legacy_json = include_str!("../../../../tests/fixtures/state/v0.json");
     must(
         std::fs::write(&store.path, legacy_json),
         "legacy state should be written",

@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn doc_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/configuration.md")
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("docs/configuration.md")
 }
 
 fn read_doc() -> String {

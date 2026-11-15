@@ -43,7 +43,7 @@ impl SessionPool {
 
     /// The configured provider with the most window headroom among on-track
     /// candidates. `None` when routing is off or no candidate is eligible.
-    pub(crate) fn quota_routed_provider(&self) -> Option<&Arc<dyn AgentProvider>> {
+    pub fn quota_routed_provider(&self) -> Option<&Arc<dyn AgentProvider>> {
         let routing_input = self.quota_routing.as_ref()?;
         let now = routing_input.clock.now();
         let default_id = self.provider.id();

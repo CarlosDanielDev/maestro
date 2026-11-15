@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn tui_config_deserializes_color_override() {
-    use crate::tui::theme::SerializableColor;
+    use crate::config::theme::SerializableColor;
     use ratatui::style::Color;
     use std::io::Write;
     let mut f = tempfile::NamedTempFile::new().unwrap();

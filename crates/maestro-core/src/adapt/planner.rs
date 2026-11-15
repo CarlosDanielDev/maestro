@@ -46,12 +46,12 @@ impl AdaptPlanner for ClaudePlanner {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub struct MockAdaptPlanner {
     result: Option<AdaptPlan>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl MockAdaptPlanner {
     pub fn with_plan(plan: AdaptPlan) -> Self {
         Self { result: Some(plan) }
@@ -62,7 +62,7 @@ impl MockAdaptPlanner {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[async_trait]
 impl AdaptPlanner for MockAdaptPlanner {
     async fn plan(

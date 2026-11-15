@@ -360,6 +360,10 @@ confirm "Proceed with this changelog?" || die "Aborted by user."
 info "Updating Cargo.toml..."
 CURRENT_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 sed -i '' "s/^version = \"${CURRENT_VERSION}\"/version = \"${VERSION}\"/" Cargo.toml
+# maestro-core inherits [workspace.package].version (bumped above); its
+# dependents pin that exact version.
+sed -i '' "s/\(maestro-core = { path = \"[^\"]*\", version = \"\)${CURRENT_VERSION}\"/\1${VERSION}\"/" \
+  Cargo.toml crates/*/Cargo.toml
 success "Cargo.toml: ${CURRENT_VERSION} → ${VERSION}"
 
 info "Updating CHANGELOG.md..."

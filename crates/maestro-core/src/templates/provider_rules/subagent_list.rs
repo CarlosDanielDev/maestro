@@ -113,6 +113,7 @@ mod tests {
 
     #[test]
     fn load_subagent_list_markdown_against_live_manifest_is_byte_identical() {
+        crate::enter_repo_root_for_test();
         let out = load_subagent_list_markdown().expect("load");
         let expected = "\
 | Subagent | Purpose |

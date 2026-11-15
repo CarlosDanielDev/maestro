@@ -106,7 +106,7 @@ mod tests {
     use super::*;
     use crate::session::types::StreamEvent;
 
-    const FIXTURE: &str = include_str!("../../../testdata/claude-transcript/3-turn.jsonl");
+    const FIXTURE: &str = include_str!("../../../../../testdata/claude-transcript/3-turn.jsonl");
 
     fn fixture_line(n: usize) -> &'static str {
         FIXTURE.lines().nth(n).unwrap()

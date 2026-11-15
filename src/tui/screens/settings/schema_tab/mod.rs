@@ -22,6 +22,8 @@ pub(crate) mod widgets;
 #[cfg(test)]
 mod float_tests;
 #[cfg(test)]
+mod role_overrides_tui_tests;
+#[cfg(test)]
 pub(crate) mod test_fixture;
 #[cfg(test)]
 mod tests;

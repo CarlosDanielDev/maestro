@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use super::Token;
 use crate::templates::TemplateError;
 
-pub(crate) fn tokenize(input: &str, source_path: &str) -> Result<Vec<Token>, TemplateError> {
+pub fn tokenize(input: &str, source_path: &str) -> Result<Vec<Token>, TemplateError> {
     let bytes = input.as_bytes();
     let mut tokens = Vec::new();
     let mut text_start = 0usize;

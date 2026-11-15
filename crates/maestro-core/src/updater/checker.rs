@@ -147,7 +147,7 @@ impl UpdateChecker for GitHubReleaseChecker {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_support {
     use super::*;
     use anyhow::anyhow;

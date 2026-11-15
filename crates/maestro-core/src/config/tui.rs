@@ -1,4 +1,4 @@
-use crate::tui::theme::ThemeConfig;
+use super::theme::ThemeConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ pub struct TuiConfig {
     /// Visual style for the mascot: `"sprite"` (pixel art, default) or
     /// `"ascii"` (legacy Unicode block-character art).
     #[serde(default)]
-    pub mascot_style: crate::mascot::MascotStyle,
+    pub mascot_style: MascotStyle,
     /// Fire the "Session Complete" modal when all sessions finish.
     /// Default `true`. Toggled at runtime via the `MOD` header chip
     /// (Shift+M) and persisted under `[tui] modal_on_complete` (#866).
@@ -30,10 +30,22 @@ impl Default for TuiConfig {
             layout: LayoutConfig::default(),
             ascii_icons: false,
             show_mascot: default_show_mascot(),
-            mascot_style: crate::mascot::MascotStyle::default(),
+            mascot_style: MascotStyle::default(),
             modal_on_complete: default_modal_on_complete(),
         }
     }
+}
+
+/// Rendering style for the mascot widget. Selects between the legacy Unicode
+/// block-character art and the 1-bit pixel-art sprites rendered via half-block
+/// encoding. Serde variants are lowercase (`"sprite"` / `"ascii"`) for
+/// human-friendly TOML.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotStyle {
+    #[default]
+    Sprite,
+    Ascii,
 }
 
 fn default_show_mascot() -> bool {

@@ -6,7 +6,7 @@
 //! in issue #707. Both implement `AgentProvider::run` as a no-op so the
 //! pool can promote sessions against them without spawning processes.
 
-#![cfg(test)]
+#![cfg(any(test, feature = "test-util"))]
 #![allow(dead_code)]
 
 use async_trait::async_trait;
@@ -24,7 +24,7 @@ use crate::templates::provider_rules::{claude_rules, http_generic_rules};
 /// HTTP-generic provider stub. `template_rules().target_dir()` returns
 /// `None`, so the runtime-injection gate fires for sessions configured
 /// against this provider.
-pub(crate) struct FakeHttpProvider;
+pub struct FakeHttpProvider;
 
 #[async_trait]
 impl AgentProvider for FakeHttpProvider {
@@ -67,7 +67,7 @@ impl AgentProvider for FakeHttpProvider {
 /// Claude-like provider stub. `template_rules().target_dir()` returns
 /// `Some(...)`, so the runtime-injection gate is skipped — Claude
 /// discovers rendered templates on disk.
-pub(crate) struct FakeClaudeProvider;
+pub struct FakeClaudeProvider;
 
 #[async_trait]
 impl AgentProvider for FakeClaudeProvider {
@@ -118,7 +118,7 @@ use crate::agent_provider::types::AgentRunStarted;
 use crate::session::types::StreamEvent;
 
 /// How one scripted `run` call ends.
-pub(crate) enum ScriptedEnd {
+pub enum ScriptedEnd {
     /// `Ok(AgentRunResult { exit_code, session_id })`
     Ok {
         exit_code: Option<i32>,
@@ -136,7 +136,7 @@ pub(crate) enum ScriptedEnd {
     WaitForCancel,
 }
 
-pub(crate) struct ScriptedTurn {
+pub struct ScriptedTurn {
     pub events: Vec<StreamEvent>,
     pub end: ScriptedEnd,
 }
@@ -144,13 +144,13 @@ pub(crate) struct ScriptedTurn {
 /// Mock `AgentProvider` that pops one [`ScriptedTurn`] per `run` call and
 /// records every [`AgentRequest`] so tests can assert `resume_session_id`
 /// across turns (RUST-GUARDRAILS §7).
-pub(crate) struct ScriptedProvider {
+pub struct ScriptedProvider {
     turns: Mutex<VecDeque<ScriptedTurn>>,
     pub requests: Mutex<Vec<AgentRequest>>,
 }
 
 impl ScriptedProvider {
-    pub(crate) fn new(turns: Vec<ScriptedTurn>) -> Self {
+    pub fn new(turns: Vec<ScriptedTurn>) -> Self {
         Self {
             turns: Mutex::new(turns.into()),
             requests: Mutex::new(Vec::new()),

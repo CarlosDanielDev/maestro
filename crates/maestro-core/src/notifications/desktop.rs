@@ -12,7 +12,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-pub(crate) enum NotifyError {
+pub enum NotifyError {
     /// macOS user has not granted notification permission to the launcher
     /// (Terminal.app / iTerm.app / etc.).
     PermissionDenied,
@@ -38,7 +38,7 @@ impl std::error::Error for NotifyError {}
 /// the tokio reactor; if a backend is sync, it should `spawn_blocking`
 /// internally. The `notify` method is fire-and-forget — errors are
 /// buffered and drained via `take_last_error`.
-pub(crate) trait DesktopNotifier: Send + Sync {
+pub trait DesktopNotifier: Send + Sync {
     /// Fire a notification. Disabled-toggle short-circuit lives inside
     /// the impl — callers do not branch on enablement.
     fn notify(&self, title: &str, body: &str);
@@ -94,13 +94,13 @@ fn build_notification_script(title: &str, body: &str) -> String {
     )
 }
 
-pub(crate) struct OsascriptNotifier {
+pub struct OsascriptNotifier {
     enabled: bool,
     last_error: Arc<Mutex<Option<NotifyError>>>,
 }
 
 impl OsascriptNotifier {
-    pub(crate) fn new(enabled: bool) -> Self {
+    pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
             last_error: Arc::new(Mutex::new(None)),
@@ -153,14 +153,14 @@ impl DesktopNotifier for OsascriptNotifier {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct NotificationCall {
+pub struct NotificationCall {
     pub title: String,
     pub body: String,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[derive(Debug)]
 struct FakeNotifierInner {
     enabled: bool,
@@ -168,15 +168,15 @@ struct FakeNotifierInner {
     last_error: Mutex<Option<NotifyError>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[derive(Debug, Clone)]
-pub(crate) struct FakeNotifier {
+pub struct FakeNotifier {
     inner: Arc<FakeNotifierInner>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl FakeNotifier {
-    pub(crate) fn new(enabled: bool) -> Self {
+    pub fn new(enabled: bool) -> Self {
         Self {
             inner: Arc::new(FakeNotifierInner {
                 enabled,
@@ -186,7 +186,7 @@ impl FakeNotifier {
         }
     }
 
-    pub(crate) fn inject_error(&self, err: NotifyError) {
+    pub fn inject_error(&self, err: NotifyError) {
         let mut slot = self
             .inner
             .last_error
@@ -195,7 +195,7 @@ impl FakeNotifier {
         *slot = Some(err);
     }
 
-    pub(crate) fn calls(&self) -> Vec<NotificationCall> {
+    pub fn calls(&self) -> Vec<NotificationCall> {
         self.inner
             .calls
             .lock()
@@ -203,7 +203,7 @@ impl FakeNotifier {
             .clone()
     }
 
-    pub(crate) fn call_count(&self) -> usize {
+    pub fn call_count(&self) -> usize {
         self.inner
             .calls
             .lock()
@@ -212,7 +212,7 @@ impl FakeNotifier {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl DesktopNotifier for FakeNotifier {
     fn notify(&self, title: &str, body: &str) {
         if !self.inner.enabled {

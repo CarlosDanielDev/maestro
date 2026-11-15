@@ -313,7 +313,7 @@ fn default_work_max_retries() -> u32 {
 fn default_consultation_max_retries() -> u32 {
     0
 }
-pub(crate) fn default_max_prompt_history() -> usize {
+pub fn default_max_prompt_history() -> usize {
     100
 }
 pub(crate) fn default_session_history_cap() -> usize {

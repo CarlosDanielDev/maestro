@@ -21,8 +21,8 @@ use anyhow::Result;
 
 use super::agents::AgentKind;
 
-pub(crate) const OLLAMA_DEFAULT_BASE_URL: &str = "http://localhost:11434";
-pub(crate) const MINIMAX_DEFAULT_BASE_URL: &str = "https://api.minimax.io/v1";
+pub const OLLAMA_DEFAULT_BASE_URL: &str = "http://localhost:11434";
+pub const MINIMAX_DEFAULT_BASE_URL: &str = "https://api.minimax.io/v1";
 
 /// Hosts that may receive bearer credentials over plain http.
 const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
@@ -36,7 +36,7 @@ pub(crate) fn is_loopback_host(host: &str) -> bool {
 /// repo ships its own `maestro.toml` and could set `allow_remote_auth =
 /// true` itself. The repo-local key is parsed but inert; the only
 /// confirmation maestro honors is this process-env switch.
-pub(crate) fn operator_allows_remote_auth() -> bool {
+pub fn operator_allows_remote_auth() -> bool {
     operator_allows_remote_auth_with(|name| std::env::var(name).ok())
 }
 

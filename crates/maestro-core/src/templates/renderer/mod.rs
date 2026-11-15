@@ -17,13 +17,13 @@ use crate::templates::TemplateError;
 use crate::templates::provider_rules::TemplateProviderRules;
 
 pub(crate) const MAX_INCLUDE_DEPTH: usize = 8;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub(crate) const SOURCE_LABEL: &str = "<template>";
 
-pub(crate) use tokenize::tokenize;
+pub use tokenize::tokenize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Token {
+pub enum Token {
     Text(String),
     Placeholder {
         name: String,
@@ -33,7 +33,7 @@ pub(crate) enum Token {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlaceholderKind {
+pub enum PlaceholderKind {
     InvokeSubagent,
     HookGate,
     Include,
@@ -43,7 +43,7 @@ pub(crate) enum PlaceholderKind {
 }
 
 impl PlaceholderKind {
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "INVOKE_SUBAGENT" => Some(Self::InvokeSubagent),
             "HOOK_GATE" => Some(Self::HookGate),
@@ -55,7 +55,7 @@ impl PlaceholderKind {
         }
     }
 
-    pub(crate) fn required_args(self) -> &'static [&'static str] {
+    pub fn required_args(self) -> &'static [&'static str] {
         match self {
             Self::InvokeSubagent => &["name", "prompt"],
             Self::HookGate => &["script", "args"],
@@ -154,7 +154,7 @@ fn expand(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub(crate) fn render(
     input: &str,
     rules: &dyn TemplateProviderRules,

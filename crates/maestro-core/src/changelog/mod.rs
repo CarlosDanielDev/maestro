@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 mod parser;
 
-const CHANGELOG_RAW: &str = include_str!("../../CHANGELOG.md");
+const CHANGELOG_RAW: &str = include_str!("../../../../CHANGELOG.md");
 
 static CHANGELOG: LazyLock<ChangelogData> = LazyLock::new(|| ChangelogData::parse(CHANGELOG_RAW));
 

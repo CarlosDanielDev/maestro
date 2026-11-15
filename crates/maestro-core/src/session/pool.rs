@@ -115,7 +115,7 @@ impl SessionPool {
     /// exists — file-claims and rendered HTTP templates are keyed on a
     /// promoted session and are intentionally excluded here. Returns `None`
     /// when every component is empty.
-    pub(crate) fn interaction_appendix(
+    pub fn interaction_appendix(
         &self,
         mode_config: Option<&crate::session::types::SessionModeConfig>,
     ) -> Option<String> {
@@ -340,7 +340,7 @@ impl SessionPool {
     /// [`Self::finalize`], which dispatches to teardown vs. retain based
     /// on the session's terminal status. Tests use the explicit form to
     /// assert the correct branch fired.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn finalize_and_teardown(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, false);
@@ -351,7 +351,7 @@ impl SessionPool {
     /// worktree. Test-only counterpart to `finalize_and_teardown` — see
     /// note above. Production code reaches this branch via
     /// [`Self::finalize`] when the session ended in `FailedGates`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn finalize_retain_worktree(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, true);
@@ -379,7 +379,7 @@ impl SessionPool {
     /// integration tests can assert teardown vs. retain without
     /// exposing the manager itself. Production code never inspects
     /// worktree existence at this layer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn worktree_exists(&self, slug: &str) -> bool {
         self.worktree_mgr.exists(slug)
     }
@@ -615,7 +615,7 @@ impl SessionPool {
 
     /// Number of registered interactive sessions, any state (#738 re-entry
     /// assertions).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn interaction_count(&self) -> usize {
         self.active
             .iter()
@@ -626,7 +626,7 @@ impl SessionPool {
 
     /// Append a turn to the live interactive session for `issue_number`.
     /// Test seam for re-entry assertions (#738).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn test_push_interaction_turn(
         &mut self,
         issue_number: u64,
@@ -862,7 +862,7 @@ pub(in crate::session) mod tests {
     fn create_adopted(pool: &mut SessionPool) -> crate::session::adopt::AdoptOutcome {
         pool.create_adopted_session(
             "ext-conv-1",
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+            std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
             Some("My external chat".to_string()),
             "opus".to_string(),
         )
@@ -891,7 +891,10 @@ pub(in crate::session) mod tests {
         );
         assert_eq!(
             managed.session.adopted_cwd.as_deref(),
-            Some(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))),
+            Some(std::path::Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../.."
+            ))),
             "session cwd must be the transcript's original cwd"
         );
         assert_eq!(
@@ -954,7 +957,7 @@ pub(in crate::session) mod tests {
         let err = pool
             .create_adopted_session(
                 "ext-conv-1",
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
                 None,
                 "opus".to_string(),
             )
@@ -975,7 +978,7 @@ pub(in crate::session) mod tests {
         let err = pool
             .create_adopted_session(
                 "ext-conv-1",
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
                 None,
                 "opus".to_string(),
             )
@@ -995,7 +998,7 @@ pub(in crate::session) mod tests {
 
             let again = pool.create_adopted_session(
                 "ext-conv-1",
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
                 None,
                 "opus".to_string(),
             );
@@ -1025,7 +1028,7 @@ pub(in crate::session) mod tests {
 
             let again = pool.create_adopted_session(
                 "ext-conv-1",
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
                 None,
                 "opus".to_string(),
             );

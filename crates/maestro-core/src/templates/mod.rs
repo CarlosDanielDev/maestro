@@ -13,8 +13,8 @@ pub mod manifest;
 pub mod provider_rules;
 pub mod rendered_cache;
 mod renderer;
-#[cfg(test)]
-pub(crate) mod test_fakes;
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_fakes;
 
 pub use error::TemplateError;
 pub(crate) use manifest::{Manifest, ManifestSubagent};
@@ -24,14 +24,14 @@ pub(crate) use manifest::{ManifestMeta, ManifestPlaceholder, ManifestProvider};
 #[cfg(test)]
 pub(crate) use provider_rules::NullRules;
 pub use provider_rules::{TemplateProviderRules, null_rules};
-#[cfg(test)]
-pub(crate) use rendered_cache::FakeRenderedStore;
+#[cfg(any(test, feature = "test-util"))]
+pub use rendered_cache::FakeRenderedStore;
 #[allow(unused_imports)]
 // Reason: DiskRenderedTemplateStore wired in setup once active_command is plumbed (#707)
 pub use rendered_cache::{DiskRenderedTemplateStore, RenderedTemplateStore};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[allow(unused_imports)]
-pub(crate) use renderer::{PlaceholderKind, Token, tokenize};
+pub use renderer::{PlaceholderKind, Token, tokenize};
 
 use std::path::{Path, PathBuf};
 
@@ -54,7 +54,7 @@ pub fn render_for_provider(
 
 /// Variant of [`render_for_provider`] that resolves files relative to an
 /// explicit templates root — used by integration tests with a tempdir.
-pub(crate) fn render_command_in(
+pub fn render_command_in(
     root: &Path,
     provider: &dyn AgentProvider,
     command: &str,
@@ -99,11 +99,8 @@ fn validate_command_name(command: &str, root: &Path) -> Result<(), TemplateError
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) fn render_str(
-    input: &str,
-    rules: &dyn TemplateProviderRules,
-) -> Result<String, TemplateError> {
+#[cfg(any(test, feature = "test-util"))]
+pub fn render_str(input: &str, rules: &dyn TemplateProviderRules) -> Result<String, TemplateError> {
     renderer::render(input, rules)
 }
 

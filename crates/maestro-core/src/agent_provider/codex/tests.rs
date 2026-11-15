@@ -253,7 +253,8 @@ fn codex_fixture_jsonl() -> &'static str {
 }
 
 fn mock_codex_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-codex-cli.sh")
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .join("tests/fixtures/mock-codex-cli.sh")
 }
 
 #[cfg(unix)]

@@ -8,7 +8,7 @@
 //! their boundaries via these helpers.
 
 /// Clamp cost values to a sane range: NaN / Infinity / negative → 0.0.
-pub(crate) fn sanitize_cost(cost: f64) -> f64 {
+pub fn sanitize_cost(cost: f64) -> f64 {
     if !cost.is_finite() || cost.is_sign_negative() {
         0.0
     } else {

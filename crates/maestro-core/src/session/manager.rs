@@ -107,8 +107,8 @@ impl ManagedSession {
 
     /// Id of the provider this session's turns run against (#929 routing
     /// assertions). Reads existing state; gated out of production.
-    #[cfg(test)]
-    pub(crate) fn provider_id(&self) -> &str {
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn provider_id(&self) -> &str {
         self.provider.id()
     }
 

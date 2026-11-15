@@ -10,7 +10,7 @@ pub mod walk;
 
 pub use detector::{DetectedStack, FsProjectDetector, ProjectDetector};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub use detector::FakeProjectDetector;
 
 use anyhow::Result;

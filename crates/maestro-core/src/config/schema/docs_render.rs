@@ -204,7 +204,7 @@ pub(crate) fn render_table_body(name: &str, fields: &[FieldSchema]) -> String {
 /// in `existing` with a freshly rendered field table for table `X`. Content
 /// outside markers is preserved byte-for-byte. Returns `Err` on malformed
 /// marker structure or unknown section names.
-pub(crate) fn regenerate(existing: &str, schema: &[TableSchema]) -> Result<String> {
+pub fn regenerate(existing: &str, schema: &[TableSchema]) -> Result<String> {
     let by_name = flatten_schema(schema);
     let mut out = String::with_capacity(existing.len() + 256);
     let mut iter = existing.lines().enumerate();

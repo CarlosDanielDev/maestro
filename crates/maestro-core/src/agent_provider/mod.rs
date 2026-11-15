@@ -11,8 +11,8 @@ pub mod qwen;
 mod qwen_parser;
 #[cfg(test)]
 mod qwen_tests;
-#[cfg(test)]
-pub(crate) mod test_fakes;
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_fakes;
 pub mod types;
 #[cfg(test)]
 mod types_tests;

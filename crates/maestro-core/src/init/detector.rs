@@ -99,19 +99,19 @@ pub fn python_entry_point(root: &Path) -> bool {
 }
 
 /// Test-only detector that returns a canned list of stacks.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub struct FakeProjectDetector {
     stacks: Vec<DetectedStack>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl FakeProjectDetector {
     pub fn new(stacks: Vec<DetectedStack>) -> Self {
         Self { stacks }
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl ProjectDetector for FakeProjectDetector {
     fn detect(&self, _root: &Path) -> Vec<DetectedStack> {
         self.stacks.clone()

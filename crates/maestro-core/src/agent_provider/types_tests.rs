@@ -228,6 +228,7 @@ fn providers_without_dedicated_rules_inherit_default_template_rules() {
 
 #[test]
 fn qwen_provider_overrides_default_template_rules_with_http_generic() {
+    crate::enter_repo_root_for_test();
     use crate::agent_provider::QwenProvider;
 
     let provider: Arc<dyn AgentProvider> = Arc::new(QwenProvider::new("qwen"));
@@ -244,6 +245,7 @@ fn qwen_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn ollama_provider_overrides_default_template_rules_with_http_generic() {
+    crate::enter_repo_root_for_test();
     use crate::agent_provider::OllamaProvider;
 
     let provider: Arc<dyn AgentProvider> = Arc::new(
@@ -261,6 +263,7 @@ fn ollama_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn minimax_provider_overrides_default_template_rules_with_http_generic() {
+    crate::enter_repo_root_for_test();
     use crate::agent_provider::MinimaxProvider;
 
     let provider: Arc<dyn AgentProvider> = Arc::new(
@@ -284,6 +287,7 @@ fn minimax_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn claude_provider_overrides_default_template_rules() {
+    crate::enter_repo_root_for_test();
     use crate::agent_provider::ClaudeProvider;
 
     let provider: Arc<dyn AgentProvider> = Arc::new(ClaudeProvider::default());
@@ -298,6 +302,7 @@ fn claude_provider_overrides_default_template_rules() {
 
 #[test]
 fn codex_provider_overrides_default_template_rules() {
+    crate::enter_repo_root_for_test();
     use crate::agent_provider::CodexProvider;
 
     let provider: Arc<dyn AgentProvider> = Arc::new(CodexProvider::new("codex"));

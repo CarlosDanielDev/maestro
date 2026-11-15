@@ -387,11 +387,11 @@ impl GitOps for CliGitOps {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[path = "git_mock.rs"]
 pub mod mock;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub use mock::MockGitOps;
 
 #[cfg(test)]

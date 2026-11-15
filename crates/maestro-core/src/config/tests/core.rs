@@ -214,7 +214,7 @@ max_retries = 7
 
 #[test]
 fn tui_config_defaults_when_section_absent() {
-    use crate::tui::theme::ThemePreset;
+    use crate::config::theme::ThemePreset;
     use std::io::Write;
     let mut f = tempfile::NamedTempFile::new().unwrap();
     write!(
@@ -239,7 +239,7 @@ alert_threshold_pct = 80
 
 #[test]
 fn tui_config_deserializes_light_preset() {
-    use crate::tui::theme::ThemePreset;
+    use crate::config::theme::ThemePreset;
     use std::io::Write;
     let mut f = tempfile::NamedTempFile::new().unwrap();
     write!(

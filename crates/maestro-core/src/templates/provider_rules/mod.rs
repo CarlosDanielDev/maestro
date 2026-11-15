@@ -241,7 +241,7 @@ mod tests {
         use std::path::{Path, PathBuf};
 
         fn manifest_dir() -> PathBuf {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         }
 
         #[test]

@@ -11,7 +11,7 @@ pub(super) fn fixture(name: &str) -> String {
 }
 
 pub(super) fn fixture_in(dir: &str, name: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join(dir)
         .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"))

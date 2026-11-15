@@ -254,7 +254,7 @@ mod tests {
     fn scan_with_features_returns_non_trivial_output() {
         // Integration smoke test: run the full pipeline against the real repo.
         // These are lower bounds, not exact counts — lower them cautiously.
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
         let s = scan(root);
 
         assert!(

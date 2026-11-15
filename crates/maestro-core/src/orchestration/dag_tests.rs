@@ -2,19 +2,19 @@ use super::*;
 
 #[test]
 fn parse_none_fixture() {
-    let body = include_str!("../../tests/fixtures/blocked_by/none.md");
+    let body = include_str!("../../../../tests/fixtures/blocked_by/none.md");
     assert!(parse_blocked_by(body).is_empty());
 }
 
 #[test]
 fn parse_single_fixture() {
-    let body = include_str!("../../tests/fixtures/blocked_by/single.md");
+    let body = include_str!("../../../../tests/fixtures/blocked_by/single.md");
     assert_eq!(parse_blocked_by(body), vec![123]);
 }
 
 #[test]
 fn parse_multi_fixture() {
-    let body = include_str!("../../tests/fixtures/blocked_by/multi.md");
+    let body = include_str!("../../../../tests/fixtures/blocked_by/multi.md");
     let mut deps = parse_blocked_by(body);
     deps.sort_unstable();
     assert_eq!(deps, vec![10, 20, 30]);
@@ -22,13 +22,13 @@ fn parse_multi_fixture() {
 
 #[test]
 fn parse_malformed_fixture() {
-    let body = include_str!("../../tests/fixtures/blocked_by/malformed.md");
+    let body = include_str!("../../../../tests/fixtures/blocked_by/malformed.md");
     assert_eq!(parse_blocked_by(body), vec![77]);
 }
 
 #[test]
 fn parse_missing_fixture() {
-    let body = include_str!("../../tests/fixtures/blocked_by/missing.md");
+    let body = include_str!("../../../../tests/fixtures/blocked_by/missing.md");
     assert!(parse_blocked_by(body).is_empty());
 }
 

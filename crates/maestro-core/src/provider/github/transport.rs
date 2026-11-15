@@ -10,7 +10,7 @@ mod cli_impl;
 mod errors;
 mod parsing;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 
 #[cfg(test)]

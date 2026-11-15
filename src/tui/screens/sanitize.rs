@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
-use super::{Finding, SanitizeReport, Severity};
+use crate::sanitize::{Finding, SanitizeReport, Severity};
 
 /// Filter state for severity cycling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

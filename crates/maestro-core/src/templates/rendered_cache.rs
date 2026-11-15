@@ -155,7 +155,7 @@ impl RenderedTemplateStore for DiskRenderedTemplateStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -164,7 +164,7 @@ mod tests {
     /// gate without touching disk. Public(crate) so unit tests in
     /// `pool.rs` and integration tests in `integration_tests/` can
     /// share it.
-    pub(crate) struct FakeRenderedStore {
+    pub struct FakeRenderedStore {
         entries: HashMap<(String, String), String>,
     }
 
@@ -285,5 +285,5 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-pub(crate) use tests::FakeRenderedStore;
+#[cfg(any(test, feature = "test-util"))]
+pub use tests::FakeRenderedStore;

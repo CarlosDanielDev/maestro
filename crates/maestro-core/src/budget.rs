@@ -3,9 +3,9 @@ use uuid::Uuid;
 
 pub mod projector;
 pub mod quota_snapshot;
-pub(crate) mod sanitize;
+pub mod sanitize;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_support;
 
 /// Action the enforcer recommends after a budget check.

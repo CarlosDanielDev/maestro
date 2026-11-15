@@ -38,7 +38,7 @@ fn find_and_load_shim_still_returns_config_only() {
 
 #[test]
 fn tui_mascot_style_serde_roundtrip() {
-    use crate::mascot::MascotStyle;
+    use crate::config::MascotStyle;
 
     for variant in [MascotStyle::Sprite, MascotStyle::Ascii] {
         let cfg = TuiConfig {
@@ -53,7 +53,7 @@ fn tui_mascot_style_serde_roundtrip() {
 
 #[test]
 fn tui_mascot_style_emits_lowercase_on_disk() {
-    use crate::mascot::MascotStyle;
+    use crate::config::MascotStyle;
     let cfg = TuiConfig {
         mascot_style: MascotStyle::Sprite,
         ..Default::default()
@@ -67,7 +67,7 @@ fn tui_mascot_style_emits_lowercase_on_disk() {
 
 #[test]
 fn tui_mascot_style_defaults_to_sprite_when_absent() {
-    use crate::mascot::MascotStyle;
+    use crate::config::MascotStyle;
     let parsed: TuiConfig = toml::from_str("").expect("empty TuiConfig parses");
     assert_eq!(parsed.mascot_style, MascotStyle::Sprite);
 }

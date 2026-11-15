@@ -62,7 +62,7 @@ fn json_parser_captures_stdout_and_maps_known_events() {
 fn json_parser_maps_success_fixture() {
     let mut parser = OpenCodeJsonParser::default();
     let events: Vec<StreamEvent> =
-        include_str!("../../../tests/fixtures/opencode_output_sample.jsonl")
+        include_str!("../../../../../tests/fixtures/opencode_output_sample.jsonl")
             .lines()
             .flat_map(|line| parser.parse_line(line))
             .collect();
@@ -104,7 +104,7 @@ fn json_parser_maps_success_fixture() {
 fn json_parser_maps_error_fixture() {
     let mut parser = OpenCodeJsonParser::default();
     let events: Vec<StreamEvent> =
-        include_str!("../../../tests/fixtures/opencode_error_sample.jsonl")
+        include_str!("../../../../../tests/fixtures/opencode_error_sample.jsonl")
             .lines()
             .flat_map(|line| parser.parse_line(line))
             .collect();

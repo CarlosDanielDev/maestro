@@ -12,7 +12,7 @@ pub use super::transport::{
     parse_milestones_json, parse_prs_json, redact_secrets,
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod mock {
     pub use crate::provider::github::transport::mock::*;
 }

@@ -1,6 +1,6 @@
 //! Shared trait-based fakes for template tests (unit + integration).
 
-#![cfg(test)]
+#![cfg(any(test, feature = "test-util"))]
 #![allow(dead_code)]
 
 use std::path::Path;
@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::templates::TemplateError;
 use crate::templates::provider_rules::TemplateProviderRules;
 
-pub(crate) struct FakeRules;
+pub struct FakeRules;
 
 impl TemplateProviderRules for FakeRules {
     fn target_dir(&self) -> Option<&'static Path> {

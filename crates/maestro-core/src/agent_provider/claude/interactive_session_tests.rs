@@ -209,8 +209,8 @@ async fn portable_pty_backend_runs_stub_claude_end_to_end() {
     // munged dir from its physical `pwd`, so canonicalize on our side too.
     let home = tmp.path().canonicalize().unwrap();
 
-    let stub =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/claude-transcript/stub-claude.sh");
+    let stub = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .join("testdata/claude-transcript/stub-claude.sh");
     assert!(stub.exists(), "stub script missing: {}", stub.display());
 
     let mut spec = RunSpec::new(

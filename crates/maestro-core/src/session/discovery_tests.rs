@@ -22,7 +22,7 @@ const SESSION_C: &str = "cccc3333-3333-3333-3333-333333333333";
 
 /// Checked-in fixture: 2 projects, 3 transcripts, one without `ai-title`.
 fn fixture_home() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transcripts/home")
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("tests/fixtures/transcripts/home")
 }
 
 /// One real-shaped transcript: metadata line, a user line carrying `cwd` and

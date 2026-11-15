@@ -49,7 +49,7 @@ fn text_args_use_qwen_text_output() {
 
 #[test]
 fn fixture_maps_to_stream_events() {
-    let fixture = include_str!("../../tests/fixtures/qwen_output_sample.jsonl");
+    let fixture = include_str!("../../../../tests/fixtures/qwen_output_sample.jsonl");
     let mut parser = QwenStreamParser::default();
     let events: Vec<StreamEvent> = fixture
         .lines()
@@ -111,7 +111,9 @@ async fn run_streams_events_from_mock_qwen_cli() {
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{}\"\ncat \"{}\"\n",
             temp.path().join("argv.txt").display(),
-            std::path::Path::new("tests/fixtures/qwen_output_sample.jsonl").display()
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+                .join("tests/fixtures/qwen_output_sample.jsonl")
+                .display()
         ),
     )
     .expect("write qwen mock");

@@ -28,12 +28,12 @@ impl ProjectAnalyzer for ClaudeAnalyzer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub struct MockProjectAnalyzer {
     result: Option<AdaptReport>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl MockProjectAnalyzer {
     pub fn with_report(report: AdaptReport) -> Self {
         Self {
@@ -46,7 +46,7 @@ impl MockProjectAnalyzer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 #[async_trait]
 impl ProjectAnalyzer for MockProjectAnalyzer {
     async fn analyze(&self, _profile: &ProjectProfile) -> anyhow::Result<AdaptReport> {

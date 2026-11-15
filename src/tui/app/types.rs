@@ -246,7 +246,7 @@ pub struct ScreenState {
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
     pub adapt_follow_up_screen: Option<crate::tui::screens::AdaptFollowUpScreen>,
-    pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
+    pub sanitize_screen: Option<crate::tui::screens::sanitize::SanitizeScreen>,
     pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
     pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
     pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,

@@ -35,7 +35,7 @@ pub(crate) const HTTP_KINDS: &[&str] = &["ollama", "minimax"];
 /// allowed_tools, extra_args) hide when kind is an HTTP variant and
 /// vice-versa. Unknown keys or unknown kinds default to visible —
 /// hiding silently is worse than showing an extra row.
-pub(crate) fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) -> bool {
+pub fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) -> bool {
     let is_subprocess = SUBPROCESS_KINDS.contains(&kind_value);
     let is_http = HTTP_KINDS.contains(&kind_value);
     if !is_subprocess && !is_http {
@@ -67,7 +67,7 @@ pub(crate) const PERMISSION_MODES: &[&str] = &[
 /// Entry fields for `[agents.<id>]`. 13 scalar/list fields per spec §6.3
 /// (11 from v0.29.0 + `num_ctx` for Ollama, #844 + `transport` for Claude, #750).
 /// `env`, `config_overrides`, `cli_flags` deferred to v0.30.0 (§7).
-pub(crate) const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
+pub const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
     FieldSchema {
         key: "kind",
         label: "Kind",
@@ -241,7 +241,7 @@ pub(crate) const TEAM_PRIMITIVES: &[&str] = &["pipeline", "fan-out", "single-pas
 /// in `entry_state::build_widget` while round-trip is carried by the
 /// parallel `Config → toml::Value` projection in `schema_tab/sync.rs`.
 /// PR-B (follow-up) will lift that fallback to a true nested editor.
-pub(crate) const TEAMS_ENTRY_FIELDS: &[FieldSchema] = &[
+pub const TEAMS_ENTRY_FIELDS: &[FieldSchema] = &[
     FieldSchema {
         key: "extends",
         label: "Extends",

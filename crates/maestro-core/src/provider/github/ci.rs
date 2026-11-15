@@ -305,7 +305,7 @@ impl CheckRunDetail {
 /// Returns `None` for unknown names — caller falls back to "no gate" and
 /// the agent must use its own judgment. Substring matching is intentional
 /// — workflow names vary (e.g. `"Test (ubuntu-latest)"`, `"clippy / lint"`).
-pub(crate) fn local_gate_for_check(name: &str) -> Option<&'static str> {
+pub fn local_gate_for_check(name: &str) -> Option<&'static str> {
     let n = name.to_ascii_lowercase();
     if n.contains("file size") || n.contains("file-size") {
         Some("bash scripts/check-file-size.sh")
@@ -331,7 +331,7 @@ pub(crate) fn local_gate_for_check(name: &str) -> Option<&'static str> {
 /// Build a prompt for a CI fix session. When `local_gate_cmd` is `Some`, an
 /// explicit "Before pushing, run `<cmd>`" clause is appended; `None`
 /// preserves the legacy auto-path output exactly.
-pub(crate) fn build_ci_fix_prompt(
+pub fn build_ci_fix_prompt(
     pr_number: u64,
     issue_number: u64,
     branch: &str,

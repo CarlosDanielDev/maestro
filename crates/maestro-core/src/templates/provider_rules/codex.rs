@@ -137,6 +137,7 @@ mod tests {
 
     #[test]
     fn skill_link_inlines_existing_skill_body_verbatim() {
+        crate::enter_repo_root_for_test();
         let out = CodexRules.skill_link("project-patterns").expect("ok");
         assert!(
             out.contains("project-patterns") || out.contains("Maestro"),
@@ -146,6 +147,7 @@ mod tests {
 
     #[test]
     fn skill_link_missing_returns_file_missing() {
+        crate::enter_repo_root_for_test();
         let err = CodexRules
             .skill_link("definitely-not-a-real-skill-xyz")
             .unwrap_err();

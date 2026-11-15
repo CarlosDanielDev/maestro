@@ -165,8 +165,8 @@ pub fn parse_owner_repo(slug: &str) -> Result<(&str, &str), &'static str> {
 /// Canonical PendingPr fixture for cross-module test reuse. Returns an entry
 /// in the `AwaitingManualRetry` shape: 3/3 attempts spent, no errors stored,
 /// no scheduled retry. Override fields after construction for variants.
-#[cfg(test)]
-pub(crate) fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
+#[cfg(any(test, feature = "test-util"))]
+pub fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
     PendingPr {
         issue_number,
         issue_numbers: vec![],

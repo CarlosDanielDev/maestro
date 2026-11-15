@@ -235,7 +235,7 @@ impl Loader {
     }
 }
 
-pub(crate) fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+pub fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
     // Defensive: callers must pre-validate, but check again so this private
     // helper cannot become a path-traversal foothold if added to a call
     // site that forgets the guard.
@@ -438,7 +438,8 @@ implementer = "claude""#,
 
     #[test]
     fn cycle_fixture_detected() {
-        let fixtures = PathBuf::from("tests/fixtures/teams");
+        let fixtures = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+            .join("tests/fixtures/teams");
         let loader = Loader::new(Some(fixtures), None);
         let err = loader.resolve().unwrap_err();
         assert!(format!("{err:#}").contains("cycle"));

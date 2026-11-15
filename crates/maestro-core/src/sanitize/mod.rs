@@ -2,14 +2,13 @@ mod analyzer;
 mod config;
 pub mod reporter;
 mod scanner;
-pub mod screen;
 mod types;
 
 use analyzer::ClaudeAnalyzer;
 pub use analyzer::SmellAnalyzer;
 pub use config::{OutputFormat, SanitizeConfig};
 pub use scanner::{CodeScanner, RustScanner};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub use types::SourceLocation;
 pub use types::{AnalysisResult, Finding, SanitizeReport, ScanResult, Severity, SmellCategory};
 

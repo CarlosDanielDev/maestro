@@ -10,10 +10,10 @@ mod core;
 // docs_render is consumed only by src/integration_tests/docs_gen.rs (also
 // #[cfg(test)]). Gate it the same way so non-test builds don't compile
 // dead-code paths that produced ~14 dead_code warnings in `cargo check`.
-#[cfg(test)]
-pub(crate) mod docs_render;
+#[cfg(any(test, feature = "test-util"))]
+pub mod docs_render;
 #[allow(dead_code)]
-pub(crate) mod dynamic;
+pub mod dynamic;
 #[allow(dead_code)]
 mod extras;
 #[allow(dead_code)]
@@ -55,8 +55,9 @@ pub enum Presentation {
 /// Kind of a configuration field, used by downstream renderers/generators
 /// to pick a widget and enforce a domain.
 #[allow(dead_code)]
+// Not `#[non_exhaustive]`: the TUI settings renderer matches every kind on
+// purpose, so a new kind must fail to compile there until it is handled.
 #[derive(Debug, Clone, Copy)]
-#[non_exhaustive]
 pub enum FieldKind {
     Bool,
     Int {
@@ -181,13 +182,13 @@ pub(crate) fn validate_non_empty(value: &toml::Value) -> Result<(), String> {
     }
 }
 
-pub(crate) const PROJECT_TABLE: TableSchema = TableSchema {
+pub const PROJECT_TABLE: TableSchema = TableSchema {
     name: "project",
     label: "Project",
     fields: core::PROJECT_FIELDS,
 };
 
-pub(crate) const BUDGET_TABLE: TableSchema = TableSchema {
+pub const BUDGET_TABLE: TableSchema = TableSchema {
     name: "budget",
     label: "Budget",
     fields: core::BUDGET_FIELDS,
@@ -311,7 +312,7 @@ const SCHEMA: &[TableSchema] = &[
 ];
 
 #[allow(dead_code)]
-pub(crate) const fn schema_for_config() -> &'static [TableSchema] {
+pub const fn schema_for_config() -> &'static [TableSchema] {
     SCHEMA
 }
 

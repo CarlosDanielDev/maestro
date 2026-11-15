@@ -5,48 +5,47 @@
 #![warn(clippy::path_buf_push_overwrite)]
 #![warn(clippy::branches_sharing_code)]
 
-pub mod agent_provider;
-mod budget;
-mod changelog;
+// Core modules live in `maestro-core` (ADR 006); these imports keep the
+// `crate::<module>` paths used across the TUI and CLI resolving.
+pub use maestro_core::agent_provider;
+use maestro_core::budget;
+use maestro_core::changelog;
 mod cli;
 mod commands;
-mod config;
-mod continuous;
-mod doctor;
-mod flags;
-mod gates;
-mod git;
-mod icon_mode;
-mod icons;
-mod init;
-mod insight;
-mod models;
-mod modes;
-mod notifications;
-mod orchestration;
-mod plugins;
-mod prompts;
-mod provider;
-mod review;
-mod session;
-mod settings;
-mod state;
-// Bin entry never reaches into templates directly; symbols are exercised
-// through provider trait defaults and via the lib (see `src/lib.rs`).
-#[allow(dead_code)]
-mod templates;
+use maestro_core::config;
+use maestro_core::continuous;
+use maestro_core::doctor;
+use maestro_core::flags;
+use maestro_core::gates;
+use maestro_core::git;
+use maestro_core::icon_mode;
+use maestro_core::icons;
+use maestro_core::init;
+use maestro_core::insight;
+use maestro_core::models;
+use maestro_core::modes;
+use maestro_core::notifications;
+use maestro_core::orchestration;
+use maestro_core::plugins;
+use maestro_core::prompts;
+use maestro_core::provider;
+use maestro_core::review;
+use maestro_core::session;
+use maestro_core::settings;
+use maestro_core::state;
+use maestro_core::templates;
 mod tui;
-mod updater;
-mod util;
-mod work;
+use maestro_core::updater;
+use maestro_core::util;
+use maestro_core::work;
 
-mod adapt;
+use maestro_core::adapt;
 mod mascot;
-mod milestone_health;
-mod prd;
-mod sanitize;
-mod system;
-mod turboquant;
+use maestro_core::milestone_health;
+use maestro_core::prd;
+use maestro_core::sanitize;
+use maestro_core::system;
+use maestro_core::turboquant;
 
 #[cfg(test)]
 mod integration_tests;

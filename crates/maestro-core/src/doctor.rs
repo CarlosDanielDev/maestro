@@ -622,7 +622,7 @@ fn check_agent_config_schema() -> CheckResult {
     check_agent_config_schema_in(Path::new("."))
 }
 
-pub(crate) fn check_agent_config_schema_in(base: &Path) -> CheckResult {
+pub fn check_agent_config_schema_in(base: &Path) -> CheckResult {
     let Some(path) = find_config_path(base) else {
         return CheckResult::fail(
             "agent config",
