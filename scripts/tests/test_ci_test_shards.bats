@@ -24,15 +24,13 @@ job_block() {
   [[ "$block" == *"actions/upload-artifact@"* ]] || false
 }
 
-# Tests spawn `env!("CARGO_BIN_EXE_maestro")`, an absolute path fixed at
-# compile time. Extracting into the workspace puts target/debug/maestro there.
 @test "shard job is a 4-way nextest hash partition over the archive" {
   block="$(job_block test-shard)"
   [ -n "$block" ]
   [[ "$block" == *"needs: [changes, test-build]"* ]] || false
   [[ "$block" == *"actions/download-artifact@"* ]] || false
   [[ "$block" == *"shard: [1, 2, 3, 4]"* ]] || false
-  [[ "$block" == *'cargo nextest run --archive-file nextest-archive.tar.zst --workspace-remap . --extract-to . --extract-overwrite --partition hash:${{ matrix.shard }}/4'* ]] || false
+  [[ "$block" == *'cargo nextest run --archive-file nextest-archive.tar.zst --workspace-remap . --partition hash:${{ matrix.shard }}/4'* ]] || false
   [[ "$block" == *'INSTA_UPDATE: "no"'* ]] || false
 }
 
