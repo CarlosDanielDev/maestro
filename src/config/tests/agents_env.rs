@@ -39,6 +39,9 @@ fn config_validate_rejects_denylisted_env_keys() {
     for prefix in crate::util::validation::AGENT_ENV_DENYLIST_PREFIXES {
         denylisted.push(format!("{prefix}X"));
     }
+    for suffix in crate::util::validation::AGENT_ENV_DENYLIST_SUFFIXES {
+        denylisted.push(format!("X{suffix}"));
+    }
     for key in &denylisted {
         let key = key.as_str();
         let toml = format!(
@@ -91,7 +94,7 @@ default = "claude"
 [agents.claude]
 kind = "claude"
 command = "claude"
-env = {{ ANTHROPIC_MODEL = "claude-sonnet-5-5", MY_TOOL_API_KEY = "value" }}
+env = {{ ANTHROPIC_MODEL = "claude-sonnet-5-5", MY_TOOL_API_KEY = "value", HTTPS_PROXY = "http://proxy:3128", NODE_ENV = "production" }}
 "#
     ))
     .expect("benign agent env must load");
@@ -107,5 +110,14 @@ env = {{ ANTHROPIC_MODEL = "claude-sonnet-5-5", MY_TOOL_API_KEY = "value" }}
     assert_eq!(
         claude.env.get("MY_TOOL_API_KEY").map(String::as_str),
         Some("value")
+    );
+    // #1135 regression: near-misses of the denied families pass through.
+    assert_eq!(
+        claude.env.get("HTTPS_PROXY").map(String::as_str),
+        Some("http://proxy:3128")
+    );
+    assert_eq!(
+        claude.env.get("NODE_ENV").map(String::as_str),
+        Some("production")
     );
 }
