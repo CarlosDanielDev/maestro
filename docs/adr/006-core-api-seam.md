@@ -174,9 +174,11 @@ frontend code; the TUI may use them later).
 - **Theme settings are config.** `[tui.theme]` data (`SerializableColor`,
   `ThemePreset`, `ThemeConfig`, `ThemeOverrides`) and `MascotStyle` live in
   `config` (`config::theme`, `config::tui`); the TUI re-exports them and keeps
-  the resolved `Theme` and all rendering. Core therefore depends on
-  `ratatui` with `default-features = false`, for `ratatui::style::Color`
-  only; `scripts/check-layers.sh` rejects any other ratatui path in core.
+  the resolved `Theme` and all rendering. Colours are core's own
+  `config::theme::ThemeColor`; `tui::theme::to_color` maps them to ratatui.
+  Core does not depend on ratatui; `scripts/check-layers.sh` fails on any
+  ratatui (or other terminal-UI / frontend crate) reference in core's
+  source or manifest.
 - **`icons` and `icon_mode` are core**, not presentation:
   `session::types::SessionStatus` resolves its own icon through them, and
   neither touches ratatui.

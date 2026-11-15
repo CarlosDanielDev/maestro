@@ -1599,7 +1599,6 @@ dependencies = [
  "portable-pty",
  "proptest",
  "rand 0.8.8",
- "ratatui",
  "regex",
  "reqwest",
  "serde",

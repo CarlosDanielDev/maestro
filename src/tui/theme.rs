@@ -153,7 +153,33 @@ fn indexed_to_basic(idx: u8) -> Color {
 // re-exported so `crate::tui::theme::*` paths keep working. The binary itself
 // names only `ThemeConfig`/`ThemePreset`; the rest serve the lib and tests.
 #[allow(unused_imports)]
-pub use crate::config::theme::{SerializableColor, ThemeConfig, ThemeOverrides, ThemePreset};
+pub use crate::config::theme::{
+    SerializableColor, ThemeColor, ThemeConfig, ThemeOverrides, ThemePreset,
+};
+
+/// Maps a config colour (core's `ThemeColor`) to the ratatui colour it names.
+pub fn to_color(sc: SerializableColor) -> Color {
+    match sc.0 {
+        ThemeColor::Black => Color::Black,
+        ThemeColor::Red => Color::Red,
+        ThemeColor::Green => Color::Green,
+        ThemeColor::Yellow => Color::Yellow,
+        ThemeColor::Blue => Color::Blue,
+        ThemeColor::Magenta => Color::Magenta,
+        ThemeColor::Cyan => Color::Cyan,
+        ThemeColor::Gray => Color::Gray,
+        ThemeColor::DarkGray => Color::DarkGray,
+        ThemeColor::LightRed => Color::LightRed,
+        ThemeColor::LightGreen => Color::LightGreen,
+        ThemeColor::LightYellow => Color::LightYellow,
+        ThemeColor::LightBlue => Color::LightBlue,
+        ThemeColor::LightMagenta => Color::LightMagenta,
+        ThemeColor::LightCyan => Color::LightCyan,
+        ThemeColor::White => Color::White,
+        ThemeColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
+        ThemeColor::Indexed(i) => Color::Indexed(i),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Resolved Theme (runtime-ready, all fields concrete)
@@ -381,7 +407,7 @@ impl Theme {
         macro_rules! apply_override {
             ($field:ident) => {
                 if let Some(c) = config.overrides.$field {
-                    theme.$field = c.into();
+                    theme.$field = to_color(c);
                 }
             };
         }
@@ -663,7 +689,7 @@ mod tests {
     #[test]
     fn from_config_override_replaces_single_field() {
         let overrides = ThemeOverrides {
-            text_primary: Some(SerializableColor(Color::Magenta)),
+            text_primary: Some(SerializableColor(ThemeColor::Magenta)),
             ..Default::default()
         };
         let cfg = ThemeConfig {
@@ -678,8 +704,8 @@ mod tests {
     #[test]
     fn from_config_multiple_overrides_all_applied() {
         let overrides = ThemeOverrides {
-            text_primary: Some(SerializableColor(Color::Magenta)),
-            border_active: Some(SerializableColor(Color::LightBlue)),
+            text_primary: Some(SerializableColor(ThemeColor::Magenta)),
+            border_active: Some(SerializableColor(ThemeColor::LightBlue)),
             ..Default::default()
         };
         let cfg = ThemeConfig {
@@ -939,7 +965,10 @@ mod tests {
     fn serializable_color_deserializes_named_red() {
         let toml_str = r#"text_primary = "red""#;
         let overrides: ThemeOverrides = toml::from_str(toml_str).expect("parse failed");
-        assert_eq!(overrides.text_primary, Some(SerializableColor(Color::Red)));
+        assert_eq!(
+            overrides.text_primary,
+            Some(SerializableColor(ThemeColor::Red))
+        );
     }
 
     #[test]
@@ -948,7 +977,7 @@ mod tests {
         let overrides: ThemeOverrides = toml::from_str(toml_str).expect("parse failed");
         assert_eq!(
             overrides.text_primary,
-            Some(SerializableColor(Color::Rgb(255, 0, 0)))
+            Some(SerializableColor(ThemeColor::Rgb(255, 0, 0)))
         );
     }
 
@@ -958,7 +987,7 @@ mod tests {
         let overrides: ThemeOverrides = toml::from_str(toml_str).expect("parse failed");
         assert_eq!(
             overrides.text_primary,
-            Some(SerializableColor(Color::Indexed(34)))
+            Some(SerializableColor(ThemeColor::Indexed(34)))
         );
     }
 
@@ -1259,7 +1288,7 @@ mod tests {
     #[test]
     fn from_config_overrides_selection_bg() {
         let overrides = ThemeOverrides {
-            selection_bg: Some(SerializableColor(Color::Magenta)),
+            selection_bg: Some(SerializableColor(ThemeColor::Magenta)),
             ..Default::default()
         };
         let cfg = ThemeConfig {
@@ -1272,7 +1301,7 @@ mod tests {
     #[test]
     fn from_config_overrides_selection_fg() {
         let overrides = ThemeOverrides {
-            selection_fg: Some(SerializableColor(Color::LightYellow)),
+            selection_fg: Some(SerializableColor(ThemeColor::LightYellow)),
             ..Default::default()
         };
         let cfg = ThemeConfig {
@@ -1318,7 +1347,7 @@ mod tests {
     #[test]
     fn fkey_badge_override_applies() {
         let overrides = ThemeOverrides {
-            fkey_badge_bg: Some(SerializableColor(Color::Magenta)),
+            fkey_badge_bg: Some(SerializableColor(ThemeColor::Magenta)),
             ..Default::default()
         };
         let cfg = ThemeConfig {

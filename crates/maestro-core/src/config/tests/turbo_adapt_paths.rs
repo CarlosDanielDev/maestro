@@ -2,8 +2,7 @@ use super::*;
 
 #[test]
 fn tui_config_deserializes_color_override() {
-    use crate::config::theme::SerializableColor;
-    use ratatui::style::Color;
+    use crate::config::theme::{SerializableColor, ThemeColor};
     use std::io::Write;
     let mut f = tempfile::NamedTempFile::new().unwrap();
     write!(
@@ -26,7 +25,7 @@ text_primary = "cyan"
     let cfg = Config::load(f.path()).expect("load failed");
     assert_eq!(
         cfg.tui.theme.overrides.text_primary,
-        Some(SerializableColor(Color::Cyan))
+        Some(SerializableColor(ThemeColor::Cyan))
     );
 }
 

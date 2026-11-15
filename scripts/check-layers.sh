@@ -303,21 +303,28 @@ done < <(find src -name '*.rs' -print0 2>/dev/null)
 
 # ---------------------------------------------------------------------------
 # maestro-core crate boundary (ADR 006, #1305). The compiler already rejects
-# `crate::tui` inside core; this catches the ways around it: a frontend
-# crate, terminal I/O, or ratatui beyond the `style::Color` value type that
-# `config::theme` serializes.
+# `crate::tui` inside core; this catches the ways around it: depending on a
+# frontend crate or a terminal-UI crate (ratatui, crossterm, ...), in the
+# manifest or in source, including aliased forms like `use ratatui as rt;`.
 # ---------------------------------------------------------------------------
-CORE_SRC="crates/maestro-core/src"
-CORE_FORBIDDEN='(^|[^A-Za-z0-9_])((maestro_tui|maestro_cli|crossterm|tui_textarea|arboard)::|crate::(tui|cli|cli_team|commands|mascot)::|ratatui::)'
-if [[ -d "$CORE_SRC" ]]; then
+CORE_DIR="crates/maestro-core"
+CORE_CRATES='ratatui|crossterm|tui_textarea|arboard|maestro_tui|maestro_cli'
+CORE_FORBIDDEN="(^|[^A-Za-z0-9_])((${CORE_CRATES})[[:space:]]*::|crate::(tui|cli|cli_team|commands|mascot)::)|(^|[^A-Za-z0-9_])(use|extern[[:space:]]+crate)[[:space:]]+(::)?(${CORE_CRATES})([^A-Za-z0-9_]|$)"
+if [[ -d "$CORE_DIR/src" ]]; then
   while IFS= read -r hit; do
     [[ -z "$hit" ]] && continue
-    # `ratatui::style::…` is the one allowed ratatui path.
-    rest="${hit//ratatui::style::/}"
-    printf '%s\n' "$rest" | grep -qE "$CORE_FORBIDDEN" || continue
     echo "CORE-FRONTEND: $hit (maestro-core must not depend on a frontend)"
     violations=$((violations + 1))
-  done < <(grep -rnE "$CORE_FORBIDDEN" "$CORE_SRC" --include='*.rs' 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+  done < <(grep -rnE "$CORE_FORBIDDEN" "$CORE_DIR/src" --include='*.rs' 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+fi
+if [[ -f "$CORE_DIR/Cargo.toml" ]]; then
+  # A dependency key (`ratatui = ...`) or table (`[dependencies.ratatui]`).
+  manifest_crates="${CORE_CRATES//_/-}"
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    echo "CORE-FRONTEND: $CORE_DIR/Cargo.toml:$hit (maestro-core must not depend on a frontend)"
+    violations=$((violations + 1))
+  done < <(grep -nE "^[[:space:]]*((${manifest_crates})[[:space:]]*=|\\[[a-z-]*dependencies\\.(${manifest_crates})\\])" "$CORE_DIR/Cargo.toml" || true)
 fi
 
 if (( violations > 0 )); then
