@@ -94,7 +94,7 @@ fn is_safe_relative_path(path: &str) -> bool {
 /// planted `.claude -> ~/elsewhere` would move the containment anchor
 /// along with it (#1099). A `.claude -> dotfiles` setup is refused too;
 /// the error names the remedy instead of following the link.
-fn refuse_symlinked_root(claude_dir: &Path) -> anyhow::Result<()> {
+pub(crate) fn refuse_symlinked_root(claude_dir: &Path) -> anyhow::Result<()> {
     if std::fs::symlink_metadata(claude_dir).is_ok_and(|m| m.file_type().is_symlink()) {
         anyhow::bail!(
             "refusing to scaffold: {} is a symlink. maestro adapt only writes inside \
@@ -664,6 +664,31 @@ mod tests {
             "names the remedy, got: {msg}"
         );
         assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn cmd_adapt_refuses_symlinked_claude_root_before_analysis() {
+        // #1314: `cmd_adapt` makes three paid calls (analyze, PRD, plan)
+        // before the scaffolder. The refusal must come first. Analyze, PRD
+        // and scaffold errors are all swallowed, so a symlink error here can
+        // only come from the early check, ahead of Phase 2.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join(".claude")).unwrap();
+        let config = crate::adapt::AdaptConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let err = crate::adapt::cmd_adapt(config).await.unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("symlink"), "names the cause, got: {msg}");
+        assert!(
+            msg.contains("real directory"),
+            "names the remedy, got: {msg}"
+        );
     }
 
     #[test]

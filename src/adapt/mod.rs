@@ -112,6 +112,9 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Refuse a symlinked `.claude` before the first paid model call (#1314).
+    scaffolder::refuse_symlinked_root(&profile.root.join(".claude"))?;
+
     eprintln!("Phase 2: Analyzing with Claude...");
     let analyzer = ClaudeAnalyzer::new(model.clone());
     let report = match analyzer.analyze(&profile).await {
