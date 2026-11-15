@@ -128,6 +128,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/check-rules-drift.sh
 
+  # Shell-script tests (scripts/tests/*.bats). Not gated on `changes`: it is
+  # cheap, and bats fixtures under scripts/tests/ may be .md files the
+  # docs-only filter would skip. No untrusted input.
+  bats:
+    name: Bats Script Tests
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install bats-core (pinned commit)
+        shell: bash
+        # Fetch by commit SHA, not by tag: tags are mutable, a commit is not
+        # (same reasoning as the actionlint install). Bump VERSION + COMMIT
+        # together.
+        run: |
+          set -euo pipefail
+          VERSION="1.13.0"
+          COMMIT="3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87"
+          src="${RUNNER_TEMP}/bats-core-src"
+          git init --quiet "${src}"
+          git -C "${src}" fetch --quiet --depth 1 https://github.com/bats-core/bats-core.git "${COMMIT}"
+          git -C "${src}" checkout --quiet FETCH_HEAD
+          test "$(git -C "${src}" rev-parse HEAD)" = "${COMMIT}"
+          "${src}/install.sh" "${RUNNER_TEMP}/bats" > /dev/null
+          echo "${RUNNER_TEMP}/bats/bin" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/bats/bin/bats" --version | grep -qx "Bats ${VERSION}"
+      - name: Run bats tests
+        run: bats scripts/tests/*.bats
+
   deny:
     # Supply-chain gate: advisories, wildcards, licenses, registries.
     # Ignore list for transitive-only unmaintained advisories is documented
@@ -151,8 +182,7 @@ jobs:
     # graph that ships in release binaries, not one resolved fresh on the
     # runner.
     #
-    # RUSTSEC-2026-0002 (lru "unsound") is gated by ratatui 0.29 → 0.30 bump;
-    # see deny.toml for the per-advisory rationale.
+    # See deny.toml for the per-advisory rationale.
     name: Cargo Audit
     needs: changes
     if: needs.changes.outputs.code == 'true'
