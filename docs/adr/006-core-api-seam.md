@@ -12,7 +12,7 @@
 
 Maestro is one crate. Any file in `src/tui/` can import any internal type, and
 does: the TUI reaches 33 top-level modules, the CLI (`src/main.rs`,
-`src/cli.rs`, `src/cli_team.rs`, `src/commands/`) reaches 24. Before #1305
+`src/cli.rs`, `src/cli_team.rs`, `src/commands/`) reaches 27. Before #1305
 moves any file, the frontends need a written list of what they may consume,
 or the split lands on a boundary made of `pub` soup.
 
@@ -65,33 +65,43 @@ a core enum:
 |--------------------------------------------|-----------------------------------------------|
 | `None`, `Push`, `Pop`, `PushTeamWizard`, `OpenIssueWizardForMilestone`, `OpenFleetRow`, `PreviewTheme`, `LogActivity`, `OpenWorktreeShell` | `LaunchSession`, `LaunchSessions`, `LaunchPromptSession`, `LaunchUnifiedSession`, `LaunchTeam`, `LaunchQueue`, `LaunchConflictFix`, `LaunchCiFix`, `RetryHollow`, `ResumeOrLaunchIssue`, `AdoptSession`, `SendInteractionTurn`, `QuitInteraction`, `UpdateConfig`, `ResetSettingsFromDetection`, `NormalizeAgentConfig`, `StartAdaptPipeline`, `SubmitPrReview`, `CheckForUpdate`, `FetchPrDetail`, `RefreshSuggestions`, `OpenInteractionDiff` |
 
-The right column's payload types (`SessionConfig`, `PromptSessionConfig`,
-`UnifiedSessionConfig`, `ConflictFixConfig`, `CiFixConfig`, `TeamInput`,
-`AdaptConfig`) move to core with the enum. The exact enum name and shape is
-#1305's call; this ADR fixes only which variants cross the seam.
+Only the right column's payload types that live under `src/tui/` move to
+core with the enum: `SessionConfig`, `PromptSessionConfig`,
+`UnifiedSessionConfig`, `ConflictFixConfig`, `CiFixConfig`
+(`src/tui/screens/mod.rs`; `SessionConfig` also has a twin in
+`src/tui/app/types.rs`). `TeamInput` (`orchestration::types`) and
+`AdaptConfig` (`adapt`) already live in core modules. The exact enum name and
+shape is #1305's call; this ADR fixes only which variants cross the seam.
 
 ---
 
 ## API sketch — what each frontend consumes
 
-Measured 2026-11-15 on `origin/main` (`bebde64`): every `crate::<module>::…`
-path in non-test code (`#[cfg(test)]` modules and `*test*.rs` files
-excluded; no grouped `use crate::{…}` imports exist in either frontend). A
-module both frontends reach is core API. Symbols listed are the ones used,
-not the whole module.
+Measured 2026-11-15 on `origin/main` (`bebde64`) over non-test code
+(`#[cfg(test)]` modules, `*test*.rs` files and comments excluded). Counted:
+every `use` tree, expanded (`use crate::a::{B, c::D}` gives two paths), and
+every inline path that names a top-level module — `crate::<module>::…`
+anywhere, bare `<module>::…` in the crate root `src/main.rs` (where
+`adapt::cmd_adapt`, `config::run_startup_migration`, `insight::run_cli` and
+`sanitize::cmd_sanitize` are called without `crate::`), and bare paths in
+files that `use crate::<module>;`. Top-level modules are the `mod` lines of
+`src/main.rs`. A module both frontends reach is core API. Symbols listed are
+the ones used, not the whole module.
 
 ### Both frontends → core API
 
 | Module | TUI uses | CLI uses |
 |--------|----------|----------|
 | `session` | `SessionEvent`, `ManagedSession`, `pool::SessionPool`, `interaction::{TurnEvent, TurnRecord, TurnState}`, `logger::SessionLogger`, `discovery`, `adopt`, `fork` | `types::{Session, SessionStatus}`, `logger::SessionLogger`, `cleanup::CleanupManager`, `worktree::{WorktreeManager, GitWorktreeManager}`, `role`, `image` |
-| `config` | `Config` (`load`, `find_and_load_in`), `AgentsConfig`, `LayoutConfig`, `schema::*`, `plan_agent_config_upgrade` | `Config`, `LoadedConfig`, `ResolvedAgentConfig`, `AgentKind`, `agents_remote_auth`, `transport_warning` |
+| `config` | `Config` (`load`, `find_and_load_in`), `AgentsConfig`, `LayoutConfig`, `schema::*`, `plan_agent_config_upgrade` | `Config`, `LoadedConfig`, `ResolvedAgentConfig`, `NotificationsConfig`, `AgentKind`, `run_startup_migration`, `agents_remote_auth`, `transport_warning` |
 | `state` | `store::StateStore`, `types::{MaestroState, TeamRun, IssueNumber}`, `file_claims`, `progress`, `prompt_history` | `store::StateStore`, `types::MaestroState` |
 | `orchestration` | `scheduler::Scheduler`, `team::{ResolvedTeam, TeamConfig}`, `loader::Loader`, `dag`, `preflight`, `cost::estimate_cost_usd` | `scheduler::Scheduler`, `team::ResolvedTeam`, `loader::Loader`, `dag`, `dispatch`, `primitives` |
 | `agent_provider` | `quota::*`, `claude_pricing::UNPRICED_MODEL_CODE`, `types::AgentHealthCheck` | `AgentProvider`, `AgentProviderFactory`, the per-vendor providers, `minimax` |
 | `provider` | `RepoProvider`, `create_provider`, `types::{Issue, Milestone, PullRequest}`, `github::*` | `create_provider`, `types::Issue`, `github::client` |
 | `work` | `assigner::WorkAssigner`, `queue::WorkQueue`, `executor::QueueExecutor`, `types::{WorkItem, WorkStatus}`, `conflicts`, `activity` | `assigner::WorkAssigner`, `types::WorkItem`, `conflicts` |
 | `budget` | `BudgetEnforcer`, `projector::BudgetProjector`, `quota_snapshot`, `sanitize` | `BudgetEnforcer::new` |
+| `adapt` | `AdaptConfig`, `analyzer`, `planner`, `materializer`, `scanner`, `prd_source::PrdSource`, `suggestions`, `knowledge` | `cmd_adapt`, `cmd_prd`, `AdaptConfig`, `PrdConfig`, `prd_source::PrdSource` |
+| `sanitize` (non-screen part) | `screen::SanitizeScreen` only — see TUI only | `cmd_sanitize`, `SanitizeConfig`, `OutputFormat`, `Severity` |
 | `flags` | `Flag`, `FlagSource`, `store::FeatureFlags` | `Flag`, `store::FeatureFlags` |
 | `review` | `dispatch::ReviewDispatcher`, `council`, `auto_review`, `bypass::BypassSource`, `types` | `bypass::BypassSource` |
 | `gates` | `runner::{GateRunner, GateCheck}`, `types::{CompletionGate, GateResult}` | `UntrustedGateRunner` |
@@ -99,23 +109,25 @@ not the whole module.
 | `settings` | `SettingsStore`, `CavemanModeState` | `FsSettingsStore` |
 | `modes` | `resolve_mode_for_labels`, `resolve_session_mode_config`, `mode_from_labels` | `resolve_mode_for_labels`, `resolve_session_mode_config` |
 | `prompts` | `PromptBuilder`, `resolve_guardrail` | `PromptBuilder::build_issue_prompt_with_images` |
-| `plugins`, `models`, `continuous`, `turboquant`, `init`, `util` | `PluginRunner`, `ModelRouter`, `ContinuousModeState`, `turboquant::adapter::TurboQuantAdapter`, `init::walk`, `util` formatting/validation helpers | `PluginRunner`, `ModelRouter::new`, `ContinuousModeState::new`, `turboquant::{pipeline, types}`, `init`, `util::validate_branch_name` |
+| `plugins`, `models`, `continuous`, `turboquant`, `init`, `util` | `PluginRunner`, `ModelRouter`, `ContinuousModeState`, `turboquant::adapter::TurboQuantAdapter`, `init::{walk, render_or_merge}`, `util` formatting/validation helpers | `PluginRunner`, `ModelRouter::new`, `ContinuousModeState::new`, `turboquant::{pipeline, types}`, `init::{render_or_merge, scaffold, ignore}`, `util::validate_branch_name` |
 
 ### TUI only
 
-`adapt`, `prd`, `milestone_health`, `updater`, `changelog`, `git` (`GitOps`,
+`prd`, `milestone_health`, `updater`, `changelog`, `git` (`GitOps`,
 `CliGitOps`), `system` (`ResourceMonitor`) — domain or I/O work with no
 ratatui; **core**, reached today only through TUI screens.
 
-`mascot`, `icons`, `icon_mode`, `sanitize::screen` — presentation. Two hold
+`mascot`, `icons`, `icon_mode`, `sanitize::screen` — presentation. The rest
+of `sanitize` (scanner, `cmd_sanitize`, report types) is core: the CLI calls
+it (row above). Two hold
 ratatui code outside `src/tui/` (`src/mascot/widget.rs`,
 `src/sanitize/screen.rs`); **these move to `maestro-tui`** (or split the
 widget out) — core must not depend on ratatui.
 
 ### CLI only
 
-`doctor`, `templates` — **core** (no frontend code; the TUI may use them
-later).
+`doctor`, `templates`, `insight` (`insight::run_cli`) — **core** (no
+frontend code; the TUI may use them later).
 
 ### Frontend ↔ frontend edges (must be cut by #1305–#1307)
 
@@ -130,9 +142,14 @@ later).
 
 ## Consequences
 
-- #1305 makes the tables above the `pub` surface of `maestro-core`; anything
-  not listed stays `pub(crate)`. Adding to the surface is a one-line edit to
-  this ADR in the same PR.
+- #1305 makes the tables above the `pub` surface of `maestro-core`: the
+  "Both frontends", "TUI only" (core part) and "CLI only" sections, including
+  every CLI entry point listed (`adapt::cmd_adapt`, `adapt::cmd_prd`,
+  `sanitize::cmd_sanitize`, `insight::run_cli`, `doctor::*`,
+  `config::run_startup_migration`, `templates`). Anything not listed may
+  become `pub(crate)`. If #1305 finds another symbol a frontend calls, it is
+  added to the surface with a one-line edit to this ADR in the same PR —
+  never made `pub(crate)` and broken.
 - `maestro-cli` depends on `maestro-core` and on `maestro-tui` through one
   launch entry point — the epic's "frontends depend only on core" holds for
   everything except starting the TUI.

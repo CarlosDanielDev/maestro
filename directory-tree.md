@@ -975,9 +975,9 @@ maestro/
 
 | Future crate | Today's paths | May consume |
 |--------------|---------------|-------------|
-| `maestro-core` | every other `src/` module, except the ratatui code outside `src/tui/` (`src/mascot/widget.rs`, `src/sanitize/screen.rs`), which moves to `maestro-tui` | nothing from either frontend |
+| `maestro-core` | every other `src/` module (23 shared by both frontends, incl. `adapt` and non-screen `sanitize`), except the ratatui code outside `src/tui/` (`src/mascot/widget.rs`, `src/sanitize/screen.rs`), which moves to `maestro-tui` | nothing from either frontend |
 | `maestro-tui` | `src/tui/` | core API only: session events (`SessionEvent` / `StreamEvent`), costs, config, the core `Action` enum, `StateStore` reads |
-| `maestro-cli` | `src/main.rs`, `src/cli.rs`, `src/cli_team.rs`, `src/commands/` | core API + one TUI launch entry point (`maestro_tui::run`) |
+| `maestro-cli` | `src/main.rs`, `src/cli.rs`, `src/cli_team.rs`, `src/commands/` | core API (incl. the CLI entry points `adapt::cmd_adapt`/`cmd_prd`, `sanitize::cmd_sanitize`, `insight::run_cli`, `doctor`, `templates`) + one TUI launch entry point (`maestro_tui::run`) |
 
 Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI → TUI internals (`HomeScreen`, `TuiCommand`, `LogLevel`, `strip_ansi`). Full symbol lists live in the ADR.
 
