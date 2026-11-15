@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::path::{Component, Path};
 
-use crate::util::write_no_follow;
+use crate::util::{create_dir_contained, write_no_follow};
 
 use super::prompts;
 use super::types::{
@@ -122,8 +122,10 @@ fn write_scaffold_files(
             continue;
         }
 
-        if let Some(parent) = target.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
+        // Contained mkdir: a symlinked subdir must not get even an empty
+        // directory created behind it (#1313).
+        if let Some(parent) = Path::new(&entry.path).parent()
+            && let Err(e) = create_dir_contained(claude_dir, parent)
         {
             files.push(ScaffoldedFile {
                 path: rel_display,
@@ -520,6 +522,28 @@ mod tests {
         assert!(
             !outside.path().join("qa.md").exists(),
             "scaffold content must not land outside .claude/ via a symlinked dir"
+        );
+    }
+
+    #[test]
+    fn scaffold_symlinked_subdir_creates_no_dir_outside() {
+        // #1313: the per-entry mkdir must not follow `.claude/agents -> ~/x`
+        // and leave an empty `~/x/nested/` behind before the write is refused.
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), claude_dir.join("agents")).unwrap();
+
+        let entries = vec![entry("agents/nested/qa.md", "qa agent")];
+        let result = write_scaffold_files(&claude_dir, &entries).unwrap();
+
+        assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
+        assert_eq!(
+            std::fs::read_dir(outside.path()).unwrap().count(),
+            0,
+            "nothing, not even an empty dir, may land behind the symlinked agents/"
         );
     }
 

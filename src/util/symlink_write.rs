@@ -7,7 +7,7 @@
 
 use std::io;
 use std::io::Write as _;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 /// True when `path` exists in any form, including a symlink — unlike
 /// `Path::exists`, which follows links and reports a dangling symlink as
@@ -80,34 +80,30 @@ pub fn write_no_follow(path: &Path, body: &str) -> io::Result<()> {
     }
 }
 
-/// Write `body` to `root/rel` via [`write_no_follow`], creating missing
-/// parent directories one at a time and refusing when any existing component
-/// between `root` and the file is a symlink (a repo-planted `.maestro ->
-/// ~/x` or `docs -> ~/x`, #1099). `root` itself is trusted: it is the
-/// project directory the user pointed maestro at.
-pub fn write_contained(root: &Path, rel: &Path, body: &str) -> io::Result<()> {
+/// Create the directory `root/rel` one component at a time, like
+/// `create_dir_all`, but refuse when any existing component between `root`
+/// and the leaf is a symlink, so a repo-planted `.claude/agents -> ~/x`
+/// cannot make maestro create even an empty directory outside the project
+/// (#1313). `root` itself is trusted. Returns the created path.
+pub fn create_dir_contained(root: &Path, rel: &Path) -> io::Result<PathBuf> {
     let mut dir = root.to_path_buf();
-    let mut components = rel.components().peekable();
-    while let Some(component) = components.next() {
+    for component in rel.components() {
         let Component::Normal(name) = component else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
-                    "refusing to write {}: not a plain relative path",
+                    "refusing to create {}: not a plain relative path",
                     rel.display()
                 ),
             ));
         };
         dir.push(name);
-        if components.peek().is_none() {
-            break;
-        }
         match std::fs::symlink_metadata(&dir) {
             Ok(meta) if meta.file_type().is_symlink() => {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     format!(
-                        "refusing to write {}: parent {} is a symlink",
+                        "refusing to create {}: {} is a symlink",
                         root.join(rel).display(),
                         dir.display()
                     ),
@@ -118,7 +114,26 @@ pub fn write_contained(root: &Path, rel: &Path, body: &str) -> io::Result<()> {
             Err(e) => return Err(e),
         }
     }
-    write_no_follow(&dir, body)
+    Ok(dir)
+}
+
+/// Write `body` to `root/rel` via [`write_no_follow`], creating missing
+/// parent directories with [`create_dir_contained`]: refuses when any
+/// existing component between `root` and the file is a symlink (a
+/// repo-planted `.maestro -> ~/x` or `docs -> ~/x`, #1099). `root` itself is
+/// trusted: it is the project directory the user pointed maestro at.
+pub fn write_contained(root: &Path, rel: &Path, body: &str) -> io::Result<()> {
+    let (Some(parent), Some(name)) = (rel.parent(), rel.file_name()) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "refusing to write {}: not a plain relative path",
+                rel.display()
+            ),
+        ));
+    };
+    let dir = create_dir_contained(root, parent)?;
+    write_no_follow(&dir.join(name), body)
 }
 
 #[cfg(test)]
@@ -293,6 +308,54 @@ mod tests {
         write_contained(dir.path(), Path::new("docs/PRD.md"), "pwned").unwrap_err();
 
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL");
+    }
+
+    // ── Contained mkdir (#1313) ───────────────────────────────────────
+
+    #[test]
+    fn create_dir_contained_creates_nested_dirs() {
+        let dir = TempDir::new().unwrap();
+
+        let created = create_dir_contained(dir.path(), Path::new("a/b/c")).unwrap();
+
+        assert_eq!(created, dir.path().join("a/b/c"));
+        assert!(created.is_dir());
+    }
+
+    #[test]
+    fn create_dir_contained_reuses_existing_dirs() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        std::fs::write(dir.path().join("a/b/keep.md"), "keep").unwrap();
+
+        create_dir_contained(dir.path(), Path::new("a/b")).unwrap();
+
+        let kept = dir.path().join("a/b/keep.md");
+        assert_eq!(std::fs::read_to_string(kept).unwrap(), "keep");
+    }
+
+    #[test]
+    fn create_dir_contained_refuses_symlinked_component_creating_nothing_outside() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join("agents")).unwrap();
+
+        let err = create_dir_contained(dir.path(), Path::new("agents/nested")).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("symlink"), "got: {err}");
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn create_dir_contained_refuses_symlink_as_last_component() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join("agents")).unwrap();
+
+        create_dir_contained(dir.path(), Path::new("agents")).unwrap_err();
     }
 
     #[test]

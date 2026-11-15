@@ -262,10 +262,8 @@ fn export_prd(app: &mut App) {
     let Some(prd) = app.prd.as_ref() else {
         return;
     };
-    let path = repo_root().join("PRD.md");
-    let body = to_markdown(prd);
-    match std::fs::write(&path, body) {
-        Ok(()) => app.activity_log.push_simple(
+    match write_prd_export(&repo_root(), prd) {
+        Ok(path) => app.activity_log.push_simple(
             "PRD".into(),
             format!("Exported PRD to {}", path.display()),
             LogLevel::Info,
@@ -276,6 +274,13 @@ fn export_prd(app: &mut App) {
             LogLevel::Error,
         ),
     }
+}
+
+/// Write `PRD.md` at `root`, refusing a repo-planted symlink there (#1313).
+fn write_prd_export(root: &std::path::Path, prd: &Prd) -> std::io::Result<std::path::PathBuf> {
+    let rel = std::path::Path::new("PRD.md");
+    crate::util::write_contained(root, rel, &to_markdown(prd))?;
+    Ok(root.join(rel))
 }
 
 fn queue_sync(app: &mut App) {
@@ -334,5 +339,47 @@ mod tests {
             .as_ref()
             .is_some_and(|s| s.pending_reset);
         assert!(!armed, "a non-R key must cancel the armed reset");
+    }
+
+    // ── Export symlink hardening (#1313) ──────────────────────────────
+
+    #[test]
+    fn export_writes_prd_md_at_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("PRD.md"), "old").unwrap();
+
+        let path = write_prd_export(dir.path(), &Prd::new()).unwrap();
+
+        assert_eq!(path, dir.path().join("PRD.md"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            to_markdown(&Prd::new())
+        );
+    }
+
+    #[test]
+    fn export_refuses_symlinked_prd_md_leaving_victim_untouched() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let victim = outside.path().join("victim.md");
+        std::fs::write(&victim, "ORIGINAL").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("PRD.md")).unwrap();
+
+        let err = write_prd_export(dir.path(), &Prd::new()).unwrap_err();
+
+        assert!(err.to_string().contains("symlink"), "got: {err}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL");
+    }
+
+    #[test]
+    fn export_refuses_dangling_symlinked_prd_md() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let victim = outside.path().join("victim.md");
+        std::os::unix::fs::symlink(&victim, dir.path().join("PRD.md")).unwrap();
+
+        write_prd_export(dir.path(), &Prd::new()).unwrap_err();
+
+        assert!(!victim.exists(), "dangling link must not create the target");
     }
 }

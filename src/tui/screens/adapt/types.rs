@@ -94,15 +94,18 @@ impl AdaptResults {
         std::path::PathBuf::from(".maestro").join("adapt-cache.json")
     }
 
-    /// Save current results to cache file. Silently ignores errors.
+    /// Save current results to cache file. A failed write is logged, never
+    /// fatal: the cache only speeds up a resumed run.
     pub fn save_cache(&self) {
-        let path = Self::cache_path();
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        if let Err(e) = self.save_cache_in(std::path::Path::new(".")) {
+            tracing::warn!("adapt cache not saved: {e}");
         }
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(&path, json);
-        }
+    }
+
+    fn save_cache_in(&self, root: &std::path::Path) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        // Refuses a repo-planted `.maestro -> ~/x` or symlinked cache file (#1313).
+        crate::util::write_contained(root, &Self::cache_path(), &json)
     }
 
     /// Load cached results if available.
@@ -145,6 +148,49 @@ pub struct AdaptError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Cache symlink hardening (#1313) ───────────────────────────────
+
+    #[test]
+    fn save_cache_in_writes_cache_under_real_maestro_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        AdaptResults::default().save_cache_in(dir.path()).unwrap();
+
+        let written = dir.path().join(".maestro/adapt-cache.json");
+        let data = std::fs::read_to_string(written).unwrap();
+        assert!(serde_json::from_str::<AdaptResults>(&data).is_ok());
+    }
+
+    #[test]
+    fn save_cache_in_refuses_symlinked_maestro_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join(".maestro")).unwrap();
+
+        let err = AdaptResults::default()
+            .save_cache_in(dir.path())
+            .unwrap_err();
+
+        assert!(err.to_string().contains("symlink"), "got: {err}");
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn save_cache_in_refuses_symlinked_cache_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let victim = outside.path().join("victim.json");
+        std::fs::write(&victim, "ORIGINAL").unwrap();
+        std::fs::create_dir_all(dir.path().join(".maestro")).unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join(".maestro/adapt-cache.json")).unwrap();
+
+        AdaptResults::default()
+            .save_cache_in(dir.path())
+            .unwrap_err();
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL");
+    }
 
     #[test]
     fn adapt_step_copy_semantics() {
