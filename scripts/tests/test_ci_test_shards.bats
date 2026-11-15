@@ -17,26 +17,12 @@ job_block() {
   ' "$CI"
 }
 
-@test "build job compiles the tests once into a nextest archive" {
-  block="$(job_block test-build)"
-  [ -n "$block" ]
-  [[ "$block" == *"cargo nextest archive --locked --archive-file nextest-archive.tar.zst"* ]] || false
-  [[ "$block" == *"actions/upload-artifact@"* ]] || false
-}
-
-@test "shard job is a 4-way nextest hash partition over the archive" {
+@test "shard job is a 4-way nextest hash partition" {
   block="$(job_block test-shard)"
   [ -n "$block" ]
-  [[ "$block" == *"needs: [changes, test-build]"* ]] || false
-  [[ "$block" == *"actions/download-artifact@"* ]] || false
   [[ "$block" == *"shard: [1, 2, 3, 4]"* ]] || false
-  [[ "$block" == *'cargo nextest run --archive-file nextest-archive.tar.zst --workspace-remap . --partition hash:${{ matrix.shard }}/4'* ]] || false
+  [[ "$block" == *'cargo nextest run --locked --partition hash:${{ matrix.shard }}/4'* ]] || false
   [[ "$block" == *'INSTA_UPDATE: "no"'* ]] || false
-}
-
-@test "shards do not rebuild the crate" {
-  block="$(job_block test-shard)"
-  [[ "$block" != *"Swatinem/rust-cache@"* ]] || false
 }
 
 @test "required check name Test is kept by the aggregator job" {
