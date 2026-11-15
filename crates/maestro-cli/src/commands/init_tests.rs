@@ -26,7 +26,7 @@ fn init_manifest_toml_matches_canonical_bytes() {
 
     let written = std::fs::read(dir.path().join(".maestro/templates/manifest.toml"))
         .expect("manifest.toml must be readable after init");
-    let canonical = include_bytes!("../../template/.maestro/templates/manifest.toml");
+    let canonical = include_bytes!("../../../../template/.maestro/templates/manifest.toml");
     assert_eq!(
         written.as_slice(),
         canonical.as_slice(),

@@ -51,23 +51,8 @@ impl Clipboard for SystemClipboard {
     }
 }
 
-/// Strip ANSI escape sequences (CSI, SGR, OSC, …) from `input` and any
-/// residual C0 control bytes (NUL, BEL, BS, DEL, …) that the underlying
-/// parser may pass through. LF (`\n`) is preserved; the underlying
-/// `strip-ansi-escapes` (vte) also drops TAB and CR as part of its
-/// terminal-state-machine handling. The post-filter is defence in
-/// depth: if the parser ever leaves a control byte through, it doesn't
-/// reach the OS clipboard (some platforms truncate at NUL).
-pub fn strip_ansi(input: &str) -> String {
-    strip_ansi_escapes::strip_str(input)
-        .chars()
-        .filter(|c| {
-            let code = *c as u32;
-            // Drop C0 (0x00..=0x1F) and DEL (0x7F), except 0x0A LF.
-            !matches!(code, 0x00..=0x09 | 0x0B..=0x1F | 0x7F)
-        })
-        .collect()
-}
+// Moved to core in #1307 so the headless `maestro logs` can share it.
+pub use crate::util::sanitize::strip_ansi;
 
 #[cfg(test)]
 pub(crate) mod testing {

@@ -7,7 +7,7 @@
 
 use std::fs;
 
-use maestro::commands::sync_templates::golden_rules::{GoldenRulesError, splice};
+use maestro_cli::commands::sync_templates::golden_rules::{GoldenRulesError, splice};
 
 #[test]
 fn splice_round_trip_against_real_repo_canonical_body_is_idempotent() {

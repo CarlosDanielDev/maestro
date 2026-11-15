@@ -18,10 +18,6 @@ mod concurrent_sessions;
 #[cfg(test)]
 mod docs_gen;
 #[cfg(test)]
-mod doctor_run_health_check;
-#[cfg(test)]
-mod init;
-#[cfg(test)]
 mod orchestration_dispatch;
 #[cfg(test)]
 mod orchestration_dispatch_routing;

@@ -56,7 +56,7 @@ hints used by tooling but does **not** define new placeholders.
 The canonical declarations live in
 `.maestro/templates/manifest.toml`. Argument enforcement is implemented in
 `src/templates/manifest.rs` and the renderer in
-`src/commands/sync_templates/`.
+`crates/maestro-cli/src/commands/sync_templates/`.
 
 ---
 
@@ -65,7 +65,7 @@ The canonical declarations live in
 1. Create the canonical file under `.maestro/templates/commands/<name>.md`.
    Front-matter is plain Markdown; placeholders use `{{...}}` syntax.
 2. Register the command in the renderer's command registry (see
-   `src/commands/sync_templates/`) so it is picked up by the sync flow.
+   `crates/maestro-cli/src/commands/sync_templates/`) so it is picked up by the sync flow.
 3. Add a byte-identical regression assertion in `tests/templates_render.rs`
    so any unintentional change to the rendered output is caught.
 4. Run `maestro sync-templates` to regenerate the provider artifacts; commit

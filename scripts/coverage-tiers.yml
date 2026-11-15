@@ -23,7 +23,7 @@ tiers:
       - "crates/maestro-core/src/gates/**"
       - "crates/maestro-core/src/provider/**"
       - "src/config.rs"
-      - "src/cli.rs"
+      - "crates/maestro-cli/src/cli.rs"
 
   tui:
     floor: 70.0

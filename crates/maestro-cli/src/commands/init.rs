@@ -1,8 +1,4 @@
 use anyhow::{Context, Result};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    terminal,
-};
 use regex::Regex;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
@@ -19,8 +15,9 @@ use crate::provider::{detect_provider_from_remote, types::ProviderKind};
 
 /// Public entry point used by the CLI. Forwards to [`cmd_init_inner`]
 /// against the real filesystem and converts the logical exit code into
-/// either `Ok(())` (success) or a process-exit (failure).
-pub fn cmd_init(reset: bool, non_interactive: bool) -> Result<()> {
+/// either `Ok(())` (success) or a process-exit (failure). The binary passes
+/// the terminal `prompter` so this crate carries no terminal-UI code (#1307).
+pub fn cmd_init(reset: bool, non_interactive: bool, prompter: &mut dyn InitPrompter) -> Result<()> {
     let cwd = std::env::current_dir().context("reading current working directory")?;
     let root = find_project_root(&cwd);
     let detector = FsProjectDetector::new();
@@ -30,12 +27,11 @@ pub fn cmd_init(reset: bool, non_interactive: bool) -> Result<()> {
         } else {
             let remote_output = git_remote_verbose(&root);
             let remote_url = first_origin_remote_url(&remote_output);
-            let mut prompter = TerminalInitPrompter;
             cmd_init_inner_with_options(
                 reset,
                 &root,
                 &detector,
-                InitOptions::interactive(remote_url.as_deref(), &mut prompter),
+                InitOptions::interactive(remote_url.as_deref(), prompter),
             )?
         };
     if code != 0 {
@@ -283,100 +279,6 @@ pub fn prompt_azdo_fields(prompter: &mut dyn InitPrompter) -> Result<(String, St
     };
 
     Ok((organization, az_project))
-}
-
-struct TerminalInitPrompter;
-
-impl InitPrompter for TerminalInitPrompter {
-    fn choose_provider(&mut self, detected: ProviderKind) -> Result<ProviderKind> {
-        let default_key = match detected {
-            ProviderKind::Github => "G",
-            ProviderKind::AzureDevops => "A",
-        };
-        eprintln!(
-            "Provider [{}]: press Enter for detected default, g for GitHub, a for Azure DevOps",
-            default_key
-        );
-        loop {
-            let key = read_key()?;
-            match key.code {
-                KeyCode::Enter => return Ok(detected),
-                KeyCode::Char('g') | KeyCode::Char('G') => return Ok(ProviderKind::Github),
-                KeyCode::Char('a') | KeyCode::Char('A') => return Ok(ProviderKind::AzureDevops),
-                KeyCode::Esc | KeyCode::Char('c')
-                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                {
-                    anyhow::bail!("maestro init aborted")
-                }
-                _ => eprintln!("Choose g, a, or Enter."),
-            }
-        }
-    }
-
-    fn prompt_azdo_organization(&mut self) -> Result<String> {
-        prompt_line("Azure DevOps organization URL")
-    }
-
-    fn prompt_azdo_project(&mut self) -> Result<String> {
-        prompt_line("Azure DevOps project")
-    }
-}
-
-fn read_key() -> Result<KeyEvent> {
-    let _raw = RawModeGuard::new()?;
-    let result = loop {
-        if let Event::Key(key) = event::read().context("reading terminal event")? {
-            break key;
-        }
-    };
-    Ok(result)
-}
-
-fn prompt_line(label: &str) -> Result<String> {
-    eprint!("{label}: ");
-    std::io::stderr().flush().context("flushing prompt")?;
-    let _raw = RawModeGuard::new()?;
-    let mut value = String::new();
-    loop {
-        if let Event::Key(key) = event::read().context("reading terminal event")? {
-            match key.code {
-                KeyCode::Enter => {
-                    eprintln!();
-                    return Ok(value);
-                }
-                KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('d')
-                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                {
-                    anyhow::bail!("maestro init aborted")
-                }
-                KeyCode::Backspace if value.pop().is_some() => {
-                    eprint!("\u{8} \u{8}");
-                    std::io::stderr().flush().context("flushing prompt")?;
-                }
-                KeyCode::Char(c) => {
-                    value.push(c);
-                    eprint!("{c}");
-                    std::io::stderr().flush().context("flushing prompt")?;
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-struct RawModeGuard;
-
-impl RawModeGuard {
-    fn new() -> Result<Self> {
-        terminal::enable_raw_mode().context("enabling raw mode")?;
-        Ok(Self)
-    }
-}
-
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
-    }
 }
 
 #[cfg(test)]

@@ -101,7 +101,7 @@ maestro/
 │           ├── pushup.md                  # Canonical port of .claude/commands/pushup.md (203 lines)  [Issue #702]
 │           ├── plan-feature.md            # Canonical port of .claude/commands/plan-feature.md (110 lines)  [Issue #702]
 │           └── simplify.md               # New canonical spec (no .claude/commands/ ancestor) (118 lines)  [Issue #702]
-├── crates/                                # Cargo workspace members (ADR 006); core moved in by #1305, TUI by #1306, CLI follows in #1307  [Issue #1304, #1305, #1306]
+├── crates/                                # Cargo workspace members (ADR 006); core moved in by #1305, TUI by #1306, CLI by #1307  [Issue #1304, #1305, #1306, #1307]
 │   ├── maestro-core/                      # Shared core library; depends on no frontend. Holds every core module (session, config, state, orchestration, providers, budget, git, ...) moved out of `src/` as-is; the per-file notes under `src/` below for those modules still apply at `crates/maestro-core/src/<same path>`. `test-util` feature exposes test doubles to the root crate's tests  [Issue #1305]
 │   │   ├── Cargo.toml
 │   │   └── src/lib.rs                     # `pub mod` for each core module; root `src/lib.rs`/`src/main.rs` re-export them so `crate::<module>` paths keep working
@@ -110,7 +110,7 @@ maestro/
 │   │   └── src/
 │   │       ├── lib.rs                     # `pub mod tui`, `mascot`, `setup`; `pub(crate) use maestro_core::<module>` keeps the TUI's `crate::<module>` paths; root `src/lib.rs`/`src/main.rs` re-export `tui`/`mascot`
 │   │       └── integration_tests/         # TUI-driven integration tests moved from `src/integration_tests/` (fleet board, adopt picker, gates, WIP backup, ...)  [Issue #1306]
-│   └── maestro-cli/                       # CLI frontend; depends on `maestro-core` + `maestro-tui` (TUI launch entry point)
+│   └── maestro-cli/                       # CLI frontend; depends on `maestro-core` only. Holds `cli.rs`/`cli_team.rs` (clap), the headless `commands/` (init, doctor, status, sync-templates, team, ...) and `dispatch`; the binary keeps the TUI-opening commands (`maestro`, `run`, `resume`) and the crossterm `init` prompter (`src/init_prompter.rs`)  [Issue #1307]
 │       ├── Cargo.toml
 │       └── src/lib.rs
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
@@ -946,7 +946,7 @@ maestro/
 │   ├── legacy_skills_removed.rs           # 4 regression-guard tests asserting that `.claude/skills/simplify/` is absent from disk; prevents accidental re-introduction of the deprecated simplify skill  [Issue #760]
 │   ├── teams_cookbook_fixtures.rs         # Integration tests validating all six `tests/fixtures/teams_cookbook/*.toml` files parse and resolve correctly via `Loader::resolve`  [Issue #675]
 │   ├── tui_design_system.rs               # CI tests: doc drift (names cited in docs/tui-design-system.md must exist in src/ or tests/) and no raw `Color::` in src/tui/screens (allowlist can only shrink)
-│   ├── workspace_skeleton.rs              # Guards the workspace: the three `crates/` are `[workspace].members`, and dependency direction follows ADR 006 (core depends on no frontend, TUI never on CLI)  [Issue #1304]
+│   ├── workspace_skeleton.rs              # Guards the workspace: the three `crates/` are `[workspace].members`, and dependency direction follows ADR 006 (core depends on no frontend, TUI never on CLI, CLI on core only; CLI code lives in `crates/maestro-cli`)  [Issue #1304, #1307]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   ├── config_roundtrip/              # TOML fixtures used by roundtrip_overlay and roundtrip_overlay_single_key tests to verify comment-preserving saves  [Issue #712]
 │   │   ├── dynamic_config/                # TOML fixtures for overlay_dynamic round-trip tests: add/remove/reorder entries in dynamic sections while preserving comments  [Issue #790]
@@ -984,13 +984,13 @@ maestro/
 
 ## Core API Seam (planned workspace split)
 
-> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). The workspace skeleton (`crates/`, #1304) exists; #1305 moved the core modules into `crates/maestro-core`, #1306–#1307 move the TUI and CLI.
+> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). The workspace skeleton (`crates/`, #1304) exists; #1305 moved the core modules into `crates/maestro-core`, #1306 the TUI into `crates/maestro-tui`, #1307 the CLI into `crates/maestro-cli`.
 
 | Future crate | Today's paths | May consume |
 |--------------|---------------|-------------|
 | `maestro-core` | every other `src/` module (23 shared by both frontends, incl. `adapt` and non-screen `sanitize`), except the ratatui code outside `src/tui/` (`src/mascot/widget.rs`, `src/sanitize/screen.rs`), which moves to `maestro-tui` | nothing from either frontend |
 | `maestro-tui` | `src/tui/` | core API only: session events (`SessionEvent` / `StreamEvent`), costs, config, the core `Action` enum, `StateStore` reads |
-| `maestro-cli` | `src/main.rs`, `src/cli.rs`, `src/cli_team.rs`, `src/commands/` | core API (incl. the CLI entry points `adapt::cmd_adapt`/`cmd_prd`, `sanitize::cmd_sanitize`, `insight::run_cli`, `doctor`, `templates`) + one TUI launch entry point (`maestro_tui::run`) |
+| `maestro-cli` | `crates/maestro-cli/src/` (`cli.rs`, `cli_team.rs`, `commands/`) | core API only (incl. the CLI entry points `adapt::cmd_adapt`/`cmd_prd`, `sanitize::cmd_sanitize`, `insight::run_cli`, `doctor`, `templates`); the `maestro` binary opens the TUI (ADR 006 #1307 amendment) |
 
 Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI → TUI internals (`HomeScreen`, `TuiCommand`, `LogLevel`, `strip_ansi`). Full symbol lists live in the ADR.
 
@@ -1020,7 +1020,7 @@ Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI �
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
 | `.maestro/templates/commands/` | Canonical command specs; four files ported/created in Issue #702: `implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md` |
 | `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
-| `crates/` | Cargo workspace members `maestro-core` (core modules, #1305), `maestro-tui`, `maestro-cli` (empty until #1306–#1307) (ADR 006, Issue #1304) |
+| `crates/` | Cargo workspace members `maestro-core` (core modules, #1305), `maestro-tui` (TUI, #1306), `maestro-cli` (CLI, #1307) (ADR 006, Issue #1304) |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
 | `docs/configuration.md` | Authoritative `maestro.toml` reference — every `[table]` with field types, defaults, and source pointers; CLI flag → config map for every `maestro <subcommand> --help` (Issue #674) |

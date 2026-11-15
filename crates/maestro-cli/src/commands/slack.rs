@@ -1,5 +1,5 @@
-use crate::commands::setup::build_notification_dispatcher;
 use crate::config::Config;
+use crate::notifications::dispatcher::build_notification_dispatcher;
 
 pub async fn cmd_test_slack() -> anyhow::Result<()> {
     let config = Config::find_and_load()?;

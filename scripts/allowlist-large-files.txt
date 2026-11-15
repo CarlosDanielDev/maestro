@@ -36,7 +36,7 @@ crates/maestro-core/src/provider/github/ci.rs # deadline: 2026-12-31, owner: @ca
 crates/maestro-core/src/provider/github/types.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split types by resource (issues/PRs/milestones)
 crates/maestro-core/src/turboquant/adapter.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
 crates/maestro-core/src/sanitize/scanner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split pattern-registry from match-execution
-src/cli.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split clap command tree from dispatch logic
+crates/maestro-cli/src/cli.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split clap command tree from dispatch logic
 crates/maestro-core/src/prompts.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split content from template-resolution helpers
 crates/maestro-core/src/doctor.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split per-check implementations into doctor/ submodule
 crates/maestro-core/src/work/assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: split assignment-rules from work-item selection

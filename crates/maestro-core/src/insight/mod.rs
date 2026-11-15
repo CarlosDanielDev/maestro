@@ -45,7 +45,8 @@ pub fn scan(root: &Path) -> Scan {
 /// subagent definitions. All reads are best-effort — a missing file or
 /// unparseable source contributes nothing rather than aborting the scan.
 fn collect_features(root: &Path) -> Vec<Feature> {
-    let cli_src = std::fs::read_to_string(root.join("src/cli.rs")).unwrap_or_default();
+    let cli_src =
+        std::fs::read_to_string(root.join("crates/maestro-cli/src/cli.rs")).unwrap_or_default();
     let tui_src = std::fs::read_to_string(root.join("crates/maestro-tui/src/tui/app/types.rs"))
         .unwrap_or_default();
 
@@ -54,7 +55,7 @@ fn collect_features(root: &Path) -> Vec<Feature> {
         &cli_src,
         "Commands",
         SurfaceType::Cli,
-        "src/cli.rs:Commands",
+        "crates/maestro-cli/src/cli.rs:Commands",
     ));
     features.extend(features::surfaces_from_enum(
         &tui_src,
@@ -251,6 +252,30 @@ mod tests {
             "from budget/ledger.rs"
         );
         assert!(m.loc >= 3, "loc must sum both files, got {}", m.loc);
+    }
+
+    /// The CLI moved to `crates/maestro-cli` (#1307); a stale path reads an
+    /// empty string and silently drops every CLI command from the scan.
+    #[test]
+    fn collect_features_finds_the_cli_commands_in_the_cli_crate() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let cli: Vec<_> = collect_features(root)
+            .into_iter()
+            .filter(|f| f.surface_type == SurfaceType::Cli)
+            .collect();
+        assert!(
+            cli.len() > 10,
+            "expected > 10 CLI commands, got {}",
+            cli.len()
+        );
+        assert!(
+            cli.iter().all(|f| f
+                .entry_points
+                .iter()
+                .all(|e| e.starts_with("crates/maestro-cli/"))),
+            "CLI entry points must name the CLI crate: {:?}",
+            cli.first().map(|f| &f.entry_points)
+        );
     }
 
     #[test]

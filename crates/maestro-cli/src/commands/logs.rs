@@ -59,7 +59,7 @@ pub fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Resu
 /// OSC 52 or cursor sequence would otherwise replay on `maestro logs` (#1043).
 /// Tabs and CR are dropped too; the JSON export keeps the raw bytes.
 fn render_log(content: &str) -> String {
-    crate::tui::clipboard::strip_ansi(content)
+    crate::util::sanitize::strip_ansi(content)
 }
 
 fn format_bytes(bytes: u64) -> String {

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
 // Sibling module loaded via `#[path]`-friendly direct mod declaration so
-// `build.rs` (which includes `src/cli.rs` directly) also picks it up.
+// the root `build.rs` (which includes this file directly) also picks it up.
 #[path = "cli_team.rs"]
 mod cli_team;
 // `TeamTier` is consumed only by the runtime handler in `commands::team`;
@@ -10,7 +10,7 @@ mod cli_team;
 #[allow(unused_imports)]
 pub use cli_team::{TeamSubcommand, TeamTier};
 
-/// Output format for sanitize reports (CLI-local, converted to sanitize::OutputFormat in main).
+/// Output format for sanitize reports (CLI-local, converted to sanitize::OutputFormat in `lib.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SanitizeOutputFormat {
     Text,
@@ -18,9 +18,9 @@ pub enum SanitizeOutputFormat {
     Markdown,
 }
 
-/// CLI-local PRD source (converted to adapt::prd_source::PrdSource in main).
+/// CLI-local PRD source (converted to adapt::prd_source::PrdSource in `lib.rs`).
 ///
-/// Kept in this file because `build.rs` includes `src/cli.rs` directly with
+/// Kept in this file because the root `build.rs` includes this file directly with
 /// `#[path]` and must not pull in the rest of the crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
 #[clap(rename_all = "snake_case")]
@@ -32,7 +32,7 @@ pub enum PrdSourceArg {
     Both,
 }
 
-/// Severity filter for sanitize reports (CLI-local, converted to sanitize::Severity in main).
+/// Severity filter for sanitize reports (CLI-local, converted to sanitize::Severity in `lib.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SanitizeSeverityFilter {
     Critical,
@@ -40,9 +40,9 @@ pub enum SanitizeSeverityFilter {
     Info,
 }
 
-/// CLI-local Role argument (converted to `session::role::Role` in main).
+/// CLI-local Role argument (converted to `session::role::Role` in `lib.rs`).
 ///
-/// Kept in this file because `build.rs` includes `src/cli.rs` directly with
+/// Kept in this file because the root `build.rs` includes this file directly with
 /// `#[path]` and must not pull in the rest of the crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "snake_case")]

@@ -14,11 +14,11 @@ pub use maestro_core::icon_mode;
 pub use maestro_core::icons;
 pub use maestro_core::turboquant;
 
+pub use maestro_cli::cli;
 pub use maestro_core::adapt;
 pub use maestro_core::agent_provider;
 pub use maestro_core::budget;
 pub use maestro_core::changelog;
-pub mod cli;
 pub mod commands;
 pub use maestro_core::config;
 pub use maestro_core::continuous;

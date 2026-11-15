@@ -1059,7 +1059,9 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 config.models.routing.clone(),
                 config.effective_default_model(),
             ));
-            app.notifications = crate::setup::build_notification_dispatcher(&config.notifications);
+            app.notifications = crate::notifications::dispatcher::build_notification_dispatcher(
+                &config.notifications,
+            );
             app.plugin_runner = if config.plugins.is_empty() {
                 None
             } else {

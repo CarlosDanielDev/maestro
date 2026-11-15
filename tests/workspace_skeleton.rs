@@ -2,7 +2,8 @@
 //!
 //! The three crates must stay workspace members, and their dependency
 //! direction must follow ADR 006: core depends on no frontend, the TUI
-//! depends on core only, the CLI may depend on both.
+//! depends on core only, the CLI depends on core only (#1307). The `maestro`
+//! binary depends on both frontends and is the one place that opens the TUI.
 
 use std::path::Path;
 
@@ -65,5 +66,71 @@ fn crate_dependencies_follow_adr_006() {
     assert!(
         !tui.iter().any(|d| d == "maestro-cli"),
         "maestro-tui must not depend on maestro-cli: {tui:?}"
+    );
+}
+
+#[test]
+fn cli_crate_has_no_terminal_ui_dependency() {
+    let manifest_path = root().join("crates/maestro-cli/Cargo.toml");
+    let cli = deps(&manifest(&manifest_path));
+    for banned in [
+        "maestro-tui",
+        "ratatui",
+        "crossterm",
+        "tui-textarea",
+        "arboard",
+    ] {
+        assert!(
+            !cli.iter().any(|d| d == banned),
+            "maestro-cli must not depend on {banned} (#1307): {cli:?}"
+        );
+    }
+}
+
+#[test]
+fn cli_code_lives_in_the_cli_crate() {
+    for path in [
+        "crates/maestro-cli/src/cli.rs",
+        "crates/maestro-cli/src/commands/mod.rs",
+    ] {
+        assert!(root().join(path).is_file(), "{path} must exist (#1307)");
+    }
+    for path in ["src/cli.rs", "src/cli_team.rs"] {
+        assert!(
+            !root().join(path).exists(),
+            "{path} must live in crates/maestro-cli (#1307)"
+        );
+    }
+}
+
+/// The manifest check above misses a crate reached some other way (a
+/// re-export through core, a `#[path]` include); scan the source too.
+#[test]
+fn cli_crate_source_names_no_terminal_ui_crate() {
+    let banned = regex::Regex::new(r"\b(crossterm|ratatui|maestro_tui|tui_textarea)\b")
+        .expect("valid regex");
+    let mut hits = Vec::new();
+    let mut dirs = vec![root().join("crates/maestro-cli/src")];
+    while let Some(dir) = dirs.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let text = std::fs::read_to_string(&path).expect("read source");
+                for (n, line) in text.lines().enumerate() {
+                    if banned.is_match(line) {
+                        hits.push(format!("{}:{}: {line}", path.display(), n + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "maestro-cli must not name a terminal-UI crate (#1307):\n{}",
+        hits.join("\n")
     );
 }
