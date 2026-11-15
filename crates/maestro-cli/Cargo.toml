@@ -1,5 +1,8 @@
 [package]
 name = "maestro-cli"
+# Inherited so clap's `#[command(version)]` on `Cli` (defined here) prints
+# the binary's version; without it `maestro --version` reported 0.0.0 (#1336).
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

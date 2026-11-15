@@ -29,6 +29,23 @@ fn deps(table: &toml::Table) -> Vec<String> {
 }
 
 #[test]
+fn every_crate_inherits_the_workspace_version() {
+    // A member without `version.workspace = true` silently builds as 0.0.0,
+    // and any `env!("CARGO_PKG_VERSION")` in it reports that (#1336).
+    for name in CRATES {
+        let path = root().join("crates").join(name).join("Cargo.toml");
+        let package = manifest(&path)["package"].clone();
+        let inherits = package
+            .get("version")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("workspace"))
+            .and_then(|w| w.as_bool())
+            == Some(true);
+        assert!(inherits, "{name} must set `version.workspace = true`");
+    }
+}
+
+#[test]
 fn workspace_lists_the_three_crates() {
     let root_manifest = manifest(&root().join("Cargo.toml"));
     let members: Vec<&str> = root_manifest["workspace"]["members"]
