@@ -39,8 +39,8 @@ jobs:
         run: bash scripts/ci-code-changed.sh "$BASE" >> "$GITHUB_OUTPUT"
 
   # Test stage (#1308): four nextest shards run in parallel with one
-  # full-suite job (doctests, snapshot grep, lockfile). The `Test`
-  # job below aggregates them, because `Test` is the required check name.
+  # doctest job (nextest skips doctests) that also checks the lockfile.
+  # The `Test` job below aggregates them: `Test` is the required check name.
   test-shard:
     name: Test shard ${{ matrix.shard }}/4
     needs: changes
@@ -57,15 +57,16 @@ jobs:
       - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-nextest@0.9.149
-      # An insta assertion with a changed or new snapshot panics under
-      # INSTA_UPDATE=no, so unreviewed snapshots fail the shard that owns them.
+      # Snapshot enforcement: an insta assertion with a changed or new
+      # snapshot panics under INSTA_UPDATE=no, so unreviewed snapshots fail
+      # the shard that owns them. Run `cargo insta review` locally first.
       - name: Run tests (nextest shard)
         env:
           INSTA_UPDATE: "no"
         run: cargo nextest run --locked --partition hash:${{ matrix.shard }}/4
 
   test-full:
-    name: Doctests and snapshots
+    name: Doctests
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -76,12 +77,6 @@ jobs:
       # nextest does not run doctests.
       - name: Run doctests
         run: cargo test --doc --locked
-      # Snapshot enforcement: fails if any insta snapshot has an unreviewed diff.
-      # Run `cargo insta review` locally to approve snapshot changes before pushing.
-      - name: Check snapshots
-        env:
-          INSTA_UPDATE: "no"
-        run: cargo test --verbose --locked 2>&1 | (! grep -q "pending snapshots")
       # Lockfile currency (#1039): a --locked build must leave the committed
       # Cargo.lock untouched. Any diff means the lockfile went stale relative
       # to the manifests, and CI would have audited/built a graph the repo

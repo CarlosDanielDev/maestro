@@ -4,7 +4,6 @@
     "cargo clippy -- -D warnings -A dead_code",
     "cargo nextest run --locked",
     "cargo test --doc --locked",
-    "cargo test --verbose 2>&1 | (! grep -q \"pending snapshots\")",
     "cargo run --quiet -- sync-templates --check",
     "cargo test --quiet docs_gen_no_drift --bin maestro",
     "bash scripts/check-file-size.sh",

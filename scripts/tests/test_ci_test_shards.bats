@@ -38,12 +38,18 @@ job_block() {
   [[ "$block" == *'needs.test-full.result'* ]] || false
 }
 
-@test "full-suite job keeps doctests, snapshot grep and lockfile check" {
+@test "doctest job keeps doctests and lockfile check" {
   block="$(job_block test-full)"
   [ -n "$block" ]
   [[ "$block" == *"cargo test --doc --locked"* ]] || false
-  [[ "$block" == *'cargo test --verbose --locked 2>&1 | (! grep -q "pending snapshots")'* ]] || false
   [[ "$block" == *"git diff --exit-code Cargo.lock"* ]] || false
+}
+
+# insta never prints "pending snapshots", so a grep for it can never fail.
+# Unreviewed snapshots fail through INSTA_UPDATE=no on the shards instead.
+@test "no pending-snapshots grep in CI or the wave gate" {
+  run grep -n 'pending snapshots' "$CI" "$REPO_ROOT/.wave.json"
+  [ "$status" -eq 1 ]
 }
 
 @test "wave gate runs nextest" {
