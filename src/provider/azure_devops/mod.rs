@@ -269,7 +269,10 @@ impl RepoProvider for AzDevOpsClient {
         };
         let mut wiql = format!("SELECT [System.Id] FROM WorkItems WHERE {state_clause}");
         for label in tag_filters {
-            wiql.push_str(&format!(" AND [System.Tags] CONTAINS '{}'", label));
+            wiql.push_str(&format!(
+                " AND [System.Tags] CONTAINS '{}'",
+                escape_wiql_string_literal(label)
+            ));
         }
 
         let json_str = self
@@ -477,13 +480,18 @@ impl RepoProvider for AzDevOpsClient {
         head_branch: &str,
         base_branch: &str,
     ) -> Result<u64> {
+        // Same guards as the GitHub twin (#1044, EXEC-6).
+        let title = validate_title(title, "PR title")?;
+        validate_body(body, "PR body")?;
+        crate::util::validate_gh_arg(head_branch, "head_branch")?;
+        crate::util::validate_gh_arg(base_branch, "base_branch")?;
         let json_str = self
             .run_az(&[
                 "repos",
                 "pr",
                 "create",
                 "--title",
-                title,
+                &title,
                 "--description",
                 body,
                 "--source-branch",

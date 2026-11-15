@@ -231,3 +231,33 @@ async fn submit_pr_review_request_changes_votes_reject_then_comments() {
             .any(|w| w == ["--content", "Needs changes"])
     );
 }
+
+#[tokio::test]
+async fn create_pr_validates_inputs_like_github_twin() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    assert!(
+        client
+            .create_pr(1, "   ", "body", "feat", "main")
+            .await
+            .is_err()
+    );
+    assert!(
+        client
+            .create_pr(1, "t", "b\0", "feat", "main")
+            .await
+            .is_err()
+    );
+    assert!(
+        client
+            .create_pr(1, "t", "b", "--evil", "main")
+            .await
+            .is_err()
+    );
+    assert!(client.create_pr(1, "t", "b", "feat", "-x").await.is_err());
+    assert!(
+        runner.calls().is_empty(),
+        "az must not run on invalid input"
+    );
+}

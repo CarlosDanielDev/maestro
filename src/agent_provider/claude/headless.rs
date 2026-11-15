@@ -62,7 +62,8 @@ pub(super) fn build_stream_args(request: &AgentRequest) -> Vec<String> {
         args.push(appendix.clone());
     }
 
-    args.push(request.prompt.clone());
+    // `--` ends option parsing: a prompt starting with `-` stays a prompt.
+    args.extend(["--".to_string(), request.prompt.clone()]);
     args
 }
 
@@ -76,7 +77,7 @@ pub(super) fn build_text_args(request: &AgentRequest) -> Vec<String> {
         args.push("--model".to_string());
         args.push(request.model.clone());
     }
-    args.push("-p".to_string());
+    args.extend(["-p", "--"].map(String::from));
     args.push(request.prompt.clone());
     args
 }
@@ -368,7 +369,7 @@ mod tests {
             args.windows(2)
                 .any(|w| w == ["--append-system-prompt", "appendix"])
         );
-        assert_eq!(args.last().map(String::as_str), Some("test prompt"));
+        assert_eq!(&args[args.len() - 2..], ["--", "test prompt"]);
     }
 
     #[test]

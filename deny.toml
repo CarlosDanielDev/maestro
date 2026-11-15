@@ -15,7 +15,11 @@ feature-depth = 1
 
 [advisories]
 version = 2
-unused-ignored-advisory = "allow"
+yanked = "deny"
+# Warn (not allow) so a stale ignore entry shows up once upstream fixes land.
+unused-ignored-advisory = "warn"
+# Single source of truth: CI's `cargo audit` job reads its --ignore list from
+# the quoted IDs in this array (.github/workflows/ci.yml). Keep one ID per line.
 ignore = [
     # Transitive via `syntect` — bincode 1.x is considered complete by the
     # bincode maintainers and has no known vulnerability. Upstream syntect
@@ -40,11 +44,15 @@ ignore = [
     # Maestro does not use custom loggers with rand — transitive-only risk.
     "RUSTSEC-2026-0097",
     # RUSTSEC-2026-0098: Name constraints for URI names were incorrectly accepted
-    # (transitive via reqwest/tokio-rustls/webpki). Maestro's TLS use is limited
-    # to GitHub API with a static CA bundle — name constraint path not exploitable.
+    # (transitive via reqwest/tokio-rustls/webpki). maestro's TLS peers are NOT
+    # only GitHub: config-driven hosts (Slack webhook, provider endpoints) are
+    # reached through the same stack. Accepted risk: exploiting this needs a
+    # certificate from a name-constrained CA in the shipped root set that
+    # mis-issues outside its constraints — a CA compromise, not something a
+    # peer can do alone. Drop this entry when reqwest's rustls-webpki is bumped.
     "RUSTSEC-2026-0098",
     # RUSTSEC-2026-0099: Name constraints accepted for wildcard certs
-    # (same chain as -0098). Same mitigation: static CA, limited attack surface.
+    # (same chain as -0098). Same accepted risk and exit condition as -0098.
     "RUSTSEC-2026-0099",
     # RUSTSEC-2026-0104: Reachable panic in CRL parsing
     # (same chain). Maestro does not configure custom CRL handling; stock

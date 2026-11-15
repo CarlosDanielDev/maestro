@@ -181,6 +181,7 @@ ci_max_wait_secs = 1800
 [notifications]
 desktop = true
 slack = false
+# The webhook URL is a secret: do not commit it (maestro warns when set).
 # slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
 # slack_rate_limit_per_min = 10
 

@@ -223,6 +223,7 @@ impl Loader {
 
     /// Remove a user-tier preset file. No-op when the file is already gone.
     pub fn delete_user_preset(name: &str) -> Result<()> {
+        validate_preset_name(name)?;
         let dir =
             Self::user_tier_default().ok_or_else(|| anyhow!("cannot determine user config dir"))?;
         let path = dir.join(format!("{name}.toml"));
@@ -331,6 +332,15 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+    #[test]
+    fn delete_user_preset_rejects_path_traversal() {
+        let err = Loader::delete_user_preset("../../evil").expect_err("traversal");
+        assert!(
+            err.to_string().contains("cannot start with '.'"),
+            "got: {err}"
+        );
+    }
 
     #[test]
     fn empty_dirs_load_cleanly() {

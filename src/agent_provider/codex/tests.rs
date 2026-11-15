@@ -52,8 +52,11 @@ fn stream_args_match_codex_exec_contract() {
     assert!(args.windows(2).any(|w| w == ["--reasoning-effort", "high"]));
     assert!(!args.iter().any(|arg| arg == "--full-auto"));
     assert_eq!(
-        args.last().map(String::as_str),
-        Some("Maestro session context:\nappendix\n\nUser task:\ntest prompt")
+        &args[args.len() - 2..],
+        [
+            "--",
+            "Maestro session context:\nappendix\n\nUser task:\ntest prompt"
+        ]
     );
 }
 

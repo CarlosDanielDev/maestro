@@ -59,6 +59,9 @@ pub async fn cmd_run(
     ) {
         tracing::warn!("{msg}");
     }
+    if let Some(msg) = config.notifications.webhook_leak_warning() {
+        tracing::warn!("{msg}");
+    }
 
     let resolved_agent = config.resolve_agent(agent.as_deref())?;
     let selected_provider = provider_for_agent(&resolved_agent)?;

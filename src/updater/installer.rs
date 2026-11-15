@@ -1,5 +1,6 @@
 use crate::updater::checker::{GitHubReleaseChecker, Version};
 use crate::updater::error::UpdateError;
+use crate::updater::http::{build_client, read_body_capped};
 use crate::updater::replace::{AtomicBinaryReplacer, BinaryReplacer};
 use crate::updater::signature::verify_sums_signature;
 use anyhow::{Context, Result};
@@ -9,8 +10,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
 
-/// Extract the maestro binary from a tar.gz archive.
+/// Extract the maestro binary from a tar.gz archive, capped at
+/// `MAX_DOWNLOAD_SIZE` inflated bytes.
 pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>> {
+    extract_binary_from_tar_gz_capped(archive_bytes, crate::updater::MAX_DOWNLOAD_SIZE)
+}
+
+/// Cap on both the declared entry size and the bytes actually inflated, so a
+/// gzip bomb cannot exhaust memory (#1044, FS-6).
+fn extract_binary_from_tar_gz_capped(archive_bytes: &[u8], max: u64) -> Result<Vec<u8>> {
     use flate2::read::GzDecoder;
     use std::io::Read;
     use tar::Archive;
@@ -19,12 +27,19 @@ pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>
     let mut archive = Archive::new(decoder);
 
     for entry in archive.entries()? {
-        let mut entry = entry?;
+        let entry = entry?;
         let path = entry.path()?;
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name == "maestro" {
+            if entry.header().size()? > max {
+                anyhow::bail!("maestro entry exceeds {max} bytes (declared size)");
+            }
+            // Bytes read, not only the header: sparse entries inflate past it.
             let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes)?;
+            entry.take(max + 1).read_to_end(&mut bytes)?;
+            if bytes.len() as u64 > max {
+                anyhow::bail!("maestro entry exceeds {max} bytes");
+            }
             return Ok(bytes);
         }
     }
@@ -159,19 +174,27 @@ impl Installer {
     async fn fetch_sums_and_signature(
         client: &reqwest::Client,
         download_url: &str,
+        trust_check: fn(&str) -> bool,
     ) -> Result<(String, String), UpdateError> {
         let base = download_url
             .rsplit_once('/')
             .map(|(base, _)| base)
             .ok_or_else(|| UpdateError::Internal("cannot derive release base URL".to_string()))?;
 
-        let sums = Self::fetch_text(client, &format!("{base}/sha256sums.txt"))
-            .await
-            .map_err(|e| UpdateError::NetworkInterrupted {
-                message: format!("fetching SHA256SUMS: {e}"),
-            })?;
-
+        let sums_url = format!("{base}/sha256sums.txt");
         let sig_url = format!("{base}/sha256sums.txt.minisig");
+        if !trust_check(&sums_url) || !trust_check(&sig_url) {
+            return Err(UpdateError::NetworkInterrupted {
+                message: format!("untrusted checksum URL derived from {download_url}"),
+            });
+        }
+
+        let sums = Self::fetch_text(client, &sums_url).await.map_err(|e| {
+            UpdateError::NetworkInterrupted {
+                message: format!("fetching SHA256SUMS: {e}"),
+            }
+        })?;
+
         let signature = Self::fetch_text(client, &sig_url).await.map_err(|e| {
             UpdateError::SignatureInvalid {
                 reason: format!("release signature missing or unreachable at {sig_url}: {e}"),
@@ -230,10 +253,7 @@ impl Installer {
             });
         }
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| UpdateError::Internal(format!("building reqwest client: {e}")))?;
+        let client = build_client(self.trust_check)?;
 
         let resp = client
             .get(download_url)
@@ -267,14 +287,8 @@ impl Installer {
             .map(|(_, name)| name)
             .unwrap_or("maestro");
 
-        let download_fut = async {
-            resp.bytes()
-                .await
-                .map_err(|e| UpdateError::NetworkInterrupted {
-                    message: format!("download interrupted: {e}"),
-                })
-        };
-        let sums_fut = async { Self::fetch_sums_and_signature(&client, download_url).await };
+        let download_fut = read_body_capped(resp, crate::updater::MAX_DOWNLOAD_SIZE);
+        let sums_fut = Self::fetch_sums_and_signature(&client, download_url, self.trust_check);
         let (bytes, (sums, signature)) = tokio::try_join!(download_fut, sums_fut)?;
 
         // The sums file is untrusted until its minisign signature verifies
@@ -319,7 +333,7 @@ impl Installer {
         let binary_bytes = if asset_name.ends_with(".tar.gz") {
             extract_binary_from_tar_gz(&bytes).map_err(|e| UpdateError::Internal(e.to_string()))?
         } else {
-            bytes.to_vec()
+            bytes
         };
 
         self.install_with_backup(binary_bytes).await
@@ -358,3 +372,7 @@ mod tests;
 #[cfg(test)]
 #[path = "installer_signature_tests.rs"]
 mod signature_tests;
+
+#[cfg(test)]
+#[path = "installer_limits_tests.rs"]
+mod limits_tests;

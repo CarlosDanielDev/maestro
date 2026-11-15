@@ -24,8 +24,12 @@ impl NotificationDispatcher {
     }
 
     /// Enable Slack notifications with the given webhook URL and rate limit.
+    /// An invalid URL leaves Slack off and logs why (#1044).
     pub fn with_slack(mut self, webhook_url: String, rate_limit_per_min: u32) -> Self {
-        self.slack_client = Some(SlackClient::new(webhook_url, rate_limit_per_min));
+        match SlackClient::new(webhook_url, rate_limit_per_min) {
+            Ok(client) => self.slack_client = Some(client),
+            Err(e) => tracing::warn!("Slack notifications disabled: {e}"),
+        }
         self
     }
 
@@ -78,8 +82,8 @@ impl NotificationDispatcher {
             // We need to send async but notify() is sync. Use tokio::spawn.
             let payload = event.to_payload();
             let url = client.webhook_url().to_string();
+            let http = client.http();
             tokio::spawn(async move {
-                let http = reqwest::Client::new();
                 match http.post(&url).json(&payload).send().await {
                     Ok(resp) if !resp.status().is_success() => {
                         tracing::error!("Slack webhook returned HTTP {}", resp.status());

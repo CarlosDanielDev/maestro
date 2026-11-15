@@ -111,7 +111,8 @@ pub fn derive_role(prompt: &str) -> Role {
     } else {
         Role::Implementer
     };
-    tracing::debug!(prompt = %prompt, role = ?role, "derived role");
+    // Length only: the prompt can carry secrets and maestro.log is plain text.
+    tracing::debug!(prompt_len = prompt.len(), role = ?role, "derived role");
     role
 }
 
@@ -159,6 +160,41 @@ pub fn role_for_subagent_name(name: &str) -> Option<Role> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Default)]
+    struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Captured {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn derive_role_debug_log_omits_prompt_text() {
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            derive_role("build it with token sk-secret-1044");
+        });
+        let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            log.contains("derived role"),
+            "debug event still emitted: {log}"
+        );
+        assert!(
+            !log.contains("sk-secret-1044"),
+            "prompt leaked into log: {log}"
+        );
+    }
 
     // --- Role enum & serde ---
 
