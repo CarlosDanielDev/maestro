@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 mod ci_merge;
+mod file_prefix;
 mod issue_creation;
 mod iteration_creation;
 mod iterations;
@@ -206,10 +207,7 @@ fn build_create_work_item_args_includes_iteration_path() {
         Some("Project\\Sprint 1"),
     );
 
-    assert!(
-        args.windows(2)
-            .any(|w| w == ["--iteration", "Project\\Sprint 1"])
-    );
+    assert!(args.contains(&"--iteration=Project\\Sprint 1".to_string()));
     assert!(
         args.windows(2)
             .any(|w| w == ["--fields", "System.Tags=a; b"])
@@ -227,7 +225,7 @@ fn build_create_work_item_args_omits_iteration_when_none() {
         None,
     );
 
-    assert!(!args.iter().any(|arg| arg == "--iteration"));
+    assert!(!args.iter().any(|arg| arg.starts_with("--iteration")));
     assert!(!args.iter().any(|arg| arg == "--fields"));
 }
 

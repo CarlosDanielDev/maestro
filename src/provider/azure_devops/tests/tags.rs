@@ -109,9 +109,9 @@ async fn list_issues_escapes_quotes_in_tag_filters() {
 
     let calls = runner.calls();
     let wiql = calls[0]
-        .windows(2)
-        .find_map(|w| (w[0] == "--wiql").then(|| w[1].clone()))
-        .expect("--wiql arg");
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--wiql="))
+        .expect("--wiql= arg");
     assert!(
         wiql.ends_with("[System.Tags] CONTAINS 'it''s'' OR ''1''=''1'"),
         "got: {wiql}"
