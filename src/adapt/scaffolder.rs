@@ -678,6 +678,9 @@ mod tests {
         symlink(outside.path(), dir.path().join(".claude")).unwrap();
         let config = crate::adapt::AdaptConfig {
             path: dir.path().to_path_buf(),
+            // If the check regresses, stop before Phase 4 so the test can
+            // never create real milestones or issues.
+            dry_run: true,
             ..Default::default()
         };
 
