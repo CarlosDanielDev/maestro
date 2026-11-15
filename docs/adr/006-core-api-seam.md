@@ -155,3 +155,35 @@ frontend code; the TUI may use them later).
   everything except starting the TUI.
 - No code moves in #1303; no visibility tricks (out of scope — the split
   enforces it mechanically).
+
+---
+
+## Amendments from #1305 (core move)
+
+- **Surface additions** — symbols the frontends call that were `pub(crate)`
+  or private, now `pub`: `budget::sanitize`, `config::{agents_remote_auth,
+  default_max_prompt_history, schema::{dynamic, PROJECT_TABLE, BUDGET_TABLE,
+  schema_for_config}}`, `doctor::check_agent_config_schema_in`,
+  `notifications::{desktop, slack::validate_webhook_url}`,
+  `orchestration::loader::write_preset_file`,
+  `provider::github::ci::{local_gate_for_check, build_ci_fix_prompt}`,
+  `session::pool::interaction_appendix`, `SessionPool::quota_routed_provider`,
+  `templates::render_command_in`. Test doubles the root crate's tests use
+  (`git::MockGitOps`, `agent_provider::test_fakes`, `FakeNotifier`, ...)
+  are behind the `test-util` feature, not part of the API.
+- **Theme settings are config.** `[tui.theme]` data (`SerializableColor`,
+  `ThemePreset`, `ThemeConfig`, `ThemeOverrides`) and `MascotStyle` live in
+  `config` (`config::theme`, `config::tui`); the TUI re-exports them and keeps
+  the resolved `Theme` and all rendering. Core therefore depends on
+  `ratatui` with `default-features = false`, for `ratatui::style::Color`
+  only; `scripts/check-layers.sh` rejects any other ratatui path in core.
+- **`icons` and `icon_mode` are core**, not presentation:
+  `session::types::SessionStatus` resolves its own icon through them, and
+  neither touches ratatui.
+- `sanitize::screen` moved to `src/tui/screens/sanitize.rs`.
+- `gates::runner` gains `impl GateCheck for Arc<T>`, so a frontend can keep
+  an `Arc` to a runner it hands over (the orphan rule forbids frontends from
+  writing that impl).
+- Narrowing `pub` to only the tables above is left to a follow-up (the
+  #1305 ADR stub's "interface hardening"); this move keeps every item that
+  was already `pub` as `pub`.
