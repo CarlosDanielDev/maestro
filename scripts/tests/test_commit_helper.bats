@@ -119,7 +119,12 @@ assert_commit_draft() {
 }
 
 @test "missing gh exits non-zero with stderr message" {
-  run env PATH="/usr/bin:/bin" "$SCRIPT" 101
+  # A PATH with only bash: /usr/bin:/bin is not enough, because Linux CI
+  # runners install gh in /usr/bin.
+  local no_gh_dir="$BATS_TEST_TMPDIR/no-gh"
+  mkdir -p "$no_gh_dir"
+  ln -s "$(command -v bash)" "$no_gh_dir/bash"
+  run env PATH="$no_gh_dir" "$SCRIPT" 101
   [ "$status" -ne 0 ]
   [[ "$output" == *"commit-helper: gh CLI is required"* ]]
 }
