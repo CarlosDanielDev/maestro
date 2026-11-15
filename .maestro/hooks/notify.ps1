@@ -12,38 +12,76 @@
 $SlackBotToken = $env:SLACK_BOT_TOKEN  # Set via environment variable
 
 # Detectar diretorio do projeto (onde o script esta)
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$ScriptDir = $PSScriptRoot
 $ProjectMaestroDir = Split-Path -Parent $ScriptDir
 $ProjectRoot = Split-Path -Parent $ProjectMaestroDir
 
 # Arquivos de configuracao (prioridade: .maestro/ > .claude/ legacy > global)
 $ProjectConfigFile = Join-Path $ProjectMaestroDir "notifications.conf"
-$LegacyProjectConfigFile = Join-Path $ProjectRoot ".claude\notifications.conf"
-$LegacyConfigFile = Join-Path $env:USERPROFILE ".claude\notifications.conf"
-$LegacySlackFile = Join-Path $env:USERPROFILE ".claude\slack_user_id"
+$LegacyProjectConfigFile = Join-Path $ProjectRoot ".claude/notifications.conf"
+$LegacyConfigFile = Join-Path $env:USERPROFILE ".claude/notifications.conf"
+$LegacySlackFile = Join-Path $env:USERPROFILE ".claude/slack_user_id"
 
-# Valores padrao
-$NOTIFY_DESKTOP = "true"
-$NOTIFY_SLACK = "true"
-$NOTIFY_PERMISSION_PROMPT = "true"
-$NOTIFY_IDLE_PROMPT = "true"
-$SLACK_USER_ID = ""
+# Config files are parsed line by line into a hashtable. A file line never
+# names a variable (#1309: Set-Variable let a cloned repo's conf overwrite any
+# script variable). Only the five known keys are accepted, and only with safe
+# value shapes ([A-Za-z0-9_.@-]*). Everything else is ignored.
+#
+# SLACK_USER_ID is the Slack destination, so it is user-global only: it is
+# read from ~/.claude/notifications.conf or ~/.claude/slack_user_id, never
+# from a project conf (#1102, #1309: a cloned repo could redirect notifications).
+$ConfigLineRegex = '^(NOTIFY_DESKTOP|NOTIFY_SLACK|NOTIFY_PERMISSION_PROMPT|NOTIFY_IDLE_PROMPT|SLACK_USER_ID)=([A-Za-z0-9_.@-]*)$'
+$SettingKeys = @("NOTIFY_DESKTOP", "NOTIFY_SLACK", "NOTIFY_PERMISSION_PROMPT", "NOTIFY_IDLE_PROMPT")
 
-# Carregar configuracao (projeto primeiro, depois global)
-$ConfigFile = if (Test-Path $ProjectConfigFile) { $ProjectConfigFile } elseif (Test-Path $LegacyProjectConfigFile) { $LegacyProjectConfigFile } elseif (Test-Path $LegacyConfigFile) { $LegacyConfigFile } else { $null }
-
-if ($ConfigFile) {
-    Get-Content $ConfigFile | ForEach-Object {
-        if ($_ -match "^([A-Z_]+)=(.*)$") {
-            Set-Variable -Name $matches[1] -Value $matches[2]
+# $Keys picks which keys the file may set: $SettingKeys or "SLACK_USER_ID".
+function Read-NotifyConfigFile($File, [string[]]$Keys, $Config) {
+    foreach ($line in Get-Content -LiteralPath $File) {
+        if ($line -cmatch $ConfigLineRegex -and $Keys -ccontains $matches[1]) {
+            $Config[$matches[1]] = $matches[2]
         }
     }
 }
 
-# Fallback para arquivo legacy de Slack
-if (-not $SLACK_USER_ID -and (Test-Path $LegacySlackFile)) {
-    $SLACK_USER_ID = (Get-Content $LegacySlackFile -Raw).Trim()
+function Get-NotifyConfig {
+    # Valores padrao
+    $config = @{
+        NOTIFY_DESKTOP = "true"
+        NOTIFY_SLACK = "true"
+        NOTIFY_PERMISSION_PROMPT = "true"
+        NOTIFY_IDLE_PROMPT = "true"
+        SLACK_USER_ID = ""
+    }
+
+    # NOTIFY_* prioridade: .maestro/notifications.conf > .claude/notifications.conf (legacy) > global
+    foreach ($file in @($ProjectConfigFile, $LegacyProjectConfigFile, $LegacyConfigFile)) {
+        if (Test-Path -LiteralPath $file) {
+            Read-NotifyConfigFile $file $SettingKeys $config
+            break
+        }
+    }
+
+    # Slack destination: user-global files only (#1102, #1309).
+    if (Test-Path -LiteralPath $LegacyConfigFile) {
+        Read-NotifyConfigFile $LegacyConfigFile "SLACK_USER_ID" $config
+    }
+    if (-not $config.SLACK_USER_ID -and (Test-Path -LiteralPath $LegacySlackFile)) {
+        $config.SLACK_USER_ID = (Get-Content -LiteralPath $LegacySlackFile -Raw).Trim()
+    }
+
+    return $config
 }
+
+# Dot-sourced (by tests/test-notify-config.ps1): stop after the definitions.
+if ($MyInvocation.InvocationName -eq '.') {
+    return
+}
+
+$config = Get-NotifyConfig
+$NOTIFY_DESKTOP = $config.NOTIFY_DESKTOP
+$NOTIFY_SLACK = $config.NOTIFY_SLACK
+$NOTIFY_PERMISSION_PROMPT = $config.NOTIFY_PERMISSION_PROMPT
+$NOTIFY_IDLE_PROMPT = $config.NOTIFY_IDLE_PROMPT
+$SLACK_USER_ID = $config.SLACK_USER_ID
 
 $input = $Input | Out-String
 $notificationType = if ($input -match '"notification_type":"([^"]*)"') { $matches[1] } else { "" }
