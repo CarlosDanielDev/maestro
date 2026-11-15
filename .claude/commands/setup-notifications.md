@@ -71,21 +71,11 @@ Se nao tiver, instrua:
 
 Peca o User ID e salve:
 
+O User ID e salvo so no arquivo global do usuario. O hook ignora `SLACK_USER_ID` no conf do projeto, para que um repo clonado nao possa redirecionar as notificacoes (#1102).
+
 ```bash
-# Ler config atual
-source .claude/notifications.conf 2>/dev/null
-
-# Atualizar apenas o SLACK_USER_ID mantendo outras configs
-cat > .claude/notifications.conf << EOF
-# Configuracoes de notificacao para este projeto
-# Valores: true | false
-
-NOTIFY_DESKTOP=${NOTIFY_DESKTOP:-true}
-NOTIFY_SLACK=${NOTIFY_SLACK:-true}
-NOTIFY_PERMISSION_PROMPT=${NOTIFY_PERMISSION_PROMPT:-true}
-NOTIFY_IDLE_PROMPT=${NOTIFY_IDLE_PROMPT:-true}
-SLACK_USER_ID=NOVO_ID_AQUI
-EOF
+mkdir -p ~/.claude
+printf '%s\n' "NOVO_ID_AQUI" > ~/.claude/slack_user_id
 ```
 
 Envie mensagem de teste:

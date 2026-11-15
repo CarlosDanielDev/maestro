@@ -30,18 +30,39 @@ readonly DESKTOP_MESSAGE_MAX_LENGTH=100
 # (HOOK-1: a cloned repo could ship arbitrary commands in a conf file).
 # Only the five known keys are accepted, and only with safe value shapes
 # ([A-Za-z0-9_.@-]*). Everything else is ignored.
+#
+# SLACK_USER_ID is the Slack destination, so it is user-global only: it is
+# read from ~/.claude/notifications.conf or ~/.claude/slack_user_id, never
+# from a project conf (#1102: a cloned repo could redirect notifications).
 readonly CONFIG_LINE_RE='^(NOTIFY_DESKTOP|NOTIFY_SLACK|NOTIFY_PERMISSION_PROMPT|NOTIFY_IDLE_PROMPT|SLACK_USER_ID)=([A-Za-z0-9_.@-]*)$'
 
+# $2 picks which keys a file may set: "settings" (the four NOTIFY_* keys)
+# or "slack_id" (SLACK_USER_ID only).
 apply_config_line() {
   local line="$1"
+  local keys="$2"
   [[ "$line" =~ $CONFIG_LINE_RE ]] || return 0
+  if [[ "$keys" == "slack_id" ]]; then
+    if [[ "${BASH_REMATCH[1]}" == "SLACK_USER_ID" ]]; then
+      SLACK_USER_ID="${BASH_REMATCH[2]}"
+    fi
+    return 0
+  fi
   case "${BASH_REMATCH[1]}" in
     NOTIFY_DESKTOP)           NOTIFY_DESKTOP="${BASH_REMATCH[2]}" ;;
     NOTIFY_SLACK)             NOTIFY_SLACK="${BASH_REMATCH[2]}" ;;
     NOTIFY_PERMISSION_PROMPT) NOTIFY_PERMISSION_PROMPT="${BASH_REMATCH[2]}" ;;
     NOTIFY_IDLE_PROMPT)       NOTIFY_IDLE_PROMPT="${BASH_REMATCH[2]}" ;;
-    SLACK_USER_ID)            SLACK_USER_ID="${BASH_REMATCH[2]}" ;;
   esac
+}
+
+read_config_file() {
+  local file="$1"
+  local keys="$2"
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    apply_config_line "$line" "$keys"
+  done < "$file"
 }
 
 load_config() {
@@ -51,17 +72,19 @@ load_config() {
   NOTIFY_IDLE_PROMPT=true
   SLACK_USER_ID=""
 
-  # Prioridade: .maestro/notifications.conf > .claude/notifications.conf (legacy) > global ~/.claude
-  local file line
+  # NOTIFY_* prioridade: .maestro/notifications.conf > .claude/notifications.conf (legacy) > global ~/.claude
+  local file
   for file in "$CONFIG_FILE" "$LEGACY_PROJECT_CONFIG_FILE" "$LEGACY_CONFIG_FILE"; do
     if [[ -f "$file" ]]; then
-      while IFS= read -r line || [[ -n "$line" ]]; do
-        apply_config_line "$line"
-      done < "$file"
+      read_config_file "$file" settings
       break
     fi
   done
 
+  # Slack destination: user-global files only (#1102).
+  if [[ -f "$LEGACY_CONFIG_FILE" ]]; then
+    read_config_file "$LEGACY_CONFIG_FILE" slack_id
+  fi
   if [[ -z "$SLACK_USER_ID" && -f "$LEGACY_SLACK_FILE" ]]; then
     SLACK_USER_ID=$(tr -d '[:space:]' < "$LEGACY_SLACK_FILE")
   fi
