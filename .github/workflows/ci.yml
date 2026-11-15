@@ -87,10 +87,12 @@ jobs:
       # snapshot panics under INSTA_UPDATE=no, so unreviewed snapshots fail
       # the shard that owns them. Run `cargo insta review` locally first.
       # `--locked` is set on the archive build; nextest rejects it here.
+      # `--extract-to .` puts target/debug/maestro back at the absolute path
+      # that `env!("CARGO_BIN_EXE_maestro")` baked into the e2e tests.
       - name: Run tests (nextest shard)
         env:
           INSTA_UPDATE: "no"
-        run: cargo nextest run --archive-file nextest-archive.tar.zst --workspace-remap . --partition hash:${{ matrix.shard }}/4
+        run: cargo nextest run --archive-file nextest-archive.tar.zst --workspace-remap . --extract-to . --extract-overwrite --partition hash:${{ matrix.shard }}/4
 
   test-full:
     name: Doctests
