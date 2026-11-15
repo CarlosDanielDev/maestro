@@ -206,30 +206,34 @@ use_to_path() {
   local path
   path=$(printf '%s' "$stripped" | sed 's/::/\//g')
 
-  # Try direct file path.
-  if [[ -f "src/${path}.rs" ]]; then
-    echo "src/${path}.rs"
-    return 0
-  fi
-  # Try mod.rs directory form.
-  if [[ -f "src/${path}/mod.rs" ]]; then
-    echo "src/${path}/mod.rs"
-    return 0
-  fi
-  # Strip last segment — handles `session::manager::SessionManager` where
-  # `SessionManager` is a type exported from `session/manager.rs`.
+  # Try each source root: the root package, then the TUI crate (#1306), whose
+  # modules the root still reaches as `crate::tui::...` via re-export.
   local stripped_path
   stripped_path=$(printf '%s' "$path" | rev | cut -d/ -f2- | rev)
-  if [[ -n "$stripped_path" ]]; then
-    if [[ -f "src/${stripped_path}.rs" ]]; then
-      echo "src/${stripped_path}.rs"
+  local root
+  for root in src crates/maestro-tui/src; do
+    # Try direct file path, then the mod.rs directory form.
+    if [[ -f "${root}/${path}.rs" ]]; then
+      echo "${root}/${path}.rs"
       return 0
     fi
-    if [[ -f "src/${stripped_path}/mod.rs" ]]; then
-      echo "src/${stripped_path}/mod.rs"
+    if [[ -f "${root}/${path}/mod.rs" ]]; then
+      echo "${root}/${path}/mod.rs"
       return 0
     fi
-  fi
+    # Strip last segment — handles `session::manager::SessionManager` where
+    # `SessionManager` is a type exported from `session/manager.rs`.
+    if [[ -n "$stripped_path" ]]; then
+      if [[ -f "${root}/${stripped_path}.rs" ]]; then
+        echo "${root}/${stripped_path}.rs"
+        return 0
+      fi
+      if [[ -f "${root}/${stripped_path}/mod.rs" ]]; then
+        echo "${root}/${stripped_path}/mod.rs"
+        return 0
+      fi
+    fi
+  done
 
   echo ""  # can't resolve; silently ignored
 }

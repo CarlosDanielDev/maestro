@@ -17,8 +17,8 @@ const DOC: &str = "docs/tui-design-system.md";
 /// Screen files that still hardcode colors. Remove an entry once fixed;
 /// the test fails if an entry is stale, so the list can only shrink.
 const RAW_COLOR_ALLOWLIST: &[&str] = &[
-    "src/tui/screens/issue_wizard/draw_diff.rs",
-    "src/tui/screens/pr_review/concerns.rs",
+    "crates/maestro-tui/src/tui/screens/issue_wizard/draw_diff.rs",
+    "crates/maestro-tui/src/tui/screens/pr_review/concerns.rs",
 ];
 
 fn root() -> PathBuf {
@@ -173,7 +173,7 @@ fn assert_ratchet(offenders: &[String], allowlist: &[&str], list_name: &str, rul
 
 #[test]
 fn screens_use_theme_colors_only() {
-    let offenders: Vec<String> = non_test_sources("src/tui/screens")
+    let offenders: Vec<String> = non_test_sources("crates/maestro-tui/src/tui/screens")
         .into_iter()
         .filter(|(_, body)| body.matches("Color::").count() > body.matches("Color::Reset").count())
         .map(|(name, _)| name)
@@ -189,19 +189,19 @@ fn screens_use_theme_colors_only() {
 /// Files that still hand-roll text input (`KeyCode::Char(c)` pushed onto a
 /// `String`). Migrate to `widgets::input::Input` (#964–#974), then remove.
 const HAND_ROLLED_INPUT_ALLOWLIST: &[&str] = &[
-    "src/tui/screens/adapt/mod.rs",
-    "src/tui/screens/bypass_warning.rs",
-    "src/tui/screens/interaction/diff_review.rs",
-    "src/tui/screens/issue_browser/draw.rs",
-    "src/tui/screens/pr_review/mod.rs",
-    "src/tui/screens/prd/input.rs",
-    "src/tui/screens/roadmap_dispatch.rs",
-    "src/tui/screens/settings/input.rs",
-    "src/tui/screens/settings/schema_tab/modals/add_entry.rs",
-    "src/tui/screens/team_wizard/compose.rs",
-    "src/tui/screens/team_wizard/launch.rs",
-    "src/tui/widgets/list_editor.rs",
-    "src/tui/widgets/text_input.rs",
+    "crates/maestro-tui/src/tui/screens/adapt/mod.rs",
+    "crates/maestro-tui/src/tui/screens/bypass_warning.rs",
+    "crates/maestro-tui/src/tui/screens/interaction/diff_review.rs",
+    "crates/maestro-tui/src/tui/screens/issue_browser/draw.rs",
+    "crates/maestro-tui/src/tui/screens/pr_review/mod.rs",
+    "crates/maestro-tui/src/tui/screens/prd/input.rs",
+    "crates/maestro-tui/src/tui/screens/roadmap_dispatch.rs",
+    "crates/maestro-tui/src/tui/screens/settings/input.rs",
+    "crates/maestro-tui/src/tui/screens/settings/schema_tab/modals/add_entry.rs",
+    "crates/maestro-tui/src/tui/screens/team_wizard/compose.rs",
+    "crates/maestro-tui/src/tui/screens/team_wizard/launch.rs",
+    "crates/maestro-tui/src/tui/widgets/list_editor.rs",
+    "crates/maestro-tui/src/tui/widgets/text_input.rs",
 ];
 
 #[test]
@@ -209,9 +209,9 @@ fn no_new_hand_rolled_text_input() {
     // ponytail: same-file text heuristic. Misses input fed through a helper
     // method (e.g. `help.rs` `push_char`); upgrade to a syn-based check if
     // those start to slip through review.
-    let offenders: Vec<String> = non_test_sources("src/tui")
+    let offenders: Vec<String> = non_test_sources("crates/maestro-tui/src/tui")
         .into_iter()
-        .filter(|(name, _)| !name.starts_with("src/tui/widgets/input/"))
+        .filter(|(name, _)| !name.starts_with("crates/maestro-tui/src/tui/widgets/input/"))
         .filter(|(_, body)| {
             let binds_char =
                 body.contains("KeyCode::Char(c)") || body.contains("KeyCode::Char(ch)");
@@ -230,7 +230,7 @@ fn no_new_hand_rolled_text_input() {
     );
 }
 
-/// Every module declared in `src/tui/widgets/mod.rs` must be cited in the
+/// Every module declared in `crates/maestro-tui/src/tui/widgets/mod.rs` must be cited in the
 /// doc's inline code, so a new widget can't land unseen. Counts as cited: a
 /// code token starting with its CamelCase type (`CiMonitor` → `CiMonitorWidget`),
 /// or `<module>::` / `widgets/<module>`. Plain prose words ("badge",
@@ -239,8 +239,8 @@ fn no_new_hand_rolled_text_input() {
 fn every_widget_is_documented() {
     let doc = fs::read_to_string(root().join(DOC)).expect("design-system doc exists");
     let spans = inline_code_spans(&doc);
-    let widgets_mod =
-        fs::read_to_string(root().join("src/tui/widgets/mod.rs")).expect("widgets/mod.rs exists");
+    let widgets_mod = fs::read_to_string(root().join("crates/maestro-tui/src/tui/widgets/mod.rs"))
+        .expect("widgets/mod.rs exists");
     let mut missing: Vec<String> = widgets_mod
         .lines()
         .filter_map(|l| {

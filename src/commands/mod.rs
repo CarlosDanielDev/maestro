@@ -1,4 +1,4 @@
-pub(crate) mod agent_provider_map;
+pub(crate) use maestro_core::agent_provider_map;
 mod clean;
 mod clean_stale;
 mod dashboard;
@@ -8,7 +8,7 @@ mod logs;
 mod queue;
 mod resume;
 pub(crate) mod run;
-pub(crate) mod setup;
+pub(crate) use maestro_tui::setup;
 mod slack;
 pub mod slash;
 mod status;

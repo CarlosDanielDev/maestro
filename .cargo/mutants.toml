@@ -5,10 +5,11 @@
 # job duration tractable. Scope aligns with the coverage core tier.
 
 exclude_globs = [
-  "src/tui/**",
+  "crates/maestro-tui/src/tui/**",
   "src/main.rs",
   "src/lib.rs",
   "src/integration_tests/**",
+  "crates/maestro-tui/src/integration_tests/**",
   "**/tests.rs",
   "**/*_test.rs",
 ]

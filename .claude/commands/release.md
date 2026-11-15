@@ -94,16 +94,16 @@ If any check fails, STOP and report the issue.
 
 Skipping this step guarantees CI failure on the release PR.
 
-1. Run `cargo test --bin maestro` — record the output.
+1. Run `cargo test -p maestro-tui` — record the output.
 2. **If all tests pass**: proceed to Step 5.
 3. **If tests fail AND every failure belongs to one of the five known-drift groups above**:
    a. Accept each failing snapshot by its exact test name, one at a time. Do **not** use `cargo-insta test --accept -- <filter>` or `cargo insta accept`: they accept **every** pending `.snap.new` in the tree, not only the filtered group, so a real regression would be accepted with the drift.
       ```bash
       # one line per failing test from step 1, e.g.:
-      INSTA_UPDATE=always cargo test --bin maestro -- --exact tui::snapshot_tests::landing::landing_welcome_80x24_ascii
+      INSTA_UPDATE=always cargo test -p maestro-tui -- --exact tui::snapshot_tests::landing::landing_welcome_80x24_ascii
       ```
       Then check `git diff` on each accepted `.snap`: only the version string and the Release Console content (summary, Mix counts, highlights, and the Ref Trend chart, which counts every CHANGELOG version including `[Unreleased]`) may change. Delete any `*.snap.new` left over from step 1 (`find src -name '*.snap.new'`).
-   b. Re-run `cargo test --bin maestro` and confirm it now passes.
+   b. Re-run `cargo test -p maestro-tui` and confirm it now passes.
    c. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
 4. **If any other tests fail** (anything outside the five groups listed above): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.
 
@@ -114,11 +114,11 @@ Skipping this step guarantees CI failure on the release PR.
 ```bash
 git add Cargo.toml CHANGELOG.md
 # Also include any snapshot updates from Step 4b (all five known-drift groups):
-git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__dashboard__home_screen_*.snap 2>/dev/null || true
-git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__landing__landing_welcome_*.snap 2>/dev/null || true
-git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_*.snap 2>/dev/null || true
-git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__home_small_terminal__home_screen_60x15_keeps_labels_and_a_log_row.snap 2>/dev/null || true
-git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__init_turboquant_header__header_shows_tq_on_for_freshly_initialised_project.snap 2>/dev/null || true
+git add crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__dashboard__home_screen_*.snap 2>/dev/null || true
+git add crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__landing__landing_welcome_*.snap 2>/dev/null || true
+git add crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_*.snap 2>/dev/null || true
+git add crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__home_small_terminal__home_screen_60x15_keeps_labels_and_a_log_row.snap 2>/dev/null || true
+git add crates/maestro-tui/src/tui/snapshot_tests/snapshots/maestro_tui__tui__snapshot_tests__init_turboquant_header__header_shows_tq_on_for_freshly_initialised_project.snap 2>/dev/null || true
 git commit -m "chore: release v<version>
 
 <one-line summary of what's in this release>

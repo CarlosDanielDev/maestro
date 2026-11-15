@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 maestro-core = { path = "../maestro-core", version = "0.31.8" }
-maestro-tui = { path = "../maestro-tui", version = "0.0.0" }
+maestro-tui = { path = "../maestro-tui", version = "0.31.8" }
 
 [lints]
 workspace = true

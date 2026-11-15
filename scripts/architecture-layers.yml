@@ -38,7 +38,7 @@ layers:
   - name: ui
     number: 4
     paths:
-      - "src/tui/**"
+      - "crates/maestro-tui/src/tui/**"
 
   - name: entry
     number: 5
@@ -52,14 +52,14 @@ forbidden:
   # (These are redundant with the layer-number check for these specific
   # cases, but are listed explicitly so the intent is documented.)
   - from: "src/session/**"
-    to: "src/tui/**"
+    to: "crates/maestro-tui/src/tui/**"
     reason: "domain logic must not depend on UI rendering"
   - from: "src/state/**"
-    to: "src/tui/**"
+    to: "crates/maestro-tui/src/tui/**"
     reason: "state persistence must not depend on UI rendering"
   - from: "src/provider/**"
-    to: "src/tui/**"
+    to: "crates/maestro-tui/src/tui/**"
     reason: "external-service clients must not depend on UI rendering"
   - from: "src/config.rs"
-    to: "src/tui/**"
+    to: "crates/maestro-tui/src/tui/**"
     reason: "config must not depend on UI (known debt: config.rs imports ThemeConfig from tui/theme; resolution via moving ThemeConfig to layer 2 — tracked in scripts/allowlist-large-files.txt config.rs deadline 2026-05-22)"
