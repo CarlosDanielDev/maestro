@@ -101,6 +101,16 @@ maestro/
 │           ├── pushup.md                  # Canonical port of .claude/commands/pushup.md (203 lines)  [Issue #702]
 │           ├── plan-feature.md            # Canonical port of .claude/commands/plan-feature.md (110 lines)  [Issue #702]
 │           └── simplify.md               # New canonical spec (no .claude/commands/ ancestor) (118 lines)  [Issue #702]
+├── crates/                                # Cargo workspace members (ADR 006); empty skeletons until #1305–#1307 move code out of `src/`  [Issue #1304]
+│   ├── maestro-core/                      # Shared core library; depends on no frontend
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs
+│   ├── maestro-tui/                       # ratatui frontend; depends on `maestro-core` only
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs
+│   └── maestro-cli/                       # CLI frontend; depends on `maestro-core` + `maestro-tui` (TUI launch entry point)
+│       ├── Cargo.toml
+│       └── src/lib.rs
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
 │   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; pub mod templates declared (Issue #701); agent_graph_spike module removed; the now-removed ADR-002 spike's #[cfg(feature = "spike")] pub mod agent_personalities block was cleaned up in issue #536  [Issue #307, #308, #526, #536, #539, #701]
@@ -934,6 +944,7 @@ maestro/
 │   ├── legacy_skills_removed.rs           # 4 regression-guard tests asserting that `.claude/skills/simplify/` is absent from disk; prevents accidental re-introduction of the deprecated simplify skill  [Issue #760]
 │   ├── teams_cookbook_fixtures.rs         # Integration tests validating all six `tests/fixtures/teams_cookbook/*.toml` files parse and resolve correctly via `Loader::resolve`  [Issue #675]
 │   ├── tui_design_system.rs               # CI tests: doc drift (names cited in docs/tui-design-system.md must exist in src/ or tests/) and no raw `Color::` in src/tui/screens (allowlist can only shrink)
+│   ├── workspace_skeleton.rs              # Guards the workspace: the three `crates/` are `[workspace].members`, and dependency direction follows ADR 006 (core depends on no frontend, TUI never on CLI)  [Issue #1304]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   ├── config_roundtrip/              # TOML fixtures used by roundtrip_overlay and roundtrip_overlay_single_key tests to verify comment-preserving saves  [Issue #712]
 │   │   ├── dynamic_config/                # TOML fixtures for overlay_dynamic round-trip tests: add/remove/reorder entries in dynamic sections while preserving comments  [Issue #790]
@@ -971,7 +982,7 @@ maestro/
 
 ## Core API Seam (planned workspace split)
 
-> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). Still one crate today; #1304–#1307 do the move.
+> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). The workspace skeleton (`crates/`, #1304) exists but is empty; #1305–#1307 do the move.
 
 | Future crate | Today's paths | May consume |
 |--------------|---------------|-------------|
@@ -1007,6 +1018,7 @@ Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI �
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
 | `.maestro/templates/commands/` | Canonical command specs; four files ported/created in Issue #702: `implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md` |
 | `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
+| `crates/` | Cargo workspace members `maestro-core`, `maestro-tui`, `maestro-cli` (ADR 006); empty until #1305–#1307 (Issue #1304) |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
 | `docs/configuration.md` | Authoritative `maestro.toml` reference — every `[table]` with field types, defaults, and source pointers; CLI flag → config map for every `maestro <subcommand> --help` (Issue #674) |

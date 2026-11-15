@@ -10,7 +10,21 @@ license = "MIT"
 name = "maestro"
 path = "src/main.rs"
 
+# Workspace skeleton (#1304, ADR 006). The crates are empty for now;
+# #1305-#1307 move code out of `src/` into them. The root package stays the
+# default member, so `cargo build`/`test`/`clippy` keep their current scope.
+[workspace]
+members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+
 [dependencies]
+maestro-core = { path = "crates/maestro-core", version = "0.0.0" }
+maestro-tui = { path = "crates/maestro-tui", version = "0.0.0" }
+maestro-cli = { path = "crates/maestro-cli", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.2"
@@ -87,12 +101,15 @@ harness = false
 name = "turboquant"
 harness = false
 
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 # `deny` (not `forbid`) so that narrowly scoped FFI blocks can be allow-listed
 # at call sites with a `// SAFETY:` comment. See docs/RUST-GUARDRAILS.md §8.
 unsafe_code = "deny"
 
-[lints.clippy]
+[workspace.lints.clippy]
 dbg_macro = "deny"
 # Lints deliberately NOT enabled globally (documented in docs/RUST-GUARDRAILS.md §2, §11):
 #   expect_used, unwrap_used, panic, todo: too many existing matches; opt-in
