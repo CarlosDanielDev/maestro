@@ -32,7 +32,7 @@ async fn create_issue_happy_path_returns_created_id() {
     let calls = runner.calls();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0][0..2], ["boards", "query"]);
-    assert!(calls[1].windows(2).any(|w| w == ["--title", "New story"]));
+    assert!(calls[1].contains(&"--title=New story".to_string()));
     assert!(calls[1].contains(&"--description=Body".to_string()));
     assert!(calls[1].windows(2).any(|w| w == ["--type", "User Story"]));
     assert!(

@@ -165,11 +165,7 @@ async fn create_issue_resolves_milestone_number_to_iteration_path() {
             .windows(4)
             .any(|w| { w == ["boards", "iteration", "project", "list"] })
     );
-    assert!(
-        calls[2]
-            .windows(2)
-            .any(|w| w == ["--iteration", "Project\\Sprint Future"])
-    );
+    assert!(calls[2].contains(&"--iteration=Project\\Sprint Future".to_string()));
 }
 
 #[tokio::test]
@@ -191,8 +187,7 @@ async fn list_issues_by_milestone_resolves_iteration_title_to_path() {
     assert_eq!(calls.len(), 3);
     assert!(
         calls[1]
-            .windows(2)
-            .any(|w| w == ["--wiql", "SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] UNDER 'Project\\Sprint Future' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'"])
+            .contains(&"--wiql=SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] UNDER 'Project\\Sprint Future' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'".to_string())
     );
 }
 
@@ -218,8 +213,7 @@ async fn list_issues_by_milestone_escapes_iteration_path_for_wiql() {
     assert!(issues.is_empty());
     assert!(
         runner.calls()[1]
-            .windows(2)
-            .any(|w| w == ["--wiql", "SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] UNDER 'Project\\Bob''s Sprint' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'"])
+            .contains(&"--wiql=SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] UNDER 'Project\\Bob''s Sprint' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'".to_string())
     );
 }
 

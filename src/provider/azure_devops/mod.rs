@@ -243,8 +243,10 @@ fn duplicate_create_error(stderr: &str) -> bool {
     normalized.contains("already exists") || normalized.contains("duplicate")
 }
 
-/// az reads a value starting with `@` as a file path and uploads the file's
-/// contents (e.g. `@~/.ssh/id_rsa`), so refuse it before az runs.
+/// az splits every argv element on its first `=` and reads the rest as a
+/// file when it starts with `@` (azure-cli `_expand_file_prefixed_files`).
+/// So free text goes as `--flag=value`, and a value starting with `@` (e.g.
+/// `@~/.ssh/id_rsa`) is refused here before az runs.
 fn reject_az_file_ref(value: &str, field: &str) -> Result<()> {
     if value.starts_with('@') {
         anyhow::bail!("{field} must not start with '@' (az reads it as a file path)");
@@ -284,11 +286,11 @@ impl RepoProvider for AzDevOpsClient {
             ));
         }
 
+        let wiql = format!("--wiql={wiql}");
         let json_str = self
             .run_az(&[
                 "boards",
                 "query",
-                "--wiql",
                 &wiql,
                 "--org",
                 &self.organization,
@@ -344,11 +346,11 @@ impl RepoProvider for AzDevOpsClient {
             escaped_iteration_path
         );
 
+        let wiql = format!("--wiql={wiql}");
         let json_str = self
             .run_az(&[
                 "boards",
                 "query",
-                "--wiql",
                 &wiql,
                 "--org",
                 &self.organization,
@@ -444,6 +446,8 @@ impl RepoProvider for AzDevOpsClient {
         }
         let tags_str = tags.join("; ");
         let num_str = issue_number.to_string();
+        // az reads `System.Tags=@x` as the file `x`.
+        reject_az_file_ref(&tags_str, "labels")?;
         let field = format!("System.Tags={}", tags_str);
         self.run_az(&[
             "boards",
@@ -465,6 +469,8 @@ impl RepoProvider for AzDevOpsClient {
         let tags: Vec<String> = issue.labels.into_iter().filter(|t| t != label).collect();
         let tags_str = tags.join("; ");
         let num_str = issue_number.to_string();
+        // az reads `System.Tags=@x` as the file `x`.
+        reject_az_file_ref(&tags_str, "labels")?;
         let field = format!("System.Tags={}", tags_str);
         self.run_az(&[
             "boards",
@@ -498,19 +504,19 @@ impl RepoProvider for AzDevOpsClient {
         reject_az_file_ref(body, "PR body")?;
         // `--flag=value` binds the body even when it starts with `-` (a
         // markdown list), so az can never read it as an option.
+        let title = format!("--title={title}");
         let description = format!("--description={body}");
+        let source = format!("--source-branch={head_branch}");
+        let target = format!("--target-branch={base_branch}");
         let json_str = self
             .run_az(&[
                 "repos",
                 "pr",
                 "create",
-                "--title",
                 &title,
                 &description,
-                "--source-branch",
-                head_branch,
-                "--target-branch",
-                base_branch,
+                &source,
+                &target,
                 "--org",
                 &self.organization,
                 "--project",
@@ -525,13 +531,13 @@ impl RepoProvider for AzDevOpsClient {
     }
 
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        let source = format!("--source-branch={head_branch}");
         let json_str = self
             .run_az(&[
                 "repos",
                 "pr",
                 "list",
-                "--source-branch",
-                head_branch,
+                &source,
                 "--status",
                 "active",
                 "--org",
@@ -581,13 +587,13 @@ impl RepoProvider for AzDevOpsClient {
             });
         }
 
+        let name = format!("--name={normalized}");
         let create_args = [
             "boards",
             "iteration",
             "project",
             "create",
-            "--name",
-            &normalized,
+            &name,
             "--org",
             &self.organization,
             "--project",
@@ -634,14 +640,14 @@ impl RepoProvider for AzDevOpsClient {
         let created = parse_iteration_json(&created_json)?;
 
         // Bound as one argument so a `-`-leading description is never an option.
+        let path = format!("--path={}", created.path);
         let description = format!("--description={description}");
         self.run_az(&[
             "boards",
             "iteration",
             "project",
             "update",
-            "--path",
-            &created.path,
+            &path,
             &description,
             "--org",
             &self.organization,
@@ -666,6 +672,7 @@ impl RepoProvider for AzDevOpsClient {
         validate_body(body, "issue body")?;
         reject_az_file_ref(&normalized_title, "issue title")?;
         reject_az_file_ref(body, "issue body")?;
+        reject_az_file_ref(&labels.join("; "), "issue labels")?;
 
         let existing_issues = self.list_issues(&[]).await?;
         if let Some(issue) = existing_issues
@@ -908,12 +915,12 @@ impl RepoProvider for AzDevOpsClient {
     async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
         crate::util::validate_gh_arg(branch, "branch")?;
         let branch_ref = ci::refs_heads_branch(branch);
+        let branch_ref = format!("--branch={branch_ref}");
         let json_str = self
             .run_az(&[
                 "pipelines",
                 "runs",
                 "list",
-                "--branch",
                 &branch_ref,
                 "--top",
                 "20",
@@ -938,12 +945,12 @@ impl RepoProvider for AzDevOpsClient {
     async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
         let pr = self.get_pr(pr_number).await?;
         let branch_ref = ci::refs_heads_branch(&pr.head_branch);
+        let branch_ref = format!("--branch={branch_ref}");
         let json_str = self
             .run_az(&[
                 "pipelines",
                 "runs",
                 "list",
-                "--branch",
                 &branch_ref,
                 "--top",
                 "20",

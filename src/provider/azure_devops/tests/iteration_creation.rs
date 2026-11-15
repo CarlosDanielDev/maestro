@@ -64,13 +64,9 @@ async fn create_milestone_creates_iteration_updates_description_and_returns_stab
     assert_eq!(calls.len(), 3);
     assert_eq!(calls[0][0..4], ["boards", "iteration", "project", "list"]);
     assert_eq!(calls[1][0..4], ["boards", "iteration", "project", "create"]);
-    assert!(calls[1].windows(2).any(|w| w == ["--name", "Sprint 2"]));
+    assert!(calls[1].contains(&"--name=Sprint 2".to_string()));
     assert_eq!(calls[2][0..4], ["boards", "iteration", "project", "update"]);
-    assert!(
-        calls[2]
-            .windows(2)
-            .any(|w| w == ["--path", "Project\\Sprint 2"])
-    );
+    assert!(calls[2].contains(&"--path=Project\\Sprint 2".to_string()));
     assert!(calls[2].contains(&"--description=desc".to_string()));
 }
 

@@ -18,8 +18,7 @@ pub(super) fn build_create_work_item_args(
         "create".to_string(),
         "--type".to_string(),
         "User Story".to_string(),
-        "--title".to_string(),
-        title.to_string(),
+        format!("--title={title}"),
         // `--flag=value` so a `-`-leading body is never read as an option.
         format!("--description={body}"),
         "--org".to_string(),
@@ -34,8 +33,7 @@ pub(super) fn build_create_work_item_args(
     }
 
     if let Some(iteration_path) = iteration_path.filter(|path| !path.is_empty()) {
-        args.push("--iteration".to_string());
-        args.push(iteration_path.to_string());
+        args.push(format!("--iteration={iteration_path}"));
     }
 
     args.extend(["-o".to_string(), "json".to_string()]);

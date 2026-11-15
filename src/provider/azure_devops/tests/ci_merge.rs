@@ -141,8 +141,7 @@ async fn ci_status_for_branch_calls_az_pipeline_runs_list() {
             "pipelines",
             "runs",
             "list",
-            "--branch",
-            "refs/heads/feature/login",
+            "--branch=refs/heads/feature/login",
             "--top",
             "20",
             "--org",
@@ -180,11 +179,7 @@ async fn ci_status_for_pr_resolves_source_branch() {
 
     let calls = runner.calls();
     assert_eq!(calls.len(), 2);
-    assert!(
-        calls[1]
-            .windows(2)
-            .any(|w| w == ["--branch", "refs/heads/feature/login"])
-    );
+    assert!(calls[1].contains(&"--branch=refs/heads/feature/login".to_string()));
 }
 
 #[tokio::test]
