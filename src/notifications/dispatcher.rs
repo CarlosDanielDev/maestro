@@ -12,6 +12,8 @@ pub struct NotificationDispatcher {
     notifications: Vec<Notification>,
     desktop_enabled: bool,
     slack_client: Option<SlackClient>,
+    /// Why a configured webhook URL was refused, for user-facing messages.
+    slack_rejection: Option<String>,
 }
 
 impl NotificationDispatcher {
@@ -20,12 +22,20 @@ impl NotificationDispatcher {
             notifications: Vec::new(),
             desktop_enabled,
             slack_client: None,
+            slack_rejection: None,
         }
     }
 
     /// Enable Slack notifications with the given webhook URL and rate limit.
+    /// An invalid URL leaves Slack off and logs why (#1044).
     pub fn with_slack(mut self, webhook_url: String, rate_limit_per_min: u32) -> Self {
-        self.slack_client = Some(SlackClient::new(webhook_url, rate_limit_per_min));
+        match SlackClient::new(webhook_url, rate_limit_per_min) {
+            Ok(client) => self.slack_client = Some(client),
+            Err(e) => {
+                tracing::warn!("Slack notifications disabled: {e}");
+                self.slack_rejection = Some(e.to_string());
+            }
+        }
         self
     }
 
@@ -57,8 +67,16 @@ impl NotificationDispatcher {
     pub async fn test_slack(&mut self) -> Result<bool, String> {
         match self.slack_client.as_mut() {
             Some(client) => client.send_test().await.map_err(|e| e.to_string()),
-            None => Err("Slack is not configured".into()),
+            None => Err(self
+                .slack_rejection
+                .clone()
+                .unwrap_or_else(|| "Slack is not configured".into())),
         }
+    }
+
+    /// The refusal message when a configured webhook URL was rejected.
+    pub fn slack_rejection(&self) -> Option<&str> {
+        self.slack_rejection.as_deref()
     }
 
     /// Whether Slack is configured.
@@ -78,14 +96,14 @@ impl NotificationDispatcher {
             // We need to send async but notify() is sync. Use tokio::spawn.
             let payload = event.to_payload();
             let url = client.webhook_url().to_string();
+            let http = client.http();
             tokio::spawn(async move {
-                let http = reqwest::Client::new();
                 match http.post(&url).json(&payload).send().await {
                     Ok(resp) if !resp.status().is_success() => {
                         tracing::error!("Slack webhook returned HTTP {}", resp.status());
                     }
                     Err(e) => {
-                        tracing::error!("Slack webhook error: {e}");
+                        tracing::error!("{}", super::slack::http_error(e));
                     }
                     _ => {
                         tracing::debug!("Slack notification sent successfully");
@@ -229,6 +247,17 @@ mod tests {
     fn has_slack_returns_false_by_default() {
         let d = NotificationDispatcher::new(false);
         assert!(!d.has_slack());
+    }
+
+    #[tokio::test]
+    async fn rejected_webhook_says_rejected_and_why() {
+        let mut d = NotificationDispatcher::new(false)
+            .with_slack("http://hooks.slack.com/services/T/B/x".into(), 10);
+        assert!(!d.has_slack());
+        let reason = d.slack_rejection().expect("rejection reason kept");
+        assert!(reason.contains("https://hooks.slack.com/"), "got: {reason}");
+        let err = d.test_slack().await.expect_err("no client");
+        assert!(err.contains("rejected"), "got: {err}");
     }
 
     #[test]

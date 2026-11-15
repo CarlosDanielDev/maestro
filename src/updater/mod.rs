@@ -1,5 +1,6 @@
 pub mod checker;
 pub mod error;
+mod http;
 pub mod installer;
 pub mod lock;
 pub mod replace;
@@ -11,8 +12,13 @@ mod test_server;
 /// GitHub repository for version checks and binary downloads.
 pub const GITHUB_REPO: &str = "CarlosDanielDev/maestro";
 
-/// Trusted domains for binary downloads.
-const TRUSTED_DOWNLOAD_HOSTS: &[&str] = &["github.com", "objects.githubusercontent.com"];
+/// Trusted domains for binary downloads. Also enforced on every redirect hop
+/// (#1044), so it must list the hosts GitHub redirects release assets to.
+const TRUSTED_DOWNLOAD_HOSTS: &[&str] = &[
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+];
 
 /// Minisign public keys trusted to sign `sha256sums.txt` (base64 keynum_pk,
 /// second line of the `minisign.pub` file).

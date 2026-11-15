@@ -17,6 +17,8 @@ pub struct PrConflictStatus {
     pub pr_number: u64,
     pub issue_number: u64,
     pub branch: String,
+    /// The PR's real base branch (`baseRefName`), not an assumed `main`.
+    pub base_branch: String,
     pub merge_state: MergeState,
     pub conflicting_files: Vec<String>,
 }
@@ -29,11 +31,15 @@ pub trait PrMergeCheck: Send {
 /// Real implementation using `gh pr view` and `git diff`.
 pub struct PrMergeChecker;
 
-/// JSON shape from `gh pr view --json headRefName,mergeable,mergeStateStatus`
+/// JSON shape from `gh pr view --json headRefName,baseRefName,mergeable,mergeStateStatus`
 #[derive(Deserialize)]
 struct PrMergeJson {
     #[serde(rename = "headRefName")]
     head_ref_name: String,
+    /// `gh` always returns it when asked; the default only keeps older
+    /// fixtures that omit the field parsing.
+    #[serde(rename = "baseRefName", default = "default_base_ref")]
+    base_ref_name: String,
     mergeable: String,
     #[serde(rename = "mergeStateStatus", default)]
     merge_state_status: String,
@@ -60,7 +66,7 @@ impl PrMergeCheck for PrMergeChecker {
                 "view",
                 &num_str,
                 "--json",
-                "headRefName,mergeable,mergeStateStatus",
+                "headRefName,baseRefName,mergeable,mergeStateStatus",
             ])
             .output()?;
 
@@ -75,7 +81,7 @@ impl PrMergeCheck for PrMergeChecker {
         // If conflicting, get the list of conflicting files
         if status.merge_state == MergeState::Conflicting {
             let diff_output = std::process::Command::new("git")
-                .args(["diff", "--name-only", &format!("main...{}", status.branch)])
+                .args(build_diff_args(&status.base_branch, &status.branch)?)
                 .output()?;
 
             if diff_output.status.success() {
@@ -86,6 +92,23 @@ impl PrMergeCheck for PrMergeChecker {
 
         Ok(status)
     }
+}
+
+fn default_base_ref() -> String {
+    "main".to_string()
+}
+
+/// `git diff --name-only <base>...<head> --`. Both refs come from the remote
+/// PR, so reject option-looking values and end option parsing (#1044).
+pub(crate) fn build_diff_args(base: &str, head: &str) -> Result<Vec<String>> {
+    crate::util::validate_gh_arg(base, "base branch")?;
+    crate::util::validate_gh_arg(head, "head branch")?;
+    Ok(vec![
+        "diff".to_string(),
+        "--name-only".to_string(),
+        format!("{base}...{head}"),
+        "--".to_string(),
+    ])
 }
 
 /// Parse merge status JSON from `gh pr view` output.
@@ -112,6 +135,7 @@ pub(crate) fn parse_merge_json(
         pr_number,
         issue_number,
         branch: pr.head_ref_name,
+        base_branch: pr.base_ref_name,
         merge_state,
         conflicting_files: Vec::new(),
     })
@@ -268,6 +292,7 @@ mod tests {
             pr_number: 42,
             issue_number: 10,
             branch: "feat/test".to_string(),
+            base_branch: "main".to_string(),
             merge_state: MergeState::Conflicting,
             conflicting_files: vec!["src/a.rs".to_string()],
         };
@@ -276,6 +301,26 @@ mod tests {
         assert_eq!(status.branch, "feat/test");
         assert_eq!(status.merge_state, MergeState::Conflicting);
         assert_eq!(status.conflicting_files.len(), 1);
+    }
+
+    #[test]
+    fn parse_merge_json_reads_base_ref_name() {
+        let json = r#"{"headRefName":"feat/a","baseRefName":"develop","mergeable":"CONFLICTING"}"#;
+        assert_eq!(parse_merge_json(json, 1, 1).unwrap().base_branch, "develop");
+    }
+
+    #[test]
+    fn diff_args_use_real_base_and_end_options() {
+        assert_eq!(
+            build_diff_args("develop", "feat/a").unwrap(),
+            ["diff", "--name-only", "develop...feat/a", "--"]
+        );
+    }
+
+    #[test]
+    fn diff_args_reject_option_like_refs() {
+        assert!(build_diff_args("main", "--output=/tmp/x").is_err());
+        assert!(build_diff_args("-x", "feat/a").is_err());
     }
 
     // --- build_conflict_fix_prompt tests ---

@@ -231,3 +231,84 @@ async fn submit_pr_review_request_changes_votes_reject_then_comments() {
             .any(|w| w == ["--content", "Needs changes"])
     );
 }
+
+#[tokio::test]
+async fn create_pr_validates_inputs_like_github_twin() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    assert!(
+        client
+            .create_pr(1, "   ", "body", "feat", "main")
+            .await
+            .is_err()
+    );
+    assert!(
+        client
+            .create_pr(1, "t", "b\0", "feat", "main")
+            .await
+            .is_err()
+    );
+    assert!(
+        client
+            .create_pr(1, "t", "b", "--evil", "main")
+            .await
+            .is_err()
+    );
+    assert!(client.create_pr(1, "t", "b", "feat", "-x").await.is_err());
+    assert!(
+        runner.calls().is_empty(),
+        "az must not run on invalid input"
+    );
+}
+
+#[tokio::test]
+async fn create_pr_binds_dash_leading_body_to_description_flag() {
+    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
+        r#"{"pullRequestId":5}"#,
+    )]));
+    let client = test_client(runner.clone());
+
+    let body = "- bullet list body\n--org evil";
+    assert_eq!(
+        client
+            .create_pr(1, "t", body, "feat", "main")
+            .await
+            .unwrap(),
+        5
+    );
+
+    let call = &runner.calls()[0];
+    assert!(
+        call.contains(&format!("--description={body}")),
+        "body must be bound to its flag, got: {call:?}"
+    );
+    assert!(!call.iter().any(|arg| arg == body), "got: {call:?}");
+}
+
+// az expands a value starting with `@` as a file to read and upload.
+#[tokio::test]
+async fn create_pr_rejects_at_prefixed_title() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_pr(1, "@/Users/x/.ssh/id_rsa", "body", "feat", "main")
+        .await
+        .expect_err("@-prefixed title");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}
+
+#[tokio::test]
+async fn create_pr_rejects_at_prefixed_body() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_pr(1, "title", "@/Users/x/.ssh/id_rsa", "feat", "main")
+        .await
+        .expect_err("@-prefixed body");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}

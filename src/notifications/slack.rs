@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::types::InterruptLevel;
 
@@ -151,14 +151,49 @@ pub struct SlackClient {
     send_times: VecDeque<Instant>,
 }
 
+/// Upper bound for one webhook round trip; a hung peer must not pin a task.
+const SLACK_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The one HTTP client a `SlackClient` owns and every send reuses.
+fn http_client(timeout: Duration) -> Result<reqwest::Client, SlackError> {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| SlackError::Http(e.to_string()))
+}
+
+/// Map a send error for display or logs. reqwest's `Display` embeds the
+/// request URL — here the webhook secret — so strip it first (#1044, SEC-5).
+pub(crate) fn http_error(e: reqwest::Error) -> SlackError {
+    SlackError::Http(e.without_url().to_string())
+}
+
+/// Incoming-webhook URLs are bearer credentials for one Slack host; refuse
+/// anything else so a typo or a hostile config cannot redirect the payload.
+pub(crate) fn validate_webhook_url(url: &str) -> Result<(), SlackError> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| SlackError::InvalidUrl(e.to_string()))?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("hooks.slack.com") {
+        return Err(SlackError::InvalidUrl(
+            "webhook URL must start with https://hooks.slack.com/".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl SlackClient {
-    pub fn new(webhook_url: String, rate_limit_per_min: u32) -> Self {
-        Self {
+    pub fn new(webhook_url: String, rate_limit_per_min: u32) -> Result<Self, SlackError> {
+        validate_webhook_url(&webhook_url)?;
+        Ok(Self {
             webhook_url,
-            http: reqwest::Client::new(),
+            http: http_client(SLACK_HTTP_TIMEOUT)?,
             rate_limit_per_min,
             send_times: VecDeque::new(),
-        }
+        })
+    }
+
+    /// Shared client (cheap `Arc` clone) for fire-and-forget sends.
+    pub fn http(&self) -> reqwest::Client {
+        self.http.clone()
     }
 
     /// Send a test message to verify the webhook is configured correctly.
@@ -189,7 +224,7 @@ impl SlackClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| SlackError::Http(e.to_string()))?;
+            .map_err(http_error)?;
 
         let status = resp.status();
         if status.is_success() {
@@ -280,12 +315,14 @@ fn parse_pct(s: &str) -> Option<u8> {
 pub enum SlackError {
     Http(String),
     Api { status: u16, body: String },
+    InvalidUrl(String),
 }
 
 impl std::fmt::Display for SlackError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SlackError::Http(e) => write!(f, "Slack HTTP error: {e}"),
+            SlackError::InvalidUrl(e) => write!(f, "Slack webhook URL rejected: {e}"),
             SlackError::Api { status, body } => {
                 write!(f, "Slack API error (HTTP {status}): {body}")
             }
@@ -298,6 +335,41 @@ impl std::error::Error for SlackError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_url_must_be_https_slack_host() {
+        assert!(validate_webhook_url("https://hooks.slack.com/services/T/B/x").is_ok());
+        assert!(validate_webhook_url("http://hooks.slack.com/services/T/B/x").is_err());
+        assert!(validate_webhook_url("https://evil.example/services/T/B/x").is_err());
+        assert!(validate_webhook_url("https://hooks.slack.com.evil.example/x").is_err());
+        assert!(validate_webhook_url("not a url").is_err());
+        assert!(SlackClient::new("http://127.0.0.1:9/hook".into(), 5).is_err());
+    }
+
+    #[tokio::test]
+    async fn http_error_text_omits_the_webhook_url() {
+        // Port 1 refuses the connection; the path stands in for the secret.
+        let url = "http://127.0.0.1:1/services/T/B/secret-1044";
+        let http = http_client(Duration::from_secs(5)).expect("client");
+        let err = http.post(url).send().await.expect_err("refused");
+        let text = http_error(err).to_string();
+        assert!(!text.contains("secret-1044"), "webhook URL leaked: {text}");
+    }
+
+    #[tokio::test]
+    async fn http_client_times_out_on_silent_peer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/hook", listener.local_addr().unwrap());
+        // Accept and hold the connection open without ever answering.
+        let _hold = tokio::spawn(async move {
+            let _conn = listener.accept().await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let http = http_client(Duration::from_millis(200)).expect("client");
+        let outcome = tokio::time::timeout(Duration::from_secs(5), http.post(&url).send()).await;
+        let send = outcome.expect("client timeout must fire before the 5s guard");
+        assert!(send.expect_err("silent peer").is_timeout());
+    }
 
     #[test]
     fn session_completed_payload_has_correct_structure() {
@@ -380,7 +452,7 @@ mod tests {
 
     #[test]
     fn rate_limiter_allows_within_limit() {
-        let mut client = SlackClient::new("https://hooks.slack.com/test".into(), 5);
+        let mut client = SlackClient::new("https://hooks.slack.com/test".into(), 5).unwrap();
         for _ in 0..5 {
             assert!(client.check_rate_limit());
             client.record_send();

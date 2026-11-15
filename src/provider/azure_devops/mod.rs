@@ -269,7 +269,10 @@ impl RepoProvider for AzDevOpsClient {
         };
         let mut wiql = format!("SELECT [System.Id] FROM WorkItems WHERE {state_clause}");
         for label in tag_filters {
-            wiql.push_str(&format!(" AND [System.Tags] CONTAINS '{}'", label));
+            wiql.push_str(&format!(
+                " AND [System.Tags] CONTAINS '{}'",
+                escape_wiql_string_literal(label)
+            ));
         }
 
         let json_str = self
@@ -477,15 +480,30 @@ impl RepoProvider for AzDevOpsClient {
         head_branch: &str,
         base_branch: &str,
     ) -> Result<u64> {
+        // Same guards as the GitHub twin (#1044, EXEC-6).
+        let title = validate_title(title, "PR title")?;
+        validate_body(body, "PR body")?;
+        crate::util::validate_gh_arg(head_branch, "head_branch")?;
+        crate::util::validate_gh_arg(base_branch, "base_branch")?;
+        // az reads a value starting with `@` as a file path and uploads the
+        // file's contents (e.g. `@~/.ssh/id_rsa`), so refuse it outright.
+        if title.starts_with('@') {
+            anyhow::bail!("PR title must not start with '@' (az reads it as a file path)");
+        }
+        if body.starts_with('@') {
+            anyhow::bail!("PR body must not start with '@' (az reads it as a file path)");
+        }
+        // `--flag=value` binds the body even when it starts with `-` (a
+        // markdown list), so az can never read it as an option.
+        let description = format!("--description={body}");
         let json_str = self
             .run_az(&[
                 "repos",
                 "pr",
                 "create",
                 "--title",
-                title,
-                "--description",
-                body,
+                &title,
+                &description,
                 "--source-branch",
                 head_branch,
                 "--target-branch",

@@ -57,15 +57,19 @@ impl GitChangeApplier {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
-    fn write_patch_to_tempfile(diff: &str) -> Result<PathBuf, ChangeApplyError> {
-        let tmp = std::env::temp_dir().join(format!(
-            "maestro-review-patch-{}.diff",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::write(&tmp, diff).map_err(|e| ChangeApplyError::GitCommandFailed {
+    /// Owner-only (0600) temp file, unlinked on drop — no world-readable
+    /// patch left in the shared temp dir (#1044, FS-7).
+    fn write_patch_to_tempfile(diff: &str) -> Result<tempfile::NamedTempFile, ChangeApplyError> {
+        let to_err = |e: std::io::Error| ChangeApplyError::GitCommandFailed {
             step: "write-tempfile",
             stderr: e.to_string(),
-        })?;
+        };
+        let mut tmp = tempfile::Builder::new()
+            .prefix("maestro-review-patch-")
+            .suffix(".diff")
+            .tempfile()
+            .map_err(to_err)?;
+        std::io::Write::write_all(&mut tmp, diff.as_bytes()).map_err(to_err)?;
         Ok(tmp)
     }
 
@@ -96,20 +100,18 @@ impl ChangeApplier for GitChangeApplier {
         validate_diff(diff)?;
 
         let head_before = self.head_sha()?;
-        let patch_path = Self::write_patch_to_tempfile(diff)?;
-        let patch_path_str = patch_path.to_string_lossy();
+        let patch_file = Self::write_patch_to_tempfile(diff)?;
+        let patch_path_str = patch_file.path().to_string_lossy();
 
         // Dry-run: refuse to touch the index if the patch wouldn't apply.
         let check = self.run_git("apply --check", &["apply", "--check", &patch_path_str])?;
         if !check.status.success() {
-            let _ = std::fs::remove_file(&patch_path);
             return Err(ChangeApplyError::PatchFailed(
                 String::from_utf8_lossy(&check.stderr).into_owned(),
             ));
         }
 
         let apply = self.run_git("apply", &["apply", "--index", &patch_path_str])?;
-        let _ = std::fs::remove_file(&patch_path);
         if !apply.status.success() {
             return Err(ChangeApplyError::PatchFailed(
                 String::from_utf8_lossy(&apply.stderr).into_owned(),
@@ -188,6 +190,22 @@ fn check_path_safe(path: &str) -> Result<(), ChangeApplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn patch_tempfile_is_private_and_auto_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = GitChangeApplier::write_patch_to_tempfile("diff").expect("tempfile");
+        let path = tmp.path().to_path_buf();
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "patch file must be owner-only");
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), "diff");
+        drop(tmp);
+        assert!(!path.exists(), "patch file must be removed on drop");
+    }
 
     #[test]
     fn validate_diff_accepts_normal_patch() {

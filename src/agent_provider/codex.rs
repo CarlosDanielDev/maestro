@@ -155,7 +155,7 @@ impl CodexProvider {
         }
 
         args.extend(self.extra_args.iter().cloned());
-        args.push(codex_prompt(request));
+        args.extend(["--".to_string(), codex_prompt(request)]);
     }
 }
 

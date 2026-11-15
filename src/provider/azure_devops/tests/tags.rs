@@ -99,3 +99,21 @@ async fn create_label_duplicate_tag_error_returns_ok() {
 
     assert_eq!(runner.calls().len(), 1);
 }
+
+#[tokio::test]
+async fn list_issues_escapes_quotes_in_tag_filters() {
+    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success("[]")]));
+    let client = test_client(runner.clone());
+
+    client.list_issues(&["it's' OR '1'='1"]).await.unwrap();
+
+    let calls = runner.calls();
+    let wiql = calls[0]
+        .windows(2)
+        .find_map(|w| (w[0] == "--wiql").then(|| w[1].clone()))
+        .expect("--wiql arg");
+    assert!(
+        wiql.ends_with("[System.Tags] CONTAINS 'it''s'' OR ''1''=''1'"),
+        "got: {wiql}"
+    );
+}

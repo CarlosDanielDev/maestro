@@ -130,7 +130,7 @@ impl OpenCodeProvider {
         }
 
         args.extend(self.extra_args.iter().cloned());
-        args.push(opencode_prompt(request));
+        args.extend(["--".to_string(), opencode_prompt(request)]);
     }
 
     fn auth_path(&self) -> PathBuf {

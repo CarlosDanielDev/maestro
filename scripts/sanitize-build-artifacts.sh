@@ -117,7 +117,9 @@ find_and_nuke() {
     return 0
   fi
   if confirm "Remove $count $label file(s)?"; then
-    printf '%s\n' "$hits" | xargs rm -f
+    # NUL-delimited so a path with spaces reaches rm as one argument (#1044).
+    find . -type f -name "$pattern" -not -path './target/*' -print0 2>/dev/null \
+      | xargs -0 rm -f --
     echo "  -> removed $count files"
   else
     echo "  -> skipped"
@@ -167,7 +169,8 @@ if [[ $INCR -eq 1 ]]; then
       if [[ $DRY -eq 1 ]]; then
         echo "DRY-RUN: would remove $count incremental dir(s) under target/"
       elif confirm "Remove $count incremental dir(s) under target/?"; then
-        printf '%s\n' "$incr_dirs" | xargs rm -rf
+        find target -type d -name incremental -prune -print0 2>/dev/null \
+          | xargs -0 rm -rf --
         echo "  -> removed $count incremental dirs"
       fi
     fi
