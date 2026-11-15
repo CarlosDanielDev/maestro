@@ -33,6 +33,10 @@ is_allowed() {
 
 violations=0
 
+# src/ plus the workspace crates (#1305 moved core into crates/maestro-core).
+scan_dirs=("$ROOT_DIR/src")
+[[ -d "$ROOT_DIR/crates" ]] && scan_dirs+=("$ROOT_DIR/crates")
+
 while IFS= read -r entry; do
   # Trim leading whitespace from wc output
   entry=$(echo "$entry" | sed 's/^[[:space:]]*//')
@@ -48,7 +52,7 @@ while IFS= read -r entry; do
     echo "VIOLATION: $rel ($lines lines, max $MAX_LINES)"
     violations=$((violations + 1))
   fi
-done < <(find "$ROOT_DIR/src" -name '*.rs' -exec wc -l {} + | grep -v ' total$')
+done < <(find "${scan_dirs[@]}" -name '*.rs' -exec wc -l {} + | grep -v ' total$')
 
 # Deadline enforcement — iterate raw entries to find `deadline: YYYY-MM-DD`.
 today=$(date +%Y-%m-%d)

@@ -228,9 +228,8 @@ fn providers_without_dedicated_rules_inherit_default_template_rules() {
 
 #[test]
 fn qwen_provider_overrides_default_template_rules_with_http_generic() {
-    crate::enter_repo_root_for_test();
     use crate::agent_provider::QwenProvider;
-
+    crate::enter_repo_root_for_test();
     let provider: Arc<dyn AgentProvider> = Arc::new(QwenProvider::new("qwen"));
     // Qwen is Subprocess-kind, not Http; the shared template rules are about
     // template semantics (no slash-command dir, no Task tool), not transport.
@@ -245,9 +244,8 @@ fn qwen_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn ollama_provider_overrides_default_template_rules_with_http_generic() {
-    crate::enter_repo_root_for_test();
     use crate::agent_provider::OllamaProvider;
-
+    crate::enter_repo_root_for_test();
     let provider: Arc<dyn AgentProvider> = Arc::new(
         OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
             .expect("ollama provider builds"),
@@ -263,9 +261,8 @@ fn ollama_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn minimax_provider_overrides_default_template_rules_with_http_generic() {
-    crate::enter_repo_root_for_test();
     use crate::agent_provider::MinimaxProvider;
-
+    crate::enter_repo_root_for_test();
     let provider: Arc<dyn AgentProvider> = Arc::new(
         MinimaxProvider::new(
             "minimax",
@@ -287,9 +284,8 @@ fn minimax_provider_overrides_default_template_rules_with_http_generic() {
 
 #[test]
 fn claude_provider_overrides_default_template_rules() {
-    crate::enter_repo_root_for_test();
     use crate::agent_provider::ClaudeProvider;
-
+    crate::enter_repo_root_for_test();
     let provider: Arc<dyn AgentProvider> = Arc::new(ClaudeProvider::default());
     let rules = provider.template_rules();
     assert_eq!(
@@ -302,9 +298,8 @@ fn claude_provider_overrides_default_template_rules() {
 
 #[test]
 fn codex_provider_overrides_default_template_rules() {
-    crate::enter_repo_root_for_test();
     use crate::agent_provider::CodexProvider;
-
+    crate::enter_repo_root_for_test();
     let provider: Arc<dyn AgentProvider> = Arc::new(CodexProvider::new("codex"));
     let rules = provider.template_rules();
     assert!(

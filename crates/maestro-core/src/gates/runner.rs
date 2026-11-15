@@ -9,9 +9,8 @@ pub trait GateCheck: Send {
     fn run_gates(&self, gates: &[CompletionGate], worktree_path: &Path) -> Vec<GateResult>;
 }
 
-/// Lets a caller keep an `Arc` to a runner it hands over as `Box<dyn GateCheck>`
-/// (tests read call counts back). Frontends cannot write this impl themselves:
-/// both the trait and `Arc` are foreign to them.
+/// Lets a caller keep an `Arc` to a runner it boxes as `dyn GateCheck`; frontends
+/// cannot write this impl (trait and `Arc` are both foreign to them).
 impl<T: GateCheck + Sync + ?Sized> GateCheck for std::sync::Arc<T> {
     fn run_gates(&self, gates: &[CompletionGate], worktree_path: &Path) -> Vec<GateResult> {
         (**self).run_gates(gates, worktree_path)

@@ -41,6 +41,8 @@ jobs:
   # Test stage (#1308): four nextest shards run in parallel with one
   # doctest job (nextest skips doctests) that also checks the lockfile.
   # The `Test` job below aggregates them: `Test` is the required check name.
+  # `--workspace` (#1305): the root package is not the only member any more,
+  # and maestro-core's tests live in its own crate.
   test-shard:
     name: Test shard ${{ matrix.shard }}/4
     needs: changes
@@ -63,7 +65,7 @@ jobs:
       - name: Run tests (nextest shard)
         env:
           INSTA_UPDATE: "no"
-        run: cargo nextest run --locked --partition hash:${{ matrix.shard }}/4
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4
 
   test-full:
     name: Doctests
@@ -76,7 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       # nextest does not run doctests.
       - name: Run doctests
-        run: cargo test --doc --locked
+        run: cargo test --workspace --doc --locked
       # Lockfile currency (#1039): a --locked build must leave the committed
       # Cargo.lock untouched. Any diff means the lockfile went stale relative
       # to the manifests, and CI would have audited/built a graph the repo
@@ -116,7 +118,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      - run: cargo clippy --locked -- -D warnings -A dead_code
+      - run: cargo clippy --workspace --locked -- -D warnings -A dead_code
 
   sync-templates:
     # Drift gate for canonical command templates (#706).

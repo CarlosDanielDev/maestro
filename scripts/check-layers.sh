@@ -301,6 +301,25 @@ while IFS= read -r -d '' src_file; do
 
 done < <(find src -name '*.rs' -print0 2>/dev/null)
 
+# ---------------------------------------------------------------------------
+# maestro-core crate boundary (ADR 006, #1305). The compiler already rejects
+# `crate::tui` inside core; this catches the ways around it: a frontend
+# crate, terminal I/O, or ratatui beyond the `style::Color` value type that
+# `config::theme` serializes.
+# ---------------------------------------------------------------------------
+CORE_SRC="crates/maestro-core/src"
+CORE_FORBIDDEN='(^|[^A-Za-z0-9_])((maestro_tui|maestro_cli|crossterm|tui_textarea|arboard)::|crate::(tui|cli|cli_team|commands|mascot)::|ratatui::)'
+if [[ -d "$CORE_SRC" ]]; then
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    # `ratatui::style::…` is the one allowed ratatui path.
+    rest="${hit//ratatui::style::/}"
+    printf '%s\n' "$rest" | grep -qE "$CORE_FORBIDDEN" || continue
+    echo "CORE-FRONTEND: $hit (maestro-core must not depend on a frontend)"
+    violations=$((violations + 1))
+  done < <(grep -rnE "$CORE_FORBIDDEN" "$CORE_SRC" --include='*.rs' 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+fi
+
 if (( violations > 0 )); then
   echo ""
   echo "$violations violation(s) found."
