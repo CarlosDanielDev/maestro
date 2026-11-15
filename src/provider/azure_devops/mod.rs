@@ -485,6 +485,9 @@ impl RepoProvider for AzDevOpsClient {
         validate_body(body, "PR body")?;
         crate::util::validate_gh_arg(head_branch, "head_branch")?;
         crate::util::validate_gh_arg(base_branch, "base_branch")?;
+        // `--flag=value` binds the body even when it starts with `-` (a
+        // markdown list), so az can never read it as an option.
+        let description = format!("--description={body}");
         let json_str = self
             .run_az(&[
                 "repos",
@@ -492,8 +495,7 @@ impl RepoProvider for AzDevOpsClient {
                 "create",
                 "--title",
                 &title,
-                "--description",
-                body,
+                &description,
                 "--source-branch",
                 head_branch,
                 "--target-branch",

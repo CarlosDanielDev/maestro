@@ -162,6 +162,12 @@ fn http_client(timeout: Duration) -> Result<reqwest::Client, SlackError> {
         .map_err(|e| SlackError::Http(e.to_string()))
 }
 
+/// Map a send error for display or logs. reqwest's `Display` embeds the
+/// request URL — here the webhook secret — so strip it first (#1044, SEC-5).
+pub(crate) fn http_error(e: reqwest::Error) -> SlackError {
+    SlackError::Http(e.without_url().to_string())
+}
+
 /// Incoming-webhook URLs are bearer credentials for one Slack host; refuse
 /// anything else so a typo or a hostile config cannot redirect the payload.
 fn validate_webhook_url(url: &str) -> Result<(), SlackError> {
@@ -218,7 +224,7 @@ impl SlackClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| SlackError::Http(e.to_string()))?;
+            .map_err(http_error)?;
 
         let status = resp.status();
         if status.is_success() {
@@ -338,6 +344,16 @@ mod tests {
         assert!(validate_webhook_url("https://hooks.slack.com.evil.example/x").is_err());
         assert!(validate_webhook_url("not a url").is_err());
         assert!(SlackClient::new("http://127.0.0.1:9/hook".into(), 5).is_err());
+    }
+
+    #[tokio::test]
+    async fn http_error_text_omits_the_webhook_url() {
+        // Port 1 refuses the connection; the path stands in for the secret.
+        let url = "http://127.0.0.1:1/services/T/B/secret-1044";
+        let http = http_client(Duration::from_secs(5)).expect("client");
+        let err = http.post(url).send().await.expect_err("refused");
+        let text = http_error(err).to_string();
+        assert!(!text.contains("secret-1044"), "webhook URL leaked: {text}");
     }
 
     #[tokio::test]

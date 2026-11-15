@@ -89,7 +89,7 @@ impl NotificationDispatcher {
                         tracing::error!("Slack webhook returned HTTP {}", resp.status());
                     }
                     Err(e) => {
-                        tracing::error!("Slack webhook error: {e}");
+                        tracing::error!("{}", super::slack::http_error(e));
                     }
                     _ => {
                         tracing::debug!("Slack notification sent successfully");

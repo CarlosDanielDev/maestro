@@ -261,3 +261,27 @@ async fn create_pr_validates_inputs_like_github_twin() {
         "az must not run on invalid input"
     );
 }
+
+#[tokio::test]
+async fn create_pr_binds_dash_leading_body_to_description_flag() {
+    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
+        r#"{"pullRequestId":5}"#,
+    )]));
+    let client = test_client(runner.clone());
+
+    let body = "- bullet list body\n--org evil";
+    assert_eq!(
+        client
+            .create_pr(1, "t", body, "feat", "main")
+            .await
+            .unwrap(),
+        5
+    );
+
+    let call = &runner.calls()[0];
+    assert!(
+        call.contains(&format!("--description={body}")),
+        "body must be bound to its flag, got: {call:?}"
+    );
+    assert!(!call.iter().any(|arg| arg == body), "got: {call:?}");
+}
