@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-cli"
-version = "0.0.0"
+version = "0.33.0"
 dependencies = [
  "anyhow",
  "async-trait",
