@@ -46,7 +46,8 @@ pub fn scan(root: &Path) -> Scan {
 /// unparseable source contributes nothing rather than aborting the scan.
 fn collect_features(root: &Path) -> Vec<Feature> {
     let cli_src = std::fs::read_to_string(root.join("src/cli.rs")).unwrap_or_default();
-    let tui_src = std::fs::read_to_string(root.join("src/tui/app/types.rs")).unwrap_or_default();
+    let tui_src = std::fs::read_to_string(root.join("crates/maestro-tui/src/tui/app/types.rs"))
+        .unwrap_or_default();
 
     let mut features = Vec::new();
     features.extend(features::surfaces_from_enum(
@@ -59,7 +60,7 @@ fn collect_features(root: &Path) -> Vec<Feature> {
         &tui_src,
         "TuiMode",
         SurfaceType::TuiMode,
-        "src/tui/app/types.rs:TuiMode",
+        "crates/maestro-tui/src/tui/app/types.rs:TuiMode",
     ));
     features.extend(features::surfaces_from_md_dir(
         &read_md_dir(&root.join(".maestro/templates/commands")),
@@ -78,9 +79,11 @@ fn collect_features(root: &Path) -> Vec<Feature> {
 /// frames) and extract the `design_system` block. All reads are best-effort — a
 /// missing file becomes an empty source and contributes an empty section.
 fn collect_design_system(root: &Path) -> DesignSystem {
-    let theme_src = std::fs::read_to_string(root.join("src/tui/theme.rs")).unwrap_or_default();
+    let theme_src = std::fs::read_to_string(root.join("crates/maestro-tui/src/tui/theme.rs"))
+        .unwrap_or_default();
     let icons_src = std::fs::read_to_string(root.join("src/icons.rs")).unwrap_or_default();
-    let frames_src = std::fs::read_to_string(root.join("src/mascot/frames.rs")).unwrap_or_default();
+    let frames_src = std::fs::read_to_string(root.join("crates/maestro-tui/src/mascot/frames.rs"))
+        .unwrap_or_default();
     design_system::collect(&theme_src, &icons_src, &frames_src)
 }
 
@@ -275,6 +278,10 @@ mod tests {
         assert!(
             !s.design_system.palette.is_empty(),
             "design_system.palette must be non-empty when scanning the real repo"
+        );
+        assert!(
+            s.design_system.mascot.is_some(),
+            "design_system.mascot must be read from the TUI crate's mascot frames"
         );
     }
 

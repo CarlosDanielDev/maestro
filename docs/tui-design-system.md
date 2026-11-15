@@ -2,12 +2,12 @@
 
 Reference for anyone (human or AI agent) changing the maestro TUI.
 **Rule zero: reuse before you build.** Every section below lists what already
-exists. If a need is covered here, use it. If not, check `src/tui/` once more,
+exists. If a need is covered here, use it. If not, check `crates/maestro-tui/src/tui/` once more,
 then build the smallest new piece and add it to this doc in the same PR.
 
 This doc is linked to the code. `design_system_doc_names_exist_in_code` in
 `tests/tui_design_system.rs` fails CI when a name or path cited here in
-backticks no longer exists in `src/`. Rename or delete something? Update this
+backticks no longer exists in `src/`, `crates/` or `tests/`. Rename or delete something? Update this
 doc too.
 
 Stack: ratatui + crossterm + tokio. All paths are relative to the repo root.
@@ -19,7 +19,7 @@ for code names; the page shows how the screens look.
 
 ---
 
-## 1. Theme — `src/tui/theme.rs`
+## 1. Theme — `crates/maestro-tui/src/tui/theme.rs`
 
 Every color comes from `&Theme`. Screens receive it in `draw(f, area, theme)`.
 Never write `Color::Rgb(..)` / `Color::Red` in a screen — the theme handles
@@ -68,7 +68,7 @@ fix a file, then remove it from the list.
 
 ---
 
-## 2. Widgets — `src/tui/widgets/`
+## 2. Widgets — `crates/maestro-tui/src/tui/widgets/`
 
 Enforced by `every_widget_is_documented`: every module declared in
 `widgets/mod.rs` must be cited here in backticks (its type, `module::item`,
@@ -98,8 +98,8 @@ get enum dispatch, `edit_hint()` for the keybind bar, and
 | Option | Where | Status |
 |---|---|---|
 | **`Input`** (canonical) | `widgets/input/` — `Input::single_line(cfg)`, `Input::multi_line(cfg)`, `InputConfig::new().placeholder(..).max_len(n).initial(..)`; render with `widgets::input::render` | Foundation landed (#963). Not yet adopted by any screen; migrations #964–#974 pending. **Use this for new fields.** |
-| `wizard_fields::TextAreaField` + `WizardFields` | `src/tui/screens/wizard_fields.rs` | Used by wizards (focus cycle, `insert_sanitized`) |
-| Raw `tui_textarea::TextArea` + `screens::wrap` | pattern in `src/tui/screens/prompt_input/draw.rs` | Rich prompt / interaction input |
+| `wizard_fields::TextAreaField` + `WizardFields` | `crates/maestro-tui/src/tui/screens/wizard_fields.rs` | Used by wizards (focus cycle, `insert_sanitized`) |
+| Raw `tui_textarea::TextArea` + `screens::wrap` | pattern in `crates/maestro-tui/src/tui/screens/prompt_input/draw.rs` | Rich prompt / interaction input |
 
 **Never** hand-roll a `String` + cursor. It caused three bugs in a row in #733
 (cursor drift on wrap, no scroll, no arrow keys). For wrapping and scroll use
@@ -129,7 +129,7 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `unified_pr_toggle::{draw_unified_pr_toggle, draw_checkbox, focus_bar}` | Checkbox row + focus bar |
 | `bypass_indicator::{draw, render_line}` | Header badge when bypass mode is on |
 
-### Other shared helpers (`src/tui/`)
+### Other shared helpers (`crates/maestro-tui/src/tui/`)
 
 | Module | Item | For |
 |---|---|---|
@@ -147,7 +147,7 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 
 ---
 
-## 3. Screens — `src/tui/screens/`
+## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract
 
@@ -182,7 +182,7 @@ The compiler catches most of these, one file at a time. **Two do not.**
 ### Keybindings
 
 Handled **before** any screen by `handle_global_shortcuts` in
-`src/tui/input_handler.rs`. A screen binding these never sees the key:
+`crates/maestro-tui/src/tui/input_handler.rs`. A screen binding these never sees the key:
 
 | Key | Action | Note |
 |---|---|---|
@@ -224,7 +224,7 @@ Conventions: `j/k` or arrows move, `Enter` open/confirm, `Esc` back,
 ## 5. Testing TUI changes
 
 Snapshot tests with `insta` + `ratatui::backend::TestBackend` live in
-`src/tui/snapshot_tests/` (helpers: `test_terminal()`, `make_session(..)`,
+`crates/maestro-tui/src/tui/snapshot_tests/` (helpers: `test_terminal()`, `make_session(..)`,
 `make_gh_issue(..)` in `snapshot_tests/mod.rs`).
 
 ```rust

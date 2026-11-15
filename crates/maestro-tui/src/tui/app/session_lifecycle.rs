@@ -222,9 +222,9 @@ mod tests {
 #[cfg(all(test, unix))]
 mod workspace_trust_tests {
     use super::*;
-    use crate::commands::setup::setup_app_from_config_with_trust;
     use crate::config::{Config, LoadedConfig};
     use crate::session::worktree::MockWorktreeManager;
+    use crate::setup::setup_app_from_config_with_trust;
     use crate::state::store::StateStore;
     use std::path::PathBuf;
 
@@ -309,9 +309,9 @@ command = "{}"
 #[cfg(all(test, unix))]
 mod workspace_trust_env_tests {
     use super::*;
-    use crate::commands::setup::setup_app_from_config_with_trust;
     use crate::config::{Config, LoadedConfig};
     use crate::session::worktree::MockWorktreeManager;
+    use crate::setup::setup_app_from_config_with_trust;
     use crate::state::store::StateStore;
 
     #[tokio::test]

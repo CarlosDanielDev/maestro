@@ -101,13 +101,15 @@ maestro/
 │           ├── pushup.md                  # Canonical port of .claude/commands/pushup.md (203 lines)  [Issue #702]
 │           ├── plan-feature.md            # Canonical port of .claude/commands/plan-feature.md (110 lines)  [Issue #702]
 │           └── simplify.md               # New canonical spec (no .claude/commands/ ancestor) (118 lines)  [Issue #702]
-├── crates/                                # Cargo workspace members (ADR 006); core moved in by #1305, TUI/CLI follow in #1306–#1307  [Issue #1304, #1305]
+├── crates/                                # Cargo workspace members (ADR 006); core moved in by #1305, TUI by #1306, CLI follows in #1307  [Issue #1304, #1305, #1306]
 │   ├── maestro-core/                      # Shared core library; depends on no frontend. Holds every core module (session, config, state, orchestration, providers, budget, git, ...) moved out of `src/` as-is; the per-file notes under `src/` below for those modules still apply at `crates/maestro-core/src/<same path>`. `test-util` feature exposes test doubles to the root crate's tests  [Issue #1305]
 │   │   ├── Cargo.toml
 │   │   └── src/lib.rs                     # `pub mod` for each core module; root `src/lib.rs`/`src/main.rs` re-export them so `crate::<module>` paths keep working
-│   ├── maestro-tui/                       # ratatui frontend; depends on `maestro-core` only
+│   ├── maestro-tui/                       # ratatui frontend; depends on `maestro-core` only. Holds `src/tui/`, `src/mascot/` and `commands/setup.rs` (now `setup.rs`) moved out of the root `src/` as-is, plus the TUI-driven integration tests; the per-file notes under `src/tui/` and `src/mascot/` below still apply at `crates/maestro-tui/src/<same path>`. Version inherits `[workspace.package]` so the header shows the binary's version  [Issue #1306]
 │   │   ├── Cargo.toml
-│   │   └── src/lib.rs
+│   │   └── src/
+│   │       ├── lib.rs                     # `pub mod tui`, `mascot`, `setup`; `pub(crate) use maestro_core::<module>` keeps the TUI's `crate::<module>` paths; root `src/lib.rs`/`src/main.rs` re-export `tui`/`mascot`
+│   │       └── integration_tests/         # TUI-driven integration tests moved from `src/integration_tests/` (fleet board, adopt picker, gates, WIP backup, ...)  [Issue #1306]
 │   └── maestro-cli/                       # CLI frontend; depends on `maestro-core` + `maestro-tui` (TUI launch entry point)
 │       ├── Cargo.toml
 │       └── src/lib.rs
@@ -131,7 +133,7 @@ maestro/
 │   ├── cli_team.rs                        # clap subcommand types for `maestro team`; TeamAction enum (List, New, Explain, Manage, Launch) with all CLI arguments; --json flag on list/explain; --yes / --issue / --issues / --max-parallel flags on launch; --tier flag (user|project) on new; --extends / --implementer / --reviewer / --docs flags on new  [Issue #665]
 │   ├── commands/                          # Command handler modules (one per CLI subcommand)
 │   │   ├── mod.rs                         # Module re-exports; `mod doctor` widened to `pub mod doctor` to allow integration-test access; `pub mod team` added; `pub(crate) mod agent_provider_map` added  [Issue #663, #665, #1000]
-│   │   ├── agent_provider_map.rs          # `enabled_agent_ids()` + `build_agent_provider_map()` relocated from `src/tui/app/mod.rs`; builds the per-agent provider map for headless team-launch without a TUI dependency  [Issue #1000]
+│   │   ├── agent_provider_map.rs          # `enabled_agent_ids()` + `build_agent_provider_map()` relocated from `src/tui/app/mod.rs`; builds the per-agent provider map for headless team-launch without a TUI dependency. Now lives in `crates/maestro-core/src/` with `provider_for_agent()` (moved from `commands/run.rs`); `commands::agent_provider_map` re-exports it  [Issue #1000, #1306]
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard; wires MinimaxQuota into App best-effort via App::with_minimax_quota  [Issue #769]
 │   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report; `pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck>` library entry point for orchestration pre-flight  [Issue #663]

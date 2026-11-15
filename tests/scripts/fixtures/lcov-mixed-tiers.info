@@ -3,7 +3,7 @@ SF:src/session/manager.rs
 LF:100
 LH:95
 end_of_record
-SF:src/tui/app.rs
+SF:crates/maestro-tui/src/tui/app.rs
 LF:200
 LH:100
 end_of_record
