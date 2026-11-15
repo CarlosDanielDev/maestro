@@ -33,7 +33,7 @@ async fn create_issue_happy_path_returns_created_id() {
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0][0..2], ["boards", "query"]);
     assert!(calls[1].windows(2).any(|w| w == ["--title", "New story"]));
-    assert!(calls[1].windows(2).any(|w| w == ["--description", "Body"]));
+    assert!(calls[1].contains(&"--description=Body".to_string()));
     assert!(calls[1].windows(2).any(|w| w == ["--type", "User Story"]));
     assert!(
         calls[1]
@@ -231,4 +231,50 @@ async fn create_issue_rejects_overlong_title_before_api_call() {
 
     assert!(err.contains("issue title too long"));
     assert!(runner.calls().is_empty());
+}
+
+#[tokio::test]
+async fn create_issue_binds_dash_leading_body_to_description_flag() {
+    let runner = Arc::new(MockAzRunner::new(vec![
+        MockAzRunner::success("[]"),
+        MockAzRunner::success(r#"{"id":123}"#),
+    ]));
+    let client = test_client(runner.clone());
+
+    let body = "- bullet list body\n--org evil";
+    client.create_issue("Story", body, &[], None).await.unwrap();
+
+    let create = &runner.calls()[1];
+    assert!(
+        create.contains(&format!("--description={body}")),
+        "body must be bound to its flag, got: {create:?}"
+    );
+    assert!(!create.iter().any(|arg| arg == body), "got: {create:?}");
+}
+
+// az expands a value starting with `@` as a file to read and upload.
+#[tokio::test]
+async fn create_issue_rejects_at_prefixed_title() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_issue("@/Users/x/.ssh/id_rsa", "body", &[], None)
+        .await
+        .expect_err("@-prefixed title");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}
+
+#[tokio::test]
+async fn create_issue_rejects_at_prefixed_body() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_issue("title", "@/Users/x/.ssh/id_rsa", &[], None)
+        .await
+        .expect_err("@-prefixed body");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
 }

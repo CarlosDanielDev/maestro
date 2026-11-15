@@ -20,8 +20,8 @@ pub(super) fn build_create_work_item_args(
         "User Story".to_string(),
         "--title".to_string(),
         title.to_string(),
-        "--description".to_string(),
-        body.to_string(),
+        // `--flag=value` so a `-`-leading body is never read as an option.
+        format!("--description={body}"),
         "--org".to_string(),
         organization.to_string(),
         "--project".to_string(),

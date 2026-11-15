@@ -152,8 +152,7 @@ async fn submit_pr_review_comment_posts_comment_without_vote() {
             "add",
             "--id",
             "13",
-            "--content",
-            "Looks good",
+            "--content=Looks good",
             "--org",
             "https://dev.azure.com/example",
             "--project",
@@ -198,8 +197,7 @@ async fn submit_pr_review_approve_votes_then_comments() {
                 "add",
                 "--id",
                 "14",
-                "--content",
-                "Approved",
+                "--content=Approved",
                 "--org",
                 "https://dev.azure.com/example",
                 "--project",
@@ -225,11 +223,7 @@ async fn submit_pr_review_request_changes_votes_reject_then_comments() {
     let calls = runner.calls();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].windows(2).any(|w| w == ["--vote", "reject"]));
-    assert!(
-        calls[1]
-            .windows(2)
-            .any(|w| w == ["--content", "Needs changes"])
-    );
+    assert!(calls[1].contains(&"--content=Needs changes".to_string()));
 }
 
 #[tokio::test]
@@ -307,6 +301,36 @@ async fn create_pr_rejects_at_prefixed_body() {
 
     let err = client
         .create_pr(1, "title", "@/Users/x/.ssh/id_rsa", "feat", "main")
+        .await
+        .expect_err("@-prefixed body");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}
+
+#[tokio::test]
+async fn submit_pr_review_binds_dash_leading_body_to_content_flag() {
+    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success("")]));
+    let client = test_client(runner.clone());
+
+    let body = "- nit one\n--org evil";
+    client
+        .submit_pr_review(16, ReviewEvent::Comment, body)
+        .await
+        .unwrap();
+
+    let call = &runner.calls()[0];
+    assert!(call.contains(&format!("--content={body}")), "got: {call:?}");
+    assert!(!call.iter().any(|arg| arg == body), "got: {call:?}");
+}
+
+// The vote must not be cast either when the comment is refused.
+#[tokio::test]
+async fn submit_pr_review_rejects_at_prefixed_body_before_voting() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .submit_pr_review(17, ReviewEvent::Approve, "@/Users/x/.ssh/id_rsa")
         .await
         .expect_err("@-prefixed body");
     assert!(err.to_string().contains("'@'"), "got: {err}");

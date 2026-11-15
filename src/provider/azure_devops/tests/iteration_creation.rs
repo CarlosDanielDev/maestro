@@ -148,3 +148,16 @@ async fn create_milestone_duplicate_create_error_recovers_existing_iteration() {
     assert_eq!(calls[1][0..4], ["boards", "iteration", "project", "create"]);
     assert_eq!(calls[2][0..4], ["boards", "iteration", "project", "list"]);
 }
+
+#[tokio::test]
+async fn create_milestone_rejects_at_prefixed_title() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_milestone("@/Users/x/.ssh/id_rsa", "desc")
+        .await
+        .expect_err("@-prefixed title");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}

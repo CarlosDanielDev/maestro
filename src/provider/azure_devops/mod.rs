@@ -552,6 +552,7 @@ impl RepoProvider for AzDevOpsClient {
     async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
         let normalized = validate_title(title, "milestone title")?;
         validate_body(description, "milestone description")?;
+        reject_az_file_ref(&normalized, "milestone title")?;
         reject_az_file_ref(description, "milestone description")?;
         let today = today_utc();
         let existing_json = self
@@ -663,6 +664,8 @@ impl RepoProvider for AzDevOpsClient {
     ) -> Result<CreateOutcome> {
         let normalized_title = validate_title(title, "issue title")?;
         validate_body(body, "issue body")?;
+        reject_az_file_ref(&normalized_title, "issue title")?;
+        reject_az_file_ref(body, "issue body")?;
 
         let existing_issues = self.list_issues(&[]).await?;
         if let Some(issue) = existing_issues
@@ -779,7 +782,9 @@ impl RepoProvider for AzDevOpsClient {
 
     async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
         validate_body(body, "PR review body")?;
+        reject_az_file_ref(body, "PR review body")?;
         let pr_number_str = pr_number.to_string();
+        let content = format!("--content={body}");
 
         if let Some(vote) = pr::review_event_vote(event) {
             self.run_az(&[
@@ -805,8 +810,7 @@ impl RepoProvider for AzDevOpsClient {
             "add",
             "--id",
             &pr_number_str,
-            "--content",
-            body,
+            &content,
             "--org",
             &self.organization,
             "--project",
