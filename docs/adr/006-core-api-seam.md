@@ -189,3 +189,25 @@ frontend code; the TUI may use them later).
 - Narrowing `pub` to only the tables above is left to a follow-up (the
   #1305 ADR stub's "interface hardening"); this move keeps every item that
   was already `pub` as `pub`.
+
+## Amendments from #1307 (CLI crate)
+
+- **`maestro-cli` depends on `maestro-core` only** — this replaces the
+  "through one launch entry point" consequence above. The `maestro` binary
+  depends on both frontends and is the one place that opens the TUI: it runs
+  `maestro`, `run` and `resume` itself and hands every other subcommand to
+  `maestro_cli::dispatch`. A `tui` feature on the CLI crate was rejected: it
+  would let a headless install silently compile the TUI out.
+- Interactive `maestro init` prompts (crossterm raw mode) stay in the binary
+  (`src/init_prompter.rs`) and reach `cmd_init` through the `InitPrompter`
+  trait, so the CLI crate carries no terminal-UI dependency.
+- **Moved to core:** `commands::agent_provider_map` and
+  `commands::run::provider_for_agent` →
+  `agent_provider::provider_map::{enabled_agent_ids, build_agent_provider_map,
+  provider_for_agent}`; `commands::setup::build_notification_dispatcher` →
+  `notifications::dispatcher::build_notification_dispatcher` (re-exported from
+  `commands::setup`); `tui::clipboard::strip_ansi` →
+  `util::sanitize::strip_ansi` (re-exported from `tui::clipboard`).
+  `enter_repo_root_for_test` is `pub` behind `test-util` for the CLI's tests.
+- Still in the binary until #1306: `commands::{dashboard, run, resume,
+  setup}` — they build the `App` and call `tui::run`.

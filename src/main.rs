@@ -6,11 +6,11 @@
 #![warn(clippy::branches_sharing_code)]
 
 // Core modules live in `maestro-core` (ADR 006); these imports keep the
-// `crate::<module>` paths used across the TUI and CLI resolving.
+// `crate::<module>` paths used across the TUI resolving. The headless CLI
+// lives in `maestro-cli` (#1307).
 pub use maestro_core::agent_provider;
 use maestro_core::budget;
 use maestro_core::changelog;
-mod cli;
 mod commands;
 use maestro_core::config;
 use maestro_core::continuous;
@@ -21,7 +21,7 @@ use maestro_core::git;
 use maestro_core::icon_mode;
 use maestro_core::icons;
 use maestro_core::init;
-use maestro_core::insight;
+mod init_prompter;
 use maestro_core::models;
 use maestro_core::modes;
 use maestro_core::notifications;
@@ -33,6 +33,7 @@ use maestro_core::review;
 use maestro_core::session;
 use maestro_core::settings;
 use maestro_core::state;
+#[cfg(test)]
 use maestro_core::templates;
 mod tui;
 use maestro_core::updater;
@@ -51,31 +52,8 @@ use maestro_core::turboquant;
 mod integration_tests;
 
 use clap::Parser;
-use cli::{Cli, Commands, PrdSourceArg, RoleArg};
 use commands::*;
-
-impl From<PrdSourceArg> for adapt::prd_source::PrdSource {
-    fn from(arg: PrdSourceArg) -> Self {
-        match arg {
-            PrdSourceArg::Local => Self::Local,
-            PrdSourceArg::Github => Self::Github,
-            PrdSourceArg::Azure => Self::Azure,
-            PrdSourceArg::Both => Self::Both,
-        }
-    }
-}
-
-impl From<RoleArg> for session::role::Role {
-    fn from(arg: RoleArg) -> Self {
-        match arg {
-            RoleArg::Implementer => Self::Implementer,
-            RoleArg::Orchestrator => Self::Orchestrator,
-            RoleArg::Reviewer => Self::Reviewer,
-            RoleArg::Docs => Self::Docs,
-            RoleArg::DevOps => Self::DevOps,
-        }
-    }
-}
+use maestro_cli::cli::{Cli, Commands};
 
 /// Cross-platform log writer that falls back to `io::sink()` if the log file
 /// cannot be opened (avoids the `/dev/null` panic on non-Unix platforms).
@@ -132,103 +110,10 @@ async fn main() -> anyhow::Result<()> {
         config::run_startup_migration(std::path::Path::new("maestro.toml"));
     }
 
+    // Subcommands that open the TUI run here; the rest are headless and
+    // live in `maestro-cli` (#1307).
     match cli.command {
-        Some(Commands::Init {
-            reset,
-            non_interactive,
-        }) => cmd_init(reset, non_interactive),
-        Some(Commands::Clean { dry_run, stale }) => cmd_clean(dry_run, stale),
-        Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,
-        Some(Commands::TestSlack) => cmd_test_slack().await,
-        Some(Commands::Completions { shell }) => cli::cmd_completions(shell),
-        Some(Commands::Mangen { out_dir }) => cli::cmd_mangen(&out_dir),
-        Some(Commands::Team { action }) => commands::team::dispatch(action).await,
-        Some(Commands::SyncTemplates {
-            provider,
-            check,
-            dry_run,
-        }) => commands::cmd_sync_templates(commands::SyncTemplatesArgs {
-            provider,
-            check,
-            dry_run,
-        }),
-        Some(Commands::Trust { yes }) => commands::trust::cmd_trust(yes),
-        Some(Commands::Untrust) => commands::trust::cmd_untrust(),
-        Some(Commands::Doctor) => cmd_doctor(),
-        Some(Commands::Insight { action }) => match action {
-            cli::InsightAction::Scan => insight::run_cli(std::path::Path::new(".")),
-        },
-        Some(Commands::Adapt {
-            path,
-            dry_run,
-            no_issues,
-            scan_only,
-            model,
-            source,
-        }) => {
-            adapt::cmd_adapt(adapt::AdaptConfig {
-                path,
-                dry_run,
-                no_issues,
-                scan_only,
-                model,
-                prd_source: source.into(),
-            })
-            .await
-        }
-        Some(Commands::Prd {
-            path,
-            model,
-            force,
-            source,
-        }) => {
-            adapt::cmd_prd(adapt::PrdConfig {
-                path,
-                model,
-                force,
-                source: source.into(),
-            })
-            .await
-        }
-        Some(Commands::Sanitize {
-            path,
-            output,
-            severity,
-            skip_ai,
-            model,
-        }) => {
-            let output_fmt = match output {
-                cli::SanitizeOutputFormat::Text => sanitize::OutputFormat::Text,
-                cli::SanitizeOutputFormat::Json => sanitize::OutputFormat::Json,
-                cli::SanitizeOutputFormat::Markdown => sanitize::OutputFormat::Markdown,
-            };
-            let sev = match severity {
-                cli::SanitizeSeverityFilter::Critical => sanitize::Severity::Critical,
-                cli::SanitizeSeverityFilter::Warning => sanitize::Severity::Warning,
-                cli::SanitizeSeverityFilter::Info => sanitize::Severity::Info,
-            };
-            sanitize::cmd_sanitize(sanitize::SanitizeConfig {
-                path,
-                output: output_fmt,
-                severity: sev,
-                skip_ai,
-                model,
-            })
-            .await
-        }
-        Some(Commands::TurboQuant { action }) => match action {
-            cli::TurboQuantAction::Benchmark {
-                dim,
-                count,
-                bits,
-                output,
-            } => cmd_turboquant_benchmark(dim, count, bits, output),
-        },
-        Some(Commands::Status) => cmd_status(),
-        Some(Commands::Cost) => cmd_cost(),
-        Some(Commands::Queue) => cmd_queue().await,
-        Some(Commands::Add { issue_number }) => cmd_add(issue_number).await,
         Some(Commands::Run {
             prompt,
             issue,
@@ -273,6 +158,9 @@ async fn main() -> anyhow::Result<()> {
             .await
         }
         None => cmd_dashboard().await,
+        Some(command) => {
+            maestro_cli::dispatch(command, &mut init_prompter::TerminalInitPrompter).await
+        }
     }
 }
 

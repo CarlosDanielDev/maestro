@@ -2,7 +2,8 @@
 //!
 //! The three crates must stay workspace members, and their dependency
 //! direction must follow ADR 006: core depends on no frontend, the TUI
-//! depends on core only, the CLI may depend on both.
+//! depends on core only, the CLI depends on core only (#1307). The `maestro`
+//! binary depends on both frontends and is the one place that opens the TUI.
 
 use std::path::Path;
 
@@ -66,4 +67,38 @@ fn crate_dependencies_follow_adr_006() {
         !tui.iter().any(|d| d == "maestro-cli"),
         "maestro-tui must not depend on maestro-cli: {tui:?}"
     );
+}
+
+#[test]
+fn cli_crate_has_no_terminal_ui_dependency() {
+    let manifest_path = root().join("crates/maestro-cli/Cargo.toml");
+    let cli = deps(&manifest(&manifest_path));
+    for banned in [
+        "maestro-tui",
+        "ratatui",
+        "crossterm",
+        "tui-textarea",
+        "arboard",
+    ] {
+        assert!(
+            !cli.iter().any(|d| d == banned),
+            "maestro-cli must not depend on {banned} (#1307): {cli:?}"
+        );
+    }
+}
+
+#[test]
+fn cli_code_lives_in_the_cli_crate() {
+    for path in [
+        "crates/maestro-cli/src/cli.rs",
+        "crates/maestro-cli/src/commands/mod.rs",
+    ] {
+        assert!(root().join(path).is_file(), "{path} must exist (#1307)");
+    }
+    for path in ["src/cli.rs", "src/cli_team.rs"] {
+        assert!(
+            !root().join(path).exists(),
+            "{path} must live in crates/maestro-cli (#1307)"
+        );
+    }
 }

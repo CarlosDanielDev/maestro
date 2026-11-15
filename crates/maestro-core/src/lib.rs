@@ -53,8 +53,9 @@ pub mod work;
 /// (`.claude/skills`, `.maestro/templates`), the way production code does.
 /// They ran from the repo root while core lived in the root package; cargo
 /// now runs them from `crates/maestro-core`, so they opt back in here.
-#[cfg(test)]
-pub(crate) fn enter_repo_root_for_test() {
+/// `maestro-cli` tests use it too (via `test-util`, #1307).
+#[cfg(any(test, feature = "test-util"))]
+pub fn enter_repo_root_for_test() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         std::env::set_current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))

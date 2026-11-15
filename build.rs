@@ -11,20 +11,20 @@
 //!
 //! **Re-runs when:**
 //! - `build.rs` changes  (implicit, handled by Cargo)
-//! - `src/cli.rs` changes (explicit directive below — this file defines the CLI)
+//! - `crates/maestro-cli/src/cli.rs` changes (explicit directive below — this file defines the CLI)
 //! - `Cargo.toml` changes (explicit directive below — version / dependency changes)
 
 #![allow(clippy::expect_used)] // Build scripts conventionally use expect()
 // NOTE: cli.rs must remain self-contained (no imports from other src/ modules)
 // because build.rs includes it directly via #[path].
-#[path = "src/cli.rs"]
+#[path = "crates/maestro-cli/src/cli.rs"]
 mod cli;
 
 fn main() {
     use clap::CommandFactory;
 
     // Tell Cargo when to re-run this script.
-    println!("cargo:rerun-if-changed=src/cli.rs");
+    println!("cargo:rerun-if-changed=crates/maestro-cli/src/cli.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
 
     let out_dir =

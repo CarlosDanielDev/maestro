@@ -6,6 +6,7 @@ pub mod ollama;
 pub mod openai_compat;
 pub mod opencode;
 pub mod parser;
+pub mod provider_map;
 pub mod quota;
 pub mod qwen;
 mod qwen_parser;

@@ -8,7 +8,7 @@
 //! is ever spawned; the trusted counterpart must proceed into dispatch.
 //!
 //! Existing tests pin the seam (`ensure_launch_config_trusted`) only; this
-//! file pins the wiring, so dropping the call at `src/commands/team_launch.rs`
+//! file pins the wiring, so dropping the call at `crates/maestro-cli/src/commands/team_launch.rs`
 //!'s `run_issue` flips `team_launch_refuses_untrusted_config_before_spawning_
 //! command` red (the stub runs and the launch succeeds).
 //!

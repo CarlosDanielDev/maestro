@@ -54,7 +54,9 @@ impl SyncFs for FakeFs {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    // The runner reads `.maestro/templates` relative to cwd, as in production.
+    maestro_core::enter_repo_root_for_test();
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
 fn cache_root() -> PathBuf {

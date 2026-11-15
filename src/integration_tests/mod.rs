@@ -23,8 +23,6 @@ mod concurrent_sessions;
 #[cfg(test)]
 mod docs_gen;
 #[cfg(test)]
-mod doctor_run_health_check;
-#[cfg(test)]
 mod fleet_board_actions;
 #[cfg(test)]
 mod fleet_board_route;
@@ -32,8 +30,6 @@ mod fleet_board_route;
 mod gate_failure_retention;
 #[cfg(test)]
 mod gates_running_state;
-#[cfg(test)]
-mod init;
 #[cfg(test)]
 mod interaction_terminator;
 #[cfg(test)]

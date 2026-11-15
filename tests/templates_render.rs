@@ -11,8 +11,8 @@ use std::path::Path;
 use maestro::agent_provider::{
     AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, QwenProvider,
 };
-use maestro::commands::sync_templates::banner::with_banner;
 use maestro::templates::render_for_provider;
+use maestro_cli::commands::sync_templates::banner::with_banner;
 
 fn assert_byte_identical(command: &str, rendered: &str, committed_path: &Path) {
     let baseline = std::fs::read_to_string(committed_path)

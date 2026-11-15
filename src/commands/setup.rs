@@ -1,5 +1,6 @@
-use crate::config::{LoadedConfig, NotificationsConfig};
-use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::config::LoadedConfig;
+// Moved to core in #1307; re-exported so the TUI call sites keep resolving.
+pub use crate::notifications::dispatcher::build_notification_dispatcher;
 use crate::review::bypass::BypassSource;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
@@ -158,21 +159,6 @@ pub fn startup_cleanup(repo_root: &std::path::Path) {
     {
         tracing::info!("Cleaned {} old session logs", removed);
     }
-}
-
-pub fn build_notification_dispatcher(cfg: &NotificationsConfig) -> NotificationDispatcher {
-    let mut dispatcher = NotificationDispatcher::new(cfg.desktop);
-    if cfg.slack {
-        if let Some(ref url) = cfg.slack_webhook_url {
-            dispatcher = dispatcher.with_slack(url.clone(), cfg.slack_rate_limit_per_min);
-            if dispatcher.has_slack() {
-                tracing::info!("Slack notifications enabled");
-            }
-        } else {
-            tracing::warn!("notifications.slack = true but no slack_webhook_url configured");
-        }
-    }
-    dispatcher
 }
 
 #[cfg(test)]

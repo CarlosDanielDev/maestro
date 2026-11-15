@@ -1,6 +1,6 @@
 //! `team` subcommand surface for the `maestro` CLI.
 //!
-//! Kept separate from `src/cli.rs` so the latter stays compact, but
+//! Kept separate from `cli.rs` so the latter stays compact, but
 //! self-contained (no cross-crate imports) because `build.rs` includes
 //! both files via `#[path]` to generate man pages and shell completions.
 

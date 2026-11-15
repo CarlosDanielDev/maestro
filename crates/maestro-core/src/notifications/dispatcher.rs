@@ -16,6 +16,25 @@ pub struct NotificationDispatcher {
     slack_rejection: Option<String>,
 }
 
+/// Build the dispatcher from `[notifications]` config (moved from the
+/// binary's `commands::setup` in #1307 so the CLI and TUI share it).
+pub fn build_notification_dispatcher(
+    cfg: &crate::config::NotificationsConfig,
+) -> NotificationDispatcher {
+    let mut dispatcher = NotificationDispatcher::new(cfg.desktop);
+    if cfg.slack {
+        if let Some(ref url) = cfg.slack_webhook_url {
+            dispatcher = dispatcher.with_slack(url.clone(), cfg.slack_rate_limit_per_min);
+            if dispatcher.has_slack() {
+                tracing::info!("Slack notifications enabled");
+            }
+        } else {
+            tracing::warn!("notifications.slack = true but no slack_webhook_url configured");
+        }
+    }
+    dispatcher
+}
+
 impl NotificationDispatcher {
     pub fn new(desktop_enabled: bool) -> Self {
         Self {

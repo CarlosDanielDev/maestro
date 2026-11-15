@@ -99,7 +99,7 @@ impl SchedulerRunner for ProductionSchedulerRunner {
         let mut ctx = DispatchContext::new(team.clone(), config.clone(), default_model);
         if let Some(cfg) = config.as_deref() {
             let factory = AgentProviderFactory::default().with_agent_providers(
-                crate::commands::agent_provider_map::build_agent_provider_map(cfg),
+                crate::agent_provider::provider_map::build_agent_provider_map(cfg),
             );
             ctx = ctx.with_provider_factory(factory);
         }
