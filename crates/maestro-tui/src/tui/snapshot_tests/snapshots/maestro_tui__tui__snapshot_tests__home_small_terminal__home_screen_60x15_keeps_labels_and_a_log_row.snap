@@ -3,7 +3,7 @@ source: crates/maestro-tui/src/tui/snapshot_tests/home_small_terminal.rs
 expression: t.backend()
 ---
 "╔══════════════════════════════════════════════════════════╗"
-"║ MAESTRO v0.33.0  ══ Dashboard ══ 󰙍 0 agents (0 active) ══║"
+"║ MAESTRO v0.33.1  ══ Dashboard ══ 󰙍 0 agents (0 active) ══║"
 "╚══════════════════════════════════════════════════════════╝"
 "╔[ Quick Actions ╗╔══[ Suggestions ]══╗╔[ Recent Activity ]╗"
 "║  [i]  Browse I…║║  󰝦 3 issues labele║║   #2 Start the wo║"
