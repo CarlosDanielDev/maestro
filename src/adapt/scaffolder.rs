@@ -48,16 +48,36 @@ impl ProjectScaffolder for ClaudeScaffolder {
         report: &AdaptReport,
         plan: &AdaptPlan,
     ) -> anyhow::Result<ScaffoldResult> {
-        let profile_json = serde_json::to_string_pretty(profile)?;
-        let report_json = serde_json::to_string_pretty(report)?;
-        let plan_json = serde_json::to_string_pretty(plan)?;
-        let prompt = prompts::build_scaffold_prompt(&profile_json, &report_json, &plan_json);
-        let raw = prompts::run_claude_print(&self.model, &prompt, &profile.root).await?;
-        let manifest: ScaffoldManifest = prompts::parse_json_response(&raw)?;
-
-        let claude_dir = profile.root.join(".claude");
-        write_scaffold_files(&claude_dir, &manifest.files)
+        scaffold_with(profile, report, plan, |prompt| async move {
+            prompts::run_claude_print(&self.model, &prompt, &profile.root).await
+        })
+        .await
     }
+}
+
+/// `scaffold` with the model call injected, so tests can count calls
+/// without spawning the real (paid) CLI.
+async fn scaffold_with<F, Fut>(
+    profile: &ProjectProfile,
+    report: &AdaptReport,
+    plan: &AdaptPlan,
+    run_model: F,
+) -> anyhow::Result<ScaffoldResult>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<String>>,
+{
+    // Refuse a symlinked `.claude` before the paid call, not after (#1314).
+    let claude_dir = profile.root.join(".claude");
+    refuse_symlinked_root(&claude_dir)?;
+    let profile_json = serde_json::to_string_pretty(profile)?;
+    let report_json = serde_json::to_string_pretty(report)?;
+    let plan_json = serde_json::to_string_pretty(plan)?;
+    let prompt = prompts::build_scaffold_prompt(&profile_json, &report_json, &plan_json);
+    let raw = run_model(prompt).await?;
+    let manifest: ScaffoldManifest = prompts::parse_json_response(&raw)?;
+
+    write_scaffold_files(&claude_dir, &manifest.files)
 }
 
 /// Structural path validation: every component must be `Component::Normal`.
@@ -70,14 +90,11 @@ fn is_safe_relative_path(path: &str) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
-fn write_scaffold_files(
-    claude_dir: &Path,
-    entries: &[ScaffoldFileEntry],
-) -> anyhow::Result<ScaffoldResult> {
-    // The `.claude` root itself must not be a symlink: canonicalizing a
-    // planted `.claude -> ~/elsewhere` would move the containment anchor
-    // along with it (#1099). A `.claude -> dotfiles` setup is refused too;
-    // the error names the remedy instead of following the link.
+/// The `.claude` root itself must not be a symlink: canonicalizing a
+/// planted `.claude -> ~/elsewhere` would move the containment anchor
+/// along with it (#1099). A `.claude -> dotfiles` setup is refused too;
+/// the error names the remedy instead of following the link.
+pub(crate) fn refuse_symlinked_root(claude_dir: &Path) -> anyhow::Result<()> {
     if std::fs::symlink_metadata(claude_dir).is_ok_and(|m| m.file_type().is_symlink()) {
         anyhow::bail!(
             "refusing to scaffold: {} is a symlink. maestro adapt only writes inside \
@@ -87,6 +104,16 @@ fn write_scaffold_files(
             claude_dir.display()
         );
     }
+    Ok(())
+}
+
+fn write_scaffold_files(
+    claude_dir: &Path,
+    entries: &[ScaffoldFileEntry],
+) -> anyhow::Result<ScaffoldResult> {
+    // Kept here too (defense in depth): the root may change between the
+    // early check in `scaffold_with` and the write.
+    refuse_symlinked_root(claude_dir)?;
     // With a real root, containment is re-checked per entry against the
     // canonicalized root so a repo-planted symlinked subdirectory
     // (`.claude/agents -> ~/elsewhere`) cannot redirect a scaffold write
@@ -603,6 +630,67 @@ mod tests {
         assert!(
             !target.exists(),
             "dangling .claude link must not be followed"
+        );
+    }
+
+    #[tokio::test]
+    async fn scaffold_refuses_symlinked_claude_root_before_model_call() {
+        // #1314: a `.claude -> dotfiles` link must be refused before the
+        // paid scaffold call, not after it.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join(".claude")).unwrap();
+        let mut profile = sample_profile_rust();
+        profile.root = dir.path().to_path_buf();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+
+        let err = scaffold_with(&profile, &sample_report(), &sample_plan(), |_prompt| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async { Ok(r#"{"files":[{"path":"CLAUDE.md","content":"x"}]}"#.to_string()) }
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the model must not be called for a symlinked .claude"
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("symlink"), "names the cause, got: {msg}");
+        assert!(
+            msg.contains("real directory"),
+            "names the remedy, got: {msg}"
+        );
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn cmd_adapt_refuses_symlinked_claude_root_before_analysis() {
+        // #1314: `cmd_adapt` makes three paid calls (analyze, PRD, plan)
+        // before the scaffolder. The refusal must come first. Analyze, PRD
+        // and scaffold errors are all swallowed, so a symlink error here can
+        // only come from the early check, ahead of Phase 2.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join(".claude")).unwrap();
+        let config = crate::adapt::AdaptConfig {
+            path: dir.path().to_path_buf(),
+            // If the check regresses, stop before Phase 4 so the test can
+            // never create real milestones or issues.
+            dry_run: true,
+            ..Default::default()
+        };
+
+        let err = crate::adapt::cmd_adapt(config).await.unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("symlink"), "names the cause, got: {msg}");
+        assert!(
+            msg.contains("real directory"),
+            "names the remedy, got: {msg}"
         );
     }
 
