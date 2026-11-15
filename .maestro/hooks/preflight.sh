@@ -7,7 +7,7 @@
 #
 # Gates included:
 #   - cargo fmt --check
-#   - cargo clippy -- -D warnings -A dead_code
+#   - cargo clippy --workspace -- -D warnings -A dead_code
 #   - scripts/check-file-size.sh (includes deadline enforcement from Wave 1)
 #
 # Gates NOT included (CI-only):
@@ -24,8 +24,8 @@ set -e
 echo "preflight: cargo fmt --check"
 cargo fmt -- --check
 
-echo "preflight: cargo clippy -- -D warnings -A dead_code"
-cargo clippy -- -D warnings -A dead_code
+echo "preflight: cargo clippy --workspace -- -D warnings -A dead_code"
+cargo clippy --workspace -- -D warnings -A dead_code
 
 echo "preflight: scripts/check-file-size.sh"
 bash scripts/check-file-size.sh

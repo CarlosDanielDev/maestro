@@ -10,9 +10,10 @@ license = "MIT"
 name = "maestro"
 path = "src/main.rs"
 
-# Workspace skeleton (#1304, ADR 006). The crates are empty for now;
-# #1305-#1307 move code out of `src/` into them. The root package stays the
-# default member, so `cargo build`/`test`/`clippy` keep their current scope.
+# Workspace (#1304, ADR 006). maestro-core holds the core modules (#1305);
+# maestro-tui and maestro-cli stay empty until #1306/#1307. There are no
+# default-members, so plain `cargo test`/`clippy` at the root cover only the
+# root package: gates pass `--workspace` to reach maestro-core.
 [workspace]
 members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
 

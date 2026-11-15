@@ -269,11 +269,11 @@ fi
 success "Tag ${TAG}: not yet present"
 
 info "Running cargo test..."
-cargo test --bin maestro 2>&1 | tail -5
+cargo test --workspace 2>&1 | tail -5
 success "Tests pass (pre-bump)"
 
 info "Running cargo clippy..."
-cargo clippy -- -D warnings -A dead_code 2>&1 | tail -5
+cargo clippy --workspace -- -D warnings -A dead_code 2>&1 | tail -5
 success "Clippy: clean"
 
 info "Running cargo fmt --check..."
@@ -472,7 +472,9 @@ fi
 
 # ── Step 5: Commit ──────────────────────────────────────────────────────────────
 info "Staging files..."
-git add Cargo.toml CHANGELOG.md
+# crates/*/Cargo.toml: the maestro-core pins bumped above; Cargo.lock
+# records both versions (#1305).
+git add Cargo.toml Cargo.lock crates/*/Cargo.toml CHANGELOG.md
 
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__landing__landing_welcome_"*.snap 2>/dev/null || true

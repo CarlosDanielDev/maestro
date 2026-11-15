@@ -25,8 +25,8 @@ Closes #556
 
 ## Test plan
 
-- [ ] cargo test --quiet
-- [ ] cargo clippy -- -D warnings -A dead_code
+- [ ] cargo test --workspace --quiet
+- [ ] cargo clippy --workspace -- -D warnings -A dead_code
 - [ ] cargo fmt --check
 - [ ] manual verification: <PLACEHOLDER>
 EOF
