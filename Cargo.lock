@@ -1517,7 +1517,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "maestro"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-cli"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-core"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1635,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-tui"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "anyhow",
  "arboard",

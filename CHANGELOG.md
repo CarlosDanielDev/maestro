@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-11-15
+
+### Fixed
+- **`maestro --version` reports the real version again.** v0.33.0 printed `maestro 0.0.0`: after the workspace split the CLI crate did not inherit the workspace version. Every crate now inherits it, and a test checks `--version` against the package version. The updater and the TUI header were not affected. (#1336)
+
 ## [0.33.0] - 2026-11-15
 
 > v0.32.0 (the 2026-09 security-audit hardening milestone) was never tagged on its own; its fixes ship in this release. The version sequence is v0.31.8 → v0.33.0.
