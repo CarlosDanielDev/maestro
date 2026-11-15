@@ -20,7 +20,6 @@ pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>
 /// gzip bomb cannot exhaust memory (#1044, FS-6).
 fn extract_binary_from_tar_gz_capped(archive_bytes: &[u8], max: u64) -> Result<Vec<u8>> {
     use flate2::read::GzDecoder;
-    use std::io::Read;
     use tar::Archive;
 
     let decoder = GzDecoder::new(archive_bytes);
@@ -35,16 +34,26 @@ fn extract_binary_from_tar_gz_capped(archive_bytes: &[u8], max: u64) -> Result<V
                 anyhow::bail!("maestro entry exceeds {max} bytes (declared size)");
             }
             // Bytes read, not only the header: sparse entries inflate past it.
-            let mut bytes = Vec::new();
-            entry.take(max + 1).read_to_end(&mut bytes)?;
-            if bytes.len() as u64 > max {
-                anyhow::bail!("maestro entry exceeds {max} bytes");
-            }
-            return Ok(bytes);
+            return read_to_end_capped(entry, max);
         }
     }
     anyhow::bail!("No 'maestro' binary found in tar.gz archive")
 }
+
+/// Read at most `max` bytes; a longer stream is an error, never truncated.
+fn read_to_end_capped(reader: impl std::io::Read, max: u64) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    reader.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        anyhow::bail!("maestro entry exceeds {max} bytes");
+    }
+    Ok(bytes)
+}
+
+/// Cap for `sha256sums.txt` and its `.minisig`: a few hundred bytes in a
+/// real release, so 64 KiB leaves wide headroom (#1044).
+const MAX_SUMS_SIZE: u64 = 64 * 1024;
 
 /// One entry of the (signature-verified) SHA256SUMS file.
 pub(crate) struct SumsEntry {
@@ -165,7 +174,8 @@ impl Installer {
         if !resp.status().is_success() {
             anyhow::bail!("HTTP {} for {}", resp.status(), url);
         }
-        Ok(resp.text().await?)
+        let body = read_body_capped(resp, MAX_SUMS_SIZE).await?;
+        Ok(String::from_utf8(body)?)
     }
 
     /// Fetch the checksums file and its minisign signature from the same

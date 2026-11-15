@@ -107,13 +107,12 @@ pub fn validate_slack_webhook_url(config: &Config) -> ValidationFeedback {
     match &config.notifications.slack_webhook_url {
         None => ValidationFeedback::valid(),
         Some(url) if url.is_empty() => ValidationFeedback::valid(),
-        Some(url) => {
-            if url.starts_with("https://") || url.starts_with("http://") {
-                ValidationFeedback::valid()
-            } else {
-                ValidationFeedback::error("must be a valid URL (https://...)")
-            }
-        }
+        // Same rule the runtime enforces, so the screen never saves a URL
+        // that Slack setup would then refuse (#1044).
+        Some(url) => match crate::notifications::slack::validate_webhook_url(url) {
+            Ok(()) => ValidationFeedback::valid(),
+            Err(e) => ValidationFeedback::error(e.to_string()),
+        },
     }
 }
 
@@ -416,6 +415,18 @@ alert_threshold_pct = 80
             validate_slack_webhook_url(&c).severity,
             ValidationSeverity::Valid
         );
+    }
+
+    #[test]
+    fn slack_url_refused_like_runtime() {
+        let mut c = test_config();
+        for url in [
+            "http://hooks.slack.com/services/T00/B00/xxx",
+            "https://evil.example/services/T00/B00/xxx",
+        ] {
+            c.notifications.slack_webhook_url = Some(url.into());
+            assert!(validate_slack_webhook_url(&c).is_error(), "accepted {url}");
+        }
     }
 
     #[test]

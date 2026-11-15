@@ -5,6 +5,9 @@ pub async fn cmd_test_slack() -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
     let mut dispatcher = build_notification_dispatcher(&config.notifications);
 
+    if let Some(reason) = dispatcher.slack_rejection() {
+        anyhow::bail!("{reason}");
+    }
     if !dispatcher.has_slack() {
         anyhow::bail!(
             "Slack is not configured. Set notifications.slack = true and slack_webhook_url in maestro.toml"

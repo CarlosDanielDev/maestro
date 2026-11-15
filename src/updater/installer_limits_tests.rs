@@ -136,3 +136,32 @@ async fn derived_sums_url_is_rechecked_against_allowlist() {
     .expect_err("derived URL off the allowlist");
     assert!(err.to_string().contains("untrusted"), "got: {err}");
 }
+
+/// A stream longer than the cap: the bytes-read guard itself must stop it,
+/// independent of any tar header (#1044 judge finding).
+#[test]
+fn capped_reader_stops_a_stream_longer_than_the_cap() {
+    let stream = vec![7u8; 2048];
+    let err = read_to_end_capped(&stream[..], 1024).expect_err("over cap");
+    assert!(err.to_string().contains("exceeds"), "got: {err}");
+    assert_eq!(
+        read_to_end_capped(&stream[..], 2048).expect("at cap").len(),
+        2048
+    );
+}
+
+fn oversized_sums(_path: &str, _port: u16) -> Vec<u8> {
+    let mut resp = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".to_vec();
+    resp.extend(std::iter::repeat_n(b'a', MAX_SUMS_SIZE as usize + 1));
+    resp
+}
+
+#[tokio::test]
+async fn checksum_and_signature_downloads_are_capped() {
+    let port = spawn_raw(oversized_sums).await;
+    let client = build_client(only_127).expect("client");
+    let err = Installer::fetch_text(&client, &format!("http://127.0.0.1:{port}/sha256sums.txt"))
+        .await
+        .expect_err("sums body over cap");
+    assert!(err.to_string().contains("too large"), "got: {err}");
+}

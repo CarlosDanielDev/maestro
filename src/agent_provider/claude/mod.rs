@@ -206,6 +206,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn text_args_end_options_before_prompt() {
+        let request = AgentRequest::stream_json("-looks like a flag".into(), "m".into());
+        let args = headless::build_text_args(&request);
+        assert_eq!(&args[args.len() - 2..], ["--", "-looks like a flag"]);
+    }
+
+    #[test]
     fn transport_from_config_value_maps_all_cases() {
         assert!(matches!(
             ClaudeTransport::from_config_value(None),

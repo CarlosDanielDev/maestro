@@ -103,6 +103,17 @@ pub fn setup_app_from_config_with_trust(
     ));
 
     app.notifications = build_notification_dispatcher(&config.notifications);
+    // #1044: surface Slack config problems in the activity log, where users
+    // look — not only in maestro.log.
+    let warn = crate::tui::activity_log::LogLevel::Warn;
+    if let Some(reason) = app.notifications.slack_rejection() {
+        let msg = format!("Slack notifications disabled: {reason}");
+        app.activity_log.push_simple("config".into(), msg, warn);
+    }
+    if let Some(msg) = config.notifications.webhook_leak_warning() {
+        tracing::warn!("{msg}");
+        app.activity_log.push_simple("config".into(), msg, warn);
+    }
 
     if !config.plugins.is_empty() {
         app.plugin_runner = Some(crate::plugins::runner::PluginRunner::with_trust(
@@ -154,7 +165,9 @@ pub fn build_notification_dispatcher(cfg: &NotificationsConfig) -> NotificationD
     if cfg.slack {
         if let Some(ref url) = cfg.slack_webhook_url {
             dispatcher = dispatcher.with_slack(url.clone(), cfg.slack_rate_limit_per_min);
-            tracing::info!("Slack notifications enabled");
+            if dispatcher.has_slack() {
+                tracing::info!("Slack notifications enabled");
+            }
         } else {
             tracing::warn!("notifications.slack = true but no slack_webhook_url configured");
         }
@@ -216,6 +229,46 @@ command = "claude"
             .unwrap_or_else(|| panic!("no bypass activation entry logged"))
             .message
             .clone()
+    }
+
+    fn build_app_with_webhook(url: &str) -> (App, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = config_with_permission_mode("default");
+        config.notifications.slack = true;
+        config.notifications.slack_webhook_url = Some(url.to_string());
+        let app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state-webhook.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            true,
+        );
+        (app, dir)
+    }
+
+    fn logged(app: &App, needle: &str) -> bool {
+        app.activity_log
+            .entries()
+            .iter()
+            .any(|e| e.message.contains(needle))
+    }
+
+    #[test]
+    fn webhook_in_config_warns_in_activity_log() {
+        let (app, _dir) = build_app_with_webhook("https://hooks.slack.com/services/T/B/x");
+        assert!(app.notifications.has_slack());
+        assert!(logged(&app, "slack_webhook_url is set in maestro.toml"));
+    }
+
+    #[test]
+    fn rejected_webhook_is_reported_in_activity_log() {
+        let (app, _dir) = build_app_with_webhook("http://hooks.slack.com/services/T/B/x");
+        assert!(!app.notifications.has_slack());
+        assert!(logged(&app, "Slack webhook URL rejected"));
     }
 
     #[test]
