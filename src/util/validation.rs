@@ -134,7 +134,7 @@ pub fn validate_agent_env_key(key: &str) -> Result<()> {
         || AGENT_ENV_DENYLIST_SUFFIXES.iter().any(|s| key.ends_with(s))
     {
         bail!(
-            "Env var {:?} is not allowed in agent env (loader/interpreter injection risk)",
+            "Env var {:?} is not allowed in agent env (can redirect code loading or TLS/registry trust)",
             key
         );
     }
@@ -406,9 +406,13 @@ mod tests {
             "PIP_EXTRA_INDEX_URL",
             "NPM_CONFIG_REGISTRY",
         ] {
+            let err = validate_agent_env_key(key)
+                .expect_err(&format!("{key} must be denied in agent env"))
+                .to_string();
+            // The reason must fit every family, not only loaders.
             assert!(
-                validate_agent_env_key(key).is_err(),
-                "{key} must be denied in agent env"
+                err.contains(key) && err.contains("TLS/registry trust"),
+                "error for {key} must name the key and the reason, got: {err}"
             );
         }
     }
@@ -420,8 +424,8 @@ mod tests {
         // because they follow the const. Bump the floor only when a key is
         // removed on purpose.
         assert!(
-            AGENT_ENV_DENYLIST_EXACT.len() >= 40,
-            "agent env denylist unexpectedly shrank ({} entries < 40)",
+            AGENT_ENV_DENYLIST_EXACT.len() >= 43,
+            "agent env denylist unexpectedly shrank ({} entries < 43)",
             AGENT_ENV_DENYLIST_EXACT.len()
         );
         assert!(
