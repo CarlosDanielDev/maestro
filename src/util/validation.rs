@@ -89,11 +89,32 @@ pub(crate) const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "NODE_TLS_REJECT_UNAUTHORIZED",
     "SSLKEYLOGFILE",
     "PIP_CERT",
+    // #1135 census (third review pass on #1126): CA-trust / TLS config files
+    // not caught by the family tables below.
+    "CURL_HOME",
+    "WGETRC",
+    "PYTHONHTTPSVERIFY",
 ];
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
-/// LD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, GIT_SSH_COMMAND, ...).
-pub(crate) const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
+/// LD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, GIT_SSH_COMMAND, ...). The #1135
+/// families deny a whole toolchain namespace (ADR 005): NODE_TLS_* (TLS
+/// verification), OPENSSL_* (OPENSSL_CONF / OPENSSL_ENGINES load code and CA
+/// config), PIP_* and NPM_CONFIG_* (package-registry and CA hijack).
+pub(crate) const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &[
+    "LD_",
+    "DYLD_",
+    "GIT_",
+    "NODE_TLS_",
+    "OPENSSL_",
+    "PIP_",
+    "NPM_CONFIG_",
+];
+
+/// Key suffixes rejected in `[agents.<id>].env` (#1135, ADR 005): the CA
+/// bundle swap family (REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE, AWS_CA_BUNDLE,
+/// CARGO_HTTP_CAINFO, ...) shares a suffix, not a prefix.
+pub(crate) const AGENT_ENV_DENYLIST_SUFFIXES: &[&str] = &["_CA_BUNDLE", "_CAINFO"];
 
 /// Validate one `[agents.<id>].env` key: the shape must match
 /// `^[A-Z][A-Z0-9_]*$` and the key must not be on the loader/interpreter
@@ -110,9 +131,10 @@ pub fn validate_agent_env_key(key: &str) -> Result<()> {
         || AGENT_ENV_DENYLIST_PREFIXES
             .iter()
             .any(|p| key.starts_with(p))
+        || AGENT_ENV_DENYLIST_SUFFIXES.iter().any(|s| key.ends_with(s))
     {
         bail!(
-            "Env var {:?} is not allowed in agent env (loader/interpreter injection risk)",
+            "Env var {:?} is not allowed in agent env (can redirect code loading or TLS/registry trust)",
             key
         );
     }
@@ -345,6 +367,54 @@ mod tests {
         assert!(validate_agent_env_key("ANTHROPIC_MODEL").is_ok());
         assert!(validate_agent_env_key("MY_TOOL_API_KEY").is_ok());
         assert!(validate_agent_env_key("X").is_ok());
+        // #1135 regression: near-misses of the denied families still pass.
+        for key in [
+            "HTTPS_PROXY",
+            "NO_PROXY",
+            "OPENAI_API_KEY",
+            "NODE_ENV",
+            "NPM_TOKEN",
+            "PIPENV_VENV_IN_PROJECT",
+            "PYTHONUNBUFFERED",
+        ] {
+            assert!(
+                validate_agent_env_key(key).is_ok(),
+                "{key} must stay allowed in agent env"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_env_key_rejects_family_members() {
+        // #1135: family prefixes/suffixes deny siblings no review listed.
+        // Every key here was surfaced by a review pass; the synthetic ones
+        // (FOO_CA_BUNDLE, NODE_TLS_FOO) stand for the next sibling.
+        for key in [
+            "REQUESTS_CA_BUNDLE",
+            "FOO_CA_BUNDLE",
+            "CARGO_HTTP_CAINFO",
+            "NODE_TLS_REJECT_UNAUTHORIZED",
+            "NODE_TLS_FOO",
+            "SSLKEYLOGFILE",
+            "OPENSSL_CONF",
+            "OPENSSL_ENGINES",
+            "CURL_HOME",
+            "WGETRC",
+            "PYTHONHTTPSVERIFY",
+            "PIP_CONFIG_FILE",
+            "PIP_INDEX_URL",
+            "PIP_EXTRA_INDEX_URL",
+            "NPM_CONFIG_REGISTRY",
+        ] {
+            let err = validate_agent_env_key(key)
+                .expect_err(&format!("{key} must be denied in agent env"))
+                .to_string();
+            // The reason must fit every family, not only loaders.
+            assert!(
+                err.contains(key) && err.contains("TLS/registry trust"),
+                "error for {key} must name the key and the reason, got: {err}"
+            );
+        }
     }
 
     #[test]
@@ -354,9 +424,13 @@ mod tests {
         // because they follow the const. Bump the floor only when a key is
         // removed on purpose.
         assert!(
-            AGENT_ENV_DENYLIST_EXACT.len() >= 40,
-            "agent env denylist unexpectedly shrank ({} entries < 40)",
+            AGENT_ENV_DENYLIST_EXACT.len() >= 43,
+            "agent env denylist unexpectedly shrank ({} entries < 43)",
             AGENT_ENV_DENYLIST_EXACT.len()
+        );
+        assert!(
+            AGENT_ENV_DENYLIST_PREFIXES.len() >= 7 && AGENT_ENV_DENYLIST_SUFFIXES.len() >= 2,
+            "agent env family tables unexpectedly shrank"
         );
         // Derived from the denylist consts (single source of truth): a key
         // added to the tables is covered here automatically.
@@ -368,6 +442,13 @@ mod tests {
         }
         for &prefix in AGENT_ENV_DENYLIST_PREFIXES {
             let key = format!("{prefix}INJECTED");
+            assert!(
+                validate_agent_env_key(&key).is_err(),
+                "{key} must be denied in agent env"
+            );
+        }
+        for &suffix in AGENT_ENV_DENYLIST_SUFFIXES {
+            let key = format!("INJECTED{suffix}");
             assert!(
                 validate_agent_env_key(&key).is_err(),
                 "{key} must be denied in agent env"

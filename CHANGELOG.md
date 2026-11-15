@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Agent env denies whole families, not just listed keys.** `[agents.*].env` now rejects any `PIP_*`, `NPM_CONFIG_*`, `OPENSSL_*`, `NODE_TLS_*`, `*_CA_BUNDLE` or `*_CAINFO` key, plus `CURL_HOME`, `WGETRC` and `PYTHONHTTPSVERIFY`. These swap CA trust, turn off TLS checks or point package installs at another registry. See ADR 005. (#1135)
+
+### Migration
+- **Move the newly denied env vars out of `[agents.*].env`.** A config that sets one of the keys above there now fails to load and names the key. Set it in the environment you start maestro from instead (`PIP_INDEX_URL=… maestro …`); agents still inherit it.
+
 ## [0.31.8] - 2026-11-14
 
 ### Fixed
