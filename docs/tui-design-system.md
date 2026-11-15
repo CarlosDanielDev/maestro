@@ -12,6 +12,11 @@ doc too.
 
 Stack: ratatui + crossterm + tokio. All paths are relative to the repo root.
 
+Visual reference: [design-system/index.html](design-system/index.html) is the
+full design system as one HTML page (screen catalog, flow map, color, keymap,
+poka-yoke, rollout). Open it in a browser. This doc stays the source of truth
+for code names; the page shows how the screens look.
+
 ---
 
 ## 1. Theme — `src/tui/theme.rs`
