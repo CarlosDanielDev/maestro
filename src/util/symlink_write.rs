@@ -7,7 +7,7 @@
 
 use std::io;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// True when `path` exists in any form, including a symlink — unlike
 /// `Path::exists`, which follows links and reports a dangling symlink as
@@ -26,8 +26,8 @@ pub fn exists_no_follow(path: &Path) -> bool {
 ///   `rename`s it into place: readers never observe a partial write, and the
 ///   final `rename` cannot be redirected by a symlink swapped in mid-flight
 ///   (rename does not follow its destination).
-/// - Parent-directory symlinks are the caller's concern; the scaffolder
-///   additionally validates containment on canonicalized paths.
+/// - Parent-directory symlinks are the caller's concern: use
+///   [`write_contained`] to also refuse a symlinked parent chain.
 pub fn write_no_follow(path: &Path, body: &str) -> io::Result<()> {
     if let Ok(meta) = std::fs::symlink_metadata(path) {
         if meta.file_type().is_symlink() {
@@ -78,6 +78,47 @@ pub fn write_no_follow(path: &Path, body: &str) -> io::Result<()> {
             Err(e)
         }
     }
+}
+
+/// Write `body` to `root/rel` via [`write_no_follow`], creating missing
+/// parent directories one at a time and refusing when any existing component
+/// between `root` and the file is a symlink (a repo-planted `.maestro ->
+/// ~/x` or `docs -> ~/x`, #1099). `root` itself is trusted: it is the
+/// project directory the user pointed maestro at.
+pub fn write_contained(root: &Path, rel: &Path, body: &str) -> io::Result<()> {
+    let mut dir = root.to_path_buf();
+    let mut components = rel.components().peekable();
+    while let Some(component) = components.next() {
+        let Component::Normal(name) = component else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "refusing to write {}: not a plain relative path",
+                    rel.display()
+                ),
+            ));
+        };
+        dir.push(name);
+        if components.peek().is_none() {
+            break;
+        }
+        match std::fs::symlink_metadata(&dir) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "refusing to write {}: parent {} is a symlink",
+                        root.join(rel).display(),
+                        dir.display()
+                    ),
+                ));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => std::fs::create_dir(&dir)?,
+            Err(e) => return Err(e),
+        }
+    }
+    write_no_follow(&dir, body)
 }
 
 #[cfg(test)]
@@ -170,5 +211,98 @@ mod tests {
             "sanity: Path::exists follows the dangling link"
         );
         assert!(exists_no_follow(&link));
+    }
+
+    // ── Parent-chain containment (#1099) ──────────────────────────────
+
+    #[test]
+    fn write_contained_creates_missing_parents() {
+        let dir = TempDir::new().unwrap();
+
+        write_contained(dir.path(), Path::new(".maestro/knowledge.md"), "kb").unwrap();
+
+        let written = dir.path().join(".maestro/knowledge.md");
+        assert_eq!(std::fs::read_to_string(written).unwrap(), "kb");
+    }
+
+    #[test]
+    fn write_contained_reuses_existing_real_parent() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+        std::fs::write(dir.path().join("docs/PRD.md"), "old").unwrap();
+
+        write_contained(dir.path(), Path::new("docs/PRD.md"), "new").unwrap();
+
+        let written = dir.path().join("docs/PRD.md");
+        assert_eq!(std::fs::read_to_string(written).unwrap(), "new");
+    }
+
+    fn assert_refused_through_symlinked_parent(parent: &str, file: &str) {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join(parent)).unwrap();
+
+        let rel = Path::new(parent).join(file);
+        let err = write_contained(dir.path(), &rel, "generated").unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(
+            err.to_string().contains("symlink"),
+            "error should name the symlink refusal, got: {err}"
+        );
+        assert_eq!(
+            std::fs::read_dir(outside.path()).unwrap().count(),
+            0,
+            "nothing may land behind the symlinked {parent}/"
+        );
+    }
+
+    #[test]
+    fn write_contained_refuses_symlinked_maestro_parent() {
+        assert_refused_through_symlinked_parent(".maestro", "knowledge.md");
+    }
+
+    #[test]
+    fn write_contained_refuses_symlinked_docs_parent() {
+        assert_refused_through_symlinked_parent("docs", "PRD.md");
+    }
+
+    #[test]
+    fn write_contained_refuses_symlink_deeper_in_the_chain() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("a")).unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join("a/b")).unwrap();
+
+        write_contained(dir.path(), Path::new("a/b/c/out.md"), "x").unwrap_err();
+
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn write_contained_refuses_victim_overwrite_via_symlinked_parent() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let victim = outside.path().join("PRD.md");
+        std::fs::write(&victim, "ORIGINAL").unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), dir.path().join("docs")).unwrap();
+
+        write_contained(dir.path(), Path::new("docs/PRD.md"), "pwned").unwrap_err();
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL");
+    }
+
+    #[test]
+    fn write_contained_rejects_non_normal_relative_path() {
+        let dir = TempDir::new().unwrap();
+        let inner = dir.path().join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+
+        write_contained(&inner, Path::new("../escape.md"), "x").unwrap_err();
+
+        assert!(!dir.path().join("escape.md").exists());
     }
 }

@@ -16,7 +16,8 @@ pub mod types;
 
 pub use command_config::{AdaptConfig, PrdConfig};
 
-use crate::util::{exists_no_follow, write_no_follow};
+use crate::util::{exists_no_follow, write_contained};
+use std::path::Path;
 
 pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
@@ -74,10 +75,7 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
 
     // Write back to the local file when the source includes it.
     if config.source.uses_local() {
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        write_no_follow(&output_path, &prd_content)?;
+        write_contained(&config.path, Path::new("docs/PRD.md"), &prd_content)?;
         eprintln!("PRD written to {}", output_path.display());
     } else {
         // For remote-only sources, surface the result so the user can
@@ -151,12 +149,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
             // pass the exists() check and then be followed by the write
             // (#1033).
             if !exists_no_follow(&prd_path) {
-                if let Some(parent) = prd_path.parent()
-                    && let Err(e) = std::fs::create_dir_all(parent)
-                {
-                    eprintln!("  Failed to create docs/: {}", e);
-                }
-                match write_no_follow(&prd_path, &content) {
+                match write_contained(&config.path, Path::new("docs/PRD.md"), &content) {
                     Ok(()) => eprintln!("  PRD saved to {}", prd_path.display()),
                     Err(e) => eprintln!("  Failed to write PRD: {}", e),
                 }
@@ -188,12 +181,12 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     let knowledge_base =
         knowledge::compress_knowledge(&profile, &report, tq_adapter.as_ref(), knowledge_budget);
     let knowledge_path = config.path.join(".maestro/knowledge.md");
-    if let Some(parent) = knowledge_path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        eprintln!("  Failed to create .maestro/: {}", e);
-    }
-    match write_no_follow(&knowledge_path, &knowledge::to_markdown(&knowledge_base)) {
+    let knowledge_md = knowledge::to_markdown(&knowledge_base);
+    match write_contained(
+        &config.path,
+        Path::new(".maestro/knowledge.md"),
+        &knowledge_md,
+    ) {
         Ok(()) => eprintln!(
             "  Knowledge base saved to {} ({} sections)",
             knowledge_path.display(),

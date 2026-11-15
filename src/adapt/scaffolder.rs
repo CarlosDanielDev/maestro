@@ -74,9 +74,23 @@ fn write_scaffold_files(
     claude_dir: &Path,
     entries: &[ScaffoldFileEntry],
 ) -> anyhow::Result<ScaffoldResult> {
-    // Containment is re-checked per entry against the canonicalized root so a
-    // repo-planted symlinked subdirectory (`.claude/agents -> ~/elsewhere`)
-    // cannot redirect scaffold writes outside the project (#1033).
+    // The `.claude` root itself must not be a symlink: canonicalizing a
+    // planted `.claude -> ~/elsewhere` would move the containment anchor
+    // along with it (#1099). A `.claude -> dotfiles` setup is refused too;
+    // the error names the remedy instead of following the link.
+    if std::fs::symlink_metadata(claude_dir).is_ok_and(|m| m.file_type().is_symlink()) {
+        anyhow::bail!(
+            "refusing to scaffold: {} is a symlink. maestro adapt only writes inside \
+             the project; replace the link with a real directory (copy in the \
+             linked files) and re-run, or add the scaffold files to the link \
+             target by hand",
+            claude_dir.display()
+        );
+    }
+    // With a real root, containment is re-checked per entry against the
+    // canonicalized root so a repo-planted symlinked subdirectory
+    // (`.claude/agents -> ~/elsewhere`) cannot redirect a scaffold write
+    // outside the project (#1033).
     std::fs::create_dir_all(claude_dir)?;
     let canonical_claude_dir = std::fs::canonicalize(claude_dir)?;
 
@@ -525,6 +539,46 @@ mod tests {
         assert!(
             !dir.path().join("victim.md").exists(),
             "scaffold must not write through a dangling symlink"
+        );
+    }
+
+    #[test]
+    fn scaffold_refuses_symlinked_claude_root() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), &claude_dir).unwrap();
+
+        let entries = vec![entry("CLAUDE.md", "x"), entry("agents/qa.md", "qa")];
+        let err = write_scaffold_files(&claude_dir, &entries).unwrap_err();
+
+        assert_eq!(
+            std::fs::read_dir(outside.path()).unwrap().count(),
+            0,
+            "nothing may land behind a symlinked .claude/ root"
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("symlink"), "names the cause, got: {msg}");
+        assert!(
+            msg.contains("real directory"),
+            "names the remedy, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn scaffold_refuses_dangling_symlinked_claude_root() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("elsewhere");
+        let claude_dir = dir.path().join(".claude");
+        use std::os::unix::fs::symlink;
+        symlink(&target, &claude_dir).unwrap();
+
+        write_scaffold_files(&claude_dir, &[entry("CLAUDE.md", "x")]).unwrap_err();
+
+        assert!(
+            !target.exists(),
+            "dangling .claude link must not be followed"
         );
     }
 
