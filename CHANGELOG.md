@@ -14,11 +14,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-15
+
+> v0.32.0 (the 2026-09 security-audit hardening milestone) was never tagged on its own; its fixes ship in this release. The version sequence is v0.31.8 → v0.33.0.
+
+### Changed
+- **maestro is now a cargo workspace of three crates.** `maestro-core` holds sessions, config, costs, adapt, insight and the rest of the engine; `maestro-tui` holds the terminal UI; `maestro-cli` holds the headless commands. The `maestro` binary ties them together: bare `maestro`, `run` and `resume` open the TUI, every other subcommand goes to `maestro-cli`. Commands, flags, config files and output are unchanged. ADR 006 names the core API both frontends use. (#1302, #1303, #1304, #1305, #1306, #1307)
+- **The core no longer depends on the terminal UI.** `maestro-core` has no `ratatui` or `crossterm` dependency; theme colors use a core-owned `ThemeColor`, converted to terminal colors in the TUI crate. `scripts/check-layers.sh` refuses any terminal-UI reference in core. (#1305)
+- **CI runs the tests on four parallel nextest shards**, plus a separate doctest job, behind the same required `Test` check. Wall time is about the same as before (~212 s); the layout is ready for faster per-crate builds. The no-op `pending snapshots` grep was removed; unreviewed snapshots still fail through `INSTA_UPDATE=no`. (#1308)
+- **Lint, tests and gates cover every crate.** clippy, nextest, doctests, coverage and the local gates (`/implement`, preflight, release) run with `--workspace`. (#1305)
+
 ### Security
 - **Agent env denies whole families, not just listed keys.** `[agents.*].env` now rejects any `PIP_*`, `NPM_CONFIG_*`, `OPENSSL_*`, `NODE_TLS_*`, `*_CA_BUNDLE` or `*_CAINFO` key, plus `CURL_HOME`, `WGETRC` and `PYTHONHTTPSVERIFY`. These swap CA trust, turn off TLS checks or point package installs at another registry. See ADR 005. (#1135)
+- **Session logs no longer replay terminal escapes.** `maestro logs --session <id>` strips ANSI/OSC sequences (clipboard writes, title changes, cursor moves) before printing; the log on disk and the JSON export are unchanged. (#1295)
+- **Bidi and zero-width characters are neutralised in logged text.** `sanitize_log` now replaces Unicode format controls (bidi overrides and isolates, zero-width and directional marks) as well as C0/C1 controls. (#1298)
+- **A cloned repo can no longer redirect your Slack notifications.** `notify.sh` and `notify.ps1` read `SLACK_USER_ID` only from your user-global config; a project `notifications.conf` may set only the four `NOTIFY_*` keys. `/setup-notifications` no longer writes `SLACK_USER_ID` into project confs. (#1299, #1315, #1318)
+- **`maestro adapt` and PRD export refuse repo-planted symlinks.** Writes through a symlinked parent directory, a symlinked `.claude` root, `PRD.md`, `.maestro/adapt-cache.json` or a scaffold directory are refused, and a symlinked `.claude` is now refused before the paid scaffold call. (#1300, #1317, #1320)
+- **Azure milestone descriptions cannot inject `az` arguments.** The description is passed as one bound argument, and a leading `@` (az's read-a-file syntax) is refused. (#1316)
+- **The 2026-09 audit's low-severity backlog is closed**: updater download caps, a redirect allowlist, Slack hardening, and argv/WIQL/filesystem fixes. Stale `cargo deny` advisory ignores were dropped, and CI now runs the bats script tests. (#1297, #1319)
 
 ### Migration
 - **Move the newly denied env vars out of `[agents.*].env`.** A config that sets one of the keys above there now fails to load and names the key. Set it in the environment you start maestro from instead (`PIP_INDEX_URL=… maestro …`); agents still inherit it.
+- **Move a project `SLACK_USER_ID` to your user config.** If a project `notifications.conf` set `SLACK_USER_ID`, put it in `~/.claude/notifications.conf` (or `~/.claude/slack_user_id`); the project value is now ignored.
+
+### Documentation
+- The full TUI design system is published as one page, `docs/design-system/index.html`, linked from `docs/tui-design-system.md`. (#1296)
 
 ## [0.31.8] - 2026-11-14
 

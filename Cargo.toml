@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.31.8"
+version = "0.33.0"
 edition = "2024"
 rust-version = "1.89"
 description = "Multi-agent orchestrator (Claude, Codex, Qwen, OpenCode, Ollama, MiniMax) with a Matrix-style TUI"
@@ -21,14 +21,14 @@ members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
 # maestro-core and maestro-tui inherit this so `env!("CARGO_PKG_VERSION")` in
 # the updater, changelog and TUI header keeps reporting the binary's version.
 # scripts/release.sh bumps it with [package].version and the core/tui deps below.
-version = "0.31.8"
+version = "0.33.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 
 [dependencies]
-maestro-core = { path = "crates/maestro-core", version = "0.31.8" }
-maestro-tui = { path = "crates/maestro-tui", version = "0.31.8" }
+maestro-core = { path = "crates/maestro-core", version = "0.33.0" }
+maestro-tui = { path = "crates/maestro-tui", version = "0.33.0" }
 maestro-cli = { path = "crates/maestro-cli", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
@@ -87,7 +87,7 @@ clap_mangen = "0.2"
 anyhow = "1"
 
 [dev-dependencies]
-maestro-core = { path = "crates/maestro-core", version = "0.31.8", features = ["test-util"] }
+maestro-core = { path = "crates/maestro-core", version = "0.33.0", features = ["test-util"] }
 insta = { version = "1", features = ["filters"] }
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
