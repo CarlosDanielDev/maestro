@@ -32,7 +32,10 @@ layers:
   - name: orchestration
     number: 3
     paths:
-      - "src/cli.rs"
+      # The CLI crate (#1307). check-layers.sh scans only `src/` for
+      # `crate::` imports; the CLI crate's boundary is pinned by
+      # tests/workspace_skeleton.rs (manifest + source scan).
+      - "crates/maestro-cli/src/**"
       - "src/commands/**"
 
   - name: ui

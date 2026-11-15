@@ -102,3 +102,35 @@ fn cli_code_lives_in_the_cli_crate() {
         );
     }
 }
+
+/// The manifest check above misses a crate reached some other way (a
+/// re-export through core, a `#[path]` include); scan the source too.
+#[test]
+fn cli_crate_source_names_no_terminal_ui_crate() {
+    let banned = regex::Regex::new(r"\b(crossterm|ratatui|maestro_tui|tui_textarea)\b")
+        .expect("valid regex");
+    let mut hits = Vec::new();
+    let mut dirs = vec![root().join("crates/maestro-cli/src")];
+    while let Some(dir) = dirs.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let text = std::fs::read_to_string(&path).expect("read source");
+                for (n, line) in text.lines().enumerate() {
+                    if banned.is_match(line) {
+                        hits.push(format!("{}:{}: {line}", path.display(), n + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "maestro-cli must not name a terminal-UI crate (#1307):\n{}",
+        hits.join("\n")
+    );
+}

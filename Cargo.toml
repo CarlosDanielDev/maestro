@@ -11,9 +11,9 @@ name = "maestro"
 path = "src/main.rs"
 
 # Workspace (#1304, ADR 006). maestro-core holds the core modules (#1305);
-# maestro-tui holds the TUI (#1306); maestro-cli stays empty until #1307. There are no
-# default-members, so plain `cargo test`/`clippy` at the root cover only the
-# root package: gates pass `--workspace` to reach maestro-core.
+# maestro-tui holds the TUI (#1306); maestro-cli holds the headless CLI (#1307).
+# There are no default-members, so plain `cargo test`/`clippy` at the root
+# cover only the root package: gates pass `--workspace` to reach the crates.
 [workspace]
 members = ["crates/maestro-core", "crates/maestro-tui", "crates/maestro-cli"]
 

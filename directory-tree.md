@@ -984,7 +984,7 @@ maestro/
 
 ## Core API Seam (planned workspace split)
 
-> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). The workspace skeleton (`crates/`, #1304) exists; #1305 moved the core modules into `crates/maestro-core`, #1307 the CLI into `crates/maestro-cli`; #1306 moves the TUI.
+> Decision: [`docs/adr/006-core-api-seam.md`](docs/adr/006-core-api-seam.md) (Issue #1303, epic #1302). The workspace skeleton (`crates/`, #1304) exists; #1305 moved the core modules into `crates/maestro-core`, #1306 the TUI into `crates/maestro-tui`, #1307 the CLI into `crates/maestro-cli`.
 
 | Future crate | Today's paths | May consume |
 |--------------|---------------|-------------|
@@ -1020,7 +1020,7 @@ Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI �
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
 | `.maestro/templates/commands/` | Canonical command specs; four files ported/created in Issue #702: `implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md` |
 | `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
-| `crates/` | Cargo workspace members `maestro-core` (core modules, #1305), `maestro-cli` (CLI, #1307), `maestro-tui` (empty until #1306) (ADR 006, Issue #1304) |
+| `crates/` | Cargo workspace members `maestro-core` (core modules, #1305), `maestro-tui` (TUI, #1306), `maestro-cli` (CLI, #1307) (ADR 006, Issue #1304) |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
 | `docs/configuration.md` | Authoritative `maestro.toml` reference — every `[table]` with field types, defaults, and source pointers; CLI flag → config map for every `maestro <subcommand> --help` (Issue #674) |

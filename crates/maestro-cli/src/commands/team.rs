@@ -1,10 +1,10 @@
 //! `maestro team` subcommand handlers.
 //!
 //! See spec `docs/superpowers/specs/2026-05-05-orchestration-wizard-design.md`
-//! and issue #665. The CLI surface itself is in `src/cli_team.rs` (kept
-//! self-contained so `build.rs` can include it for man/completion generation);
-//! this module wires the surface to the orchestration loader, scheduler, and
-//! state store.
+//! and issue #665. The CLI surface itself is in `cli_team.rs` at this crate's
+//! root (kept self-contained so the root `build.rs` can include it for
+//! man/completion generation); this module wires the surface to the
+//! orchestration loader, scheduler, and state store.
 //!
 //! ## Layout
 //!
