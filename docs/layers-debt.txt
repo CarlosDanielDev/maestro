@@ -28,6 +28,5 @@
 # bootstrap the TUI. Inversion strategy: commands construct and return an
 # opaque "ready-to-run" value that main.rs (layer 5) hands to the TUI. Or
 # the tui/app entry points move to orchestration layer.
-src/commands/run.rs → src/tui/app/work_assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: invert dependency — commands emit events or return opaque handles; work_assigner consumers move to orchestration layer
-src/commands/dashboard.rs → src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: commands construct AppConfig; entry point in main.rs passes it to tui
-src/commands/setup.rs → src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: same pattern as dashboard — commands return config, tui consumes
+src/commands/run.rs → crates/maestro-tui/src/tui/app/work_assigner.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: invert dependency — commands emit events or return opaque handles; work_assigner consumers move to orchestration layer
+src/commands/dashboard.rs → crates/maestro-tui/src/tui/app/mod.rs # deadline: 2026-12-31, owner: @carlos, ticket: #TBD, plan: commands construct AppConfig; entry point in main.rs passes it to tui

@@ -34,9 +34,9 @@ teardown() {
 }
 
 @test "higher-layer import fails (domain → ui)" {
-  mkdir -p src/session src/tui
+  mkdir -p src/session crates/maestro-tui/src/tui
   cp "$FIXTURES/layers-higherlayer-fail.rs" src/session/naughty.rs
-  echo "pub struct ThemeConfig;" > src/tui/theme.rs
+  echo "pub struct ThemeConfig;" > crates/maestro-tui/src/tui/theme.rs
   run bash "$SCRIPT" "$MANIFEST"
   [ "$status" -eq 1 ]
   # session→tui matches both the layer-ordering rule and the explicit forbidden pair;
@@ -45,31 +45,31 @@ teardown() {
 }
 
 @test "forbidden pair fails (state → tui)" {
-  mkdir -p src/state src/tui
+  mkdir -p src/state crates/maestro-tui/src/tui
   cp "$FIXTURES/layers-forbiddenpair-fail.rs" src/state/store.rs
-  echo "pub struct SerializableColor;" > src/tui/theme.rs
+  echo "pub struct SerializableColor;" > crates/maestro-tui/src/tui/theme.rs
   run bash "$SCRIPT" "$MANIFEST"
   [ "$status" -eq 1 ]
   [[ "$output" == *"FORBIDDEN"* ]]
 }
 
 @test "known-debt entry with future deadline is tolerated" {
-  mkdir -p src/state src/tui
+  mkdir -p src/state crates/maestro-tui/src/tui
   cp "$FIXTURES/layers-forbiddenpair-fail.rs" src/state/store.rs
-  echo "pub struct SerializableColor;" > src/tui/theme.rs
+  echo "pub struct SerializableColor;" > crates/maestro-tui/src/tui/theme.rs
   cat > layers-debt.txt <<'EOF'
-src/state/store.rs → src/tui/theme.rs # deadline: 2099-12-31, owner: @test, ticket: #TEST, plan: resolve later
+src/state/store.rs → crates/maestro-tui/src/tui/theme.rs # deadline: 2099-12-31, owner: @test, ticket: #TEST, plan: resolve later
 EOF
   DEBT_FILE_OVERRIDE="$PWD/layers-debt.txt" run bash "$SCRIPT" "$MANIFEST"
   [ "$status" -eq 0 ]
 }
 
 @test "known-debt entry with past deadline fails with DEADLINE PAST" {
-  mkdir -p src/state src/tui
+  mkdir -p src/state crates/maestro-tui/src/tui
   cp "$FIXTURES/layers-forbiddenpair-fail.rs" src/state/store.rs
-  echo "pub struct SerializableColor;" > src/tui/theme.rs
+  echo "pub struct SerializableColor;" > crates/maestro-tui/src/tui/theme.rs
   cat > layers-debt.txt <<'EOF'
-src/state/store.rs → src/tui/theme.rs # deadline: 2000-01-01, owner: @test, ticket: #TEST, plan: overdue
+src/state/store.rs → crates/maestro-tui/src/tui/theme.rs # deadline: 2000-01-01, owner: @test, ticket: #TEST, plan: overdue
 EOF
   DEBT_FILE_OVERRIDE="$PWD/layers-debt.txt" run bash "$SCRIPT" "$MANIFEST"
   [ "$status" -eq 1 ]
