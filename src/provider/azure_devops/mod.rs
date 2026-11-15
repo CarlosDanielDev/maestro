@@ -485,6 +485,14 @@ impl RepoProvider for AzDevOpsClient {
         validate_body(body, "PR body")?;
         crate::util::validate_gh_arg(head_branch, "head_branch")?;
         crate::util::validate_gh_arg(base_branch, "base_branch")?;
+        // az reads a value starting with `@` as a file path and uploads the
+        // file's contents (e.g. `@~/.ssh/id_rsa`), so refuse it outright.
+        if title.starts_with('@') {
+            anyhow::bail!("PR title must not start with '@' (az reads it as a file path)");
+        }
+        if body.starts_with('@') {
+            anyhow::bail!("PR body must not start with '@' (az reads it as a file path)");
+        }
         // `--flag=value` binds the body even when it starts with `-` (a
         // markdown list), so az can never read it as an option.
         let description = format!("--description={body}");

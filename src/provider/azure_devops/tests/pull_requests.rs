@@ -285,3 +285,30 @@ async fn create_pr_binds_dash_leading_body_to_description_flag() {
     );
     assert!(!call.iter().any(|arg| arg == body), "got: {call:?}");
 }
+
+// az expands a value starting with `@` as a file to read and upload.
+#[tokio::test]
+async fn create_pr_rejects_at_prefixed_title() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_pr(1, "@/Users/x/.ssh/id_rsa", "body", "feat", "main")
+        .await
+        .expect_err("@-prefixed title");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}
+
+#[tokio::test]
+async fn create_pr_rejects_at_prefixed_body() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_pr(1, "title", "@/Users/x/.ssh/id_rsa", "feat", "main")
+        .await
+        .expect_err("@-prefixed body");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
+}
