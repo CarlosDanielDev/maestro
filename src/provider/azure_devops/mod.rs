@@ -243,6 +243,15 @@ fn duplicate_create_error(stderr: &str) -> bool {
     normalized.contains("already exists") || normalized.contains("duplicate")
 }
 
+/// az reads a value starting with `@` as a file path and uploads the file's
+/// contents (e.g. `@~/.ssh/id_rsa`), so refuse it before az runs.
+fn reject_az_file_ref(value: &str, field: &str) -> Result<()> {
+    if value.starts_with('@') {
+        anyhow::bail!("{field} must not start with '@' (az reads it as a file path)");
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl RepoProvider for AzDevOpsClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
@@ -485,14 +494,8 @@ impl RepoProvider for AzDevOpsClient {
         validate_body(body, "PR body")?;
         crate::util::validate_gh_arg(head_branch, "head_branch")?;
         crate::util::validate_gh_arg(base_branch, "base_branch")?;
-        // az reads a value starting with `@` as a file path and uploads the
-        // file's contents (e.g. `@~/.ssh/id_rsa`), so refuse it outright.
-        if title.starts_with('@') {
-            anyhow::bail!("PR title must not start with '@' (az reads it as a file path)");
-        }
-        if body.starts_with('@') {
-            anyhow::bail!("PR body must not start with '@' (az reads it as a file path)");
-        }
+        reject_az_file_ref(&title, "PR title")?;
+        reject_az_file_ref(body, "PR body")?;
         // `--flag=value` binds the body even when it starts with `-` (a
         // markdown list), so az can never read it as an option.
         let description = format!("--description={body}");
@@ -549,6 +552,7 @@ impl RepoProvider for AzDevOpsClient {
     async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
         let normalized = validate_title(title, "milestone title")?;
         validate_body(description, "milestone description")?;
+        reject_az_file_ref(description, "milestone description")?;
         let today = today_utc();
         let existing_json = self
             .run_az(&[
@@ -628,6 +632,8 @@ impl RepoProvider for AzDevOpsClient {
         let created_json = String::from_utf8_lossy(&output.stdout).to_string();
         let created = parse_iteration_json(&created_json)?;
 
+        // Bound as one argument so a `-`-leading description is never an option.
+        let description = format!("--description={description}");
         self.run_az(&[
             "boards",
             "iteration",
@@ -635,8 +641,7 @@ impl RepoProvider for AzDevOpsClient {
             "update",
             "--path",
             &created.path,
-            "--description",
-            description,
+            &description,
             "--org",
             &self.organization,
             "--project",

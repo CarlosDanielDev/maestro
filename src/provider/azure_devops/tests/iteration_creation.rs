@@ -71,7 +71,52 @@ async fn create_milestone_creates_iteration_updates_description_and_returns_stab
             .windows(2)
             .any(|w| w == ["--path", "Project\\Sprint 2"])
     );
-    assert!(calls[2].windows(2).any(|w| w == ["--description", "desc"]));
+    assert!(calls[2].contains(&"--description=desc".to_string()));
+}
+
+#[tokio::test]
+async fn create_milestone_binds_dash_leading_description_to_flag() {
+    let iteration = r#"{
+        "name": "Sprint 2",
+        "path": "Project\\Sprint 2",
+        "attributes": { "finishDate": "2999-12-31T00:00:00Z" }
+    }"#;
+    let runner = Arc::new(MockAzRunner::new(vec![
+        MockAzRunner::success("[]"),
+        MockAzRunner::success(iteration),
+        MockAzRunner::success(iteration),
+    ]));
+    let client = test_client(runner.clone());
+
+    let description = "- bullet list\n--org evil";
+    client
+        .create_milestone("Sprint 2", description)
+        .await
+        .unwrap();
+
+    let update = &runner.calls()[2];
+    assert!(
+        update.contains(&format!("--description={description}")),
+        "description must be bound to its flag, got: {update:?}"
+    );
+    assert!(
+        !update.iter().any(|arg| arg == description),
+        "got: {update:?}"
+    );
+}
+
+// az expands a value starting with `@` as a file to read and upload.
+#[tokio::test]
+async fn create_milestone_rejects_at_prefixed_description() {
+    let runner = Arc::new(MockAzRunner::new(vec![]));
+    let client = test_client(runner.clone());
+
+    let err = client
+        .create_milestone("Sprint 2", "@/Users/x/.ssh/id_rsa")
+        .await
+        .expect_err("@-prefixed description");
+    assert!(err.to_string().contains("'@'"), "got: {err}");
+    assert!(runner.calls().is_empty(), "az must not run");
 }
 
 #[tokio::test]
