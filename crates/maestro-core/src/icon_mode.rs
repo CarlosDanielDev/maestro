@@ -17,14 +17,26 @@ const ASCII: u8 = 2;
 
 static MODE: AtomicU8 = AtomicU8::new(UNINITIALIZED);
 
-/// Initialize icon mode from config. Call once at startup.
+/// Initialize icon mode from config. Call at startup and on config reload.
+/// `MAESTRO_ASCII_ICONS=1` overrides `ascii_icons = false`; the env var is
+/// read here, once, so per-frame lookups stay a single atomic load.
 pub fn init_from_config(ascii_icons: bool) {
-    let value = if ascii_icons { ASCII } else { NERD_FONT };
+    init_from_config_with_env(ascii_icons, |k| std::env::var(k).ok());
+}
+
+/// Testable version of `init_from_config`: accepts an env-var reader closure.
+pub(crate) fn init_from_config_with_env(
+    ascii_icons: bool,
+    get_env: impl Fn(&str) -> Option<String>,
+) {
+    let ascii = ascii_icons || !use_nerd_font_from_env(get_env);
+    let value = if ascii { ASCII } else { NERD_FONT };
     MODE.store(value, Ordering::Release);
 }
 
 /// Returns true if Nerd Font icons should be used.
-/// Checks (in order): config flag, `MAESTRO_ASCII_ICONS` env var.
+/// Reads the mode set by `init_from_config` (config flag or env override);
+/// before init, falls back to the `MAESTRO_ASCII_ICONS` env var.
 pub fn use_nerd_font() -> bool {
     match MODE.load(Ordering::Acquire) {
         NERD_FONT => true,
@@ -88,6 +100,29 @@ mod tests {
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(false);
         assert!(use_nerd_font());
+    }
+
+    #[test]
+    fn env_var_overrides_config_ascii_false() {
+        let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        init_from_config_with_env(false, |_| Some("1".to_string()));
+        assert!(!use_nerd_font());
+        init_from_config(false); // restore
+    }
+
+    #[test]
+    fn env_var_read_once_at_init_not_per_lookup() {
+        let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let reads = std::cell::Cell::new(0);
+        init_from_config_with_env(false, |_| {
+            reads.set(reads.get() + 1);
+            Some("1".to_string())
+        });
+        for _ in 0..1000 {
+            assert!(!use_nerd_font());
+        }
+        assert_eq!(reads.get(), 1);
+        init_from_config(false); // restore
     }
 
     #[test]
