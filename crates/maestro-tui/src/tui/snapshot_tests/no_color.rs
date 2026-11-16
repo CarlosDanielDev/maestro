@@ -1,6 +1,9 @@
 //! NO_COLOR snapshot harness (#1247): render any screen with the `NoColor`
-//! theme and snapshot the buffer *with its styles*, so the snapshot proves no
-//! colour is drawn and shows which modifiers carry the meaning instead.
+//! theme and return the buffer *with its styles*, so the snapshot shows which
+//! modifiers carry the meaning. It does not assert that no colour is drawn:
+//! colours hard-coded outside the theme still show up in the snapshot. Known
+//! exception: `agent_badge::agent_color` (see `docs/design-system/decisions.md`,
+//! 2026-11-16 NoColor gap).
 //!
 //! Add a NO_COLOR snapshot to a screen in one line:
 //! `assert_snapshot!(no_color_snapshot(|f, theme| screen.draw(f, f.area(), theme)));`

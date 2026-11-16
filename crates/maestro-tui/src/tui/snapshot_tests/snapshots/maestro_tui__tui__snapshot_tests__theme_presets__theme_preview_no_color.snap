@@ -1,13 +1,13 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/theme_presets.rs
-expression: "render_theme_preview(ThemePreset::NoColor)"
+expression: "render_theme_preview(ThemePreset::NoColor, \"no-color\")"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
         "╔═════════════════════════════════[ Settings ]═════════════════════════════════╗",
         "║Search: press /   │○ live_preview                                             ║",
-        "║──────────────────│preset:  dark                                            ║",
+        "║──────────────────│preset:  no-color                                        ║",
         "║  Advanced        │○ ascii_icons                                              ║",
         "║  Providers       │✓ show_mascot                                              ║",
         "║  Budget          │mascot_style:  sprite                                    ║",

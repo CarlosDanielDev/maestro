@@ -19,16 +19,15 @@ fn preset_theme(preset: ThemePreset) -> Theme {
     })
 }
 
-/// Every `field: Value` pair from the derived `Debug` output, so a test over
-/// "every colour" also covers fields added later.
+/// One value per `Theme` field, read from the pretty `Debug` output (one
+/// field per line at 4-space indent), so a test over "every colour" also
+/// covers fields added later. `Rgb(..)` spans lines and reads as `Rgb(`.
 fn colour_values(theme: &Theme) -> Vec<String> {
-    let dbg = format!("{theme:?}");
-    let body = dbg
-        .trim_start_matches("Theme {")
-        .trim_end_matches('}')
-        .trim();
-    body.split(", ")
-        .map(|pair| pair.split_once(": ").map_or(pair, |(_, v)| v).to_string())
+    format!("{theme:#?}")
+        .lines()
+        .filter(|l| l.starts_with("    ") && !l.starts_with("     "))
+        .filter_map(|l| l.trim().split_once(": "))
+        .map(|(_, v)| v.trim_end_matches(',').to_string())
         .collect()
 }
 
@@ -148,6 +147,8 @@ fn no_color_preset_is_all_reset() {
 #[test]
 fn high_contrast_preset_has_no_reset_and_light_muted_text() {
     let t = Theme::high_contrast();
+    // One value per field: an Rgb theme yields as many values as a named one.
+    assert_eq!(colour_values(&t).len(), colour_values(&Theme::dark()).len());
     assert!(colour_values(&t).iter().all(|v| v != "Reset"));
     assert_eq!(t.text_primary, Color::Rgb(255, 255, 255));
     assert_eq!(t.text_muted, Color::Rgb(0xc4, 0xc4, 0xc4));

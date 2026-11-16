@@ -1,13 +1,13 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/theme_presets.rs
-expression: "render_theme_preview(ThemePreset::Light)"
+expression: "render_theme_preview(ThemePreset::Light, \"light\")"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
         "╔═════════════════════════════════[ Settings ]═════════════════════════════════╗",
         "║Search: press /   │○ live_preview                                             ║",
-        "║──────────────────│preset:  dark                                            ║",
+        "║──────────────────│preset:  light                                           ║",
         "║  Advanced        │○ ascii_icons                                              ║",
         "║  Providers       │✓ show_mascot                                              ║",
         "║  Budget          │mascot_style:  sprite                                    ║",
@@ -44,8 +44,8 @@ Buffer {
         x: 20, y: 2, fg: Black, bg: Reset, underline: Reset, modifier: NONE,
         x: 28, y: 2, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
         x: 30, y: 2, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
-        x: 34, y: 2, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
-        x: 36, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 35, y: 2, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 37, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 79, y: 2, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
         x: 1, y: 3, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
         x: 11, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

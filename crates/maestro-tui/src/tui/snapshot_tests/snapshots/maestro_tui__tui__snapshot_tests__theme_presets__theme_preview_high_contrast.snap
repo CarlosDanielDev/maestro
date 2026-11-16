@@ -1,13 +1,13 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/theme_presets.rs
-expression: "render_theme_preview(ThemePreset::HighContrast)"
+expression: "render_theme_preview(ThemePreset::HighContrast, \"high-contrast\")"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
         "╔═════════════════════════════════[ Settings ]═════════════════════════════════╗",
         "║Search: press /   │○ live_preview                                             ║",
-        "║──────────────────│preset:  dark                                            ║",
+        "║──────────────────│preset:  high-contrast                                   ║",
         "║  Advanced        │○ ascii_icons                                              ║",
         "║  Providers       │✓ show_mascot                                              ║",
         "║  Budget          │mascot_style:  sprite                                    ║",
@@ -43,7 +43,7 @@ Buffer {
         x: 1, y: 2, fg: Rgb(196, 196, 196), bg: Reset, underline: Reset, modifier: NONE,
         x: 20, y: 2, fg: Rgb(255, 255, 255), bg: Reset, underline: Reset, modifier: NONE,
         x: 28, y: 2, fg: Rgb(196, 196, 196), bg: Reset, underline: Reset, modifier: NONE,
-        x: 36, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 45, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 79, y: 2, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
         x: 1, y: 3, fg: Rgb(196, 196, 196), bg: Reset, underline: Reset, modifier: NONE,
         x: 11, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

@@ -133,3 +133,12 @@ first. One entry per decision.
 - **Section:** `§03 Color tokens`.
 - **Rejected:** deleting `border_focused` from config; inventing new hues for light/retro.
 - **Source:** #1247.
+
+## 2026-11-16 — NoColor known gap: agent badge colours bypass the theme
+
+- **What:** under `NO_COLOR` / `TERM=dumb` / `preset = "no-color"`, the agent badge still draws colour, because `agent_color` in `crates/maestro-tui/src/tui/agent_badge.rs` returns hard-coded colours (e.g. `Color::LightYellow` for Claude) instead of reading `&Theme`. The first NO_COLOR snapshot (`overview::panel_view_single_running_session_no_color_snapshot`) pins this as one `fg: LightYellow` cell.
+- **Why:** routing agent colours through the theme is screen/widget scope, not part of the token issue. The snapshot keeps the leak visible until it is fixed.
+- **Section:** `§03 Color tokens` (no-color preset: "All colours Reset").
+- **Rejected:** fixing `agent_badge.rs` inside #1247 (scope); making `no_color_snapshot` assert no colour now (it would fail on this known gap and block the harness).
+- **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
+- **Source:** #1247 (judge finding on PR #1345).
