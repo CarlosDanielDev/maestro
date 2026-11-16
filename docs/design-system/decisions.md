@@ -46,6 +46,14 @@ first. One entry per decision.
 - **Rejected:** `Option<Breakpoint>` (the issue names the four-class enum); adding the quit hint now (it would name the wrong key).
 - **Source:** #1253.
 
+## 2026-11-16 — Status chips: FailedGates gets its own glyph; context gauges keep 50/70
+
+- **What:** `ds::status_chip` draws `FailedGates` as `⊠ gates failed` (ASCII `[!]`), not `✗` like `Errored`. `ds::gauge::gauge_level` (0.6 / 0.8 / 1.0) is for spend and quota only; context gauges keep 50% / 70%.
+- **Why:** every status needs its own glyph so a chip reads without colour and without the word being fully visible (#1251 asks for 16 distinct glyphs). Context thresholds match the commit nudge at 50% and the auto-fork at 70% in `context_overflow.rs`; moving them to 60 / 80 would warn after the action already happened.
+- **Section:** `§04 Components` (StatusChip, Gauge), `§07 ratatui implementation`.
+- **Rejected:** the shared `✗` for both error statuses (two statuses, one glyph); one threshold set for every gauge (context would disagree with its own overflow actions).
+- **Source:** #1251.
+
 ## 2026-11-14 — Release Console landing and UX Spine sidebar are superseded
 
 - **What:** the redesign wins over two logged decisions: the one-landing Release Console renderer (#1218) and the UX Spine sidebar chain (#826-#835). Both are superseded by `index.html`.

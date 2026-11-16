@@ -179,6 +179,19 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
 
+### Status chip, gauge level, money (`crates/maestro-tui/src/tui/ds/`, #1251)
+
+| Item | Returns | For |
+|---|---|---|
+| `status_chip::status_chip(status, theme)` | `Span` | `glyph word` for any `SessionStatus`, coloured by `status_color`; `NeedsReview` / `FailedGates` / `Errored` are bold. Reads the global icon mode |
+| `status_chip::status_chip_for_mode(status, theme, nerd_font)` | `Span` | Same, icon mode passed in (use it in tests) |
+| `status_chip::status_word(status)` | `&str` | The chip word alone (`needs you`, `PR ready`, `gates failed`, ...) |
+| `gauge::gauge_level(ratio)` | `GaugeLevel` | Spend and quota gauges: `< 0.6` `Low`, `0.6` `Medium`, `0.8` `High`, `>= 1.0` `Critical`. NaN / negative = `Low` |
+| `GaugeLevel::style(theme)` | `Style` | `gauge_low` / `gauge_medium` / `gauge_high`; `Critical` = `gauge_high` + BOLD |
+| `money::money(Option<f64>)` | `String` | The only dollar formatter: `$12.40`, `$0.00`, `<$0.01` under one cent, `$?` for `None` (unpriced). NaN, negatives, `-0.0` print `$0.00` (via `sanitize_cost`) |
+
+Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`

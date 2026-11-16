@@ -17,6 +17,7 @@ pub fn sanitize_cost(cost: f64) -> f64 {
 }
 
 /// Clamp percent values to `[0.0, 1.0]`. NaN / negative → 0.0; >1.0 → 1.0.
+#[cfg(test)]
 pub(crate) fn sanitize_pct(pct: f64) -> f64 {
     if pct.is_nan() || pct < 0.0 {
         0.0
