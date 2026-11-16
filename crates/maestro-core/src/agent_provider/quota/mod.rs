@@ -46,7 +46,9 @@ use std::path::{Path, PathBuf};
 
 use crate::agent_provider::minimax::quota::{Clock, SystemClock};
 use cache::{CacheEntry, RATE_LIMIT_BACKOFF};
-use failures::{FailureLog, FailureSink};
+use failures::FailureLog;
+#[cfg(test)]
+use failures::FailureSink;
 use fetch::{QuotaHttp, ReqwestQuotaHttp};
 use types::{ProviderWindows, TransportError};
 
@@ -108,6 +110,7 @@ impl QuotaFetcher {
     }
 
     /// Sends failure reports to `sink` instead of tracing. Tests use this.
+    #[cfg(test)]
     fn with_failure_sink(mut self, sink: Box<dyn FailureSink>) -> Self {
         self.failures = FailureLog::new(sink);
         self
