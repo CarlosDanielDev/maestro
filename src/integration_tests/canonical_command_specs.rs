@@ -193,7 +193,7 @@ fn frontmatter_placeholders_match_body_placeholders() {
             .collect();
         body_names.sort();
 
-        let mut fm_names = fm.placeholders.clone();
+        let mut fm_names = fm.placeholders;
         fm_names.sort();
 
         assert_eq!(
@@ -250,7 +250,7 @@ fn frontmatter_includes_match_body_and_resolve_under_core() {
             .collect();
         body_includes.sort();
 
-        let mut fm_includes = fm.includes.clone();
+        let mut fm_includes = fm.includes;
         fm_includes.sort();
 
         assert_eq!(
