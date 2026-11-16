@@ -669,8 +669,8 @@ fn tui_theme_overrides_lists_every_themeoverrides_field() {
         .expect("tui.theme.overrides top-level table must be registered");
     assert_eq!(
         overrides.fields.len(),
-        28,
-        "tui.theme.overrides must enumerate all 28 ThemeOverrides color fields"
+        32,
+        "tui.theme.overrides must enumerate all 32 ThemeOverrides color fields"
     );
     let keys: Vec<&str> = overrides.fields.iter().map(|f| f.key).collect();
     for required in [
@@ -702,6 +702,10 @@ fn tui_theme_overrides_lists_every_themeoverrides_field() {
         "title_accent",
         "fkey_badge_bg",
         "fkey_badge_fg",
+        "surface_bar",
+        "surface_overlay",
+        "status_needs_pr",
+        "status_conflict",
     ] {
         assert!(
             keys.contains(&required),

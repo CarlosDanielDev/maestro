@@ -26,6 +26,7 @@ mod landing;
 mod landing_full_app;
 mod milestone;
 mod milestone_wizard;
+mod no_color;
 mod overview;
 mod prompt_input;
 mod quota_badges;
@@ -46,6 +47,7 @@ mod settings_teams_warnings_parity;
 mod settings_theme_parity;
 mod settings_turboquant_parity;
 mod team_wizard;
+mod theme_presets;
 mod token_dashboard_provider_rollup;
 mod turboquant_dashboard;
 

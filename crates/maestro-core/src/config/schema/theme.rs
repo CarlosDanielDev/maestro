@@ -1,4 +1,4 @@
-//! Schema for `[tui.theme.overrides]` — 28 optional color overrides applied
+//! Schema for `[tui.theme.overrides]` — 32 optional color overrides applied
 //! on top of the preset (see `src/tui/theme.rs::ThemeOverrides`).
 //!
 //! Every override accepts a named color (`red`, `darkgray`, `lightcyan`, …),
@@ -60,7 +60,7 @@ pub(super) const TUI_THEME_OVERRIDES_FIELDS: &[FieldSchema] = &[
     override_field(
         "border_focused",
         "Border Focused",
-        "Focused panel border color — name, hex, or 256-color index",
+        "Retired: still accepted so old configs load, never drawn (focus uses `border_active`)",
     ),
     override_field(
         "accent_success",
@@ -161,5 +161,25 @@ pub(super) const TUI_THEME_OVERRIDES_FIELDS: &[FieldSchema] = &[
         "fkey_badge_fg",
         "F-key Badge FG",
         "F-key badge foreground color — name, hex, or 256-color index",
+    ),
+    override_field(
+        "surface_bar",
+        "Surface Bar",
+        "Status bar background — name, hex, or 256-color index",
+    ),
+    override_field(
+        "surface_overlay",
+        "Surface Overlay",
+        "Dialog and palette background — name, hex, or 256-color index",
+    ),
+    override_field(
+        "status_needs_pr",
+        "Status Needs PR",
+        "PR-ready session state color — name, hex, or 256-color index",
+    ),
+    override_field(
+        "status_conflict",
+        "Status Conflict",
+        "Conflict-fix session state color — name, hex, or 256-color index",
     ),
 ];

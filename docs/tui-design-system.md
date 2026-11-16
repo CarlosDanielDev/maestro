@@ -24,9 +24,15 @@ this doc and the decisions log fit together: [design-system/README.md](design-sy
 
 Every color comes from `&Theme`. Screens receive it in `draw(f, area, theme)`.
 Never write `Color::Rgb(..)` / `Color::Red` in a screen — the theme handles
-presets (`dark`, `light`, `retro`), user overrides from `maestro.toml`
-(`ThemeConfig { preset, overrides }`), and terminal downgrade
+presets (`dark`, `light`, `retro`, `high-contrast`, `no-color`), user overrides
+from `maestro.toml` (`ThemeConfig { preset, overrides }`), and terminal downgrade
 (`ColorCapability::{Basic, Extended, TrueColor}` via `apply_capability`).
+
+Build the startup theme with `Theme::detect(&config.tui.theme)`: `NO_COLOR`
+(non-empty) or `TERM=dumb` forces `Theme::no_color()` (every colour `Reset`,
+overrides skipped); otherwise preset + overrides + `apply_capability`. Under
+`no-color`, meaning must come from modifiers, border type and glyphs — never
+from colour alone.
 
 ### Color tokens (fields on `Theme`)
 
@@ -34,7 +40,7 @@ presets (`dark`, `light`, `retro`), user overrides from `maestro.toml`
 |---|---|---|
 | Branding | `branding_fg`, `branding_bg` | logo / header brand only |
 | Text | `text_primary`, `text_secondary`, `text_muted` | body, labels, hints/disabled |
-| Borders | `border_active`, `border_inactive`, `border_focused` | use via `styled_block`, not directly |
+| Borders | `border_active`, `border_inactive` | use via `styled_block`, not directly. `border_active` is the only focus colour |
 | Session status | `status_running`, `status_completed`, `status_errored`, `status_paused`, `status_killed`, `status_queued`, `status_spawning`, `status_stalled`, `status_retrying`, `status_gates_running`, `status_needs_review`, `status_ci_fix` | use via `status_color(status)` |
 | Semantic | `accent_success`, `accent_warning`, `accent_error`, `accent_info`, `accent_identifier` | ok / warn / fail / info / issue & PR numbers |
 | Gauges | `gauge_low`, `gauge_medium`, `gauge_high`, `gauge_background` | use via gauge helpers |
@@ -43,9 +49,22 @@ presets (`dark`, `light`, `retro`), user overrides from `maestro.toml`
 | Selection | `selection_bg`, `selection_fg` | focused list row |
 | Titles | `title_accent` | block titles (set by `styled_block`) |
 | F-key badges | `fkey_badge_bg`, `fkey_badge_fg` | F-key bar |
+| Surfaces (#1247) | `surface_bar`, `surface_overlay` | status bar background; dialog / palette background |
+| PR states (#1247) | `status_needs_pr`, `status_conflict` | PR-ready and conflict-fix states (not yet wired into `status_color`) |
 
-Adding a token means touching: `Theme`, `ThemeOverrides`, the three presets,
-`from_config`, and `apply_capability`. Prefer an existing token first.
+`border_focused` is retired: `ThemeOverrides` still parses it so old
+`maestro.toml` files load, but `Theme` has no such field and nothing draws it.
+
+Dark values for the four v1 tokens (§03): `surface_bar` = `Indexed(236)`,
+`surface_overlay` = `Indexed(235)`, `status_needs_pr` = `Blue`,
+`status_conflict` = `LightMagenta`.
+
+NO_COLOR snapshots: `snapshot_tests::no_color::no_color_snapshot(|f, theme| ..)`
+draws any screen with `Theme::no_color()` and returns the buffer with styles,
+so a screen adds its NO_COLOR snapshot in one line.
+
+Adding a token means touching: `Theme`, `ThemeOverrides`, the five presets,
+`from_config`, `apply_capability`, and the `tui.theme.overrides` schema. Prefer an existing token first.
 
 ### Helper methods
 

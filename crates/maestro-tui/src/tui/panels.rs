@@ -392,7 +392,7 @@ fn draw_single_panel(
         Style::default().fg(status_color).add_modifier(flash_mod)
     } else if is_selected {
         Style::default()
-            .fg(theme.border_focused)
+            .fg(theme.border_active)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(status_color)

@@ -161,12 +161,16 @@ fn color_to_name(color: ThemeColor) -> &'static str {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum ThemePreset {
     #[default]
     Dark,
     Light,
     Retro,
+    /// Black/white base, saturated accents (low vision, projectors).
+    HighContrast,
+    /// Every colour `Reset`; also forced by `NO_COLOR` or `TERM=dumb`.
+    NoColor,
 }
 
 /// Top-level theme configuration, embeddable in maestro.toml.
@@ -197,6 +201,8 @@ pub struct ThemeOverrides {
     pub text_muted: Option<SerializableColor>,
     pub border_active: Option<SerializableColor>,
     pub border_inactive: Option<SerializableColor>,
+    /// Retired (#1247): still parsed so old `maestro.toml` files load, never
+    /// drawn. Focus uses `border_active`.
     pub border_focused: Option<SerializableColor>,
     pub accent_success: Option<SerializableColor>,
     pub accent_warning: Option<SerializableColor>,
@@ -218,4 +224,8 @@ pub struct ThemeOverrides {
     pub title_accent: Option<SerializableColor>,
     pub fkey_badge_bg: Option<SerializableColor>,
     pub fkey_badge_fg: Option<SerializableColor>,
+    pub surface_bar: Option<SerializableColor>,
+    pub surface_overlay: Option<SerializableColor>,
+    pub status_needs_pr: Option<SerializableColor>,
+    pub status_conflict: Option<SerializableColor>,
 }

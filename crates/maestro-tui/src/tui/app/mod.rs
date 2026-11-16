@@ -646,9 +646,7 @@ impl App {
             &std::path::PathBuf::from("."),
         );
         self.pool.set_guardrail_prompt(guardrail);
-        let mut theme = Theme::from_config(&config.tui.theme);
-        theme.apply_capability(crate::tui::theme::ColorCapability::detect());
-        self.theme = theme;
+        self.theme = Theme::detect(&config.tui.theme);
         self.prompt_history
             .set_max_entries(config.sessions.max_prompt_history);
         if let Err(e) = self.prompt_history.load() {

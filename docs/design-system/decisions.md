@@ -125,3 +125,11 @@ first. One entry per decision.
 - **Section:** `§09 Code findings & open questions`, `§02.3 Create milestone (wizard)`.
 - **Rejected:** not recorded.
 - **Source:** #1238.
+
+## 2026-11-16 — Theme tokens v1: `border_focused` kept parsing, preset values outside dark
+
+- **What:** `border_focused` stays in `ThemeOverrides` (parsed, ignored) and is removed from the runtime `Theme`; focus uses `border_active`. Light, retro and high-contrast values for the four new tokens come from the `--t-bar`, `--t-pn`, `--t-bl` and `--t-mg` mock palette in `index.html` (light and dark-ANSI presets keep named colours for the status tokens). `status_needs_pr` / `status_conflict` exist but `status_color` still maps `NeedsPr` / `ConflictFix` to the old fields until a screen issue moves them.
+- **Why:** deleting the key would break loading of existing `maestro.toml` files; §03 gives only dark values; rewiring `status_color` changes colours on every screen and is screen-issue scope.
+- **Section:** `§03 Color tokens`.
+- **Rejected:** deleting `border_focused` from config; inventing new hues for light/retro.
+- **Source:** #1247.
