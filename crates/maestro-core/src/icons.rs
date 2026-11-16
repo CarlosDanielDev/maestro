@@ -66,6 +66,25 @@ pub enum IconId {
     Repo,
     User,
     Branch,
+
+    // Session status chips (`ds::status_chip`, #1251): one glyph per
+    // `SessionStatus`, plain Unicode with an ASCII fallback.
+    ChipQueued,
+    ChipSpawning,
+    ChipRunning,
+    ChipGatesRunning,
+    ChipNeedsReview,
+    ChipNeedsPr,
+    ChipCiFix,
+    ChipConflictFix,
+    ChipRetrying,
+    ChipStalled,
+    ChipPaused,
+    ChipCompleted,
+    ChipFailedGates,
+    ChipErrored,
+    ChipKilled,
+    ChipInteractive,
 }
 
 /// A Nerd Font / ASCII icon pair.
@@ -139,6 +158,24 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Repo => IconPair::new("\u{f408}", "(g)"), // nf-oct-repo
         IconId::User => IconPair::new("\u{f007}", "@"),   // nf-fa-user
         IconId::Branch => IconPair::new("\u{f418}", "(b)"), // nf-oct-git_branch
+
+        // ── Session status chips (docs/design-system/index.html §04) ──
+        IconId::ChipQueued => IconPair::new("\u{25cb}", "[ ]"), // ○
+        IconId::ChipSpawning => IconPair::new("\u{25c7}", "[^]"), // ◇
+        IconId::ChipRunning => IconPair::new("\u{25cf}", "[*]"), // ●
+        IconId::ChipGatesRunning => IconPair::new("\u{25c6}", "[g]"), // ◆
+        IconId::ChipNeedsReview => IconPair::new("\u{25d0}", "[?]"), // ◐
+        IconId::ChipNeedsPr => IconPair::new("\u{21e1}", "[p]"), // ⇡
+        IconId::ChipCiFix => IconPair::new("\u{21af}", "[c]"),  // ↯
+        IconId::ChipConflictFix => IconPair::new("\u{21c4}", "[x]"), // ⇄
+        IconId::ChipRetrying => IconPair::new("\u{21bb}", "[r]"), // ↻
+        IconId::ChipStalled => IconPair::new("\u{2026}", "[~]"), // …
+        IconId::ChipPaused => IconPair::new("\u{2016}", "[=]"), // ‖
+        IconId::ChipCompleted => IconPair::new("\u{2713}", "[v]"), // ✓
+        IconId::ChipFailedGates => IconPair::new("\u{22a0}", "[!]"), // ⊠
+        IconId::ChipErrored => IconPair::new("\u{2717}", "[E]"), // ✗
+        IconId::ChipKilled => IconPair::new("\u{25a0}", "[k]"), // ■
+        IconId::ChipInteractive => IconPair::new("\u{25b6}", "[>]"), // ▶
     }
 }
 

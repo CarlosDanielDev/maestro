@@ -265,6 +265,16 @@ async fn event_loop(
         {
             match event::read()? {
                 Event::Key(key) => {
+                    let size = terminal.size()?;
+                    let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                    if let Some(action) =
+                        input_handler::handle_key_under_size_guard(app, key, area).await
+                    {
+                        if matches!(action, input_handler::KeyAction::Quit) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
                     if let crate::updater::UpgradeState::ReadyToRestart { .. } = &app.upgrade_state
                         && key.code == KeyCode::Char('y')
                     {

@@ -1,10 +1,11 @@
 ---
 source: crates/maestro-tui/src/tui/ds/checklist_tests.rs
+assertion_line: 74
 expression: terminal.backend()
 ---
-"╔══════════════[ Draft ]═════1/4 ready ╗"
-"║ ✓ Title                              ║"
-"║ ✗ Acceptance  required               ║"
-"║ ! Files to modify  no paths          ║"
-"║ ○ Blocked by  step 4                 ║"
-"╚══════════════════════════════════════╝"
+"┌──────────────[ Draft ]─────1/4 ready ┐"
+"│ ✓ Title                              │"
+"│ ✗ Acceptance  required               │"
+"│ ! Files to modify  no paths          │"
+"│ ○ Blocked by  step 4                 │"
+"└──────────────────────────────────────┘"

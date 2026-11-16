@@ -1,0 +1,19 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/size_guard.rs
+expression: terminal.backend()
+---
+"╭──────────────────[ Terminal too small ]──────────────────╮"
+"│ maestro needs 80 x 24 - this window is 60 x 15           │"
+"│                                                          │"
+"│ wid┌────────────────[ Confirm Exit ]────────────────┐    │"
+"│ hei│                                                │    │"
+"│    │  Are you sure you want to exit?                │    │"
+"│ Age│                                                │    │"
+"│ con│  [y]es  [n]o / [Esc] / [Enter]                 │    │"
+"│    │                                                │    │"
+"│    │                                                │    │"
+"│    └────────────────────────────────────────────────┘    │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰──────────────────────────────────────────────────────────╯"
