@@ -12,7 +12,7 @@
 //! All `gh` failures degrade to `Ok(None)` rather than bubbling — the
 //! sync flow still works without an ingested PRD.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use serde::Deserialize;

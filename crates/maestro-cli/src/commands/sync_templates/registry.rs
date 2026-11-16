@@ -6,8 +6,8 @@
 //! would be wasted work and would leak runtime configuration into a
 //! read-only render command.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use crate::templates::{
     TemplateProviderRules, null_rules,

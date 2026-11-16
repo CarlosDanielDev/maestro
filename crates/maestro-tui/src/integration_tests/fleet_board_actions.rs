@@ -177,7 +177,7 @@ fn fleet_adopt_refuses_an_id_already_in_the_pool() {
         "maestro",
         &[transcript(EXTERNAL_ID, REPO_CWD, "fix the parser", 86_400)],
     );
-    open_board(&mut app, rows.clone());
+    open_board(&mut app, rows);
     let first = press(board(&mut app), KeyCode::Enter);
     handle_screen_action(&mut app, first);
     assert_eq!(adopted_sessions(&app).len(), 1);

@@ -2,7 +2,7 @@
 //! `draw.rs` to keep that file under the file-size cap. Pure helpers
 //! returning styled spans for the sync + save state indicators.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::tui::screens::prd::state::{PrdSaveStatus, PrdSyncStatus};
 use crate::tui::theme::Theme;

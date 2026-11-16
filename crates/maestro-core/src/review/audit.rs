@@ -4,7 +4,7 @@
 //! trait so the activity log captures a tamper-evident trail. Required by
 //! both #327 (manual accept) and #328 (bypass auto-accept).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327 / #328. Loggers are wired by the App
 // in Phase 2; constructors and the trait are tests-only until then.
 #![allow(dead_code)]

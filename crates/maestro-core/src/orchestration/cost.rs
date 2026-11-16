@@ -207,10 +207,12 @@ mod tests {
 
     #[test]
     fn cost_constants_are_nonzero() {
-        assert!(L2_SYSTEM_PROMPT_TOKENS > 0);
-        assert!(AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER > 0);
-        assert!(RECOVERY_BUDGET > 0);
-        assert!(RECOVERY_TOKENS_PER_ROLE > 0);
+        const {
+            assert!(L2_SYSTEM_PROMPT_TOKENS > 0);
+            assert!(AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER > 0);
+            assert!(RECOVERY_BUDGET > 0);
+            assert!(RECOVERY_TOKENS_PER_ROLE > 0);
+        }
     }
 
     #[test]

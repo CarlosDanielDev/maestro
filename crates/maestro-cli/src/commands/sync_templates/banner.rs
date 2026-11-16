@@ -4,8 +4,8 @@
 //! out of `render_for_provider` preserves the byte-identical regression gate
 //! in `tests/templates_render.rs`.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 pub fn with_banner(rendered: &str, command: &str) -> String {
     format!(

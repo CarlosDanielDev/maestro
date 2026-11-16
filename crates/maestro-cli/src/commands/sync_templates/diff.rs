@@ -3,8 +3,8 @@
 //! Mirrors the format used by `tests/templates_render.rs::assert_byte_identical`:
 //! one line per change, `L<n> -` for expected and `L<n> +` for actual.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 pub fn line_diff(expected: &str, actual: &str) -> String {
     if expected == actual {

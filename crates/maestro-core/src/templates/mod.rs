@@ -5,8 +5,8 @@
 //! `{{INVOKE_SUBAGENT}}`, `{{HOOK_GATE}}`, `{{INCLUDE}}`, `{{SUBAGENT_LIST}}`,
 //! `{{SKILL}}`. Unknown placeholders fail closed — see [`TemplateError`].
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 mod error;
 pub mod manifest;
@@ -21,8 +21,6 @@ pub(crate) use manifest::{Manifest, ManifestSubagent};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use manifest::{ManifestMeta, ManifestPlaceholder, ManifestProvider};
-#[cfg(test)]
-pub(crate) use provider_rules::NullRules;
 pub use provider_rules::{TemplateProviderRules, null_rules};
 #[cfg(any(test, feature = "test-util"))]
 pub use rendered_cache::FakeRenderedStore;

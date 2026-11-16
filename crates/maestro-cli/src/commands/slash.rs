@@ -4,7 +4,7 @@
 //! is additive (new `SlashCommand` enum variants), keeping the dispatcher
 //! under the file-size cap.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327. The dispatcher is wired into the
 // session-input loop in Phase 2; tests exercise parsing and dispatch today.
 #![allow(dead_code)]

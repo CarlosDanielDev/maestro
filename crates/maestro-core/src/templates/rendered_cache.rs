@@ -26,8 +26,8 @@
 //! id, which is *not* otherwise slug-validated at config-load time — this
 //! is the only place that catches a hostile config (issue #707 security review).
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::PathBuf;
 
@@ -164,15 +164,14 @@ mod tests {
     /// gate without touching disk. Public(crate) so unit tests in
     /// `pool.rs` and integration tests in `integration_tests/` can
     /// share it.
+    #[derive(Default)]
     pub struct FakeRenderedStore {
         entries: HashMap<(String, String), String>,
     }
 
     impl FakeRenderedStore {
         pub fn new() -> Self {
-            Self {
-                entries: HashMap::new(),
-            }
+            Self::default()
         }
 
         pub fn with(mut self, provider: &str, command: &str, body: &str) -> Self {

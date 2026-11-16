@@ -7,8 +7,8 @@
 //! SHA-256 checksums of the *repo-relative* writes in `.maestro/templates.lock`
 //! for CI drift detection.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 pub mod banner;
 pub mod diff;

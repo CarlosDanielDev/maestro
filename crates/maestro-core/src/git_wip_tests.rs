@@ -7,7 +7,6 @@
 //! `use crate::git::*` reaches the ops and WIP subject constants.
 
 use super::*;
-use crate::git::*;
 
 // --- Issue #562: MockGitOps backup/amend/detect unit tests ---
 
@@ -226,7 +225,7 @@ fn cli_backup_wip_bails_when_worktree_missing() {
 #[test]
 fn cli_amend_clean_and_push_replaces_wip_subject_at_head() {
     let work_tmp = tempfile::tempdir().unwrap();
-    let remote_tmp = init_repo_with_remote(work_tmp.path());
+    let _remote_tmp = init_repo_with_remote(work_tmp.path());
 
     let branch = "feat/issue-562";
     run_git_in(work_tmp.path(), &["checkout", "-q", "-b", branch]);
@@ -287,7 +286,7 @@ fn cli_clean_tree_pushes_only_agent_commit() {
     // work) — the pushed branch must carry ONLY the agent's commit, not
     // an empty `feat: implement changes for issue #N` head commit.
     let work_tmp = tempfile::tempdir().unwrap();
-    let remote_tmp = init_repo_with_remote(work_tmp.path());
+    let _remote_tmp = init_repo_with_remote(work_tmp.path());
 
     // The stub agent's own commit, exactly like the #1143 repro.
     let branch = "maestro/issue-3";
@@ -339,7 +338,7 @@ fn cli_gate_changes_commit_cleanly_when_no_wip() {
     // during gates (e.g. accepted snapshots) must land in one clean
     // conventional commit via the commit_and_push fallback.
     let work_tmp = tempfile::tempdir().unwrap();
-    let remote_tmp = init_repo_with_remote(work_tmp.path());
+    let _remote_tmp = init_repo_with_remote(work_tmp.path());
 
     // Tree is clean — no agent commit, no uncommitted work.
     let ops = CliGitOps;

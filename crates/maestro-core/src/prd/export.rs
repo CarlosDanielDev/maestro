@@ -1,6 +1,6 @@
 //! Markdown export for the PRD (#321). Pure function, snapshot-friendly.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #321. `to_markdown` is invoked by the
 // PRD screen export action + `maestro prd --export` subcommand in Phase 2.
 #![allow(dead_code)]

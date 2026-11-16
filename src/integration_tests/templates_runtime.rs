@@ -4,8 +4,8 @@
 //! provider gating, origin gating, and TurboQuant interaction. Uses
 //! `FakeRenderedStore` so no disk I/O is required.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::sync::Arc;
 

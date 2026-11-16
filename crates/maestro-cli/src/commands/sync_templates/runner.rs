@@ -7,8 +7,8 @@
 //! and either writes (default), compares for drift (`--check`), or reports
 //! the plan (`--dry-run`).
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::{Path, PathBuf};
 

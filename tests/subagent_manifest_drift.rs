@@ -3,6 +3,7 @@
 //!
 //! - "missing" case: a new agent file on disk without a manifest entry.
 //! - "stale" case: a manifest entry without a corresponding agent file.
+//!
 //! Both fail with a single diff line so the fix is mechanical.
 //!
 //! The pure comparator `check_drift` is unit-tested below for both error
@@ -24,10 +25,10 @@ fn collect_disk_slugs(dir: &Path) -> BTreeSet<String> {
         let entry = entry.unwrap_or_else(|e| panic!("dir entry: {e}"));
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if let Some(stem) = name.strip_suffix(".md") {
-            if stem.starts_with("subagent-") {
-                out.insert(stem.to_string());
-            }
+        if let Some(stem) = name.strip_suffix(".md")
+            && stem.starts_with("subagent-")
+        {
+            out.insert(stem.to_string());
         }
     }
     out

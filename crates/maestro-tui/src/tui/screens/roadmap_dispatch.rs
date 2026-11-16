@@ -1,6 +1,6 @@
 //! Dispatch shim for the roadmap screen (#329).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::tui::app::App;
 use crate::tui::screens::ScreenAction;

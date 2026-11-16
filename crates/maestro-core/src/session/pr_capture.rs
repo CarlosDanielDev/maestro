@@ -11,7 +11,7 @@
 //! `/review`. Living in a small dedicated module keeps `session/manager.rs`
 //! and `session/parser.rs` from growing.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327. The extractor is invoked from the
 // session parser in Phase 2; tests exercise the regex + struct today.
 #![allow(dead_code)]

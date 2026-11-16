@@ -95,8 +95,10 @@ fn adopted_session_persists_to_state_store_with_id_and_cwd() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = crate::state::store::StateStore::new(dir.path().join("maestro-state.json"));
 
-    let mut state = crate::state::types::MaestroState::default();
-    state.sessions = pool.all_sessions().into_iter().cloned().collect();
+    let state = crate::state::types::MaestroState {
+        sessions: pool.all_sessions().into_iter().cloned().collect(),
+        ..Default::default()
+    };
     store.save(&state).expect("state saves");
 
     let loaded = store.load().expect("state loads back");

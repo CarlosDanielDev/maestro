@@ -7,7 +7,7 @@
 //!   3. Post the rendered comment back to the PR via `gh pr comment`.
 //!   4. Return the parsed report so the TUI can show concerns.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::review::dispatch::ReviewDispatcher;

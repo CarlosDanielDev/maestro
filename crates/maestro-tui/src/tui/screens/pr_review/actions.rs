@@ -3,7 +3,7 @@
 //! Returns a `ConcernAction` for the App to fold into state. The App then
 //! drives `ChangeApplier` for accepted concerns.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::review::types::{Concern, ConcernStatus};

@@ -5,8 +5,8 @@
 //! `CARGO_MANIFEST_DIR` — RED phase fails with descriptive `panic!` messages
 //! while the files are absent; GREEN phase passes once they are authored.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use crate::templates::{PlaceholderKind, TemplateError, Token, render_str, tokenize};
 
@@ -64,8 +64,8 @@ fn parse_frontmatter(fm_text: &str, slug: &str) -> Frontmatter {
     let mut in_provenance = false;
 
     for line in fm_text.lines() {
-        if line.starts_with("  - ") {
-            let val = line[4..].trim().trim_matches('"').to_string();
+        if let Some(item) = line.strip_prefix("  - ") {
+            let val = item.trim().trim_matches('"').to_string();
             if in_placeholders {
                 fm.placeholders.push(val);
                 continue;
@@ -88,22 +88,20 @@ fn parse_frontmatter(fm_text: &str, slug: &str) -> Frontmatter {
             fm.version = rest.trim().trim_matches('"').to_string();
         } else if let Some(rest) = line.strip_prefix("description:") {
             fm.description = rest.trim().trim_matches('"').to_string();
-        } else if line.starts_with("placeholders:") {
-            let rest = line["placeholders:".len()..].trim();
+        } else if let Some(rest) = line.strip_prefix("placeholders:") {
+            let rest = rest.trim();
             if rest != "[]" {
                 in_placeholders = true;
             }
-        } else if line.starts_with("includes:") {
-            let rest = line["includes:".len()..].trim();
+        } else if let Some(rest) = line.strip_prefix("includes:") {
+            let rest = rest.trim();
             if rest != "[]" {
                 in_includes = true;
             }
         } else if line.starts_with("source_provenance:") {
             in_provenance = true;
-        } else if in_provenance {
-            if let Some(rest) = line.strip_prefix("  ported_from:") {
-                fm.ported_from = rest.trim().trim_matches('"').to_string();
-            }
+        } else if in_provenance && let Some(rest) = line.strip_prefix("  ported_from:") {
+            fm.ported_from = rest.trim().trim_matches('"').to_string();
         }
     }
     assert!(
@@ -306,15 +304,15 @@ fn tokenize_ok_null_render_fails_closed_prompts_under_cap() {
             tokenize(body, slug).unwrap_or_else(|e| panic!("{slug}: tokenize returned Err: {e}"));
 
         for tok in &tokens {
-            if let Token::Placeholder { name, args, .. } = tok {
-                if let Some(prompt) = args.get("prompt") {
-                    assert!(
-                        prompt.len() <= 200,
-                        "{slug}: placeholder '{name}' prompt= is {} bytes (max 200): {:?}",
-                        prompt.len(),
-                        &prompt[..prompt.len().min(60)]
-                    );
-                }
+            if let Token::Placeholder { name, args, .. } = tok
+                && let Some(prompt) = args.get("prompt")
+            {
+                assert!(
+                    prompt.len() <= 200,
+                    "{slug}: placeholder '{name}' prompt= is {} bytes (max 200): {:?}",
+                    prompt.len(),
+                    &prompt[..prompt.len().min(60)]
+                );
             }
         }
 

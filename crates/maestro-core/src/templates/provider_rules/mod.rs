@@ -6,8 +6,8 @@
 //! provider rule modules live in `claude.rs`, `codex.rs`, and
 //! `http_generic.rs`.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 mod claude;
 mod codex;

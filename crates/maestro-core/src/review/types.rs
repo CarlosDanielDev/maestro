@@ -7,7 +7,7 @@
 //!
 //! `#[serde(deny_unknown_fields)]` is intentional: see RUST-GUARDRAILS §6.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327. TUI panel + session-manager wiring
 // land in Phase 2; until then every public item is exercised only by tests.
 #![allow(dead_code)]

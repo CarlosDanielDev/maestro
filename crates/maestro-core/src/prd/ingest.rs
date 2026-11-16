@@ -12,7 +12,7 @@
 //! - **Non-Goals**: `non-goals`, `non goals`, `out of scope`, `what we're not`
 //! - **Stakeholders**: `stakeholders`, `team`, `owners`, `roles`
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 /// Result of parsing a PRD markdown body. Fields are `Option`/`Vec`

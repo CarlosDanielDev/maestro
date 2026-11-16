@@ -4,7 +4,7 @@
 //! milestones and issues. The trait is mockable; the in-memory fake is
 //! used in unit tests.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::prd::discover::{DiscoveredPrd, discover_all};

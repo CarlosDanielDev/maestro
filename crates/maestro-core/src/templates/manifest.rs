@@ -4,8 +4,8 @@
 //! metadata. The renderer's *placeholder vocabulary* is hard-coded; the
 //! manifest is informational metadata only (required args, target dirs).
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 // Manifest fields/methods are populated for #706 (sync-templates CLI) and
 // downstream consumers; load() exercises them via serde at parse time.
 #![allow(dead_code)]

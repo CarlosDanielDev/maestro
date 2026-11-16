@@ -30,15 +30,14 @@ pub fn make_session(agent_id: Option<&str>, cost: f64, model: &str) -> Session {
 }
 
 /// Test fake — returns whatever the caller seeded for each provider id.
+#[derive(Default)]
 pub struct FakeProviderQuotaSnapshots {
     entries: HashMap<String, QuotaRow>,
 }
 
 impl FakeProviderQuotaSnapshots {
     pub fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn with(mut self, provider_id: &str, row: QuotaRow) -> Self {

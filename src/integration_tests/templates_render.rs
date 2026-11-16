@@ -3,8 +3,8 @@
 //! End-to-end render path: tempdir manifest + command files, real filesystem,
 //! provider-rules trait injected via a fake.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::Path;
 

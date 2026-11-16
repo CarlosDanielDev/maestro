@@ -8,8 +8,8 @@
 //! divergence. `scripts/check-rules-drift.sh` remains as a secondary safety
 //! net for non-Rust CI lanes.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::{Path, PathBuf};
 

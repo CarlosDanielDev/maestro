@@ -5,8 +5,8 @@
 //! `.maestro/templates/manifest.toml`; the on-disk `.claude/agents/` registry
 //! is the drift detector (see `tests/subagent_manifest_drift.rs`).
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::Path;
 

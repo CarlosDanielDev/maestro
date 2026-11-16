@@ -5,8 +5,8 @@
 //! `VCS_PROVIDER_CMD`. Unknown placeholders fail closed with
 //! `TemplateError::UnknownPlaceholder`.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 mod tokenize;
 

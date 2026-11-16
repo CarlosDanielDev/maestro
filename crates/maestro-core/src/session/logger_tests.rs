@@ -179,7 +179,7 @@ fn cleanup_refuses_symlinked_log_dir() {
     fs::create_dir_all(logs_link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&victim, &logs_link).unwrap();
 
-    let logger = SessionLogger::new(logs_link.clone());
+    let logger = SessionLogger::new(logs_link);
     let removed = logger.cleanup_old_logs(30).unwrap();
     assert_eq!(removed, 0, "symlinked log root must clean nothing");
     assert!(

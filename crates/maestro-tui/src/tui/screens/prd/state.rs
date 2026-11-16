@@ -1,6 +1,6 @@
 //! PRD screen state machine (#321).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::prd::model::{Goal, Prd};
 use std::time::Instant;

@@ -1,6 +1,6 @@
 //! Roadmap screen rendering (#329).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::tui::panels::compact_gauge_bar_counts;

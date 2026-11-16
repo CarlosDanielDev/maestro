@@ -4,7 +4,7 @@
 //! Stakeholders, Timeline. Goals and Non-Goals are editable in-screen.
 //! Current State is auto-populated from GitHub via `prd::sync`.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 pub mod chips;
 pub mod draw;

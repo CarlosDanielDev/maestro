@@ -1,7 +1,7 @@
 {
   "gate": [
     "cargo fmt -- --check",
-    "cargo clippy --workspace -- -D warnings -A dead_code",
+    "cargo clippy --workspace --all-targets -- -D warnings -A dead_code",
     "cargo nextest run --workspace --locked",
     "cargo test --workspace --doc --locked",
     "cargo run --quiet -- sync-templates --check",

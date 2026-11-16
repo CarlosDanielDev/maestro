@@ -158,10 +158,12 @@ fn clean_stale_never_touches_a_worktree_owned_by_a_live_session() {
     live.status = SessionStatus::Running;
     live.owner_pid = Some(std::process::id());
 
-    let mut state = MaestroState::default();
-    state.sessions = vec![stale_a, live];
+    let state = MaestroState {
+        sessions: vec![stale_a, live],
+        ..Default::default()
+    };
     let state_path = dir.path().join("maestro-state.json");
-    StateStore::new(state_path.to_path_buf())
+    StateStore::new(state_path.clone())
         .save(&state)
         .expect("save state fixture");
 
@@ -199,8 +201,10 @@ fn mark_stale_sessions_killed_only_touches_stale_sessions() {
     done.status = SessionStatus::Completed;
     done.owner_pid = Some(dead);
 
-    let mut state = MaestroState::default();
-    state.sessions = vec![stale, live, done];
+    let mut state = MaestroState {
+        sessions: vec![stale, live, done],
+        ..Default::default()
+    };
 
     let marked = mark_stale_sessions_killed(&mut state, |_| false);
 
@@ -233,8 +237,10 @@ fn mark_stale_sessions_killed_skips_sessions_whose_worktree_removal_failed() {
     b.owner_pid = Some(dead);
     b.worktree_path = Some(std::path::PathBuf::from("/wt/b-wt"));
 
-    let mut state = MaestroState::default();
-    state.sessions = vec![a, b];
+    let mut state = MaestroState {
+        sessions: vec![a, b],
+        ..Default::default()
+    };
 
     let marked = mark_stale_sessions_killed(&mut state, |s| {
         s.worktree_path

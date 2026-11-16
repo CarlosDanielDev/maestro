@@ -1,6 +1,6 @@
 //! Dispatch shim for the bypass-warning screen (#328).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::tui::app::App;
 use crate::tui::screens::ScreenAction;

@@ -3,8 +3,8 @@
 //! Public seam between the renderer and its callers. Callers branch on the
 //! variant to drive exit codes (sync-templates CI) and remediation messages.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::PathBuf;
 

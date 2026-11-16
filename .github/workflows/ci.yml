@@ -118,7 +118,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      - run: cargo clippy --workspace --locked -- -D warnings -A dead_code
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings -A dead_code
 
   sync-templates:
     # Drift gate for canonical command templates (#706).

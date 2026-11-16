@@ -167,12 +167,14 @@ mod tests {
 
     #[test]
     fn format_cost_report_three_sessions_two_providers() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![
-            make_cost_session(Some("claude"), Some(301), 0.15),
-            make_cost_session(Some("claude"), Some(302), 0.08),
-            make_cost_session(Some("minimax"), Some(303), 0.00),
-        ];
+        let mut state = MaestroState {
+            sessions: vec![
+                make_cost_session(Some("claude"), Some(301), 0.15),
+                make_cost_session(Some("claude"), Some(302), 0.08),
+                make_cost_session(Some("minimax"), Some(303), 0.00),
+            ],
+            ..Default::default()
+        };
         state.update_total_cost();
         let report = format_cost_report(&state);
 
@@ -190,8 +192,10 @@ mod tests {
 
     #[test]
     fn format_cost_report_ollama_zero_cost_shows_free_marker() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_cost_session(Some("ollama"), Some(400), 0.0)];
+        let mut state = MaestroState {
+            sessions: vec![make_cost_session(Some("ollama"), Some(400), 0.0)],
+            ..Default::default()
+        };
         state.update_total_cost();
         let report = format_cost_report(&state);
         assert!(report.contains("ollama"));
@@ -204,8 +208,10 @@ mod tests {
 
     #[test]
     fn format_cost_report_minimax_zero_cost_shows_free_marker() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_cost_session(Some("minimax"), Some(500), 0.0)];
+        let mut state = MaestroState {
+            sessions: vec![make_cost_session(Some("minimax"), Some(500), 0.0)],
+            ..Default::default()
+        };
         state.update_total_cost();
         let report = format_cost_report(&state);
         assert!(report.contains("minimax"));
@@ -214,8 +220,10 @@ mod tests {
 
     #[test]
     fn format_cost_report_session_with_no_agent_id_groups_under_unknown() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_cost_session(None, Some(42), 0.05)];
+        let mut state = MaestroState {
+            sessions: vec![make_cost_session(None, Some(42), 0.05)],
+            ..Default::default()
+        };
         state.update_total_cost();
         let report = format_cost_report(&state);
         assert!(report.contains("unknown"));
@@ -232,8 +240,10 @@ mod tests {
     fn format_cost_report_unpriced_session_shows_unknown_not_free() {
         let mut s = make_cost_session(Some("claude"), Some(1155), 0.0);
         s.cost_unknown = true;
-        let mut state = MaestroState::default();
-        state.sessions = vec![s];
+        let mut state = MaestroState {
+            sessions: vec![s],
+            ..Default::default()
+        };
         state.update_total_cost();
         let report = format_cost_report(&state);
         assert!(
@@ -248,8 +258,10 @@ mod tests {
     fn format_status_report_unpriced_session_shows_unknown_cost() {
         let mut s = make_cost_session(Some("claude"), Some(1155), 0.0);
         s.cost_unknown = true;
-        let mut state = MaestroState::default();
-        state.sessions = vec![s];
+        let state = MaestroState {
+            sessions: vec![s],
+            ..Default::default()
+        };
         let report = format_status_report(&state);
         assert!(report.contains("#1155 COMPLETED $?"), "got:\n{report}");
         assert!(!report.contains("COMPLETED $0.00"), "got:\n{report}");
@@ -274,8 +286,10 @@ mod tests {
     #[test]
     fn status_report_marks_dead_owner_running_session_as_stale() {
         let dead = crate::system::process::testing::dead_process_pid();
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_status_session(SessionStatus::Running, Some(dead))];
+        let mut state = MaestroState {
+            sessions: vec![make_status_session(SessionStatus::Running, Some(dead))],
+            ..Default::default()
+        };
         state.update_total_cost();
 
         let report = format_status_report(&state);
@@ -300,11 +314,13 @@ mod tests {
 
     #[test]
     fn status_report_live_owner_session_still_runs() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_status_session(
-            SessionStatus::Running,
-            Some(std::process::id()),
-        )];
+        let mut state = MaestroState {
+            sessions: vec![make_status_session(
+                SessionStatus::Running,
+                Some(std::process::id()),
+            )],
+            ..Default::default()
+        };
         state.update_total_cost();
 
         let report = format_status_report(&state);
@@ -320,8 +336,10 @@ mod tests {
 
     #[test]
     fn status_report_legacy_session_without_owner_shows_running() {
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_status_session(SessionStatus::Running, None)];
+        let mut state = MaestroState {
+            sessions: vec![make_status_session(SessionStatus::Running, None)],
+            ..Default::default()
+        };
         state.update_total_cost();
 
         let report = format_status_report(&state);
@@ -337,8 +355,10 @@ mod tests {
     #[test]
     fn status_report_terminal_session_with_dead_owner_stays_completed() {
         let dead = crate::system::process::testing::dead_process_pid();
-        let mut state = MaestroState::default();
-        state.sessions = vec![make_status_session(SessionStatus::Completed, Some(dead))];
+        let mut state = MaestroState {
+            sessions: vec![make_status_session(SessionStatus::Completed, Some(dead))],
+            ..Default::default()
+        };
         state.update_total_cost();
 
         let report = format_status_report(&state);

@@ -8,8 +8,8 @@
 //! Zero-state singleton — `ClaudeProvider::template_rules()` returns a
 //! reference to a `static` instance.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::Path;
 

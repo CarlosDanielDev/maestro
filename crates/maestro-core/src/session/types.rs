@@ -2893,7 +2893,7 @@ mod tests {
     #[test]
     fn render_event_payload_caps_large_assistant_text() {
         let big = "x".repeat(20_000);
-        let event = StreamEvent::AssistantMessage { text: big.clone() };
+        let event = StreamEvent::AssistantMessage { text: big };
         let rendered = render_event_payload(&event);
         assert!(rendered.len() < 20_000);
         assert!(rendered.contains("…[truncated]"));

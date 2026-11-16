@@ -5,7 +5,7 @@
 //! diff size cap, path allow-list, `git apply --check` dry-run, post-apply
 //! HEAD re-verification.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::review::apply::{AppliedChange, ChangeApplier, ChangeApplyError};
