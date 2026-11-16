@@ -1,13 +1,12 @@
 ---
-source: src/tui/widgets/empty_state.rs
-assertion_line: 134
+source: crates/maestro-tui/src/tui/widgets/empty_state.rs
 expression: output
 ---
-"╔═════════════[ Roadmap ]══════════════╗"
-"║                                      ║"
-"║                                      ║"
-"║         ⠸ Fetching milestones        ║"
-"║                                      ║"
-"║                                      ║"
-"║                                      ║"
-"╚══════════════════════════════════════╝"
+"┌─────────────[ Roadmap ]──────────────┐"
+"│                                      │"
+"│                                      │"
+"│         ⠸ Fetching milestones        │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"└──────────────────────────────────────┘"

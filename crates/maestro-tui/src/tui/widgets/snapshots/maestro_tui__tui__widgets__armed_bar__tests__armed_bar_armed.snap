@@ -1,8 +1,9 @@
 ---
 source: crates/maestro-tui/src/tui/widgets/armed_bar.rs
+assertion_line: 156
 expression: "draw(&armed, t0 + Duration::from_millis(1200)).backend()"
 ---
-"╔═════════════════════════[ Write to GitHub ]══════════════════════════╗"
-"║[~] ARMED  creates 1 issue in CarlosDanielDev/maestro                 ║"
-"║Enter again to write · 2s · Esc disarms                               ║"
-"╚══════════════════════════════════════════════════════════════════════╝"
+"┌─────────────────────────[ Write to GitHub ]──────────────────────────┐"
+"│[~] ARMED  creates 1 issue in CarlosDanielDev/maestro                 │"
+"│Enter again to write · 2s · Esc disarms                               │"
+"└──────────────────────────────────────────────────────────────────────┘"

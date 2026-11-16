@@ -136,6 +136,7 @@ mod tests {
         Enter(Duration),
         Tick(Duration),
         Disarm,
+        Reset,
         Finish(bool),
     }
 
@@ -158,8 +159,8 @@ mod tests {
             (
                 "blocked -> ready -> armed -> working -> done",
                 true,
-                &[Enter(Z), Enter(S), Enter(S * 2), Finish(true)],
-                &["blocked", "armed", "working", "done"],
+                &[Enter(Z), Reset, Enter(S), Enter(S * 2), Finish(true)],
+                &["blocked", "ready", "armed", "working", "done"],
             ),
             (
                 "second Enter at exactly 3s still commits",
@@ -223,15 +224,13 @@ mod tests {
             if *blocked {
                 armed.block("2 placeholders left");
             }
+            assert_eq!(steps.len(), expected.len(), "{case}: table row lengths");
             for (i, (step, want)) in steps.iter().zip(expected.iter()).enumerate() {
                 match *step {
                     Enter(at) => {
-                        // A blocked start is unblocked by its first step.
-                        if *blocked && i == 1 {
-                            armed.reset();
-                        }
                         armed.on_enter(t0 + at);
                     }
+                    Reset => armed.reset(),
                     Tick(at) => armed.tick(t0 + at),
                     Disarm => armed.disarm(),
                     Finish(ok) => armed.finish(if ok { Ok(()) } else { Err("retry".into()) }),

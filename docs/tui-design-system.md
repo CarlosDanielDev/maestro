@@ -70,8 +70,8 @@ Adding a token means touching: `Theme`, `ThemeOverrides`, the five presets,
 
 | Method | Returns | Notes |
 |---|---|---|
-| `theme.styled_block(title, focused)` | `Block` | **Default panel.** Double border, centered `[ Title ]` in `title_accent`, border color by focus |
-| `theme.styled_block_plain(focused)` | `Block` | Same, no title |
+| `theme.styled_block(title, focused)` | `Block` | **Default panel.** Delegates to `ds::panel::panel`: focused = Thick border in `border_active` + bold, unfocused = Plain in `border_inactive`; centered `[ Title ]` in `title_accent` |
+| `theme.styled_block_plain(focused)` | `Block` | Same, no title (`ds::panel::panel_plain`) |
 | `theme.stats_block()` | `Block` | Top + bottom border only (stats rows) |
 | `theme.status_color(SessionStatus)` | `Color` | Session state color |
 | `theme.gauge_color(pct)` | `Color` | Context / usage gauge (high = bad) |
@@ -79,6 +79,20 @@ Adding a token means touching: `Theme`, `ThemeOverrides`, the five presets,
 | `theme.milestone_gauge_color(pct)` | `Color` | Inverted: high completion = green |
 | `theme.budget_color(u8)` | `Color` | `>= 90` error, else warning |
 | `widgets::focused_selection_style(theme)` | `Style` | Focused row: selection colors + bold + reversed (crate-private) |
+
+### Panels, breakpoints, SizeGuard — `crates/maestro-tui/src/tui/ds/` (#1253)
+
+Border type carries the meaning (design `§03 Borders & focus`), so focus
+survives NO_COLOR. Use `styled_block` for the two everyday states; call
+`ds::panel` directly for overlays and danger.
+
+| Item | For |
+|---|---|
+| `ds::panel::panel(title, Focus, theme)` / `panel_plain(Focus, theme)` | `Focus::Inactive` Plain · `border_inactive`; `Active` Thick · `border_active` + bold; `Overlay` Rounded · `accent_info`; `Danger` Double · `accent_error`. Double means danger only |
+| `ds::breakpoint::Breakpoint::from_area(rect)` | `TooSmall` (< `MIN_SIZE` 80x24) · `Compact` 80–99 · `Regular` 100–149 · `Wide` >= 150 columns |
+| `ds::breakpoint::MIN_SIZE` | `(80, 24)` |
+| `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor. The `TuiMode` confirms `ConfirmExit`, `ConfirmKill` and `BudgetPreSpawn` are drawn on top of the guard. While the guard is shown, a key goes only to one of those confirms; every other key (global chords included) is ignored, except `Ctrl+C`. Resize events always go through. Confirms that live inside a screen (Settings discard, Fleet board / Adopt picker live confirm) stay hidden, and their keys are ignored |
+| `ds::size_guard::is_shown(area)` | The one size test: `ui::draw` uses it to draw the guard, and the run loop uses it (`input_handler::handle_key_under_size_guard`) to swallow keys |
 
 Enforced by `screens_use_theme_colors_only` in `tests/tui_design_system.rs`:
 any `Color::` (except `Color::Reset`) in a non-test screen file fails CI.
@@ -182,6 +196,19 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
+
+### Status chip, gauge level, money (`crates/maestro-tui/src/tui/ds/`, #1251)
+
+| Item | Returns | For |
+|---|---|---|
+| `status_chip::status_chip(status, theme)` | `Span` | `glyph word` for any `SessionStatus`, coloured by `status_color`; `NeedsReview` / `FailedGates` / `Errored` are bold. Reads the global icon mode |
+| `status_chip::status_chip_for_mode(status, theme, nerd_font)` | `Span` | Same, icon mode passed in (use it in tests) |
+| `status_chip::status_word(status)` | `&str` | The chip word alone (`needs you`, `PR ready`, `gates failed`, ...) |
+| `gauge::gauge_level(ratio)` | `GaugeLevel` | Spend and quota gauges: `< 0.6` `Low`, `0.6` `Medium`, `0.8` `High`, `>= 1.0` `Critical`. NaN / negative = `Low` |
+| `GaugeLevel::style(theme)` | `Style` | `gauge_low` / `gauge_medium` / `gauge_high`; `Critical` = `gauge_high` + BOLD |
+| `money::money(Option<f64>)` | `String` | The only dollar formatter: `$12.40`, `$0.00`, `<$0.01` under one cent, `$?` for `None` (unpriced). NaN, negatives, `-0.0` print `$0.00` (via `sanitize_cost`) |
+
+Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
 
 ---
 

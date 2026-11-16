@@ -24,11 +24,43 @@ first. One entry per decision.
 
 ## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
 
-- **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border stays the standard double border.
+- **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border is the standard `styled_block` panel border, not the kit's per-state plain / thick / double. The state label is bold text, not the kit's reversed chip, and the working / done lines are fixed words (`writing to GitHub…`, `written to GitHub`) instead of a caller-set action word; the write itself is always in the caller's description.
 - **Why:** the design system rule is "never paste raw glyphs" and ASCII mode must work; no `IconId` exists for `⏎` or `⊘`. The printed seconds carry the same meaning as the bar.
 - **Section:** `§04 Components` (Kit v2 `armedBar`).
 - **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
-- **Source:** #1250.
+- **Source:** #1250. Follow-ups: `IconId::Enter` for `⏎`; a reversed chip and a caller-set action word when a screen adopts the bar and needs them.
+
+## 2026-11-16 — Keys are swallowed while the SizeGuard is shown
+
+- **What:** below 80x24, a key goes only to a `TuiMode` confirm drawn on top of the guard (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`). Every other key is ignored, global chords included (`Ctrl+Q`, `Ctrl+B`, `Ctrl+X`, `q`, F-keys, the upgrade-restart `y`), except `Ctrl+C`. Resize events are never swallowed. The check sits at the single input dispatch point (the run loop, before the upgrade check and `handle_key`) and uses `ds::size_guard::is_shown`, the same size test as `ui::draw`.
+- **Why:** the guard hides the screen, so any key would act unseen: Settings discard (`Esc`, `y`), the Fleet board / Adopt picker live-session adopt (`y`), the QueueConfirmation launch (`Enter`), HollowRetry, BypassWarning. Swallowing keys covers these and any future screen at once.
+- **Section:** `§04 SizeGuard`, `§05 Poka-yoke catalog` (Terminal too small).
+- **Rejected:** drawing every screen-level confirm over the guard (it needs a per-screen hook and still leaves non-confirm keys acting unseen). Owner decision.
+- **Source:** #1253 (judge finding on PR #1352).
+
+## 2026-11-16 — The #1157 home check moves to 80x24; 60x15 now pins the SizeGuard
+
+- **What:** `home_small_terminal` keeps a 60x15 snapshot, which now shows the SizeGuard (`home_screen_60x15_shows_the_size_guard`). The #1157 home layout checks (labels whole or ending in `…`, one activity-log row) move to 80x24, the smallest size still laid out (`home_screen_80x24_keeps_labels_and_a_log_row`).
+- **Why:** §03 puts every terminal below 80x24 behind the SizeGuard, so the home layout no longer exists at 60x15. The #1157 guarantees still apply at the floor.
+- **Section:** `§03 Layout grid & breakpoints`, `§04 SizeGuard`.
+- **Rejected:** moving the test to 80x24 alone, because it would drop the pin on what a 60x15 terminal shows; exempting the home from the guard.
+- **Source:** #1253 (review note from the wave orchestrator).
+
+## 2026-11-16 — ds::panel, Breakpoint and SizeGuard differ from the spec in four small ways
+
+- **What:** (1) `Breakpoint::from_area` returns a `TooSmall` variant, not `Option<Breakpoint>` with `None`. (2) `Focus` has four variants; `Disabled` is not added. (3) The SizeGuard shows `width 72/80` and `height 12/24` as text, with no gauge bars, and writes `80 x 24` with an ASCII `x`. (4) The SizeGuard drops the "or ⌃Q to quit safely" line.
+- **Why:** (1) and (2) follow issue #1253 as written. (3) a fixed-width bar does not fit the small windows the guard exists for, and the shared gauge is #1251's; ASCII needs no icon fallback. (4) today `Ctrl+Q` toggles TurboQuant, so the hint would be false until the keymap issue moves quit there.
+- **Section:** `§03 Borders & focus`, `§03 Layout grid & breakpoints`, `§04 SizeGuard`, `§07 Breakpoints and the Home layout`.
+- **Rejected:** `Option<Breakpoint>` (the issue names the four-class enum); adding the quit hint now (it would name the wrong key).
+- **Source:** #1253.
+
+## 2026-11-16 — Status chips: FailedGates gets its own glyph; context gauges keep 50/70
+
+- **What:** `ds::status_chip` draws `FailedGates` as `⊠ gates failed` (ASCII `[!]`), not `✗` like `Errored`. `ds::gauge::gauge_level` (0.6 / 0.8 / 1.0) is for spend and quota only; context gauges keep 50% / 70%.
+- **Why:** every status needs its own glyph so a chip reads without colour and without the word being fully visible (#1251 asks for 16 distinct glyphs). Context thresholds match the commit nudge at 50% and the auto-fork at 70% in `context_overflow.rs`; moving them to 60 / 80 would warn after the action already happened.
+- **Section:** `§04 Components` (StatusChip, Gauge), `§07 ratatui implementation`.
+- **Rejected:** the shared `✗` for both error statuses (two statuses, one glyph); one threshold set for every gauge (context would disagree with its own overflow actions).
+- **Source:** #1251.
 
 ## 2026-11-14 — Release Console landing and UX Spine sidebar are superseded
 

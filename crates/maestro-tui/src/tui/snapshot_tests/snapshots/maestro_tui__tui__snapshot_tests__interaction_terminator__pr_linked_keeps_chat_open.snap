@@ -1,5 +1,5 @@
 ---
-source: src/tui/snapshot_tests/interaction_terminator.rs
+source: crates/maestro-tui/src/tui/snapshot_tests/interaction_terminator.rs
 expression: terminal.backend()
 ---
 "┌─ agent agent  ·  model default  ·  #42 ──────────────────────────────────────────────────────────────────────────────┐"
@@ -37,8 +37,8 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Dn/PgUp/Pg"
-"╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
-"║Type a prompt to begin…                                                                                               ║"
-"║                                                                                                                      ║"
-"║                                                                                                                      ║"
-"╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Message ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃Type a prompt to begin…                                                                                               ┃"
+"┃                                                                                                                      ┃"
+"┃                                                                                                                      ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
