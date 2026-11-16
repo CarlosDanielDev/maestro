@@ -19,6 +19,7 @@ Carlos. Software developer. Background in mobile/hybrid. Strong in TDD and clean
 - Database: none — TOML state files via `toml_edit`
 - Testing: `cargo test` + `insta` (snapshots)
 - Styling: ratatui theme system (`src/tui/theme.rs`). Before any `src/tui/` change, read `docs/tui-design-system.md` and reuse the widgets, tokens, and helpers it lists; add anything new to it in the same PR
+- Design: `docs/design-system/index.html` is the target TUI design (layers explained in `docs/design-system/README.md`). Before any `crates/maestro-tui/src/tui/` change, read the target section. If the code must differ, or you learn something the design did not foresee, add an entry to `docs/design-system/decisions.md` in the same PR (what, why, section, rejected alternative). Session-end summaries still go to `MEMORY.md`; TUI design entries go to `decisions.md` and `MEMORY.md` only links them
 
 If something looks like the wrong tool, flag it before using anything else.
 
