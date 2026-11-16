@@ -57,7 +57,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // #1253: below 80x24 every mode would overlap; explain the minimum instead.
     if Breakpoint::from_area(f.area()) == Breakpoint::TooSmall {
-        size_guard::draw(f, f.area(), app.active_theme());
+        draw_size_guard(f, app);
         return;
     }
 
@@ -1421,6 +1421,30 @@ fn draw_notification_banner(
     f.render_widget(banner, area);
 }
 
+/// The SizeGuard, with any open confirm drawn on top of it: a hidden
+/// confirm would still take `y` and act unseen (#1253).
+fn draw_size_guard(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let theme = app.active_theme();
+    size_guard::draw(f, area, theme);
+    let popup = crate::tui::budget_prespawn::modal_rect(area);
+    match app.tui_mode {
+        TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, popup, theme),
+        TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, popup, theme),
+        TuiMode::BudgetPreSpawn { session_id } => {
+            let (projected_total, limit) = budget_prespawn_values(app, session_id);
+            crate::tui::budget_prespawn::draw_budget_prespawn(
+                f,
+                projected_total,
+                limit,
+                popup,
+                theme,
+            );
+        }
+        _ => {}
+    }
+}
+
 fn draw_confirm_kill_overlay(
     f: &mut Frame,
     session_id: uuid::Uuid,
@@ -1428,8 +1452,18 @@ fn draw_confirm_kill_overlay(
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
-    use ratatui::widgets::Clear;
     let popup = help::centered_rect(40, 20, area);
+    draw_confirm_kill_popup(f, session_id, app, popup, theme);
+}
+
+fn draw_confirm_kill_popup(
+    f: &mut Frame,
+    session_id: uuid::Uuid,
+    app: &App,
+    popup: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::Clear;
     f.render_widget(Clear, popup);
 
     let label = app
@@ -1468,8 +1502,17 @@ fn draw_confirm_exit_overlay(
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
-    use ratatui::widgets::Clear;
     let popup = help::centered_rect(50, 25, area);
+    draw_confirm_exit_popup(f, app, popup, theme);
+}
+
+fn draw_confirm_exit_popup(
+    f: &mut Frame,
+    app: &App,
+    popup: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::Clear;
     f.render_widget(Clear, popup);
 
     let active = app.pool.active_count();

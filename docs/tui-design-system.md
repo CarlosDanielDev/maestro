@@ -91,7 +91,7 @@ survives NO_COLOR. Use `styled_block` for the two everyday states; call
 | `ds::panel::panel(title, Focus, theme)` / `panel_plain(Focus, theme)` | `Focus::Inactive` Plain · `border_inactive`; `Active` Thick · `border_active` + bold; `Overlay` Rounded · `accent_info`; `Danger` Double · `accent_error`. Double means danger only |
 | `ds::breakpoint::Breakpoint::from_area(rect)` | `TooSmall` (< `MIN_SIZE` 80x24) · `Compact` 80–99 · `Regular` 100–149 · `Wide` >= 150 columns |
 | `ds::breakpoint::MIN_SIZE` | `(80, 24)` |
-| `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor |
+| `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor. An open confirm (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`) is drawn on top of the guard, so a key never confirms something the user cannot see |
 
 Enforced by `screens_use_theme_colors_only` in `tests/tui_design_system.rs`:
 any `Color::` (except `Color::Reset`) in a non-test screen file fails CI.

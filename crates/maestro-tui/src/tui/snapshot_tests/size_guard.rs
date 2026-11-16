@@ -149,3 +149,30 @@ fn size_guard_does_not_replace_a_minimum_size_terminal() {
 fn ui_draw_does_not_panic_on_a_1x1_terminal() {
     draw_mode(TuiMode::Dashboard, 1, 1);
 }
+
+/// A confirm that the SizeGuard hid would still take `y` and act unseen, so
+/// every confirm draws on top of the guard.
+#[test]
+fn confirm_exit_stays_visible_over_the_size_guard_at_60x15() {
+    let terminal = draw_mode(TuiMode::ConfirmExit, 60, 15);
+    let out = format!("{}", terminal.backend());
+    assert!(out.contains("Terminal too small"), "{out}");
+    assert!(
+        out.contains("Are you sure you want to exit?") && out.contains("[y]es"),
+        "the quit confirm must stay visible below 80x24:\n{out}"
+    );
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn other_confirms_stay_visible_over_the_size_guard_at_60x15() {
+    let id = Uuid::nil();
+    let cases = [
+        (TuiMode::ConfirmKill(id), "Kill session"),
+        (TuiMode::BudgetPreSpawn { session_id: id }, "[y]es"),
+    ];
+    for (mode, text) in cases {
+        let out = format!("{}", draw_mode(mode, 60, 15).backend());
+        assert!(out.contains(text), "{mode:?} confirm hidden:\n{out}");
+    }
+}
