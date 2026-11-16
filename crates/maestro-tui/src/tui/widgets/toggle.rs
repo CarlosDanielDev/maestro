@@ -126,16 +126,16 @@ mod tests {
     struct ModeRestoreGuard;
     impl Drop for ModeRestoreGuard {
         fn drop(&mut self) {
-            crate::tui::icons::init_from_config(false);
+            crate::tui::icons::init_ignoring_env(false);
         }
     }
 
     fn render_toggle_indicator(value: bool, nerd: bool) -> String {
-        use crate::tui::icons::init_from_config;
+        use crate::tui::icons::init_ignoring_env;
         use ratatui::{Terminal, backend::TestBackend};
 
         let _lock = TOGGLE_RENDER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        init_from_config(!nerd);
+        init_ignoring_env(!nerd);
         let _restore = ModeRestoreGuard;
 
         let backend = TestBackend::new(20, 1);

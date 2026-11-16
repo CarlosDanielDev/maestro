@@ -34,6 +34,14 @@ pub(crate) fn init_from_config_with_env(
     MODE.store(value, Ordering::Release);
 }
 
+/// Test-only: set the mode from the config flag alone, ignoring
+/// `MAESTRO_ASCII_ICONS`, so tests stay hermetic when a developer has the
+/// env var exported. Public so `maestro-tui` tests can reach it.
+#[doc(hidden)]
+pub fn init_ignoring_env(ascii_icons: bool) {
+    init_from_config_with_env(ascii_icons, |_| None);
+}
+
 /// Returns true if Nerd Font icons should be used.
 /// Reads the mode set by `init_from_config` (config flag or env override);
 /// before init, falls back to the `MAESTRO_ASCII_ICONS` env var.
@@ -92,13 +100,13 @@ mod tests {
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(true);
         assert!(!use_nerd_font());
-        init_from_config(false); // restore
+        init_ignoring_env(false); // restore
     }
 
     #[test]
     fn init_from_config_ascii_false_enables_nerd_font() {
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        init_from_config(false);
+        init_ignoring_env(false);
         assert!(use_nerd_font());
     }
 
@@ -107,22 +115,23 @@ mod tests {
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config_with_env(false, |_| Some("1".to_string()));
         assert!(!use_nerd_font());
-        init_from_config(false); // restore
+        init_ignoring_env(false); // restore
     }
 
     #[test]
-    fn env_var_read_once_at_init_not_per_lookup() {
+    fn lookups_keep_init_result_whatever_the_real_env() {
+        // `use_nerd_font()` must return what init resolved, never re-read
+        // the env per lookup. Both halves run, so a per-lookup env read
+        // breaks one of them whether `MAESTRO_ASCII_ICONS` is set or not.
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let reads = std::cell::Cell::new(0);
-        init_from_config_with_env(false, |_| {
-            reads.set(reads.get() + 1);
-            Some("1".to_string())
-        });
+        init_from_config_with_env(false, |_| Some("1".to_string()));
         for _ in 0..1000 {
             assert!(!use_nerd_font());
         }
-        assert_eq!(reads.get(), 1);
-        init_from_config(false); // restore
+        init_from_config_with_env(false, |_| None);
+        for _ in 0..1000 {
+            assert!(use_nerd_font());
+        }
     }
 
     #[test]
@@ -130,7 +139,7 @@ mod tests {
         let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(true);
         assert!(!use_nerd_font());
-        init_from_config(false);
+        init_ignoring_env(false);
         assert!(use_nerd_font());
     }
 }
