@@ -24,7 +24,7 @@ pub enum HeadingStyle {
     /// Keep the `#` prefix (`## Overview`). Default for existing callers.
     #[default]
     Hashes,
-    /// Drop the `#` prefix; the heading is still bold `accent_info`.
+    /// Drop the `#` prefix; the heading is bold `accent_warning` (`mdBlock`).
     Bare,
 }
 
@@ -187,9 +187,11 @@ impl<'t> MarkdownRenderer<'t> {
     fn current_style(&self) -> Style {
         let mut style = Style::default().fg(self.theme.text_primary);
         if self.in_heading {
-            style = style
-                .fg(self.theme.accent_info)
-                .add_modifier(Modifier::BOLD);
+            let colour = match self.opts.heading {
+                HeadingStyle::Hashes => self.theme.accent_info,
+                HeadingStyle::Bare => self.theme.accent_warning,
+            };
+            style = style.fg(colour).add_modifier(Modifier::BOLD);
         } else if self.in_link {
             style = style.fg(self.theme.accent_info);
         }
@@ -303,6 +305,11 @@ impl<'t> MarkdownRenderer<'t> {
         self.active_spans.push(Span::styled(
             TODO_CHIP,
             warn.add_modifier(Modifier::REVERSED | Modifier::BOLD),
+        ));
+        // Plain (unreversed) gap so the chip reads as a block of its own.
+        self.active_spans.push(Span::styled(
+            " ",
+            Style::default().fg(self.theme.text_primary),
         ));
         self.push_text_part(body, warn);
     }
@@ -1306,18 +1313,32 @@ mod tests {
         let result = render_markdown_with("## Overview", &theme(), 80, bare);
         let first = result.lines[0].spans.first().expect("expected a span");
         assert_eq!(first.content, "Overview", "bare heading must not keep `#`");
-        assert_eq!(first.style.fg, Some(Color::Cyan));
+        assert_eq!(
+            first.style.fg,
+            Some(Color::Yellow),
+            "bare heading is bold accent_warning, as mdBlock"
+        );
         assert!(first.style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn default_options_match_render_markdown() {
+    fn default_options_keep_hashes_and_leave_todo_and_refs_plain() {
         let input = "## Overview\n\nSee #12 and [TODO: name it].";
+        let text = render_markdown(input, &theme(), 80);
+        let heading = &text.lines[0].spans[0];
+        assert_eq!(heading.content, "## ", "default keeps the `#` prefix");
         assert_eq!(
-            render_markdown_with(input, &theme(), 40, MarkdownOptions::default()),
-            render_markdown(input, &theme(), 40),
+            heading.style.fg,
+            Some(Color::Cyan),
+            "default heading colour"
         );
-        let first = &render_markdown(input, &theme(), 40).lines[0].spans[0];
-        assert_eq!(first.content, "## ", "default keeps the `#` prefix");
+        let body: Vec<_> = text.lines[2].spans.iter().collect();
+        let line: String = body.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(line, "See #12 and [TODO: name it].");
+        assert!(
+            body.iter().all(|s| s.style.fg == Some(Color::White)
+                && !s.style.add_modifier.contains(Modifier::REVERSED)),
+            "no chip and no ref styling by default: {body:?}"
+        );
     }
 }

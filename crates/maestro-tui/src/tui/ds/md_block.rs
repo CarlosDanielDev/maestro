@@ -48,6 +48,8 @@ mod tests {
 
         let heading = &text.lines[0].spans[0];
         assert_eq!(heading.content, "Acceptance", "bare heading, no `#`");
+        assert_eq!(heading.style.fg, Some(theme.accent_warning));
+        assert!(heading.style.add_modifier.contains(Modifier::BOLD));
 
         let chip = find(&all, " TODO ");
         assert_eq!(chip.style.fg, Some(theme.accent_warning));
@@ -57,6 +59,13 @@ mod tests {
                 .contains(Modifier::REVERSED | Modifier::BOLD),
             "chip is reversed + bold so it survives NO_COLOR: {chip:?}"
         );
+        let gap = all
+            .iter()
+            .position(|s| s.content == " TODO ")
+            .map(|i| &all[i + 1])
+            .expect("span after chip");
+        assert_eq!(gap.content, " ", "plain gap between chip and text");
+        assert!(!gap.style.add_modifier.contains(Modifier::REVERSED));
         let body = find(&all, "the feature");
         assert_eq!(body.style.fg, Some(theme.accent_warning));
         assert!(
@@ -66,8 +75,7 @@ mod tests {
 
         let reference = find(&all, "#123");
         assert_eq!(reference.style.fg, Some(theme.accent_identifier));
-        // Body line only: in Theme::dark the heading's accent_info is the
-        // same Cyan as accent_identifier.
+        // Body line only, so the heading cannot match by accident.
         assert!(
             text.lines[2]
                 .spans
@@ -82,6 +90,6 @@ mod tests {
             .iter()
             .map(|s| s.content.as_ref())
             .collect();
-        assert_eq!(line, "Name it  TODO the feature for #123, not C#4.");
+        assert_eq!(line, "Name it  TODO  the feature for #123, not C#4.");
     }
 }
