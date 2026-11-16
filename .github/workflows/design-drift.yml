@@ -1,0 +1,28 @@
+name: Design Drift
+
+# A PR that touches crates/maestro-tui/src/tui/ must update the design docs
+# or carry a `Design: no change` line in its body (#1238). Runs on `edited`
+# too, so adding the line to the body re-runs the check.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  design-drift:
+    name: Design Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The PR body is untrusted: it reaches the script only through env,
+      # never through `${{ }}` inside `run:`.
+      - run: bash scripts/check-design-drift.sh
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          DESIGN_DRIFT_BASE: origin/${{ github.base_ref }}
