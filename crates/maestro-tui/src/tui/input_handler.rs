@@ -14,6 +14,33 @@ pub(super) enum KeyAction {
     Quit,
 }
 
+/// #1253: while the SizeGuard is shown (terminal below 80x24) the screen is
+/// hidden, so keys go only to a confirm drawn on top of the guard
+/// (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`). Every other key,
+/// global chords included, is ignored, except `Ctrl+C`. Returns `None` when
+/// the guard is not shown and the key takes the normal path.
+pub(super) async fn handle_key_under_size_guard(
+    app: &mut App,
+    key: KeyEvent,
+    area: ratatui::layout::Rect,
+) -> Option<KeyAction> {
+    if !crate::tui::ds::size_guard::is_shown(area) {
+        return None;
+    }
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.running = false;
+        return Some(KeyAction::Quit);
+    }
+    Some(match app.tui_mode {
+        app::TuiMode::ConfirmExit => handle_confirm_exit(app, &key),
+        app::TuiMode::ConfirmKill(id) => handle_confirm_kill(app, &key, id).await,
+        app::TuiMode::BudgetPreSpawn { session_id } => {
+            handle_budget_prespawn(app, &key, session_id).await
+        }
+        _ => KeyAction::Consumed,
+    })
+}
+
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
 /// global shortcuts, and screen dispatch in priority order.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
@@ -1206,6 +1233,10 @@ fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
         app.panel_view.scroll_offset = 0;
     }
 }
+
+#[cfg(test)]
+#[path = "input_handler_size_guard_tests.rs"]
+mod size_guard_tests;
 
 #[cfg(test)]
 mod tests {

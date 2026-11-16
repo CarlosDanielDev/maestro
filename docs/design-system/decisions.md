@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — Keys are swallowed while the SizeGuard is shown
+
+- **What:** below 80x24, a key goes only to a `TuiMode` confirm drawn on top of the guard (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`). Every other key is ignored, global chords included (`Ctrl+Q`, `Ctrl+B`, `Ctrl+X`, `q`, F-keys, the upgrade-restart `y`), except `Ctrl+C`. Resize events are never swallowed. The check sits at the single input dispatch point (the run loop, before the upgrade check and `handle_key`) and uses `ds::size_guard::is_shown`, the same size test as `ui::draw`.
+- **Why:** the guard hides the screen, so any key would act unseen: Settings discard (`Esc`, `y`), the Fleet board / Adopt picker live-session adopt (`y`), the QueueConfirmation launch (`Enter`), HollowRetry, BypassWarning. Swallowing keys covers these and any future screen at once.
+- **Section:** `§04 SizeGuard`, `§05 Poka-yoke catalog` (Terminal too small).
+- **Rejected:** drawing every screen-level confirm over the guard (it needs a per-screen hook and still leaves non-confirm keys acting unseen). Owner decision.
+- **Source:** #1253 (judge finding on PR #1352).
+
 ## 2026-11-16 — The #1157 home check moves to 80x24; 60x15 now pins the SizeGuard
 
 - **What:** `home_small_terminal` keeps a 60x15 snapshot, which now shows the SizeGuard (`home_screen_60x15_shows_the_size_guard`). The #1157 home layout checks (labels whole or ending in `…`, one activity-log row) move to 80x24, the smallest size still laid out (`home_screen_80x24_keeps_labels_and_a_log_row`).

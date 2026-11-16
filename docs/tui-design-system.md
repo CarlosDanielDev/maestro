@@ -91,7 +91,8 @@ survives NO_COLOR. Use `styled_block` for the two everyday states; call
 | `ds::panel::panel(title, Focus, theme)` / `panel_plain(Focus, theme)` | `Focus::Inactive` Plain · `border_inactive`; `Active` Thick · `border_active` + bold; `Overlay` Rounded · `accent_info`; `Danger` Double · `accent_error`. Double means danger only |
 | `ds::breakpoint::Breakpoint::from_area(rect)` | `TooSmall` (< `MIN_SIZE` 80x24) · `Compact` 80–99 · `Regular` 100–149 · `Wide` >= 150 columns |
 | `ds::breakpoint::MIN_SIZE` | `(80, 24)` |
-| `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor. An open confirm (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`) is drawn on top of the guard, so a key never confirms something the user cannot see |
+| `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor. The `TuiMode` confirms `ConfirmExit`, `ConfirmKill` and `BudgetPreSpawn` are drawn on top of the guard. While the guard is shown, a key goes only to one of those confirms; every other key (global chords included) is ignored, except `Ctrl+C`. Resize events always go through. Confirms that live inside a screen (Settings discard, Fleet board / Adopt picker live confirm) stay hidden, and their keys are ignored |
+| `ds::size_guard::is_shown(area)` | The one size test: `ui::draw` uses it to draw the guard, and the run loop uses it (`input_handler::handle_key_under_size_guard`) to swallow keys |
 
 Enforced by `screens_use_theme_colors_only` in `tests/tui_design_system.rs`:
 any `Color::` (except `Color::Reset`) in a non-test screen file fails CI.

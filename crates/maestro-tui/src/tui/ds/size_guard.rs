@@ -10,9 +10,15 @@ use ratatui::{
     widgets::{Clear, Padding, Paragraph, Wrap},
 };
 
-use super::breakpoint::MIN_SIZE;
+use super::breakpoint::{Breakpoint, MIN_SIZE};
 use super::panel::{Focus, panel};
 use crate::tui::theme::Theme;
+
+/// True when `area` is below [`MIN_SIZE`]: `ui::draw` shows the SizeGuard
+/// and the input loop swallows keys. The one size test both use.
+pub fn is_shown(area: Rect) -> bool {
+    Breakpoint::from_area(area) == Breakpoint::TooSmall
+}
 
 pub fn draw(f: &mut Frame, area: Rect, theme: &Theme) {
     let (min_w, min_h) = MIN_SIZE;
