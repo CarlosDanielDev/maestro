@@ -15,8 +15,10 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessi
 // (live on `[agents.<id>]`). Bumped 51 → 93 in #788 after backfilling
 // project/sessions/review/tui/turboquant/concurrency sections. Bumped
 // 93 → 94 on 2026-05-23 for `sessions.session_history_cap` (persisted
-// session-history toggle).
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 94;
+// session-history toggle). Bumped 94 → 98 in #1247 for the four theme v1
+// overrides (`surface_bar`, `surface_overlay`, `status_needs_pr`,
+// `status_conflict`).
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 98;
 // Bumped 3 → 4 in #788 — `review.reviewers` registered as VecOfStruct.
 // Bumped 4 → 5 in #803 — `teams` registered as FlattenedMap.
 const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 5;
