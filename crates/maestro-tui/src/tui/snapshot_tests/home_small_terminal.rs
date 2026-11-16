@@ -1,8 +1,10 @@
-//! Snapshot test for the home screen on a 60x15 terminal (#1157).
+//! Snapshot tests for the home screen on small terminals (#1157, #1253).
 //!
-//! Pins two things a tiny terminal used to break: Quick Actions labels are
-//! never cut mid-word without an `…`, and the activity log keeps at least one
-//! content row below the home panes.
+//! At 60x15 (the size #1157 pinned) the terminal is below the 80x24 floor, so
+//! `ui::draw` shows the SizeGuard instead of an overlapping home. At 80x24,
+//! the smallest size still laid out, the home keeps what #1157 pinned: Quick
+//! Actions labels are never cut mid-word without an `…`, and the activity log
+//! keeps at least one content row below the home panes.
 
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
@@ -76,9 +78,27 @@ fn local_ten_am() -> chrono::DateTime<chrono::Utc> {
 }
 
 #[test]
-fn home_screen_60x15_keeps_labels_and_a_log_row() {
+fn home_screen_60x15_shows_the_size_guard() {
     let mut app = small_home_app();
     let mut t = Terminal::new(TestBackend::new(60, 15)).unwrap();
+    t.draw(|f| ui::draw(f, &mut app)).unwrap();
+
+    let output = format!("{}", t.backend());
+    assert!(
+        output.contains("Terminal too small") && output.contains("60 x 15"),
+        "60x15 is below the 80x24 floor and must show the SizeGuard:\n{output}"
+    );
+    assert!(
+        !output.contains("Quick Actions"),
+        "no home layout below the floor:\n{output}"
+    );
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn home_screen_80x24_keeps_labels_and_a_log_row() {
+    let mut app = small_home_app();
+    let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
     t.draw(|f| ui::draw(f, &mut app)).unwrap();
 
     let output = format!("{}", t.backend());
@@ -87,7 +107,9 @@ fn home_screen_60x15_keeps_labels_and_a_log_row() {
         "Quick Actions labels must be whole or end in `…`:\n{output}"
     );
     assert!(
-        !output.contains("Browse Is║"),
+        !["│", "┃", "║"]
+            .iter()
+            .any(|b| output.contains(&format!("Browse Is{b}"))),
         "label clipped mid-word without `…`:\n{output}"
     );
     assert!(
