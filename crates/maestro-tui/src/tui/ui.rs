@@ -1502,7 +1502,7 @@ fn draw_confirm_exit_overlay(
     let border_color = if has_active {
         theme.accent_warning
     } else {
-        theme.border_focused
+        theme.border_active
     };
 
     let block = theme

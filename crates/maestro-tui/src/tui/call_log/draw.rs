@@ -150,7 +150,7 @@ fn draw_payload(
     let block = Block::default()
         .borders(Borders::ALL)
         .title(Span::styled(title, Style::default().fg(theme.title_accent)))
-        .border_style(Style::default().fg(theme.border_focused));
+        .border_style(Style::default().fg(theme.border_active));
     let para = Paragraph::new(entry.payload_json.clone())
         .block(block)
         .style(Style::default().fg(theme.text_primary))

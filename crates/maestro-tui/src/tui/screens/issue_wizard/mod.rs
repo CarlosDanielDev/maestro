@@ -731,7 +731,7 @@ impl IssueWizardScreen {
             let focused = i == focused_idx;
             let border_style = if focused {
                 Style::default()
-                    .fg(theme.border_focused)
+                    .fg(theme.border_active)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()

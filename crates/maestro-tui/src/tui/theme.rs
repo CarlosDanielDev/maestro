@@ -200,7 +200,6 @@ pub struct Theme {
     // Borders
     pub border_active: Color,
     pub border_inactive: Color,
-    pub border_focused: Color,
 
     // Status colors (mapped via status_color())
     pub status_running: Color,
@@ -249,6 +248,12 @@ pub struct Theme {
     // F-key badge styling (#218)
     pub fkey_badge_bg: Color,
     pub fkey_badge_fg: Color,
+
+    // Theme tokens v1 (#1247, design system §03)
+    pub surface_bar: Color,
+    pub surface_overlay: Color,
+    pub status_needs_pr: Color,
+    pub status_conflict: Color,
 }
 
 impl Default for Theme {
@@ -268,7 +273,6 @@ impl Theme {
             text_muted: Color::DarkGray,
             border_active: Color::Green,
             border_inactive: Color::DarkGray,
-            border_focused: Color::White,
             status_running: Color::Green,
             status_completed: Color::Blue,
             status_errored: Color::Red,
@@ -301,6 +305,10 @@ impl Theme {
             title_accent: Color::Yellow,
             fkey_badge_bg: Color::Yellow,
             fkey_badge_fg: Color::Black,
+            surface_bar: Color::Indexed(236),
+            surface_overlay: Color::Indexed(235),
+            status_needs_pr: Color::Blue,
+            status_conflict: Color::LightMagenta,
         }
     }
 
@@ -314,7 +322,6 @@ impl Theme {
             text_muted: Color::Gray,
             border_active: Color::Blue,
             border_inactive: Color::Gray,
-            border_focused: Color::Black,
             status_running: Color::Blue,
             status_completed: Color::Green,
             status_errored: Color::Red,
@@ -347,6 +354,10 @@ impl Theme {
             title_accent: Color::Blue,
             fkey_badge_bg: Color::Blue,
             fkey_badge_fg: Color::White,
+            surface_bar: Color::Rgb(236, 235, 228),
+            surface_overlay: Color::Rgb(255, 255, 255),
+            status_needs_pr: Color::Blue,
+            status_conflict: Color::Magenta,
         }
     }
 
@@ -360,7 +371,6 @@ impl Theme {
             text_muted: Color::Rgb(0, 100, 25),
             border_active: Color::Rgb(255, 140, 0),
             border_inactive: Color::Rgb(0, 100, 25),
-            border_focused: Color::Rgb(255, 175, 0),
             status_running: Color::Rgb(0, 255, 65),
             status_completed: Color::Rgb(0, 180, 45),
             status_errored: Color::Rgb(255, 60, 0),
@@ -393,7 +403,144 @@ impl Theme {
             title_accent: Color::Rgb(255, 175, 0),
             fkey_badge_bg: Color::Rgb(255, 175, 0),
             fkey_badge_fg: Color::Black,
+            surface_bar: Color::Rgb(11, 26, 14),
+            surface_overlay: Color::Rgb(6, 18, 10),
+            status_needs_pr: Color::Rgb(59, 255, 176),
+            status_conflict: Color::Rgb(125, 255, 154),
         }
+    }
+
+    /// High-contrast theme — pure black/white base, saturated accents, muted
+    /// text no darker than `#c4c4c4` (design system §03).
+    pub fn high_contrast() -> Self {
+        const BLACK: Color = Color::Rgb(0, 0, 0);
+        const WHITE: Color = Color::Rgb(255, 255, 255);
+        const MUTED: Color = Color::Rgb(196, 196, 196);
+        const ACCENT: Color = Color::Rgb(184, 255, 61);
+        const WARN: Color = Color::Rgb(255, 213, 0);
+        const INFO: Color = Color::Rgb(41, 231, 255);
+        const ERROR: Color = Color::Rgb(255, 97, 97);
+        const BLUE: Color = Color::Rgb(134, 182, 255);
+        const MAGENTA: Color = Color::Rgb(229, 155, 255);
+        const BAR: Color = Color::Rgb(26, 26, 26);
+        Self {
+            branding_fg: BLACK,
+            branding_bg: ACCENT,
+            text_primary: WHITE,
+            text_secondary: MUTED,
+            text_muted: MUTED,
+            border_active: ACCENT,
+            border_inactive: MUTED,
+            status_running: ACCENT,
+            status_completed: BLUE,
+            status_errored: ERROR,
+            status_paused: WARN,
+            status_killed: ERROR,
+            status_queued: MUTED,
+            status_spawning: INFO,
+            status_stalled: WARN,
+            status_retrying: MAGENTA,
+            status_gates_running: INFO,
+            status_needs_review: WARN,
+            status_ci_fix: MAGENTA,
+            accent_success: ACCENT,
+            accent_warning: WARN,
+            accent_error: ERROR,
+            accent_info: INFO,
+            accent_identifier: INFO,
+            gauge_low: ACCENT,
+            gauge_medium: WARN,
+            gauge_high: ERROR,
+            gauge_background: BAR,
+            notification_critical: ERROR,
+            notification_blocker: ERROR,
+            notification_default: WARN,
+            keybind_key: WARN,
+            keybind_label_bg: MUTED,
+            keybind_label_fg: BLACK,
+            selection_bg: WARN,
+            selection_fg: BLACK,
+            title_accent: WARN,
+            fkey_badge_bg: WARN,
+            fkey_badge_fg: BLACK,
+            surface_bar: BAR,
+            surface_overlay: Color::Rgb(13, 13, 13),
+            status_needs_pr: BLUE,
+            status_conflict: MAGENTA,
+        }
+    }
+
+    /// No-colour theme — every colour `Reset`, so the terminal's own
+    /// foreground/background show through. Meaning must come from modifiers,
+    /// border type and glyphs (design system §03).
+    pub fn no_color() -> Self {
+        const R: Color = Color::Reset;
+        Self {
+            branding_fg: R,
+            branding_bg: R,
+            text_primary: R,
+            text_secondary: R,
+            text_muted: R,
+            border_active: R,
+            border_inactive: R,
+            status_running: R,
+            status_completed: R,
+            status_errored: R,
+            status_paused: R,
+            status_killed: R,
+            status_queued: R,
+            status_spawning: R,
+            status_stalled: R,
+            status_retrying: R,
+            status_gates_running: R,
+            status_needs_review: R,
+            status_ci_fix: R,
+            accent_success: R,
+            accent_warning: R,
+            accent_error: R,
+            accent_info: R,
+            accent_identifier: R,
+            gauge_low: R,
+            gauge_medium: R,
+            gauge_high: R,
+            gauge_background: R,
+            notification_critical: R,
+            notification_blocker: R,
+            notification_default: R,
+            keybind_key: R,
+            keybind_label_bg: R,
+            keybind_label_fg: R,
+            selection_bg: R,
+            selection_fg: R,
+            title_accent: R,
+            fkey_badge_bg: R,
+            fkey_badge_fg: R,
+            surface_bar: R,
+            surface_overlay: R,
+            status_needs_pr: R,
+            status_conflict: R,
+        }
+    }
+
+    /// The startup theme. `NO_COLOR` (any non-empty value) or `TERM=dumb`
+    /// forces `no_color()` and skips overrides; otherwise the configured
+    /// preset plus overrides, downgraded to the terminal's colour capability.
+    pub fn detect(config: &ThemeConfig) -> Self {
+        Self::detect_from_env(config, |k| std::env::var(k).ok())
+    }
+
+    /// Testable [`Theme::detect`]: accepts an env-var reader closure.
+    pub(crate) fn detect_from_env(
+        config: &ThemeConfig,
+        get_env: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        let no_color = get_env("NO_COLOR").is_some_and(|v| !v.is_empty());
+        if no_color || get_env("TERM").as_deref() == Some("dumb") {
+            return Self::no_color();
+        }
+        let mut theme = Self::from_config(config);
+        theme.apply_capability(ColorCapability::detect_from_env(&get_env));
+        theme
     }
 
     /// Build a theme from config, applying overrides on top of the preset.
@@ -402,6 +549,8 @@ impl Theme {
             ThemePreset::Dark => Self::dark(),
             ThemePreset::Light => Self::light(),
             ThemePreset::Retro => Self::retro(),
+            ThemePreset::HighContrast => Self::high_contrast(),
+            ThemePreset::NoColor => Self::no_color(),
         };
 
         macro_rules! apply_override {
@@ -419,7 +568,7 @@ impl Theme {
         apply_override!(text_muted);
         apply_override!(border_active);
         apply_override!(border_inactive);
-        apply_override!(border_focused);
+        // `border_focused` is retired (#1247): parsed for old configs, ignored.
         apply_override!(accent_success);
         apply_override!(accent_warning);
         apply_override!(accent_error);
@@ -440,6 +589,10 @@ impl Theme {
         apply_override!(title_accent);
         apply_override!(fkey_badge_bg);
         apply_override!(fkey_badge_fg);
+        apply_override!(surface_bar);
+        apply_override!(surface_overlay);
+        apply_override!(status_needs_pr);
+        apply_override!(status_conflict);
 
         theme
     }
@@ -459,7 +612,6 @@ impl Theme {
             text_muted,
             border_active,
             border_inactive,
-            border_focused,
             status_running,
             status_completed,
             status_errored,
@@ -492,6 +644,10 @@ impl Theme {
             title_accent,
             fkey_badge_bg,
             fkey_badge_fg,
+            surface_bar,
+            surface_overlay,
+            status_needs_pr,
+            status_conflict,
         );
     }
 
@@ -569,7 +725,7 @@ impl Theme {
     /// Compute the border style for a given focus state.
     fn border_style(&self, focused: bool) -> Style {
         let color = if focused {
-            self.border_focused
+            self.border_active
         } else {
             self.border_inactive
         };
@@ -615,6 +771,10 @@ impl Theme {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[path = "theme_v1_tests.rs"]
+mod v1_tests;
 
 #[cfg(test)]
 mod tests {

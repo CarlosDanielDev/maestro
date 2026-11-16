@@ -3,7 +3,7 @@
 
 use super::{DefaultValue, FieldKind, FieldSchema, validate_non_empty};
 
-const THEME_PRESETS: &[&str] = &["dark", "light", "retro"];
+const THEME_PRESETS: &[&str] = &["dark", "light", "retro", "high-contrast", "no-color"];
 const LAYOUT_MODES: &[&str] = &["vertical", "horizontal"];
 const LAYOUT_DENSITIES: &[&str] = &["default", "comfortable", "compact"];
 const QUANT_STRATEGIES: &[&str] = &["turboquant", "polarquant", "qjl"];

@@ -1001,9 +1001,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             crate::icon_mode::init_from_config(config.tui.ascii_icons);
             app.flags
                 .set_enabled(crate::flags::Flag::TurboQuant, config.turboquant.enabled);
-            let mut theme = crate::tui::theme::Theme::from_config(&config.tui.theme);
-            theme.apply_capability(crate::tui::theme::ColorCapability::detect());
-            app.theme = theme;
+            app.theme = crate::tui::theme::Theme::detect(&config.tui.theme);
             app.preview_theme = None;
             app.show_mascot = config.tui.show_mascot;
             app.mascot_style = config.tui.mascot_style;
@@ -1126,9 +1124,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         }
         ScreenAction::PreviewTheme(theme_config) => {
             if let Some(tc) = theme_config {
-                let mut theme = crate::tui::theme::Theme::from_config(&tc);
-                theme.apply_capability(crate::tui::theme::ColorCapability::detect());
-                app.preview_theme = Some(theme);
+                app.preview_theme = Some(crate::tui::theme::Theme::detect(&tc));
             } else {
                 app.preview_theme = None;
             }

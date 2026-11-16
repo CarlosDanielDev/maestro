@@ -24,7 +24,7 @@ pub fn draw_session_summary(
     let title = format!("Session Summary ({} sessions)", summary.session_count);
     let block = theme
         .styled_block(&title, true)
-        .border_style(Style::default().fg(theme.border_focused));
+        .border_style(Style::default().fg(theme.border_active));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -64,7 +64,7 @@ pub fn draw_session_summary(
             Span::styled(
                 format!("{}{} ", select_marker, expand_marker),
                 Style::default().fg(if is_selected {
-                    theme.border_focused
+                    theme.border_active
                 } else {
                     theme.text_muted
                 }),

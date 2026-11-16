@@ -36,6 +36,16 @@ fn panel_view_single_running_session() {
 }
 
 #[test]
+fn panel_view_single_running_session_no_color_snapshot() {
+    // #1247: first caller of the NO_COLOR harness.
+    let panel = PanelView::new();
+    let session = make_session(SessionStatus::Running, Some(42));
+    assert_snapshot!(super::no_color::no_color_snapshot(|f, theme| {
+        panel.draw(f, &[&session], f.area(), theme, 0);
+    }));
+}
+
+#[test]
 fn panel_view_unpriced_session_shows_unknown_cost() {
     // #1155: the session panel header renders `$?` for an unpriced model.
     let mut terminal = test_terminal();

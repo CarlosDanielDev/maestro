@@ -716,7 +716,7 @@ For tier-resolution rules, the `maestro team` CLI surface, and cookbook walkthro
 <!-- BEGIN AUTOGEN:tui.theme -->
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `preset` | enum (`dark`, `light`, `retro`) | `dark` | Color preset applied to the TUI |
+| `preset` | enum (`dark`, `light`, `retro`, `high-contrast`, `no-color`) | `dark` | Color preset applied to the TUI |
 <!-- END AUTOGEN:tui.theme -->
 
 ### `[tui.theme.overrides]`
@@ -733,7 +733,7 @@ Per-field color overrides applied on top of the preset. Each override accepts a 
 | `text_muted` | string | unset | Muted text color (deprecated or low-priority text) — name, hex, or 256-color index |
 | `border_active` | string | unset | Active panel border color — name, hex, or 256-color index |
 | `border_inactive` | string | unset | Inactive panel border color — name, hex, or 256-color index |
-| `border_focused` | string | unset | Focused panel border color — name, hex, or 256-color index |
+| `border_focused` | string | unset | Retired: still accepted so old configs load, never drawn (focus uses `border_active`) |
 | `accent_success` | string | unset | Success accent color (gates passed, completion) — name, hex, or 256-color index |
 | `accent_warning` | string | unset | Warning accent color — name, hex, or 256-color index |
 | `accent_error` | string | unset | Error accent color — name, hex, or 256-color index |
@@ -754,6 +754,10 @@ Per-field color overrides applied on top of the preset. Each override accepts a 
 | `title_accent` | string | unset | Title bar accent color — name, hex, or 256-color index |
 | `fkey_badge_bg` | string | unset | F-key badge background color — name, hex, or 256-color index |
 | `fkey_badge_fg` | string | unset | F-key badge foreground color — name, hex, or 256-color index |
+| `surface_bar` | string | unset | Status bar background — name, hex, or 256-color index |
+| `surface_overlay` | string | unset | Dialog and palette background — name, hex, or 256-color index |
+| `status_needs_pr` | string | unset | PR-ready session state color — name, hex, or 256-color index |
+| `status_conflict` | string | unset | Conflict-fix session state color — name, hex, or 256-color index |
 <!-- END AUTOGEN:tui.theme.overrides -->
 
 ```toml

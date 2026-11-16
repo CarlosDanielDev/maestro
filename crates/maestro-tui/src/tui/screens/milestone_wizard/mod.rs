@@ -674,7 +674,7 @@ impl MilestoneWizardScreen {
     /// before rendering so `draw_impl` can stay `&self`.
     pub(super) fn refresh_field_blocks(&mut self, theme: &Theme) {
         let border_style = Style::default()
-            .fg(theme.border_focused)
+            .fg(theme.border_active)
             .add_modifier(Modifier::BOLD);
         let block = |title: &'static str| {
             Block::default()
