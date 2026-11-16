@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — The #1157 home check moves to 80x24; 60x15 now pins the SizeGuard
+
+- **What:** `home_small_terminal` keeps a 60x15 snapshot, which now shows the SizeGuard (`home_screen_60x15_shows_the_size_guard`). The #1157 home layout checks (labels whole or ending in `…`, one activity-log row) move to 80x24, the smallest size still laid out (`home_screen_80x24_keeps_labels_and_a_log_row`).
+- **Why:** §03 puts every terminal below 80x24 behind the SizeGuard, so the home layout no longer exists at 60x15. The #1157 guarantees still apply at the floor.
+- **Section:** `§03 Layout grid & breakpoints`, `§04 SizeGuard`.
+- **Rejected:** moving the test to 80x24 alone, because it would drop the pin on what a 60x15 terminal shows; exempting the home from the guard.
+- **Source:** #1253 (review note from the wave orchestrator).
+
 ## 2026-11-16 — ds::panel, Breakpoint and SizeGuard differ from the spec in four small ways
 
 - **What:** (1) `Breakpoint::from_area` returns a `TooSmall` variant, not `Option<Breakpoint>` with `None`. (2) `Focus` has four variants; `Disabled` is not added. (3) The SizeGuard shows `width 72/80` and `height 12/24` as text, with no gauge bars, and writes `80 x 24` with an ASCII `x`. (4) The SizeGuard drops the "or ⌃Q to quit safely" line.
