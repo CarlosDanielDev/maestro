@@ -6,7 +6,7 @@
 //! on `PatchFailed` vs. `CommitFailed` vs. `NothingToApply` without parsing
 //! free-form strings.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327. The trait + InMemoryChangeApplier
 // fake are exercised by tests; the real GitChangeApplier and call sites
 // land in Phase 2 (security review §1 must be addressed first).

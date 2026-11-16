@@ -1,6 +1,6 @@
 //! PRD screen input handler (#321).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::prd::model::Prd;
 use crate::tui::screens::prd::state::{EditTarget, PrdAction, PrdPane, PrdScreen, PrdSection};

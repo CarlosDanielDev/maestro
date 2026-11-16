@@ -252,7 +252,6 @@ pub fn print_launch_outcome(outcome: &LaunchOutcome) {
 mod workspace_trust_tests {
     use super::ensure_launch_config_trusted;
     use crate::config::{Config, LoadedConfig};
-    use std::path::PathBuf;
 
     fn loaded_from(toml_body: &str, tag: &str) -> (tempfile::TempDir, LoadedConfig) {
         let dir = tempfile::tempdir().unwrap();

@@ -6,7 +6,7 @@
 //! module wires the screen directly into App state and translates the
 //! returned `PrdAction` into the existing `ScreenAction` vocabulary.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::prd::export::to_markdown;
 use crate::prd::model::Prd;

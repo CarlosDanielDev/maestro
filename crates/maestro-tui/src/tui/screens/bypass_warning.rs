@@ -3,7 +3,7 @@
 //! The user must literally type `CONFIRM` to enable bypass mode the first
 //! time they activate it in a session. Any other input cancels.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #328. The screen is routed from `app.rs`
 // when the user first activates bypass in Phase 2; tests exercise the
 // CONFIRM-typing state machine today.

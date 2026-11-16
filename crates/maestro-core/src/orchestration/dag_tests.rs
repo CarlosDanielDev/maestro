@@ -126,7 +126,7 @@ fn auto_expand_adds_same_milestone() {
     let selected = HashSet::from([1u64, 2]);
     let mut edges = HashMap::new();
     edges.insert(2, vec![Edge::SameMilestoneOpenExternal(3)]);
-    let r = auto_expand(selected.clone(), &edges);
+    let r = auto_expand(selected, &edges);
     match r {
         ExpandResult::Expanded { selected: s, added } => {
             assert!(s.contains(&3));

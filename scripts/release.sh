@@ -273,7 +273,7 @@ cargo test --workspace 2>&1 | tail -5
 success "Tests pass (pre-bump)"
 
 info "Running cargo clippy..."
-cargo clippy --workspace -- -D warnings -A dead_code 2>&1 | tail -5
+cargo clippy --workspace --all-targets -- -D warnings -A dead_code 2>&1 | tail -5
 success "Clippy: clean"
 
 info "Running cargo fmt --check..."

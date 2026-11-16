@@ -5,8 +5,8 @@
 //! before formatting (CWE-88). Lives in its own module to keep `mod.rs`
 //! under the 400-line cap.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use crate::templates::TemplateError;
 

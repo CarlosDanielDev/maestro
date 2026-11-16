@@ -6,8 +6,8 @@
 //! all structure comes from the transcript tail (spike #747), so the drained
 //! bytes are dropped.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::io::Read;
 use std::sync::Arc;

@@ -11,7 +11,7 @@
 //!
 //! Anything outside the fence is treated as decorative human prose.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #327. The parser is invoked from the TUI
 // review panel that ships in Phase 2; tests exercise it today.
 #![allow(dead_code)]

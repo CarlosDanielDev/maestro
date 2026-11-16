@@ -5,8 +5,8 @@
 //! Cache writes (HTTP-only providers) are intentionally NOT tracked — they live
 //! outside the repo and would break cross-machine reproducibility.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

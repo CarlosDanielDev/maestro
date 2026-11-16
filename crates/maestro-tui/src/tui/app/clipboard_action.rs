@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 //! Copy-focused-response action: routes a `c` keypress on the Overview
 //! into a clipboard write of the focused session's `last_message`, with

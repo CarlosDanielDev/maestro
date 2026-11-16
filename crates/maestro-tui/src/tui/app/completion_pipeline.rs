@@ -746,7 +746,6 @@ mod tests {
 /// must respect the gate, not only add_session.
 #[cfg(all(test, unix))]
 mod workspace_trust_tests {
-    use super::*;
     use crate::config::{Config, LoadedConfig};
     use crate::session::types::Session;
     use crate::session::worktree::MockWorktreeManager;

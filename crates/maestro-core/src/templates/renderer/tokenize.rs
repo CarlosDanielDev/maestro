@@ -3,8 +3,8 @@
 //! Hand-written state-machine scanner. Single-line placeholders only —
 //! newline inside a placeholder body returns `UnterminatedPlaceholder`.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::collections::BTreeMap;
 

@@ -161,9 +161,7 @@ fn run_with_check_returns_in_sync_when_baselines_match_render() {
         check: true,
         dry_run: false,
     };
-    let outcome = make_runner(&repo, &cache, fs.clone())
-        .run(&args)
-        .expect("check");
+    let outcome = make_runner(&repo, &cache, fs).run(&args).expect("check");
     assert!(matches!(outcome, SyncOutcome::InSync), "got: {outcome:?}");
 }
 
@@ -181,9 +179,7 @@ fn run_with_check_returns_drift_when_baseline_is_modified() {
         check: true,
         dry_run: false,
     };
-    let outcome = make_runner(&repo, &cache, fs.clone())
-        .run(&args)
-        .expect("check");
+    let outcome = make_runner(&repo, &cache, fs).run(&args).expect("check");
     match outcome {
         SyncOutcome::DriftDetected { paths, diffs } => {
             assert!(!paths.is_empty(), "drift paths must be non-empty");

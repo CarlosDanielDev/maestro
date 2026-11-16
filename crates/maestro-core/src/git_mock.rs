@@ -12,6 +12,7 @@ use std::path::Path;
 
 use super::GitOps;
 
+#[derive(Default)]
 pub struct MockGitOps {
     pub should_fail: bool,
     /// Canned unified diff returned by `diff_against_merge_base` (#918).
@@ -42,20 +43,7 @@ pub struct MockGitOps {
 
 impl MockGitOps {
     pub fn new() -> Self {
-        Self {
-            should_fail: false,
-            diff_text: String::new(),
-            changed_files: Vec::new(),
-            diff_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            remote_branches: Vec::new(),
-            commits_ahead: false,
-            head_is_wip: false,
-            backup_skips: false,
-            push_delay: None,
-            backup_wip_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            amend_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            commit_and_push_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
     pub fn with_commits_ahead(mut self, value: bool) -> Self {

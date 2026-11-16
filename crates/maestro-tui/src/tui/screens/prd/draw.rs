@@ -1,6 +1,6 @@
 //! PRD screen rendering (#321).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::prd::model::{Prd, TimelineStatus};
 use crate::tui::screens::prd::chips::{save_chip, sync_chip};

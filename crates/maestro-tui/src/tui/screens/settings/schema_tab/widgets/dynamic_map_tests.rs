@@ -159,7 +159,7 @@ fn agents_kind_subprocess_hides_http_only_fields() {
         "agents",
         AGENTS_ENTRY_FIELDS,
         None,
-        clock.clone() as Arc<dyn Clock>,
+        clock as Arc<dyn Clock>,
     );
     w.handle_input(ev(KeyCode::Char('a')));
     typed_seq(&mut w, "claude");
@@ -206,7 +206,7 @@ fn agents_kind_http_hides_subprocess_only_fields() {
         "agents",
         AGENTS_ENTRY_FIELDS,
         None,
-        clock.clone() as Arc<dyn Clock>,
+        clock as Arc<dyn Clock>,
     );
     w.handle_input(ev(KeyCode::Char('a')));
     typed_seq(&mut w, "ollama");
@@ -262,7 +262,7 @@ fn switching_kind_clamps_focus_off_now_hidden_field() {
         "agents",
         AGENTS_ENTRY_FIELDS,
         None,
-        clock.clone() as Arc<dyn Clock>,
+        clock as Arc<dyn Clock>,
     );
     w.handle_input(ev(KeyCode::Char('a')));
     typed_seq(&mut w, "claude");

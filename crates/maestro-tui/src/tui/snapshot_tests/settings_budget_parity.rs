@@ -157,7 +157,7 @@ fn budget_round_trip_per_session_5point5_total_12point5() {
 #[test]
 fn budget_full_round_trip_through_schema_renderer() -> anyhow::Result<()> {
     let original = test_config();
-    let mut config = original.clone();
+    let mut config = original;
     let fields = from_schema(&BUDGET_TABLE, &config);
     sync_to_config(&BUDGET_TABLE, &fields, &mut config)?;
     assert!(

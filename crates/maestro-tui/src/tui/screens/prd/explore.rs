@@ -5,7 +5,7 @@
 //! discovered across GitHub + local + Azure. The user can pick one with
 //! arrow keys + Enter to re-ingest from that specific source.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::prd::discover::DiscoveredPrd;

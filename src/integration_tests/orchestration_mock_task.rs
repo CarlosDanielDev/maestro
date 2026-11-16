@@ -32,6 +32,7 @@ impl MockTaskQueue {
         let response = responses
             .pop_front()
             .ok_or_else(|| SubagentError::Other("mock queue exhausted".into()))?;
+        drop(responses);
         if response.role != role {
             return Err(SubagentError::ResultShapeMismatch {
                 role,

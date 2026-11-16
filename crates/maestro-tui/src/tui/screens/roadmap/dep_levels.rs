@@ -13,7 +13,7 @@
 //! Within a level the order is stable (input order preserved), so the UI
 //! can render `Level N (parallel)` blocks deterministically.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #329. `dep_levels` is consumed by the
 // roadmap loader and the dormant `milestone::update_milestone_dependency_graph`
 // in Phase 2; tests cover topo-sort + cycle detection today.

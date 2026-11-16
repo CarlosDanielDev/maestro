@@ -98,6 +98,7 @@ async fn first_turn_runs_through_pipeline_and_binds_resume_id() {
     assert_eq!(requests.len(), 1);
     assert!(requests[0].resume_session_id.is_none());
     assert_eq!(requests[0].prompt, "do the work");
+    drop(requests);
 
     // The persisted transcript lives on the Session (#948).
     let session = &app.pool.get_active_mut(id).expect("active").session;
@@ -151,6 +152,7 @@ async fn followup_turn_resumes_the_bound_conversation() {
     assert!(requests[0].resume_session_id.is_none());
     assert_eq!(requests[1].resume_session_id.as_deref(), Some("conv-947"));
     assert_eq!(requests[1].prompt, "second");
+    drop(requests);
 
     let session = app
         .pool
@@ -215,6 +217,7 @@ async fn failure_settles_interactive_and_followup_retries_on_same_resume_id() {
     let requests = provider.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1].resume_session_id.as_deref(), Some("conv-947"));
+    drop(requests);
 
     let session = &app.pool.get_active_mut(id).expect("active").session;
     assert_eq!(session.settled_from, Some(SessionStatus::Completed));

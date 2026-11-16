@@ -10,7 +10,7 @@
 //! - Audit log entry on every state change.
 //! - `auto_disable_after_cycle()` flips back to Off after a review cycle.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #328. The controller is constructed by the
 // App in Phase 2 (CLI flag → enable_session, header indicator, auto-disable
 // hook); tests exercise the state machine today.

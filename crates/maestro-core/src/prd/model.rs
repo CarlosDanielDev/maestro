@@ -5,7 +5,7 @@
 //! section is auto-populated from GitHub data (open/closed milestones and
 //! issues) and the rest is editable from the TUI.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #321. The PRD TUI screen + GitHub syncer
 // land in Phase 2; serde + state-machine methods are tests-only today.
 #![allow(dead_code)]

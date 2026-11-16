@@ -176,7 +176,6 @@ mod tests {
     use crate::config::Config;
     use crate::flags::store::FeatureFlags;
     use crate::tui::screens::settings::SettingsScreen;
-    use crate::tui::widgets::WidgetKind;
 
     /// Pin the validator-key index to the label at that position so future
     /// schema reshapes that move a field's index break this test, not the

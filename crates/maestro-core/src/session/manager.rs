@@ -999,9 +999,14 @@ mod tests {
             }
         }
         assert!(saw_answer, "assistant text must flow through SessionEvents");
-        let requests = provider.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].resume_session_id.as_deref(), Some("conv-2"));
+        let resume_ids: Vec<Option<String>> = provider
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.resume_session_id.clone())
+            .collect();
+        assert_eq!(resume_ids, vec![Some("conv-2".to_string())]);
     }
 
     #[tokio::test]

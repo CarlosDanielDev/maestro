@@ -5,7 +5,7 @@
 //! affordance. The accept-key handler in `actions.rs` mutates the
 //! corresponding `Concern.status`.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(dead_code)]
 
 use crate::review::types::{ConcernStatus, ReviewReport, Severity};

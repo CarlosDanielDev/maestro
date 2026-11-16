@@ -25,8 +25,8 @@
 //! verbatim into every rendered Codex command document. Treat `.claude/skills`
 //! as part of the prompt surface when reviewing PRs that touch those files.
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use std::path::Path;
 

@@ -221,8 +221,10 @@ mod tests {
         no_wt.status = SessionStatus::Running;
         no_wt.owner_pid = Some(dead);
 
-        let mut state = MaestroState::default();
-        state.sessions = vec![derived, recorded, live, gone, no_wt];
+        let state = MaestroState {
+            sessions: vec![derived, recorded, live, gone, no_wt],
+            ..Default::default()
+        };
 
         let mgr = CleanupManager::new(dir.path());
         let scan = mgr.stale_worktrees(&state);
@@ -284,8 +286,10 @@ mod tests {
         live.status = SessionStatus::Running;
         live.owner_pid = Some(std::process::id());
 
-        let mut state = MaestroState::default();
-        state.sessions = vec![stale, live];
+        let state = MaestroState {
+            sessions: vec![stale, live],
+            ..Default::default()
+        };
 
         let mgr = CleanupManager::new(dir.path());
         let scan = mgr.stale_worktrees(&state);

@@ -57,6 +57,13 @@ pub struct CapturingShellLauncher {
 }
 
 #[cfg(test)]
+impl Default for CapturingShellLauncher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
 impl CapturingShellLauncher {
     pub fn new() -> Self {
         Self {

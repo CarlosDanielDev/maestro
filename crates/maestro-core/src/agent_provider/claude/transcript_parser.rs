@@ -24,8 +24,8 @@
 //!   the TUI as `Unknown`.
 //! - Non-JSON lines → `Unknown` (genuine corruption worth surfacing).
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
 use serde_json::Value;
 

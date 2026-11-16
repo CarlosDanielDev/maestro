@@ -308,7 +308,6 @@ command = "{}"
 /// additions must still gate the spawn — env reaches the child process.
 #[cfg(all(test, unix))]
 mod workspace_trust_env_tests {
-    use super::*;
     use crate::config::{Config, LoadedConfig};
     use crate::session::worktree::MockWorktreeManager;
     use crate::setup::setup_app_from_config_with_trust;

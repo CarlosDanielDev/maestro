@@ -1,6 +1,6 @@
 //! Persistent header badge shown when bypass mode is active (#328).
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #328. The header drawer in `app.rs` calls
 // `draw()` when bypass is active in Phase 2; tests cover render today.
 #![allow(dead_code)]

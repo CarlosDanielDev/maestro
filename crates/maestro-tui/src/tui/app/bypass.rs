@@ -1,7 +1,7 @@
 //! Bypass-mode App methods (#328) — extracted out of `app/mod.rs` to keep
 //! the parent file under the 400-line cap.
 
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
