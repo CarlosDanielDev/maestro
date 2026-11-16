@@ -1,15 +1,14 @@
 ---
-source: src/tui/screens/fleet_board/snapshot_tests.rs
-assertion_line: 102
+source: crates/maestro-tui/src/tui/screens/fleet_board/snapshot_tests.rs
 expression: "render(&mut screen, 110, 10)"
 ---
-╔════════════════════════════════════[ Fleet Board (last active first) ]═════════════════════════════════════╗
-║Type to filter…                                                                                             ║
-║No sessions yet                                                                                             ║
-║Pool sessions and Claude Code transcripts under ~/.claude/projects appear here.                             ║
-║                                                                                                            ║
-║                                                                                                            ║
-║                                                                                                            ║
-║                                                                                                            ║
-╚════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+┌────────────────────────────────────[ Fleet Board (last active first) ]─────────────────────────────────────┐
+│Type to filter…                                                                                             │
+│No sessions yet                                                                                             │
+│Pool sessions and Claude Code transcripts under ~/.claude/projects appear here.                             │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 [↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open/Adopt  [Esc] Back

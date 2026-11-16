@@ -9,6 +9,7 @@ use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
 use crate::tui::detail;
+use crate::tui::ds::{breakpoint::Breakpoint, size_guard};
 use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::icons::{self, IconId};
@@ -53,6 +54,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     app.mascot_animator.tick(&clock);
     let derived = crate::mascot::derive_dashboard_mascot_state(app.pool.all_statuses());
     app.mascot_animator.set_state(derived, &clock);
+
+    // #1253: below 80x24 every mode would overlap; explain the minimum instead.
+    if Breakpoint::from_area(f.area()) == Breakpoint::TooSmall {
+        size_guard::draw(f, f.area(), app.active_theme());
+        return;
+    }
 
     let log_height = if !app.show_activity_log {
         0

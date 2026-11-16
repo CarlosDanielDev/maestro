@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/size_guard.rs
+expression: terminal.backend()
+---
+"╭───────────────────────────[ Terminal too small ]────────────────────────────╮"
+"│ maestro needs 80 x 24 - this window is 79 x 24                              │"
+"│                                                                             │"
+"│ width  79/80                                                                │"
+"│ height 24/24                                                                │"
+"│                                                                             │"
+"│ Agents keep running in the background. Resize to continue.                  │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"│                                                                             │"
+"╰─────────────────────────────────────────────────────────────────────────────╯"

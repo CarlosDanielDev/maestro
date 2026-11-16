@@ -1,13 +1,12 @@
 ---
-source: src/tui/widgets/empty_state.rs
-assertion_line: 118
+source: crates/maestro-tui/src/tui/widgets/empty_state.rs
 expression: "render_state(EmptyState::idle(\"Recent Activity\", \"No recent sessions.\",\n\"Press [r] to launch one.\",))?"
 ---
-"╔═════════[ Recent Activity ]══════════╗"
-"║                                      ║"
-"║                                      ║"
-"║          No recent sessions.         ║"
-"║       Press [r] to launch one.       ║"
-"║                                      ║"
-"║                                      ║"
-"╚══════════════════════════════════════╝"
+"┌─────────[ Recent Activity ]──────────┐"
+"│                                      │"
+"│                                      │"
+"│          No recent sessions.         │"
+"│       Press [r] to launch one.       │"
+"│                                      │"
+"│                                      │"
+"└──────────────────────────────────────┘"

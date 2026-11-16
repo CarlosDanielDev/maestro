@@ -1,13 +1,12 @@
 //! Design system: read `docs/tui-design-system.md` before changing TUI code.
 //! Reuse what it lists; add new tokens/widgets/helpers to it (CI checks it: `tests/tui_design_system.rs`).
 
-use ratatui::layout::Alignment;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Borders};
 use serde::{Deserialize, Serialize};
 
 use crate::session::types::SessionStatus;
+use crate::tui::ds;
 
 // ---------------------------------------------------------------------------
 // Color capability detection
@@ -722,43 +721,23 @@ impl Theme {
         }
     }
 
-    /// Compute the border style for a given focus state.
-    fn border_style(&self, focused: bool) -> Style {
-        let color = if focused {
-            self.border_active
-        } else {
-            self.border_inactive
-        };
-        let style = Style::default().fg(color);
-        if focused {
-            style.add_modifier(Modifier::BOLD)
-        } else {
-            style
-        }
-    }
-
-    /// Build a standard block with themed double borders and DOS-style centered title.
+    /// Standard titled panel. Delegates to [`ds::panel::panel`]: focused is
+    /// `Focus::Active` (Thick), unfocused is `Focus::Inactive` (Plain).
     pub fn styled_block<'a>(&self, title: &'a str, focused: bool) -> Block<'a> {
-        let formatted_title = format!("[ {} ]", title.trim());
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(self.border_style(focused))
-            .title(Span::styled(
-                formatted_title,
-                Style::default()
-                    .fg(self.title_accent)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .title_alignment(Alignment::Center)
+        ds::panel::panel(title, Self::focus(focused), self)
     }
 
-    /// Build a standard block with themed double borders but no title.
+    /// Standard panel with no title. Delegates to [`ds::panel::panel_plain`].
     pub fn styled_block_plain(&self, focused: bool) -> Block<'static> {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(self.border_style(focused))
+        ds::panel::panel_plain(Self::focus(focused), self)
+    }
+
+    fn focus(focused: bool) -> ds::panel::Focus {
+        if focused {
+            ds::panel::Focus::Active
+        } else {
+            ds::panel::Focus::Inactive
+        }
     }
 
     pub fn stats_block(&self) -> Block<'static> {

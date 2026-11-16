@@ -1,4 +1,5 @@
-//! Snapshot test for the home screen on a 60x15 terminal (#1157).
+//! Snapshot test for the home screen on the smallest terminal maestro lays
+//! out, 80x24 (#1157; below that `ui::draw` shows the SizeGuard, #1253).
 //!
 //! Pins two things a tiny terminal used to break: Quick Actions labels are
 //! never cut mid-word without an `…`, and the activity log keeps at least one
@@ -76,9 +77,9 @@ fn local_ten_am() -> chrono::DateTime<chrono::Utc> {
 }
 
 #[test]
-fn home_screen_60x15_keeps_labels_and_a_log_row() {
+fn home_screen_80x24_keeps_labels_and_a_log_row() {
     let mut app = small_home_app();
-    let mut t = Terminal::new(TestBackend::new(60, 15)).unwrap();
+    let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
     t.draw(|f| ui::draw(f, &mut app)).unwrap();
 
     let output = format!("{}", t.backend());
@@ -87,7 +88,9 @@ fn home_screen_60x15_keeps_labels_and_a_log_row() {
         "Quick Actions labels must be whole or end in `…`:\n{output}"
     );
     assert!(
-        !output.contains("Browse Is║"),
+        !["│", "┃", "║"]
+            .iter()
+            .any(|b| output.contains(&format!("Browse Is{b}"))),
         "label clipped mid-word without `…`:\n{output}"
     );
     assert!(

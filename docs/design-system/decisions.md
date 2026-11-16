@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — ds::panel, Breakpoint and SizeGuard differ from the spec in four small ways
+
+- **What:** (1) `Breakpoint::from_area` returns a `TooSmall` variant, not `Option<Breakpoint>` with `None`. (2) `Focus` has four variants; `Disabled` is not added. (3) The SizeGuard shows `width 72/80` and `height 12/24` as text, with no gauge bars, and writes `80 x 24` with an ASCII `x`. (4) The SizeGuard drops the "or ⌃Q to quit safely" line.
+- **Why:** (1) and (2) follow issue #1253 as written. (3) a fixed-width bar does not fit the small windows the guard exists for, and the shared gauge is #1251's; ASCII needs no icon fallback. (4) today `Ctrl+Q` toggles TurboQuant, so the hint would be false until the keymap issue moves quit there.
+- **Section:** `§03 Borders & focus`, `§03 Layout grid & breakpoints`, `§04 SizeGuard`, `§07 Breakpoints and the Home layout`.
+- **Rejected:** `Option<Breakpoint>` (the issue names the four-class enum); adding the quit hint now (it would name the wrong key).
+- **Source:** #1253.
+
 ## 2026-11-14 — Release Console landing and UX Spine sidebar are superseded
 
 - **What:** the redesign wins over two logged decisions: the one-landing Release Console renderer (#1218) and the UX Spine sidebar chain (#826-#835). Both are superseded by `index.html`.
