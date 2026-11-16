@@ -1,31 +1,75 @@
 use std::sync::LazyLock;
 
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd, TextMergeStream,
+};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
+use crate::tui::issue_refs::extract_issue_refs;
 use crate::tui::theme::Theme;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
+const TODO_OPEN: &str = "[TODO:";
+const TODO_CHIP: &str = " TODO ";
+
+/// How headings are drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HeadingStyle {
+    /// Keep the `#` prefix (`## Overview`). Default for existing callers.
+    #[default]
+    Hashes,
+    /// Drop the `#` prefix; the heading is still bold `accent_info`.
+    Bare,
+}
+
+/// Options for [`render_markdown_with`]. `Default` matches [`render_markdown`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarkdownOptions {
+    pub heading: HeadingStyle,
+    /// Render `[TODO: …]` as a reversed warn chip and `#123` in
+    /// `accent_identifier`.
+    pub inline_marks: bool,
+}
+
 /// Render a markdown string into ratatui-styled text, applying colors and
 /// modifiers from the given Theme. The `width` parameter is used for
 /// width-dependent elements like horizontal rules.
 pub fn render_markdown(input: &str, theme: &Theme, width: u16) -> Text<'static> {
+    render_markdown_with(input, theme, width, MarkdownOptions::default())
+}
+
+/// [`render_markdown`] with explicit [`MarkdownOptions`].
+pub fn render_markdown_with(
+    input: &str,
+    theme: &Theme,
+    width: u16,
+    opts: MarkdownOptions,
+) -> Text<'static> {
     if input.is_empty() || input.trim().is_empty() {
         return Text::default();
     }
 
-    let mut renderer = MarkdownRenderer::new(theme, width);
+    let mut renderer = MarkdownRenderer::new(theme, width, opts);
     let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES;
     let parser = Parser::new_ext(input, options);
 
-    for event in parser {
-        renderer.process_event(event);
+    // `[TODO: x]` arrives as several Text events (`[`, `TODO: x`, `]`);
+    // merging them lets `push_inline` see the whole marker. Only for
+    // `inline_marks`, so the default output stays byte-for-byte the same.
+    if opts.inline_marks {
+        for event in TextMergeStream::new(parser) {
+            renderer.process_event(event);
+        }
+    } else {
+        for event in parser {
+            renderer.process_event(event);
+        }
     }
 
     renderer.flush_line();
@@ -97,6 +141,7 @@ impl WrapState {
 struct MarkdownRenderer<'t> {
     theme: &'t Theme,
     width: u16,
+    opts: MarkdownOptions,
     lines: Vec<Line<'static>>,
     active_spans: Vec<Span<'static>>,
     bold: bool,
@@ -110,10 +155,11 @@ struct MarkdownRenderer<'t> {
 }
 
 impl<'t> MarkdownRenderer<'t> {
-    fn new(theme: &'t Theme, width: u16) -> Self {
+    fn new(theme: &'t Theme, width: u16, opts: MarkdownOptions) -> Self {
         Self {
             theme,
             width,
+            opts,
             lines: Vec::new(),
             active_spans: Vec::new(),
             bold: false,
@@ -207,6 +253,58 @@ impl<'t> MarkdownRenderer<'t> {
         if !state.buf.is_empty() {
             self.active_spans.push(Span::styled(state.buf, style));
         }
+    }
+
+    /// Push inline text; with `inline_marks`, `[TODO: x]` becomes a chip and
+    /// `#123` an identifier span.
+    fn push_inline(&mut self, text: &str, style: Style) {
+        if !self.opts.inline_marks {
+            self.wrap_and_push_text(text, style);
+            return;
+        }
+        let mut rest = text;
+        while let Some(start) = rest.find(TODO_OPEN) {
+            let Some(len) = rest[start..].find(']') else {
+                break;
+            };
+            self.push_refs(&rest[..start], style);
+            self.push_todo_chip(&rest[start + TODO_OPEN.len()..start + len]);
+            rest = &rest[start + len + 1..];
+        }
+        self.push_refs(rest, style);
+    }
+
+    fn push_refs(&mut self, text: &str, style: Style) {
+        let ident = style.fg(self.theme.accent_identifier);
+        let mut last = 0;
+        for r in extract_issue_refs(text) {
+            self.push_text_part(&text[last..r.start], style);
+            self.push_text_part(&text[r.start..r.end], ident);
+            last = r.end;
+        }
+        self.push_text_part(&text[last..], style);
+    }
+
+    fn push_text_part(&mut self, text: &str, style: Style) {
+        if !text.is_empty() {
+            self.wrap_and_push_text(text, style);
+        }
+    }
+
+    /// Reversed + bold so the chip still reads as a chip under NO_COLOR.
+    fn push_todo_chip(&mut self, body: &str) {
+        let warn = Style::default().fg(self.theme.accent_warning);
+        let wraps = self.width > 0
+            && !self.in_heading
+            && self.active_spans_width() + TODO_CHIP.len() > self.width as usize;
+        if wraps {
+            self.flush_line();
+        }
+        self.active_spans.push(Span::styled(
+            TODO_CHIP,
+            warn.add_modifier(Modifier::REVERSED | Modifier::BOLD),
+        ));
+        self.push_text_part(body, warn);
     }
 
     fn active_spans_width(&self) -> usize {
@@ -309,13 +407,15 @@ impl<'t> MarkdownRenderer<'t> {
                     self.push_blank_line();
                 }
                 self.in_heading = true;
-                let prefix = Self::heading_prefix(level);
-                self.active_spans.push(Span::styled(
-                    prefix.to_string(),
-                    Style::default()
-                        .fg(self.theme.accent_info)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                if self.opts.heading == HeadingStyle::Hashes {
+                    let prefix = Self::heading_prefix(level);
+                    self.active_spans.push(Span::styled(
+                        prefix.to_string(),
+                        Style::default()
+                            .fg(self.theme.accent_info)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
             }
             Event::End(TagEnd::Heading(_)) => {
                 self.in_heading = false;
@@ -432,7 +532,7 @@ impl<'t> MarkdownRenderer<'t> {
                         }
                     }
                     let style = self.current_style();
-                    self.wrap_and_push_text(&text.into_string(), style);
+                    self.push_inline(&text, style);
                 }
             }
 
@@ -1195,5 +1295,29 @@ mod tests {
             "render_markdown regressed badly: {}ms for 10KB (expected < 50ms)",
             elapsed.as_millis()
         );
+    }
+
+    #[test]
+    fn heading_style_bare_drops_hash_prefix() {
+        let bare = MarkdownOptions {
+            heading: HeadingStyle::Bare,
+            ..MarkdownOptions::default()
+        };
+        let result = render_markdown_with("## Overview", &theme(), 80, bare);
+        let first = result.lines[0].spans.first().expect("expected a span");
+        assert_eq!(first.content, "Overview", "bare heading must not keep `#`");
+        assert_eq!(first.style.fg, Some(Color::Cyan));
+        assert!(first.style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn default_options_match_render_markdown() {
+        let input = "## Overview\n\nSee #12 and [TODO: name it].";
+        assert_eq!(
+            render_markdown_with(input, &theme(), 40, MarkdownOptions::default()),
+            render_markdown(input, &theme(), 40),
+        );
+        let first = &render_markdown(input, &theme(), 40).lines[0].spans[0];
+        assert_eq!(first.content, "## ", "default keeps the `#` prefix");
     }
 }

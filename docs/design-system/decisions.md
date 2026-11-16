@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — checklist counts future rows; `#ref` uses accent_identifier; plain glyphs for now
+
+- **What:** `ds::checklist` counts `○` (Pending) rows in the `n/m` total, where the `checklistPanel` / `readyStrip` mocks leave "optional" rows out. `#123` in `ds::md_block` uses `accent_identifier`, not the info colour of the `md()` mock. The `✓ ✗ ! ○` glyphs are plain characters, with no `IconId` ASCII fallback yet.
+- **Why:** a `○` row is a required item of a later step; leaving it out would show `3/3 ready` on a draft that is not ready. The issue (#1252) names `accent_identifier` for refs. `crates/maestro-core/src/icons.rs` is owned by #1251 in this wave, so the fallback waits for a follow-up.
+- **Section:** `§04 Kit v2` (`mdBlock`, `readyStrip`), `§02.2 Issue wizard` (Draft checklist).
+- **Rejected:** excluding `○` from the total (overstates readiness); adding `IconId` variants here (file owned by another agent this wave).
+- **Source:** #1252.
+
 ## 2026-11-14 — Release Console landing and UX Spine sidebar are superseded
 
 - **What:** the redesign wins over two logged decisions: the one-landing Release Console renderer (#1218) and the UX Spine sidebar chain (#826-#835). Both are superseded by `index.html`.

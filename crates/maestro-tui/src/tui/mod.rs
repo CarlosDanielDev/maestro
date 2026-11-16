@@ -12,6 +12,7 @@ pub mod clipboard_toast;
 pub mod cost_dashboard;
 pub mod dep_graph;
 pub mod detail;
+pub mod ds;
 pub mod fullscreen;
 pub mod help;
 pub mod icons;
