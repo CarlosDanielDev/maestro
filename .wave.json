@@ -9,7 +9,8 @@
     "bash scripts/check-file-size.sh",
     "bash scripts/check-rules-drift.sh",
     "cargo deny check",
-    "bash scripts/check-layers.sh"
+    "bash scripts/check-layers.sh",
+    "bash scripts/check-design-drift.sh"
   ],
   "base": "main",
   "serial": [

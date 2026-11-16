@@ -5,7 +5,7 @@ schema_version = 1
 [files.".claude/CLAUDE.md"]
 provider = "claude"
 command = "golden-rules"
-sha256 = "510f89937a059c5a4d285f9e66bd00a2f9e187c11e404efa37adb9bdf30dd22e"
+sha256 = "350107da90b0b16da354eee08d16e67e0c5f469786dbce9fd27289fd8baa5914"
 
 [files.".claude/commands/implement.md"]
 provider = "claude"
@@ -30,14 +30,14 @@ sha256 = "3b2c71a6ac77a7beee497df5385bb9d6b218ce67f300570b1559e6f7a235d423"
 [files.".codex/AGENTS.md"]
 provider = "codex"
 command = "golden-rules"
-sha256 = "e35c3f6f9d09e5fe3c8a46cb29142285b5c6ed7e686e24f1054eb7b29eeb600b"
+sha256 = "4bfbf278b586e03375a59832738d1517aa10fbb8d9a9953fa7df5ce8202a9efc"
 
 [files."AGENTS.md"]
 provider = "agents-md"
 command = "golden-rules"
-sha256 = "17345d8d2e2f52fbcf61f460770cc7bd70388a6ec190295ba9a1b70e02a5b120"
+sha256 = "00069b6415be01b18f944ae2362eac4f27dcae01f4737491660111e32ffb381a"
 
 [files."GEMINI.md"]
 provider = "gemini"
 command = "golden-rules"
-sha256 = "9091c96ba192f9672e98345792529f228329686dc81c3fbe0f640070a7d2572d"
+sha256 = "6b15268357988bac21250257a4c59a4a0a596b77e645e0a878c20e7c8020a1ec"
