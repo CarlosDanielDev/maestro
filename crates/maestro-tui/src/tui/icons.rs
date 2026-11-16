@@ -10,7 +10,7 @@
 pub use crate::icons::*;
 
 #[cfg(test)]
-pub use crate::icon_mode::init_from_config;
+pub use crate::icon_mode::{init_from_config, init_ignoring_env};
 // Re-exported for callers that import mode detection from `tui::icons`.
 pub use crate::icon_mode::use_nerd_font;
 
@@ -245,14 +245,14 @@ mod tests {
 
     #[test]
     fn get_routes_through_global_mode_nerd() {
-        init_from_config(false); // nerd mode
+        init_ignoring_env(false); // nerd mode
         let via_get = get(IconId::Play);
         let via_pure = get_for_mode(IconId::Play, true);
         assert_eq!(
             via_get, via_pure,
             "get() must match get_for_mode(..., true) in nerd mode"
         );
-        init_from_config(false); // restore
+        init_ignoring_env(false); // restore
     }
 
     #[test]
@@ -268,7 +268,7 @@ mod tests {
             via_get.is_ascii(),
             "get() in ascii mode must return ASCII-only string"
         );
-        init_from_config(false); // restore
+        init_ignoring_env(false); // restore
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
             SessionStatus::Running.symbol(),
             SessionStatus::Running.ascii_symbol()
         );
-        icon_mode::init_from_config(false); // Nerd
+        icon_mode::init_ignoring_env(false); // Nerd
         assert_eq!(
             SessionStatus::Running.symbol(),
             SessionStatus::Running.nerd_symbol()
