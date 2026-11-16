@@ -1,0 +1,8 @@
+---
+source: crates/maestro-tui/src/tui/widgets/armed_bar.rs
+expression: "draw(&armed, t0).backend()"
+---
+"╔═════════════════════════[ Write to GitHub ]══════════════════════════╗"
+"║[+] DONE  creates 1 issue in CarlosDanielDev/maestro                  ║"
+"║written to GitHub                                                     ║"
+"╚══════════════════════════════════════════════════════════════════════╝"

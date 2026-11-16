@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
+
+- **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border stays the standard double border.
+- **Why:** the design system rule is "never paste raw glyphs" and ASCII mode must work; no `IconId` exists for `⏎` or `⊘`. The printed seconds carry the same meaning as the bar.
+- **Section:** `§04 Components` (Kit v2 `armedBar`).
+- **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
+- **Source:** #1250.
+
 ## 2026-11-14 — Release Console landing and UX Spine sidebar are superseded
 
 - **What:** the redesign wins over two logged decisions: the one-landing Release Console renderer (#1218) and the UX Spine sidebar chain (#826-#835). Both are superseded by `index.html`.
