@@ -135,6 +135,12 @@ fn title_is_plain_when_nothing_needs_you() {
     assert_eq!(terminal_title(2), "(2) maestro");
 }
 
+#[test]
+fn exit_title_has_no_count() {
+    assert_eq!(exit_title(), "maestro");
+    assert_eq!(exit_title(), terminal_title(0));
+}
+
 fn draw_queue(w: u16, items: &[AttentionItem], fleet_busy: bool) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(w, 24)).unwrap();
     let h = items.len().max(3) as u16 + 2;

@@ -201,10 +201,15 @@ fn session_item(s: &SessionSignal) -> Option<AttentionItem> {
 /// `maestro`, or `(n) maestro` when `n` items need you.
 pub fn terminal_title(count: usize) -> String {
     if count == 0 {
-        "maestro".to_string()
+        exit_title().to_string()
     } else {
         format!("({count}) maestro")
     }
+}
+
+/// The title left behind on quit, so the shell tab keeps no stale count.
+pub fn exit_title() -> &'static str {
+    "maestro"
 }
 
 /// How the panel is drawn. `fleet_busy` picks the empty copy.

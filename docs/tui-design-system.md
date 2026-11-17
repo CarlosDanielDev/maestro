@@ -324,6 +324,7 @@ Implements `AttentionQueue` (`ds::attention_queue`) from `docs/design-system/ind
 | `AttentionItem` | `kind`, `subject` (`Subject::Session { id, issue, status }`, `DoctorCheck`, `GhAuth`, `Budget`, `Quota`), one sanitized `reason`, the `action` word (always on `⏎`), `since` |
 | `attention::draw(f, area, items, QueueView, theme, nerd_font)` | `Needs you (n)` panel (`ds::panel`, Thick when focused). Row: chip (`status_chip` for sessions; `✗ doctor`, `✗ gh auth`, `⚠ budget`, `⚠ quota`), subject, reason (cut with `…`), age, `⏎ action`. The selected row uses the focused selection style. Empty: `Nothing needs you. Start something: i f a` plus a key line when `fleet_busy` is false; `All clear. Agents are working.` when true |
 | `attention::terminal_title(n)` | `maestro`, or `(n) maestro` when `n > 0` |
+| `attention::exit_title()` | `maestro`: written by the quit restore in `tui::run`, so no stale count stays in the shell tab |
 | `App::attention()` / `App::attention_input()` | The queue from App state: pool sessions, the Home doctor warnings, `gh_auth_ok`, the budget enforcer when it alerts, quota windows at 80% or more |
 | `App::sync_terminal_title(out)` | Writes the title only when it changed. The run loop calls it after each draw |
 
