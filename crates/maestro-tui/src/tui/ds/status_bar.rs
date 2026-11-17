@@ -5,7 +5,8 @@
 //! the update chip pinned right. Drawn on `surface_bar`.
 //!
 //! When the row is too narrow, whole segments drop (a value is never cut):
-//! the update chip first, then TurboQuant, quota, budget and fleet counts.
+//! the update chip first, then TurboQuant, quota, the continuous-run chip,
+//! budget and fleet counts.
 //! The brand and the two safety chips never drop.
 
 use ratatui::Frame;
@@ -69,20 +70,24 @@ pub struct StatusModel {
     pub bypass: bool,
     /// Version of an available update (already sanitized).
     pub update: Option<String>,
+    /// `(done, attempted)` while a continuous run is active.
+    pub continuous: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Segment {
     Fleet,
     Budget,
+    Continuous,
     Quota,
     TurboQuant,
 }
 
 /// Left segments in the order they drop, after the update chip.
-const DROP_ORDER: [Segment; 4] = [
+const DROP_ORDER: [Segment; 5] = [
     Segment::TurboQuant,
     Segment::Quota,
+    Segment::Continuous,
     Segment::Budget,
     Segment::Fleet,
 ];
@@ -230,6 +235,17 @@ fn left_segments(model: &StatusModel, theme: &Theme, nerd_font: bool) -> Vec<(Se
         (Segment::Fleet, fleet(model.fleet, theme, nerd_font)),
         (Segment::Budget, budget(model, theme)),
     ];
+    if let Some((done, attempted)) = model.continuous {
+        out.push((
+            Segment::Continuous,
+            vec![Span::styled(
+                format!(" CONTINUOUS: {done}/{attempted} done "),
+                Style::default()
+                    .fg(theme.accent_info)
+                    .add_modifier(Modifier::REVERSED | Modifier::BOLD),
+            )],
+        ));
+    }
     if !model.quota.is_empty() {
         out.push((
             Segment::Quota,

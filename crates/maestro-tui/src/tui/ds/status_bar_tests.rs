@@ -21,6 +21,7 @@ fn full_model() -> StatusModel {
         untrusted: true,
         bypass: true,
         update: Some("0.34.0".to_string()),
+        continuous: None,
     }
 }
 
@@ -169,4 +170,49 @@ fn pinned_width_counts_only_safety_chips() {
     model.bypass = false;
     model.untrusted = false;
     assert_eq!(pinned_width(&model, true), 0);
+}
+
+#[test]
+fn status_bar_shows_continuous_progress() {
+    let mut model = full_model();
+    model.continuous = Some((3, 7));
+    let row = render(&model, 150);
+    assert!(row.contains("CONTINUOUS: 3/7 done"), "{row:?}");
+    assert_snapshot!(row);
+
+    model.continuous = None;
+    let row = render(&model, 150);
+    assert!(
+        !row.contains("CONTINUOUS"),
+        "only while a run is active: {row:?}"
+    );
+}
+
+#[test]
+fn continuous_drops_after_quota_before_budget() {
+    let mut model = full_model();
+    model.continuous = Some((3, 7));
+    // Room for brand, fleet, budget and the run chip, but not for quota.
+    let row = render(&model, 110);
+    assert!(!row.contains("claude"), "quota drops first: {row:?}");
+    assert!(row.contains("CONTINUOUS: 3/7 done"), "{row:?}");
+    assert!(row.contains("$12.40/50"), "{row:?}");
+}
+
+#[test]
+fn continuous_chip_reads_without_colour() {
+    let theme = Theme::no_color();
+    let mut model = full_model();
+    model.continuous = Some((3, 7));
+    let (left, _) = segments(&model, 150, &theme, false);
+    let chip = left
+        .iter()
+        .find(|s| s.content.contains("CONTINUOUS"))
+        .expect("continuous chip drawn");
+    assert!(
+        chip.style
+            .add_modifier
+            .contains(ratatui::style::Modifier::REVERSED | ratatui::style::Modifier::BOLD),
+        "{chip:?}"
+    );
 }

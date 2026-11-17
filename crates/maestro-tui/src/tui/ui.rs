@@ -1084,6 +1084,10 @@ fn status_model(app: &App) -> status_bar::StatusModel {
         untrusted: !app.workspace_trusted,
         bypass: app.bypass_active,
         update,
+        continuous: app
+            .continuous_mode
+            .as_ref()
+            .map(|run| (run.completed_count, run.total_attempted())),
     }
 }
 

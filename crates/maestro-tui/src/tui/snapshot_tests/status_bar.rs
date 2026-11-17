@@ -71,3 +71,14 @@ fn update_notice_single_place() {
     let row = out.lines().next().unwrap_or_default();
     assert!(row.contains("↑ 9.8.7 u"), "the one place is the bar: {row}");
 }
+
+#[test]
+fn status_bar_shows_continuous_progress_from_app() {
+    let mut app = app("status-bar-continuous");
+    let mut run = crate::continuous::ContinuousModeState::new();
+    run.on_issue_completed(1);
+    run.on_issue_completed(2);
+    app.continuous_mode = Some(run);
+    let row = top_row(&mut app);
+    assert!(row.contains("CONTINUOUS: 2/2 done"), "{row}");
+}
