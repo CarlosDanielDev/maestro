@@ -1,4 +1,5 @@
 mod attention;
+pub(crate) use attention::write_exit_title;
 mod auto_pr;
 mod auto_pr_apply;
 mod auto_pr_phase;

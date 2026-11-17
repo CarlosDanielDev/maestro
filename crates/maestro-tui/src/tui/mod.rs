@@ -202,10 +202,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         leave_tui_mode(terminal.backend_mut())?;
         terminal.show_cursor()?;
         // Drop the `(n)` count so the shell tab is not left with a stale one.
-        let _ = execute!(
-            terminal.backend_mut(),
-            crossterm::terminal::SetTitle(ds::attention::exit_title())
-        );
+        let _ = app::write_exit_title(terminal.backend_mut());
     }
 
     app.kill_all().await;

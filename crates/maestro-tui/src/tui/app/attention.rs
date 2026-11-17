@@ -7,7 +7,8 @@ use std::io::Write;
 use super::App;
 use crate::budget::{BudgetAction, BudgetCheck};
 use crate::tui::ds::attention::{
-    AttentionInput, AttentionItem, BudgetSignal, QuotaSignal, SessionSignal, rank, terminal_title,
+    AttentionInput, AttentionItem, BudgetSignal, QuotaSignal, SessionSignal, exit_title, rank,
+    terminal_title,
 };
 
 /// A provider's busiest window at or above this shows as a quota notice
@@ -97,6 +98,12 @@ impl App {
     }
 }
 
+/// Quit restore: leave the plain `exit_title()` so the shell tab keeps no
+/// stale `(n)` count.
+pub(crate) fn write_exit_title<W: Write>(out: &mut W) -> std::io::Result<()> {
+    crossterm::execute!(out, crossterm::terminal::SetTitle(exit_title()))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::session::types::SessionStatus;
@@ -121,6 +128,13 @@ mod tests {
             .enqueue(make_session(SessionStatus::NeedsPr, Some(405)));
         assert_eq!(app.attention().len(), 2);
         assert_eq!(title_after_sync(&mut app), "\u{1b}]0;(2) maestro\u{7}");
+    }
+
+    #[test]
+    fn exit_restore_writes_the_plain_title() {
+        let mut out = Vec::new();
+        super::write_exit_title(&mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "\u{1b}]0;maestro\u{7}");
     }
 
     #[test]
