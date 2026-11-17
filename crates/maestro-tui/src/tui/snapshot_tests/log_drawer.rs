@@ -240,3 +240,47 @@ fn activity_log_height_sizes_drawer() {
         assert_eq!(bottom, 38, "drawer sits right above the footer");
     }
 }
+
+/// Ctrl+L reaches the drawer from a live Interaction composer and leaves the
+/// typed text alone; Ctrl+G still clears it.
+#[tokio::test]
+async fn ctrl_l_opens_drawer_from_interaction_composer() {
+    use crate::session::interaction::TurnState;
+    use crate::tui::screens::InteractionScreen;
+    let mut app = log_app(TuiMode::Interaction);
+    app.screen_state.interaction_screen = Some(InteractionScreen::test_fixture(
+        7,
+        true,
+        TurnState::Idle,
+        vec![],
+        "/tmp/maestro/wt-1263",
+    ));
+    for c in "draft".chars() {
+        let _ = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+        )
+        .await;
+    }
+    let text = |app: &App| {
+        app.screen_state
+            .interaction_screen
+            .as_ref()
+            .unwrap()
+            .editor_text()
+    };
+    assert_eq!(text(&app), "draft");
+
+    let _ = handle_key(&mut app, ctrl_l()).await;
+    assert!(app.activity_log.drawer_open, "Ctrl+L opens the drawer");
+    assert_eq!(text(&app), "draft", "Ctrl+L does not clear the composer");
+
+    let _ = handle_key(&mut app, esc()).await;
+    assert!(!app.activity_log.drawer_open);
+    let _ = handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert_eq!(text(&app), "", "Ctrl+G clears the composer");
+}

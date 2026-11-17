@@ -138,7 +138,7 @@ fn ctrl_p_produce_pr_false_logs_and_does_not_send() {
 }
 
 #[test]
-fn ctrl_u_clears_editor_leaves_history() {
+fn ctrl_g_clears_editor_leaves_history() {
     let mut s = InteractionScreen::test_fixture(
         7,
         true,
@@ -147,10 +147,21 @@ fn ctrl_u_clears_editor_leaves_history() {
         "/tmp/maestro/wt-x",
     );
     type_text(&mut s, "partial");
-    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
+    let action = s.handle_input(&ctrl('g'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.editor_text(), "");
     assert_eq!(s.history_len(), 3);
+}
+
+/// #1263: Ctrl+U stays the composer's undo (tui-textarea's default), so
+/// "clear input" lives on Ctrl+G instead.
+#[test]
+fn ctrl_u_still_undoes_in_composer() {
+    let mut s = screen_for(7, true, TurnState::Idle);
+    type_text(&mut s, "abc");
+    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
+    assert_eq!(action, ScreenAction::None);
+    assert_eq!(s.editor_text(), "ab", "Ctrl+U undoes the last edit");
 }
 
 #[test]
@@ -177,9 +188,9 @@ fn streaming_ignores_enter() {
 }
 
 #[test]
-fn streaming_ignores_ctrl_u() {
+fn streaming_ignores_ctrl_g() {
     let mut s = screen_for(7, true, TurnState::Streaming);
-    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
+    let action = s.handle_input(&ctrl('g'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
 }
 
@@ -290,7 +301,7 @@ fn keybindings_list_expected_keys() {
         "Enter",
         "Shift+Enter",
         "Ctrl+P",
-        "Ctrl+U",
+        "Ctrl+G",
         "Ctrl+W",
         "Esc",
         "Up/Down/PgUp/PgDn",

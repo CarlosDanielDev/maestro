@@ -36,7 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "─ Settled from COMPLETED ───────────────────────────────────────────────────────────────────────────────────────────────"
-"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+U] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Dn/PgUp/Pg"
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+G] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Dn/PgUp/Pg"
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Message ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "┃Type a prompt to begin…                                                                                               ┃"
 "┃                                                                                                                      ┃"

@@ -309,7 +309,7 @@ Implements the Activity log row of "Shell rules" in `docs/design-system/index.ht
 | `ds::log_drawer::draw(f, area, rows, &log, theme, nerd_font)` | Rounded `Focus::Overlay` box on `surface_overlay`, the last `rows` rows of `area` (clamped), local time. `ui::draw` passes the main area and `tui.layout.activity_log_height` (same rows as the pane) |
 | `ActivityLog::draw_block_in_zone(.., block, ..)` | The log lines inside a caller's block (the drawer's overlay panel) |
 
-Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
+The Interaction composer clears its input with `Ctrl+G` (`Ctrl+U` stays tui-textarea's undo). Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
 
 ---
 
