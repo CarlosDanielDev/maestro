@@ -1,3 +1,4 @@
+mod attention;
 mod auto_pr;
 mod auto_pr_apply;
 mod auto_pr_phase;
@@ -292,6 +293,9 @@ pub struct App {
     pub minimax_quota: Option<std::sync::Arc<crate::agent_provider::minimax::quota::MinimaxQuota>>,
     /// Live provider quota windows, routing and alerts (#1065). Off by default.
     pub quota: quota_refresh::QuotaRefresh,
+    /// Last terminal title written (`(n) maestro`), so it is only
+    /// re-sent when the Needs-you count changes (#1259).
+    last_terminal_title: Option<String>,
 }
 
 impl App {
@@ -446,6 +450,7 @@ impl App {
             minimax_forced_count_5h: 0,
             minimax_quota: None,
             quota: quota_refresh::QuotaRefresh::default(),
+            last_terminal_title: None,
         };
         if let Some(error) = state_load_error {
             app.activity_log.push_simple(

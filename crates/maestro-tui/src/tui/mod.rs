@@ -247,6 +247,7 @@ async fn event_loop(
 
         if let Some(terminal) = terminal.as_mut() {
             terminal.draw(|f| ui::draw(f, app))?;
+            let _ = app.sync_terminal_title(terminal.backend_mut());
         }
 
         app.check_completions().await?;

@@ -26,7 +26,7 @@ pub type Snapshot = HashMap<String, ProviderWindows>;
 pub struct QuotaRefresh {
     pub(super) enabled: bool,
     rx: Option<mpsc::UnboundedReceiver<Snapshot>>,
-    windows: Snapshot,
+    pub(super) windows: Snapshot,
     alerts: QuotaAlerts,
     clock: Box<dyn Clock>,
 }
