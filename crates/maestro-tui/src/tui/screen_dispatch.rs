@@ -1052,11 +1052,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.turboquant_adapter = tq_adapter;
 
             // 4. Long-lived collaborators rebuilt from the new config.
-            app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
-                config.budget.per_session_usd,
-                config.budget.total_usd,
-                config.budget.alert_threshold_pct,
-            ));
+            app.install_budget(&config.budget);
             app.model_router = Some(crate::models::ModelRouter::new(
                 config.models.routing.clone(),
                 config.effective_default_model(),

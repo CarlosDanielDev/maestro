@@ -91,11 +91,7 @@ pub fn setup_app_from_config_with_trust(
         app.activate_bypass(source);
     }
 
-    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
-        config.budget.per_session_usd,
-        config.budget.total_usd,
-        config.budget.alert_threshold_pct,
-    ));
+    app.install_budget(&config.budget);
 
     app.model_router = Some(crate::models::ModelRouter::new(
         config.models.routing.clone(),
