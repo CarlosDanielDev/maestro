@@ -877,11 +877,15 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
     }
 
     // #1263: Ctrl+L toggles the log drawer on any screen; Esc closes it.
-    if key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL) {
+    // Under a modal the drawer is hidden and both keys go to the modal.
+    if key.code == KeyCode::Char('l')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && !crate::tui::ui::log_drawer_blocked(app)
+    {
         app.activity_log.drawer_open = !app.activity_log.drawer_open;
         return true;
     }
-    if key.code == KeyCode::Esc && app.activity_log.drawer_open {
+    if key.code == KeyCode::Esc && crate::tui::ui::log_drawer_shown(app) {
         app.activity_log.drawer_open = false;
         return true;
     }

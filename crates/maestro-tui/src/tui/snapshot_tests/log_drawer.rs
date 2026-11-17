@@ -288,3 +288,60 @@ async fn ctrl_l_opens_drawer_from_interaction_composer() {
     .await;
     assert_eq!(text(&app), "", "Ctrl+G clears the composer");
 }
+
+/// Modals take keys before (or instead of) the global `Ctrl+L` / `Esc`, so
+/// an open drawer must never cover them: e.g. the BudgetPreSpawn spend
+/// confirm still takes `y`/`n`.
+#[test]
+fn log_drawer_hidden_under_modals() {
+    let nil = uuid::Uuid::nil();
+    for mode in [
+        TuiMode::BudgetPreSpawn { session_id: nil },
+        TuiMode::ConfirmKill(nil),
+        TuiMode::ConfirmExit,
+        TuiMode::QueueExecution,
+        TuiMode::CompletionSummary,
+        TuiMode::ContinuousPause,
+    ] {
+        let render = |open: bool| {
+            let mut app = log_app(mode);
+            app.nav_stack.push(TuiMode::IssueBrowser);
+            app.activity_log.drawer_open = open;
+            format!("{}", draw(&mut app, 80, 24).backend())
+        };
+        let closed = render(false);
+        let open = render(true);
+        assert_eq!(
+            open, closed,
+            "{mode:?}: the drawer must not cover the modal"
+        );
+    }
+    let mut app = log_app(TuiMode::BudgetPreSpawn { session_id: nil });
+    app.activity_log.drawer_open = true;
+    let out = format!("{}", draw(&mut app, 80, 24).backend());
+    assert!(out.contains("$"), "spend confirm text is visible:\n{out}");
+    assert!(!out.contains("Activity Log ]"), "no drawer rows:\n{out}");
+}
+
+/// With the drawer closed, `Esc` reaches the screen (here: Settings pops).
+#[tokio::test]
+async fn esc_reaches_screen_when_drawer_closed() {
+    let mut app = log_app(TuiMode::Settings);
+    app.nav_stack.push(TuiMode::Landing);
+    let _ = handle_key(&mut app, esc()).await;
+    assert_ne!(app.tui_mode, TuiMode::Settings, "Esc goes to the screen");
+}
+
+/// Under a modal the hidden drawer does not eat `Esc`: it reaches the modal.
+#[tokio::test]
+async fn esc_reaches_modal_while_drawer_hidden() {
+    let mut app = log_app(TuiMode::ConfirmKill(uuid::Uuid::nil()));
+    app.nav_stack.push(TuiMode::Overview);
+    app.activity_log.drawer_open = true;
+    let _ = handle_key(&mut app, esc()).await;
+    assert_ne!(
+        app.tui_mode,
+        TuiMode::ConfirmKill(uuid::Uuid::nil()),
+        "Esc closes the kill confirm"
+    );
+}

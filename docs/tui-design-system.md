@@ -308,6 +308,7 @@ Implements the Activity log row of "Shell rules" in `docs/design-system/index.ht
 |---|---|
 | `ActivityLog::take_alerts()` | WARN/ERR entries since the last call. `ui::draw` turns them into toasts (`App::push_toast`) when neither the pane nor the drawer is visible, and drops them when one is. Screens never call it |
 | `ActivityLog::drawer_open` | The drawer state. `Ctrl+L` toggles it, `Esc` closes it (`handle_global_shortcuts`) |
+| `ui::log_drawer_blocked(app)` / `ui::log_drawer_shown(app)` | Under the help overlay or a modal (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`, `QueueExecution`, `CompletionSummary`, `ContinuousPause`) the drawer is hidden but stays open, and `Ctrl+L` / `Esc` go to the modal. It comes back when the modal closes |
 | `ds::log_drawer::draw(f, area, rows, &log, theme, nerd_font)` | Rounded `Focus::Overlay` box on `surface_overlay`, the last `rows` rows of `area` (clamped), local time. `ui::draw` passes the main area and `tui.layout.activity_log_height` (same rows as the pane) |
 | `ActivityLog::draw_block_in_zone(.., block, ..)` | The log lines inside a caller's block (the drawer's overlay panel) |
 

@@ -60,6 +60,27 @@ fn shows_log_pane(app: &App) -> bool {
     }
 }
 
+/// #1263: a modal or overlay is up. These take keys before (or instead of)
+/// the global `Ctrl+L` / `Esc`, so the log drawer is hidden under them and
+/// those keys go to the modal; the drawer comes back when the modal closes.
+pub(crate) fn log_drawer_blocked(app: &App) -> bool {
+    app.help_state.is_some()
+        || matches!(
+            app.tui_mode,
+            TuiMode::ConfirmExit
+                | TuiMode::ConfirmKill(_)
+                | TuiMode::BudgetPreSpawn { .. }
+                | TuiMode::QueueExecution
+                | TuiMode::CompletionSummary
+                | TuiMode::ContinuousPause
+        )
+}
+
+/// The log drawer is open and on screen.
+pub(crate) fn log_drawer_shown(app: &App) -> bool {
+    app.activity_log.drawer_open && !log_drawer_blocked(app)
+}
+
 /// Rows for the Activity pane and the log drawer, from
 /// `tui.layout.activity_log_height` (a percentage, clamped to 10..=50).
 fn configured_log_rows(app: &App, total: u16) -> u16 {
@@ -878,7 +899,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_footer(f, app, &mode_km, chunks[3], &theme);
 
     // #1263: the Ctrl+L drawer covers the bottom of the main area.
-    if app.activity_log.drawer_open {
+    if log_drawer_shown(app) {
         let rows = configured_log_rows(app, f.area().height);
         crate::tui::ds::log_drawer::draw(
             f,
@@ -889,7 +910,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             crate::icon_mode::use_nerd_font(),
         );
     }
-    raise_log_toasts(app, chunks[2].height > 0 || app.activity_log.drawer_open);
+    raise_log_toasts(app, chunks[2].height > 0 || log_drawer_shown(app));
 
     // #1254: toasts sit above every screen, below the help overlay.
     if let Some(toast) = app.copy_toast.as_ref() {
@@ -1200,7 +1221,7 @@ fn draw_footer(
         key_hints::from_pairs(&pairs)
     };
     // #1263: while the log drawer is open, Esc closes it.
-    if app.activity_log.drawer_open {
+    if log_drawer_shown(app) {
         hints.retain(|h| h.key != "Esc");
         hints.splice(0..0, key_hints::from_pairs(&[("Esc", "Close log")]));
     }
