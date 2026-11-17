@@ -198,3 +198,11 @@ first. One entry per decision.
 - **Rejected:** fixing `agent_badge.rs` inside #1247 (scope); making `no_color_snapshot` assert no colour now (it would fail on this known gap and block the harness).
 - **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
 - **Source:** #1247 (judge finding on PR #1345).
+
+## 2026-11-16 — Kit v2 pieces: `+n` overflow, three-column tree, no loading/error tile yet
+
+- **What:** `ds::filter_chips` ends with `+n` (hidden count) instead of the mock's `…`. `ds::tree_prefix` uses three columns per level (`├─ `, `└─ `, `│  `, blank under a last ancestor) instead of the mock's two (`├ `, `│ `), and has no `▾ ▸` expander. `ds::kpi_tile` ships the ready and empty forms only; the delta is drawn in a neutral colour.
+- **Why:** the issue asks for `+n` and for `├─ └─ │`; a count tells how much is hidden, `…` does not. Blank space under a last ancestor is what makes nested levels read right. The issue lists value, delta, sparkline, context and the empty reason; loading and error forms wait for the Stats screen issue that fetches the data. Up is good for some metrics and bad for others, so colour by direction would lie half the time.
+- **Section:** `§04 Kit v2` (`subTabs`, `filterChips`, `kpiTile`, `treePrefix`), Stats KpiTile caption.
+- **Rejected:** `…` overflow (hides the count); a `│ ` rail at every ancestor level (wrong under last children); green-up / red-down delta.
+- **Source:** #1256.

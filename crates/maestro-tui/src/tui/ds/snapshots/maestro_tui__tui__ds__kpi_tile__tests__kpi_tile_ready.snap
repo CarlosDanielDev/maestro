@@ -1,0 +1,8 @@
+---
+source: crates/maestro-tui/src/tui/ds/kpi_tile.rs
+expression: "draw(&ready(), &Theme::dark()).backend()"
+---
+"┌──────[ Spend · 30d ]───────┐"
+"│ $38.42  ↑ $1.10            │"
+"│ ▂▃▂▅▁▄▆▅█▆ of $50 cap      │"
+"└────────────────────────────┘"
