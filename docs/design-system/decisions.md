@@ -269,3 +269,11 @@ first. One entry per decision.
 - **Rejected:** keeping the Release Console as Home's Wide-only panel (keeps the decoration rows on the default screen); drawing a second Activity pane inside the center column (two log renderers); an `IconId` for `⊘` (the glyph is drawn as-is, like the `▌` marker); the `new_ux` flag of #833 (no such flag exists in the code yet; this PR does not add it).
 - **Known gap:** the "which model routing picks" row of Budget & quota, Milestone next issues / blockers, and the Adopt `no outside sessions` reason are not drawn (no cheap data source on Home today). Hints are not in panel titles (`f full board`, `o details`, `h review` of the mock) because the shell rules keep hints in the footer. The Fleet panel takes the leftover height of its column.
 - **Source:** #1264.
+
+## 2026-11-17 — Home `⏎` on a session row opens the session Overview
+
+- **What:** `⏎` on a Needs-you session row (gates failed, errored, needs review, PR ready) opens `TuiMode::Overview` with `panel_view.selected` on that session. The issue said "lands on Dashboard with that session selected"; the test keeps its name `home_enter_attention_opens_dashboard_row`.
+- **Why:** today's `TuiMode::Dashboard` (`HomeScreen`) has no session rows, so nothing there can be selected. Overview is the session grid that #1263 already treats as part of the Dashboard. When the Dashboard redesign (operate epic) adds session rows, the jump moves there.
+- **Section:** `§02 Home: Mission Control` (Needs you), `§02.1 Dashboard: operations cockpit`.
+- **Rejected:** pushing `Dashboard` with no selection (the operator lands on a menu and must find the session again); `Detail(id)` (skips the fleet context and is not part of the Dashboard).
+- **Source:** #1264.
