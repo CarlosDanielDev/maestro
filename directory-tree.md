@@ -905,7 +905,7 @@ maestro/
 │       ├── check-file-size.bats           # bats tests for check-file-size.sh (moved from tests/scripts/)  [Issue #1355]
 │       ├── check-layers.bats              # bats tests for check-layers.sh (moved from tests/scripts/)  [Issue #1355]
 │       ├── release.bats                   # bats tests for release.sh merge wait/fallback (moved from tests/scripts/)  [Issue #1355]
-│       ├── test_bats_location.bats        # Guard: no bats left in tests/scripts/, CI glob still scripts/tests/*.bats  [Issue #1355]
+│       ├── test_bats_location.bats        # Guard: fails if a tracked .bats file sits outside scripts/tests/ and tests/hooks/  [Issue #1355]
 │       ├── test_commit_helper.bats        # bats tests for label-to-prefix precedence, missing issue, gh availability, and draft-file writes  [Issue #556]
 │       ├── test_condense_issue.bats       # bats tests for deterministic condensed issue summaries  [Issue #555]
 │       ├── test_dor_lint.bats             # bats tests for DOR lint, blocker states, contracts, and label task-type mapping  [Issue #555]
