@@ -53,6 +53,7 @@ first. One entry per decision.
 - **Section:** `§04 Components` (Kit v2 `armedBar`).
 - **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
 - **Source:** #1250. Follow-ups: `IconId::Enter` for `⏎`; a reversed chip and a caller-set action word when a screen adopts the bar and needs them.
+- **Resolved (#1357):** the key part is done. `IconId::Enter` exists (`⏎` with Nerd Font, `Enter` in ASCII mode) and `ArmedBar` draws every key label through it, so ASCII mode still reads `Enter`. The reversed chip and the caller-set action word stay open.
 
 ## 2026-11-16 — md_block and checklist: where #1252 differs from the mocks
 
