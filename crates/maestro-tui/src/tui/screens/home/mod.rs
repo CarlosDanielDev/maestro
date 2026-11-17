@@ -1,4 +1,5 @@
 mod draw;
+pub mod mission;
 pub mod types;
 
 pub use types::*;

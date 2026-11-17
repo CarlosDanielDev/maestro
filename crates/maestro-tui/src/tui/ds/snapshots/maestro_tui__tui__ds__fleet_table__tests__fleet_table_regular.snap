@@ -1,0 +1,12 @@
+---
+source: crates/maestro-tui/src/tui/ds/fleet_table_tests.rs
+assertion_line: 56
+expression: out
+---
+┌───────────────────────────────────────────────[ Fleet (4) ]────────────────────────────────────────────────┐
+│ STATUS          ISSUE  TITLE                               MODEL           CONTEXT            COST    TIME │
+│ ● running       #409   Token refresh                       claude-opus-4-5 ▓▓▓░░░░░░  35%    $1.25  12m03s │
+│ ⊠ gates failed  #412   Auth refactor                       claude-opus-4-5 ▓▓▓▓▓▓▓░░  83%    $1.25  12m03s │
+│ ⇡ PR ready      #405   Docs for the fleet board            claude-opus-4-5 ▓▓▓░░░░░░  35%       $?  12m03s │
+│ ○ queued               Run the prompt                      claude-opus-4-5 ▓▓▓░░░░░░  35%    $1.25       — │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

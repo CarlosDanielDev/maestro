@@ -1,0 +1,29 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/home_mission.rs
+assertion_line: 200
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ● 2 run ◐ 2 wait ✗ 1 fail │ $4.82/20 │ TQ:OFF                "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"┌──────────────────────────────[ Budget & quota ]──────────────────────────────┐"
+"│ spend ▓░░░░░ $4.82/$20.00                                                    │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Needs you (3) ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃▌⊠ gates failed #412     Auth refactor · completion gates fail…      ⏎ open   ┃"
+"┃ ◐ needs you    #398     Plan approval · waiting for your revi…      ⏎ review ┃"
+"┃ ⇡ PR ready     #405     Docs for the fleet board · work done,…      ⏎ open PR┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"┌────────────────────────────────[ Fleet (6) ]─────────────────────────────────┐"
+"│ STATUS          ISSUE  TITLE                                     CTX    COST │"
+"│ ● running       #409   Token refresh                             70%   $1.00 │"
+"│ ● running       #410   Fleet board filters                       50%   $1.00 │"
+"│ ⊠ gates failed  #412   Auth refactor                             70%   $1.50 │"
+"│ ◐ needs you     #398   Plan approval                             20%   $0.75 │"
+"│ ⇡ PR ready      #405   Docs for the fleet board                  30%   $0.00 │"
+"│ ○ queued        #411   Quota strip                               60%   $1.25 │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
+"│10:00:00 [S-1] home-mission-log-1264                                          │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Enter Open   j/k Move   Tab Next panel                                  q quit "

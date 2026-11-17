@@ -1,0 +1,12 @@
+---
+source: crates/maestro-tui/src/tui/ds/fleet_table_tests.rs
+assertion_line: 68
+expression: out
+---
+┌────────────────────────────────[ Fleet (4) ]─────────────────────────────────┐
+│ STATUS          ISSUE  TITLE                                     CTX    COST │
+│ ● running       #409   Token refresh                             35%   $1.25 │
+│ ⊠ gates failed  #412   Auth refactor                             83%   $1.25 │
+│ ⇡ PR ready      #405   Docs for the fleet board                  35%      $? │
+│ ○ queued               Run the prompt                            35%   $1.25 │
+└──────────────────────────────────────────────────────────────────────────────┘

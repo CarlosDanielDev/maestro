@@ -88,27 +88,15 @@ fn landing_log_keeps_the_old_height_from_40_rows() {
 }
 
 #[test]
-fn landing_80x28_shows_the_compact_console_above_the_log() {
-    // 28 rows, not 27: the TabBar row (#1258) takes one row from the landing.
+fn landing_80x28_draws_mission_control_above_the_log() {
+    // #1264: Home is Mission Control; the Release Console is gone from it.
     let mut app = landing_app();
     let rows = draw_rows(&mut app, 80, 28);
     let text = rows.join("\n");
-    for needle in [
-        "Release Console v",
-        "┌Mix",
-        "┌Highlights",
-        "<q> quit",
-        LOG_MESSAGE,
-    ] {
+    for needle in ["Budget & quota", "Needs you", "Fleet", LOG_MESSAGE] {
         assert!(text.contains(needle), "missing {needle:?}:\n{text}");
     }
-    // Status bar is row 0 (#1257), the TabBar row 1 (#1258); the compact
-    // header sits below one pad row.
-    assert!(
-        rows[3].contains("MAESTRO  v"),
-        "row 3: {:?}\n{text}",
-        rows[3]
-    );
+    assert!(!text.contains("Release Console v"), "{text}");
     assert!(!text.contains("|  \\/  |"), "big logo must be off:\n{text}");
 }
 
@@ -141,11 +129,11 @@ fn dashboard_log_height_is_unchanged_at_80x30() {
 }
 
 #[test]
-fn landing_without_the_activity_log_still_shows_the_console() {
+fn landing_without_the_activity_log_still_shows_mission_control() {
     let mut app = landing_app();
     app.show_activity_log = false;
     let rows = draw_rows(&mut app, 80, 27);
     let text = rows.join("\n");
     assert!(!text.contains("Activity Log"), "{text}");
-    assert!(text.contains("Release Console v"), "{text}");
+    assert!(text.contains("Needs you"), "{text}");
 }
