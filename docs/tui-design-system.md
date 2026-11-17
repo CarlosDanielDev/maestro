@@ -210,7 +210,7 @@ these rows.
 | `ds::tab_bar::tab_for_digit(c)` / `tab_index(mode)` / `tab_label(mode)` | Digit → mode, and "is this mode a tab?" |
 | `ds::crumb_bar::draw(f, area, &crumbs, state, theme)` | The shell row inside a flow (any mode that is not a tab): `Home › New issue`, elided with `elide_breadcrumbs`. `state` is the right-aligned slot (draft saved, fetch age, write state); `None` shows `Esc back  ? help` |
 | `ds::crumb_bar::crumbs(stack, current)` / `crumb_label(mode)` | Crumb labels from the nav stack: tab name for a tab, else `breadcrumb_label` |
-| `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, `⌃Q quit` pinned right (`pin_quit = false` only in the quit dialog) |
+| `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, the quit hint `ds::key_hints::QUIT` pinned right (`pin_quit = false` only in the quit dialog). `QUIT` is `q quit` until #1260 makes ⌃Q quit |
 | `ds::key_hints::from_pairs(&[(key, label)])` | A screen's `(key, label)` list as `InlineHint`s, in order |
 | `ds::bar_row::draw_left_right(f, area, left, right)` | One row with a flush-right part that drops when it does not fit |
 | `Screen::footer_hints(&self)` | A screen's footer hints for its current state, most important first. Empty (the default) means the footer shows the mode's `mode_keymap` hints |

@@ -1,6 +1,7 @@
 //! Footer of key hints (design system §04 `ds::key_hints`): one row at the
 //! bottom of every screen with the hints for the focused context, and
-//! `⌃Q quit` pinned right. Inside the quit dialog the pin is left out.
+//! the quit hint ([`QUIT`]) pinned right. Inside the quit dialog the pin is
+//! left out.
 //!
 //! Hints are kept in order and the first one that does not fit ends the
 //! row. They are measured by their drawn width, not with
@@ -18,8 +19,9 @@ use super::bar_row::{draw_left_right, key_style};
 use crate::tui::navigation::keymap::InlineHint;
 use crate::tui::theme::Theme;
 
-/// The pinned quit hint, `(key, label)`.
-pub const QUIT: (&str, &str) = ("⌃Q", "quit");
+/// The pinned quit hint, `(key, label)`: the key that quits today (`q`,
+/// outside text input). #1260 makes ⌃Q quit; change this one const then.
+pub const QUIT: (&str, &str) = ("q", "quit");
 
 /// Turn a screen's `(key, label)` list into hints, first = highest priority.
 pub fn from_pairs(pairs: &[(&'static str, &'static str)]) -> Vec<InlineHint> {
@@ -71,6 +73,10 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
 
+    fn quit_hint() -> String {
+        format!("{} {}", QUIT.0, QUIT.1)
+    }
+
     fn row(hints: &[InlineHint], pin_quit: bool, width: u16) -> String {
         let mut t = Terminal::new(TestBackend::new(width, 1)).unwrap();
         let theme = Theme::dark();
@@ -92,12 +98,12 @@ mod tests {
         let out = row(&hints, true, 30);
         assert!(out.starts_with(" ↑/↓ Field   Esc Back"), "{out:?}");
         assert!(!out.contains("long"), "{out:?}");
-        assert!(out.trim_end().ends_with("⌃Q quit"), "{out:?}");
+        assert!(out.trim_end().ends_with(&quit_hint()), "{out:?}");
     }
 
     #[test]
     fn quit_dialog_drops_the_pin() {
         let out = row(&from_pairs(&[("y", "quit")]), false, 80);
-        assert!(!out.contains("⌃Q"), "{out:?}");
+        assert!(!out.contains(&quit_hint()), "{out:?}");
     }
 }

@@ -1353,7 +1353,7 @@ fn draw_shell_row(f: &mut Frame, app: &App, area: Rect, theme: &crate::tui::them
 }
 
 /// The one footer (#1258): the screen's own hints (`Screen::footer_hints`),
-/// else the mode's inline hints, with `⌃Q quit` pinned right except inside
+/// else the mode's inline hints, with the quit hint pinned right except inside
 /// the quit dialog.
 fn draw_footer(
     f: &mut Frame,

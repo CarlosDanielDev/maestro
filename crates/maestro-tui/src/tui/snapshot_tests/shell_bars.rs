@@ -1,6 +1,6 @@
 //! The shell rows of `ui::draw` (#1258): TabBar on the seven top-level
 //! screens, CrumbBar inside flows, and one footer of key hints that always
-//! ends with `⌃Q quit`.
+//! ends with the quit hint (`ds::key_hints::QUIT`).
 
 use insta::assert_snapshot;
 use ratatui::style::Modifier;
@@ -43,6 +43,12 @@ fn draw(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
     t.draw(|f| ui::draw(f, app)).unwrap();
     t
+}
+
+/// The pinned quit hint as drawn, read from the const (#1260 changes it).
+fn quit_hint() -> String {
+    let (key, label) = crate::tui::ds::key_hints::QUIT;
+    format!("{key} {label}")
 }
 
 fn row_text(t: &Terminal<TestBackend>, y: u16) -> String {
@@ -103,7 +109,7 @@ fn footer_pins_quit() {
             let t = draw(&mut app, w, 24);
             let last = row_text(&t, 23);
             assert!(
-                last.trim_end().ends_with("⌃Q quit"),
+                last.trim_end().ends_with(&quit_hint()),
                 "{mode:?} at {w} cols: footer {last:?}"
             );
         }
@@ -115,5 +121,5 @@ fn quit_dialog_footer_has_no_quit_pin() {
     let mut app = shell_app(TuiMode::ConfirmExit);
     app.nav_stack.push(TuiMode::Dashboard);
     let t = draw(&mut app, 100, 24);
-    assert!(!row_text(&t, 23).contains("⌃Q quit"));
+    assert!(!row_text(&t, 23).contains(&quit_hint()));
 }

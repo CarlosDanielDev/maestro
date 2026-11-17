@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::tui::theme::Theme;
 
-/// The key part of a hint (`Esc`, `⌃Q`, a tab digit): bold `keybind_key`.
+/// The key part of a hint (`Esc`, `q`, a tab digit): bold `keybind_key`.
 pub fn key_style(theme: &Theme) -> Style {
     Style::default()
         .fg(theme.keybind_key)

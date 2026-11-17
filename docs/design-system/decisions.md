@@ -22,12 +22,20 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-17 — The footer pins `q quit` until #1260
+
+- **What:** the footer's pinned quit hint is `q quit`, not the design's `⌃Q quit`. It lives in one const, `ds::key_hints::QUIT`.
+- **Why:** today `⌃Q` toggles TurboQuant and `q` opens the quit dialog (outside text input). A hint must name the key that does the thing. #1260 makes ⌃Q quit and changes that one const.
+- **Section:** `Shell rules`, `§04 Components` (`key_hints`).
+- **Rejected:** printing `⌃Q quit` now (wrong key on main until #1260); rebinding ⌃Q in #1258 (#1260 owns it).
+- **Source:** #1258 (orchestrator decision), #1260.
+
 ## 2026-11-16 — Shell rows: the footer replaces the F-key bar; digits only on tab screens
 
-- **What:** (1) The bottom F-key bar is gone; that row is now the one `ds::key_hints` footer. F-keys still work and are listed in help (`?` / F1). (2) Digits `1`-`7` switch tabs only on the seven tab screens, never in a flow (CrumbBar) and never while a text field has focus; on Milestones this shadows the old `1` / `2` sub-tab keys (`Tab` still switches). (3) The TabBar and CrumbBar right side say `? help`, not `⌃K palette`, because the palette does not exist yet. (4) The footer draws `⌃Q quit` as the issue asks, but until #1260 lands `⌃Q` still toggles TurboQuant. (5) Footer hints are cut at their drawn width; `fit_hints_to_width` is not used because it counts bytes and the `[k] label` form, and dropped `Esc Back` from Settings at 80 columns. (6) `›` and `⌃Q` are literal characters, like the existing `↑/↓` hints; they are text, not Nerd Font icons.
+- **What:** (1) The bottom F-key bar is gone; that row is now the one `ds::key_hints` footer. F-keys still work and are listed in help (`?` / F1). (2) Digits `1`-`7` switch tabs only on the seven tab screens, never in a flow (CrumbBar) and never while a text field has focus; on Milestones this shadows the old `1` / `2` sub-tab keys (`Tab` still switches). (3) The TabBar and CrumbBar right side say `? help`, not `⌃K palette`, because the palette does not exist yet. (4) The footer pins `q quit`, not the `⌃Q quit` the design and #1258 name: until #1260 lands `⌃Q` toggles TurboQuant and `q` quits (outside text input). The pin is one const, `ds::key_hints::QUIT`; #1260 changes it. (5) Footer hints are cut at their drawn width; `fit_hints_to_width` is not used because it counts bytes and the `[k] label` form, and dropped `Esc Back` from Settings at 80 columns. (6) `›` and `⌃Q` are literal characters, like the existing `↑/↓` hints; they are text, not Nerd Font icons.
 - **Why:** "one footer" in Shell rules; inside wizards digits are content (issue numbers); a key hint must not advertise a key that does nothing.
 - **Section:** `Shell rules`, `§04 Components` (`tab_bar`, `key_hints`), `§02.2 Issue wizard` (CrumbBar).
-- **Rejected:** keeping the F-key bar under the footer (two hint rows); digits as global keys (they would eat issue numbers in wizards); changing `fit_hints_to_width` (the status bar, owned by #1257, uses it).
+- **Rejected:** printing `⌃Q quit` before #1260 (the hint would name a key that toggles TurboQuant); rebinding ⌃Q here (#1260 owns it); keeping the F-key bar under the footer (two hint rows); digits as global keys (they would eat issue numbers in wizards); changing `fit_hints_to_width` (the status bar, owned by #1257, uses it).
 - **Source:** #1258.
 
 ## 2026-11-16 — armedBar keys and glyphs are ASCII-safe

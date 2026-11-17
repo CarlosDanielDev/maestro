@@ -25,4 +25,4 @@ expression: t.backend()
 "┃  [q]  Quit           ┃│                          ││                          │"
 "┃                      ┃│                          ││                          │"
 "┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
-" i Issues   m Milestones   r Prompt   s Sessions   a Adapt              ⌃Q quit "
+" i Issues   m Milestones   r Prompt   s Sessions   a Adapt               q quit "
