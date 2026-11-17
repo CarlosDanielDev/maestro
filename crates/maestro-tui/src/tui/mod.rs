@@ -247,6 +247,7 @@ async fn event_loop(
 
         if let Some(terminal) = terminal.as_mut() {
             terminal.draw(|f| ui::draw(f, app))?;
+            // Best-effort: a failed title write must never stop the run loop.
             let _ = app.sync_terminal_title(terminal.backend_mut());
         }
 
