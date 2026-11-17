@@ -1080,15 +1080,37 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
 /// entry predates the `Screen` trait (`SessionSwitcher`) or whose
 /// default mode is Normal but still have ambient typing surfaces
 /// (`PromptInput`, `Settings`).
+///
+/// #1377: also the help overlay search, the PRD edit field and the Roadmap
+/// label/assignee filters (their screens never report `Insert`).
 fn is_text_input_mode(app: &App) -> bool {
     use crate::tui::navigation::InputMode;
     if crate::tui::ui::active_screen_input_mode(app) == InputMode::Insert {
         return true;
     }
+    if app.help_state.as_ref().is_some_and(|h| h.search_active) {
+        return true;
+    }
+    let state = &app.screen_state;
+    match app.tui_mode {
+        app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings => true,
+        app::TuiMode::Prd => state.prd_screen.as_ref().is_some_and(|s| s.edit.is_some()),
+        app::TuiMode::Roadmap => {
+            (state.roadmap_screen.as_ref()).is_some_and(|s| s.editing_filter.is_some())
+        }
+        _ => false,
+    }
+}
+
+/// The run loop restarts maestro on this key (`y` while a restart is
+/// pending). #1377: only a bare `y`, and never while a text field has focus.
+pub(super) fn is_restart_key(app: &App, key: &KeyEvent) -> bool {
     matches!(
-        app.tui_mode,
-        app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings
-    )
+        app.upgrade_state,
+        crate::updater::UpgradeState::ReadyToRestart { .. }
+    ) && key.code == KeyCode::Char('y')
+        && key.modifiers.is_empty()
+        && !is_text_input_mode(app)
 }
 
 /// The tab a plain digit opens: only on a top-level screen (inside a flow
@@ -1102,12 +1124,6 @@ fn tab_key_target(app: &App, key: &KeyEvent) -> Option<app::TuiMode> {
         || crate::tui::ds::tab_bar::tab_index(app.tui_mode).is_none()
         || is_text_input_mode(app)
     {
-        return None;
-    }
-    let state = &app.screen_state;
-    let editing = state.prd_screen.as_ref().is_some_and(|s| s.edit.is_some())
-        || (state.roadmap_screen.as_ref()).is_some_and(|s| s.editing_filter.is_some());
-    if editing {
         return None;
     }
     crate::tui::ds::tab_bar::tab_for_digit(c)
@@ -1313,6 +1329,10 @@ mod tab_tests;
 #[cfg(test)]
 #[path = "input_handler_upgrade_tests.rs"]
 mod upgrade_tests;
+
+#[cfg(test)]
+#[path = "input_handler_text_input_tests.rs"]
+mod text_input_tests;
 
 #[cfg(test)]
 mod tests {
