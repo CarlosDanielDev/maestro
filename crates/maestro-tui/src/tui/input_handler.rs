@@ -137,8 +137,12 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
     KeyAction::Consumed
 }
 
-/// Handle upgrade banner input (u/y/n/Esc).
+/// Handle upgrade banner input (u/y/n/Esc). #1368: only a bare key acts,
+/// and never while a text field has focus, so typed text reaches the field.
 fn handle_upgrade_keys(app: &mut App, key: &KeyEvent) -> bool {
+    if !key.modifiers.is_empty() || is_text_input_mode(app) {
+        return false;
+    }
     match &app.upgrade_state {
         crate::updater::UpgradeState::Available(info) => {
             if key.code == KeyCode::Char('u') {
@@ -1305,6 +1309,10 @@ mod size_guard_tests;
 #[cfg(test)]
 #[path = "input_handler_tab_tests.rs"]
 mod tab_tests;
+
+#[cfg(test)]
+#[path = "input_handler_upgrade_tests.rs"]
+mod upgrade_tests;
 
 #[cfg(test)]
 mod tests {
