@@ -1,5 +1,3 @@
-use ratatui::style::Color;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentVisualKind {
     Claude,
@@ -30,18 +28,6 @@ pub fn agent_kind_for_id(agent_id: Option<&str>) -> AgentVisualKind {
     }
 }
 
-pub fn agent_color(agent_id: Option<&str>) -> Color {
-    match agent_kind_for_id(agent_id) {
-        AgentVisualKind::Claude => Color::LightYellow,
-        AgentVisualKind::Codex => Color::LightCyan,
-        AgentVisualKind::Qwen => Color::LightMagenta,
-        AgentVisualKind::Opencode => Color::LightGreen,
-        AgentVisualKind::Ollama => Color::Green,
-        AgentVisualKind::Minimax => Color::LightBlue,
-        AgentVisualKind::Unknown => Color::Gray,
-    }
-}
-
 pub fn agent_label(agent_id: Option<&str>) -> String {
     agent_id
         .filter(|id| !id.trim().is_empty())
@@ -52,6 +38,7 @@ pub fn agent_label(agent_id: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::style::Color;
 
     #[test]
     fn maps_known_provider_ids_to_visual_kinds() {
@@ -68,6 +55,50 @@ mod tests {
             agent_kind_for_id(Some("future-agent")),
             AgentVisualKind::Unknown
         );
+    }
+
+    const ALL_IDS: [&str; 7] = [
+        "claude",
+        "codex",
+        "qwen",
+        "opencode",
+        "ollama",
+        "minimax",
+        "future-agent",
+    ];
+
+    #[test]
+    fn no_color_theme_draws_every_agent_badge_as_reset() {
+        let theme = crate::tui::theme::Theme::no_color();
+        for id in ALL_IDS {
+            assert_eq!(theme.agent_color(Some(id)), Color::Reset, "agent {id}");
+        }
+        assert_eq!(theme.agent_color(None), Color::Reset);
+    }
+
+    #[test]
+    fn coloured_presets_keep_todays_agent_colours() {
+        use crate::tui::theme::Theme;
+        let expected = [
+            Color::LightYellow,
+            Color::LightCyan,
+            Color::LightMagenta,
+            Color::LightGreen,
+            Color::Green,
+            Color::LightBlue,
+            Color::Gray,
+        ];
+        for theme in [
+            Theme::dark(),
+            Theme::light(),
+            Theme::retro(),
+            Theme::high_contrast(),
+        ] {
+            for (id, colour) in ALL_IDS.into_iter().zip(expected) {
+                assert_eq!(theme.agent_color(Some(id)), colour, "agent {id}");
+            }
+            assert_eq!(theme.agent_color(None), Color::LightYellow);
+        }
     }
 
     #[test]

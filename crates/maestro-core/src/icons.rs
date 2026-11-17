@@ -85,6 +85,9 @@ pub enum IconId {
     ChipErrored,
     ChipKilled,
     ChipInteractive,
+
+    // Keys: a key name drawn in a hint or bar (`ArmedBar`, #1357).
+    Enter,
 }
 
 /// A Nerd Font / ASCII icon pair.
@@ -176,6 +179,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::ChipErrored => IconPair::new("\u{2717}", "[E]"), // ✗
         IconId::ChipKilled => IconPair::new("\u{25a0}", "[k]"), // ■
         IconId::ChipInteractive => IconPair::new("\u{25b6}", "[>]"), // ▶
+
+        // ── Keys ──────────────────────────────────────────────────
+        IconId::Enter => IconPair::new("\u{23ce}", "Enter"), // ⏎
     }
 }
 

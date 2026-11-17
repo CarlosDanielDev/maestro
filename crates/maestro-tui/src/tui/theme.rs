@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders};
 use serde::{Deserialize, Serialize};
 
 use crate::session::types::SessionStatus;
+use crate::tui::agent_badge::{AgentVisualKind, agent_kind_for_id};
 use crate::tui::ds;
 
 // ---------------------------------------------------------------------------
@@ -253,6 +254,16 @@ pub struct Theme {
     pub surface_overlay: Color,
     pub status_needs_pr: Color,
     pub status_conflict: Color,
+
+    // Agent badge colours (#1346), read via `agent_color()`. The badge also
+    // prints the agent's name, so `Reset` under no-color loses no meaning.
+    pub agent_claude: Color,
+    pub agent_codex: Color,
+    pub agent_qwen: Color,
+    pub agent_opencode: Color,
+    pub agent_ollama: Color,
+    pub agent_minimax: Color,
+    pub agent_unknown: Color,
 }
 
 impl Default for Theme {
@@ -308,6 +319,13 @@ impl Theme {
             surface_overlay: Color::Indexed(235),
             status_needs_pr: Color::Blue,
             status_conflict: Color::LightMagenta,
+            agent_claude: Color::LightYellow,
+            agent_codex: Color::LightCyan,
+            agent_qwen: Color::LightMagenta,
+            agent_opencode: Color::LightGreen,
+            agent_ollama: Color::Green,
+            agent_minimax: Color::LightBlue,
+            agent_unknown: Color::Gray,
         }
     }
 
@@ -357,6 +375,13 @@ impl Theme {
             surface_overlay: Color::Rgb(255, 255, 255),
             status_needs_pr: Color::Blue,
             status_conflict: Color::Magenta,
+            agent_claude: Color::LightYellow,
+            agent_codex: Color::LightCyan,
+            agent_qwen: Color::LightMagenta,
+            agent_opencode: Color::LightGreen,
+            agent_ollama: Color::Green,
+            agent_minimax: Color::LightBlue,
+            agent_unknown: Color::Gray,
         }
     }
 
@@ -406,6 +431,13 @@ impl Theme {
             surface_overlay: Color::Rgb(6, 18, 10),
             status_needs_pr: Color::Rgb(59, 255, 176),
             status_conflict: Color::Rgb(125, 255, 154),
+            agent_claude: Color::LightYellow,
+            agent_codex: Color::LightCyan,
+            agent_qwen: Color::LightMagenta,
+            agent_opencode: Color::LightGreen,
+            agent_ollama: Color::Green,
+            agent_minimax: Color::LightBlue,
+            agent_unknown: Color::Gray,
         }
     }
 
@@ -466,6 +498,13 @@ impl Theme {
             surface_overlay: Color::Rgb(13, 13, 13),
             status_needs_pr: BLUE,
             status_conflict: MAGENTA,
+            agent_claude: Color::LightYellow,
+            agent_codex: Color::LightCyan,
+            agent_qwen: Color::LightMagenta,
+            agent_opencode: Color::LightGreen,
+            agent_ollama: Color::Green,
+            agent_minimax: Color::LightBlue,
+            agent_unknown: Color::Gray,
         }
     }
 
@@ -518,6 +557,13 @@ impl Theme {
             surface_overlay: R,
             status_needs_pr: R,
             status_conflict: R,
+            agent_claude: R,
+            agent_codex: R,
+            agent_qwen: R,
+            agent_opencode: R,
+            agent_ollama: R,
+            agent_minimax: R,
+            agent_unknown: R,
         }
     }
 
@@ -647,7 +693,27 @@ impl Theme {
             surface_overlay,
             status_needs_pr,
             status_conflict,
+            agent_claude,
+            agent_codex,
+            agent_qwen,
+            agent_opencode,
+            agent_ollama,
+            agent_minimax,
+            agent_unknown,
         );
+    }
+
+    /// The badge colour for an agent id (`None` means Claude).
+    pub fn agent_color(&self, agent_id: Option<&str>) -> Color {
+        match agent_kind_for_id(agent_id) {
+            AgentVisualKind::Claude => self.agent_claude,
+            AgentVisualKind::Codex => self.agent_codex,
+            AgentVisualKind::Qwen => self.agent_qwen,
+            AgentVisualKind::Opencode => self.agent_opencode,
+            AgentVisualKind::Ollama => self.agent_ollama,
+            AgentVisualKind::Minimax => self.agent_minimax,
+            AgentVisualKind::Unknown => self.agent_unknown,
+        }
     }
 
     /// Map a session status to its themed color.

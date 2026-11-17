@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-17 — Agent badge colours are theme tokens, not user overrides
+
+- **What:** seven flat `Theme` fields (`agent_claude` … `agent_unknown`), read through `Theme::agent_color(agent_id)`. The four coloured presets share today's colours; no-color sets them all to `Reset`. They are not in `ThemeOverrides`, as before.
+- **Why:** NO_COLOR must draw no colour, and the theme is the one place colours live. Flat fields match every other token, so `apply_capability` and the Debug-based preset tests cover them unchanged.
+- **Section:** `§03 Color tokens` (no-color preset: "All colours Reset").
+- **Rejected:** a nested `AgentColors` struct (breaks the one-value-per-field preset tests); a `no_color` flag checked inside `agent_color` (a second source of truth); adding overrides now (config and schema scope, not asked).
+- **Source:** #1346.
+
 ## 2026-11-17 — The footer pins `q quit` until #1260
 
 - **What:** the footer's pinned quit hint is `q quit`, not the design's `⌃Q quit`. It lives in one const, `ds::key_hints::QUIT`.
@@ -53,6 +61,7 @@ first. One entry per decision.
 - **Section:** `§04 Components` (Kit v2 `armedBar`).
 - **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
 - **Source:** #1250. Follow-ups: `IconId::Enter` for `⏎`; a reversed chip and a caller-set action word when a screen adopts the bar and needs them.
+- **Resolved (#1357):** the key part is done. `IconId::Enter` exists (`⏎` with Nerd Font, `Enter` in ASCII mode) and `ArmedBar` draws every key label through it, so ASCII mode still reads `Enter`. The reversed chip and the caller-set action word stay open.
 
 ## 2026-11-16 — md_block and checklist: where #1252 differs from the mocks
 
@@ -206,7 +215,7 @@ first. One entry per decision.
 - **Rejected:** deleting `border_focused` from config; inventing new hues for light/retro.
 - **Source:** #1247.
 
-## 2026-11-16 — NoColor known gap: agent badge colours bypass the theme
+## 2026-11-16 — NoColor known gap: agent badge colours bypass the theme (RESOLVED 2026-11-17, #1346)
 
 - **What:** under `NO_COLOR` / `TERM=dumb` / `preset = "no-color"`, the agent badge still draws colour, because `agent_color` in `crates/maestro-tui/src/tui/agent_badge.rs` returns hard-coded colours (e.g. `Color::LightYellow` for Claude) instead of reading `&Theme`. The first NO_COLOR snapshot (`overview::panel_view_single_running_session_no_color_snapshot`) pins this as one `fg: LightYellow` cell.
 - **Why:** routing agent colours through the theme is screen/widget scope, not part of the token issue. The snapshot keeps the leak visible until it is fixed.
@@ -214,6 +223,7 @@ first. One entry per decision.
 - **Rejected:** fixing `agent_badge.rs` inside #1247 (scope); making `no_color_snapshot` assert no colour now (it would fail on this known gap and block the harness).
 - **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
 - **Source:** #1247 (judge finding on PR #1345).
+- **Resolved:** #1346 moved the colours into `Theme` as seven `agent_*` tokens read through `Theme::agent_color(agent_id)`; the no-color preset sets them all to `Reset`, and `agent_badge::agent_color` is gone. `no_color_snapshot` now panics on any non-`Reset` fg, bg or underline colour, and the overview NO_COLOR snapshot has no colour left.
 
 ## 2026-11-16 — StatusBar: one row, chips replace the banners
 
