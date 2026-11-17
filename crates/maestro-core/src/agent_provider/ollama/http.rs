@@ -264,7 +264,8 @@ impl OllamaHttpClient {
             Ok(())
         } else {
             Err(OllamaError::Request(
-                "refusing insecure HTTP transport for non-loopback Ollama host; use HTTPS".to_string(),
+                "refusing insecure HTTP transport for non-loopback Ollama host; use HTTPS"
+                    .to_string(),
             ))
         }
     }
