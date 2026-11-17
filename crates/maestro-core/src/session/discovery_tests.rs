@@ -154,7 +154,10 @@ fn scan_missing_transcript_root_yields_empty() {
     assert!(scan_transcripts(home.path()).is_empty());
 }
 
+// Wall-clock budget: flaked the gate under parallel-build load (#1356),
+// so it is opt-in and CI runs it alone (`ci.yml`, "Run perf tests alone").
 #[test]
+#[ignore = "perf: wall-clock budget, run alone (#1356)"]
 fn scan_120_transcripts_completes_under_1s() {
     let home = tempdir().unwrap();
     // 40 filler lines per transcript: the 200ms budget (issue bound 1s,
