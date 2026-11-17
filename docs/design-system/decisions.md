@@ -286,3 +286,12 @@ first. One entry per decision.
 - **Rejected:** wiring only in `setup.rs` (config reload would rebuild the enforcer and leave a projector from the old `per_session_usd`); a new `[budget]` key for the floor (no request for it; 0.10 is the value the projector tests use). The §02.24 queue-and-toast redesign (`Esc` keep, `d` drop, `b` settings) is not part of this change.
 - **Known gap:** the status-bar hints for `BudgetPreSpawn` (`navigation/mode_hints.rs`) still list `y Proceed` / `s Skip-once` on Block; that file is owned by the keymap work (#1248) in this wave.
 - **Source:** #1243.
+
+## 2026-11-17 — Keymap registry declares keys; dispatch stays where it is
+
+- **What:** `navigation::registry` declares bindings (`Chord`, `Scope`, `Action`, `Danger`, label) and `check` encodes the §06 rules (no duplicate in a scope, no inner key shadowing an outer one, no destructive bare lowercase letter, no safe bare uppercase letter without a documented exception). It holds the §06 Global table, the keys `handle_global_shortcuts` takes today (`⌃L ⌃B ⌃X ⌃C`, Shift `Q M C P`, the Shift ones as documented exceptions until the globals issue retires them) and two screens, Log viewer and Session summary. Their footers now come from the registry: `j Down  k Up  g Top  G Bottom` and `j Down  k Up  Enter Expand`. `Esc Back` left those two footers because `Esc` is a Global key and the crumb bar already shows `Esc back`; `j/k` is now two hints because the registry has one binding per chord.
+- **Why:** the ADR stub in #1248: rewriting dispatch for every mode in one PR is the big-bang the rollout avoids. A declaration checked by a test catches collisions now; screens move one at a time.
+- **Section:** `§06 Keymap`, `§07 ratatui implementation` ("Keymap registry: collisions fail the build"), `§04` keymap registry.
+- **Rejected:** dispatching keys from the registry in this PR (touches every handler); the `Reversible` danger level of the §07 sketch (the issue asks for `Safe | Destructive`; add it when a rule needs it); a confirm-step check (`requires_confirm` needs dispatch to know about the registry); merging `j`/`k` into one `j/k` hint (would need leaked or owned strings for a `&'static` hint key).
+- **Known gap:** `⌃K` and `⌃Q` are declared as §06 targets; today `⌃K` is unbound and `⌃Q` toggles TurboQuant (#1260). `Shift+P` is declared `Destructive` (a GitHub write) but has no confirm step. F2–F12 are not declared (they come from the mode F-key table).
+- **Source:** #1248.

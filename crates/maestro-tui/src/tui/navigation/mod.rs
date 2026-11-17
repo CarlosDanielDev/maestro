@@ -1,6 +1,7 @@
 pub mod focus;
 pub mod keymap;
 mod mode_hints;
+pub mod registry;
 pub mod sidebar_state;
 
 /// Vim-style input mode for the entire application.
