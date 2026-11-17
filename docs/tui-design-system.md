@@ -314,6 +314,22 @@ Implements the Activity log row of "Shell rules" in `docs/design-system/index.ht
 
 The Interaction composer clears its input with `Ctrl+G` (`Ctrl+U` stays tui-textarea's undo). Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
 
+### Needs-you queue and terminal title (`crates/maestro-tui/src/tui/ds/attention.rs`, #1259)
+
+Implements `AttentionQueue` (`ds::attention_queue`) from `docs/design-system/index.html` §04, the Needs-you panel of §02 Home, and the §05 "Missing an agent that waits on you" title count. Decision: `docs/design-system/decisions.md` (2026-11-17, Needs-you queue).
+
+| Item | For |
+|---|---|
+| `attention::rank(&AttentionInput)` | Pure ranking over plain data (`SessionSignal`, `doctor_failures`, `gh_auth_lost`, `BudgetSignal`, `QuotaSignal`); no `App` needed. `AttentionKind::{Error, NeedsReview, NeedsPr, Resource}` in that order: gates failed / errored sessions, failed doctor checks and lost gh auth, then review, then PR ready, then budget and quota. Kind first, then the oldest `since`; undated items after dated ones; ties keep input order |
+| `AttentionItem` | `kind`, `subject` (`Subject::Session { id, issue, status }`, `DoctorCheck`, `GhAuth`, `Budget`, `Quota`), one sanitized `reason`, the `action` word (always on `⏎`), `since` |
+| `attention::draw(f, area, items, QueueView, theme, nerd_font)` | `Needs you (n)` panel (`ds::panel`, Thick when focused). Row: chip (`status_chip` for sessions; `✗ doctor`, `✗ gh auth`, `⚠ budget`, `⚠ quota`), subject, reason (cut with `…`), age, `⏎ action`. The selected row uses the focused selection style. Empty: `Nothing needs you. Start something: i f a` plus a key line when `fleet_busy` is false; `All clear. Agents are working.` when true |
+| `attention::terminal_title(n)` | `maestro`, or `(n) maestro` when `n > 0` |
+| `attention::exit_title()` | `maestro`: written by the quit restore in `tui::run`, so no stale count stays in the shell tab |
+| `App::attention()` / `App::attention_input()` | The queue from App state: pool sessions, the Home doctor warnings, `gh_auth_ok`, the budget enforcer when it alerts, quota windows at 80% or more |
+| `App::sync_terminal_title(out)` | Writes the title only when it changed. The run loop calls it after each draw |
+
+Rules: one action per row, always `⏎` (no per-row letters; `p` already means PRD on Home). The Home layout that shows the panel and the `⏎` jump are the Home issue's work; today only the title is live.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`

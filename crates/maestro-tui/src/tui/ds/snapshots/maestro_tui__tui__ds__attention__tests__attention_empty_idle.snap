@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/ds/attention_tests.rs
+expression: terminal.backend()
+---
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Needs you ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃ ✓ Nothing needs you. Start something: i f a                                  ┃"
+"┃   i new issue   f fleet board   a adopt a Claude Code session                ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

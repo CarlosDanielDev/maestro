@@ -1,4 +1,5 @@
 pub mod armed;
+pub mod attention;
 pub mod bar_row;
 pub mod breakpoint;
 pub mod checklist;

@@ -201,6 +201,8 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         disable_raw_mode()?;
         leave_tui_mode(terminal.backend_mut())?;
         terminal.show_cursor()?;
+        // Drop the `(n)` count so the shell tab is not left with a stale one.
+        let _ = app::write_exit_title(terminal.backend_mut());
     }
 
     app.kill_all().await;
@@ -247,6 +249,8 @@ async fn event_loop(
 
         if let Some(terminal) = terminal.as_mut() {
             terminal.draw(|f| ui::draw(f, app))?;
+            // Best-effort: a failed title write must never stop the run loop.
+            let _ = app.sync_terminal_title(terminal.backend_mut());
         }
 
         app.check_completions().await?;
