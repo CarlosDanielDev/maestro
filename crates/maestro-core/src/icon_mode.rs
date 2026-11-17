@@ -63,6 +63,9 @@ fn process_env(key: &str) -> Option<String> {
 /// Test builds never read the real env, so the suite gives the same result
 /// whether or not a developer has `MAESTRO_ASCII_ICONS` exported (#1354).
 /// Tests that need the override inject it via `init_from_config_with_env`.
+/// The `maestro` binary that `cargo test` builds for `tests/*.rs` gets
+/// `test-util` too, so it ignores the env at startup: an e2e test of the
+/// #1091 override must inject it some other way.
 #[cfg(any(test, feature = "test-util"))]
 fn process_env(_key: &str) -> Option<String> {
     None
