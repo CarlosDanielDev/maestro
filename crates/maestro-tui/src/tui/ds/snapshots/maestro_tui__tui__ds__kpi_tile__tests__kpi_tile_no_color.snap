@@ -1,0 +1,22 @@
+---
+source: crates/maestro-tui/src/tui/ds/kpi_tile.rs
+expression: out
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 60, height: 4 },
+    content: [
+        "┌──────[ Spend · 30d ]───────┐┌──────[ Runs / week ]───────┐",
+        "│ $38.42  ↑ $1.10            ││ no runs yet                │",
+        "│ ▂▃▂▅▁▄▆▅█▆ of $50 cap      ││                            │",
+        "└────────────────────────────┘└────────────────────────────┘",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 7, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 22, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 37, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 52, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 1, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 8, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

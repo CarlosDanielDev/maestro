@@ -226,6 +226,23 @@ total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
 
 Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
 
+
+### Sub-tabs, filter chips, KPI tile, tree prefix (`crates/maestro-tui/src/tui/ds/`, #1256)
+
+Implements `subTabs`, `filterChips`, `kpiTile` and `treePrefix` from
+`docs/design-system/index.html` (§04 Kit v2). Screens adopt them in their own issues.
+
+| Item | Returns | For |
+|---|---|---|
+| `sub_tabs::sub_tabs(&[SubTab], active, theme)` | `Line` | Sub-view strip: `d Detail   f Output   v Gates ✗`. `SubTab { key, label, badge }`; the key is bold `keybind_key`, the badge `text_muted`; the active tab is REVERSED + bold. `active` out of range = none active |
+| `filter_chips::filter_chips(&[FilterChip], width, theme)` | `Line` | Active filters ` label:tui ✕ `, REVERSED with a bold value. Chips that do not fit `width` collapse into a muted `+n` (`n` = hidden chips); the line never passes `width` |
+| `kpi_tile::kpi_tile(f, area, &KpiTile, theme)` / `kpi_tile_for_mode(.., nerd_font)` | — | One KPI in a panel, height `KPI_TILE_HEIGHT` (4). `KpiState::Ready { value, delta, spark, context }`: bold value, `KpiDelta { text, trend }` with `Trend::{Up, Down, Flat}` glyph `↑ ↓ =` (ASCII `^ v =`), a ratatui `Sparkline` of the last 6 (tile < 26 wide) or 12 points, and one muted context line. `KpiState::Empty { reason }` draws the reason (`no runs yet`), never a fake `0` |
+| `tree_prefix::tree_prefix(last_path, ascii)` | `String` | Tree row prefix, three columns per level: `├─ `, `└─ `, `│  ` (ASCII `|- `, `` `- ``, `|  `). `last_path[i]` = the ancestor at level `i` is a last child; the final entry is the row. Empty path = root, no prefix |
+
+Rules: meaning rides on REVERSED / BOLD and glyphs, so every piece reads under
+NO_COLOR. The delta colour is neutral: whether up is good depends on the metric,
+so say it in the context line.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
