@@ -163,6 +163,24 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `unified_pr_toggle::{draw_unified_pr_toggle, draw_checkbox, focus_bar}` | Checkbox row + focus bar |
 | `bypass_indicator::{draw, render_line}` | Header badge when bypass mode is on |
 
+### Armed-Enter — the only way a screen starts a GitHub write (#1250)
+
+Every GitHub write a screen starts (create, comment, review, merge, label,
+re-run) goes through `ArmedEnter` and is drawn with `ArmedBar`. No screen
+calls a GitHub write on a single key. Screens adopt it in their own issues.
+
+| Item | Where | For |
+|---|---|---|
+| `ArmedEnter` | `crates/maestro-tui/src/tui/ds/armed.rs` | Pure state machine, clock passed in: `on_enter(now) -> EnterOutcome` (`Armed` / `Commit` / `Ignored`), `tick(now)`, `disarm()`, `block(reason)`, `reset()`, `finish(Result<(), String>)`, `remaining(now)` |
+| `ArmedState` | same | `Blocked(reason)` → `Ready` → `Armed(at)` → `Working` → `Done` / `Failed(fix)` |
+| `ARM_WINDOW` | same | The 3 s window, in one place. Second Enter at `<= ARM_WINDOW` commits; later re-arms |
+| `ArmedBar::new(&armed, description, now).render(f, area, theme)` | `widgets/armed_bar` | Glyph + word + the exact write (`creates 1 issue in owner/repo`); second line = reason, countdown, or fix. Height `ARMED_BAR_HEIGHT` |
+
+Rules: Blocked is inert (Enter returns `Ignored`), so show the fix in the
+reason. On `EnterOutcome::Commit` start the write, then call `finish`.
+Any other key or Esc calls `disarm()`; the app tick calls `tick(now)`.
+The description is plain text (no GitHub types) and is sanitized by the bar.
+
 ### Other shared helpers (`crates/maestro-tui/src/tui/`)
 
 | Module | Item | For |

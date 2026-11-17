@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
+
+- **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border is the standard `styled_block` panel border, not the kit's per-state plain / thick / double. The state label is bold text, not the kit's reversed chip, and the working / done lines are fixed words (`writing to GitHub…`, `written to GitHub`) instead of a caller-set action word; the write itself is always in the caller's description.
+- **Why:** the design system rule is "never paste raw glyphs" and ASCII mode must work; no `IconId` exists for `⏎` or `⊘`. The printed seconds carry the same meaning as the bar.
+- **Section:** `§04 Components` (Kit v2 `armedBar`).
+- **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
+- **Source:** #1250. Follow-ups: `IconId::Enter` for `⏎`; a reversed chip and a caller-set action word when a screen adopts the bar and needs them.
+
 ## 2026-11-16 — md_block and checklist: where #1252 differs from the mocks
 
 - **What:** (1) `ds::checklist` counts `○` (Pending) rows in the `n/m` total; the `checklistPanel` / `readyStrip` mocks leave "optional" rows out. (2) `#ref` in `ds::md_block` uses `accent_identifier`, not the info colour of the `md()` mock, and detection is `extract_issue_refs` (`#1` to `#999999999`, not after a letter), not the mock's `#\d{2,5}\b`, so `#1` is a ref here. (3) The `✓ ✗ ! ○` glyphs are plain characters, with no `IconId` ASCII fallback yet. (4) `checklist_panel` draws with `theme.styled_block`, which is `ds::panel` since #1253: plain border (thick when focused), as the mock, but a centred `[ Draft ]` title where the mock's `E.block` has a left-aligned ` Draft `. Bare headings (bold `accent_warning`) and the plain space after the TODO chip match the mock.

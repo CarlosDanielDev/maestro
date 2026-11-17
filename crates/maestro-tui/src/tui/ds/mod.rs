@@ -1,3 +1,4 @@
+pub mod armed;
 pub mod breakpoint;
 pub mod checklist;
 pub mod gauge;

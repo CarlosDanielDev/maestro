@@ -1,0 +1,9 @@
+---
+source: crates/maestro-tui/src/tui/widgets/armed_bar.rs
+assertion_line: 142
+expression: "draw(&armed, Instant::now()).backend()"
+---
+"┌─────────────────────────[ Write to GitHub ]──────────────────────────┐"
+"│[!] BLOCKED  creates 1 issue in CarlosDanielDev/maestro               │"
+"│2 [TODO] placeholders would be published · Enter does nothing         │"
+"└──────────────────────────────────────────────────────────────────────┘"
