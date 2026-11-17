@@ -38,6 +38,14 @@ first. One entry per decision.
 - **Rejected:** printing `⌃Q quit` before #1260 (the hint would name a key that toggles TurboQuant); rebinding ⌃Q here (#1260 owns it); keeping the F-key bar under the footer (two hint rows); digits as global keys (they would eat issue numbers in wizards); changing `fit_hints_to_width` (the status bar, owned by #1257, uses it).
 - **Source:** #1258.
 
+## 2026-11-16 — toast: bottom right, ASCII-safe, one at a time
+
+- **What:** `ds::toast` draws bottom right (the design), not top right (the #1254 text), and shows one toast at a time instead of two stacked: a newer toast replaces the older, errors queue. The glyph is followed by the severity word (`ok`, `info`, `warn`, `error`). Glyphs come from existing `IconId`s (`CheckCircle`, `DotFill`, `Warning`, `XCircle`) and the countdown bar from `GaugeFilled` / `GaugeEmpty`, not the kit's `✓ · ! ✗` and `▰▱`; the key is written `^Z`, not `⌃Z`. The kit's per-toast right-side action (`l view log`, `⏎ fix`) is not built yet. The clipboard toast moved from the status row to the same bottom-right box.
+- **Why:** the issue asks for glyph + word so a toast reads under NO_COLOR; "one visible" is the issue's test hint. ASCII mode must work and raw glyphs are not allowed (same call as `ArmedBar`). Bottom right keeps the status row free for #1257.
+- **Section:** `§04 Components` (`toast`, Kit v2 `toast`), `§05 Losing a reversible action`.
+- **Rejected:** top right (covers the status bar and its banners); two stacked toasts (no caller needs it yet); new `IconId`s for `!` and `·` (more surface for no new meaning).
+- **Source:** #1254.
+
 ## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
 
 - **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border is the standard `styled_block` panel border, not the kit's per-state plain / thick / double. The state label is bold text, not the kit's reversed chip, and the working / done lines are fixed words (`writing to GitHub…`, `written to GitHub`) instead of a caller-set action word; the write itself is always in the caller's description.
@@ -206,3 +214,11 @@ first. One entry per decision.
 - **Rejected:** fixing `agent_badge.rs` inside #1247 (scope); making `no_color_snapshot` assert no colour now (it would fail on this known gap and block the harness).
 - **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
 - **Source:** #1247 (judge finding on PR #1345).
+
+## 2026-11-16 — Kit v2 pieces: `+n` overflow, three-column tree, no loading/error tile yet
+
+- **What:** `ds::filter_chips` ends with `+n` (hidden count) instead of the mock's `…`. `ds::tree_prefix` uses three columns per level (`├─ `, `└─ `, `│  `, blank under a last ancestor) instead of the mock's two (`├ `, `│ `), and has no `▾ ▸` expander. `ds::kpi_tile` ships the ready and empty forms only; the delta is drawn in a neutral colour.
+- **Why:** the issue asks for `+n` and for `├─ └─ │`; a count tells how much is hidden, `…` does not. Blank space under a last ancestor is what makes nested levels read right. The issue lists value, delta, sparkline, context and the empty reason; loading and error forms wait for the Stats screen issue that fetches the data. Up is good for some metrics and bad for others, so colour by direction would lie half the time.
+- **Section:** `§04 Kit v2` (`subTabs`, `filterChips`, `kpiTile`, `treePrefix`), Stats KpiTile caption.
+- **Rejected:** `…` overflow (hides the count); a `│ ` rail at every ancestor level (wrong under last children); green-up / red-down delta.
+- **Source:** #1256.

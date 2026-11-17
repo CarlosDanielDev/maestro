@@ -192,7 +192,7 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 | `marquee.rs` | `MarqueeState`, `visible_slice`, `needs_scroll` | Scroll text that overflows |
 | `breadcrumb.rs` | `elide_breadcrumbs(labels, max_width, sep)` | Fit breadcrumb to width |
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
-| `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation |
+| `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
 
@@ -249,6 +249,38 @@ total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
 
 Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
 
+
+### Sub-tabs, filter chips, KPI tile, tree prefix (`crates/maestro-tui/src/tui/ds/`, #1256)
+
+Implements `subTabs`, `filterChips`, `kpiTile` and `treePrefix` from
+`docs/design-system/index.html` (§04 Kit v2). Screens adopt them in their own issues.
+
+| Item | Returns | For |
+|---|---|---|
+| `sub_tabs::sub_tabs(&[SubTab], active, theme)` | `Line` | Sub-view strip: `d Detail   f Output   v Gates ✗`. `SubTab { key, label, badge }`; the key is bold `keybind_key`, the badge `text_muted`; the active tab is REVERSED + bold. `active` out of range = none active |
+| `filter_chips::filter_chips(&[FilterChip], width, theme)` | `Line` | Active filters ` label:tui ✕ `, REVERSED with a bold value. Chips that do not fit `width` collapse into a muted `+n` (`n` = hidden chips); the line never passes `width` |
+| `kpi_tile::kpi_tile(f, area, &KpiTile, theme)` / `kpi_tile_for_mode(.., nerd_font)` | — | One KPI in a panel, height `KPI_TILE_HEIGHT` (4). `KpiState::Ready { value, delta, spark, context }`: bold value, `KpiDelta { text, trend }` with `Trend::{Up, Down, Flat}` glyph `↑ ↓ =` (ASCII `^ v =`), a ratatui `Sparkline` of the last 6 (tile < 26 wide) or 12 points, and one muted context line. `KpiState::Empty { reason }` draws the reason (`no runs yet`), never a fake `0` |
+| `tree_prefix::tree_prefix(last_path, ascii)` | `String` | Tree row prefix, three columns per level: `├─ `, `└─ `, `│  ` (ASCII `|- `, `` `- ``, `|  `). `last_path[i]` = the ancestor at level `i` is a last child; the final entry is the row. Empty path = root, no prefix |
+
+Rules: meaning rides on REVERSED / BOLD and glyphs, so every piece reads under
+NO_COLOR. The delta colour is neutral: whether up is good depends on the metric,
+so say it in the context line.
+
+### Toast (`crates/maestro-tui/src/tui/ds/toast.rs`, #1254)
+
+Implements `toast` from `docs/design-system/index.html` §04 (Components, Kit v2). The one toast: never draw a second banner.
+
+| Item | For |
+|---|---|
+| `Toast::new(Severity, message)` / `Toast::undoable(message, undo)` | Build a toast. `Severity::{Success, Info, Warn, Error}`. An undoable toast is a success toast with a `^Z undo` countdown for `UNDO_WINDOW` (5 s) |
+| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue |
+| `ToastUndo` | `Box<dyn FnOnce(&mut App)>`: what `Ctrl+Z` runs. Which actions get one is each screen's call |
+| `ds::toast::draw(f, area, &ToastView, theme)` / `draw_for_mode(.., nerd_font)` | Rounded `surface_overlay` box at the bottom right of `area`, above its last row; glyph + severity word (`ok`, `info`, `warn`, `error`) in the severity colour, bold. `ui::draw` draws `app.toasts` after every screen, so screens never call it |
+
+Message text goes through `sanitize_for_terminal` inside `draw`. Glyphs and
+the countdown bar come from `icons::get_for_mode` (`CheckCircle`, `DotFill`,
+`Warning`, `XCircle`, `GaugeFilled`, `GaugeEmpty`), so ASCII mode works.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
@@ -300,6 +332,8 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Shift+C` | Auto-review concerns panel | when pending |
 | `Shift+P` | Retry PR creation | skipped in text-input mode |
 | `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode, not while a PRD goal or Roadmap filter is edited. Overview keeps `1`-`9` for session detail |
+| `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
+| `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
 
 Before adding a key: grep `handle_global_shortcuts`. In text-input screens
 plain letters are typed, so use a free `Ctrl+letter` (e.g. `Ctrl+W`) and

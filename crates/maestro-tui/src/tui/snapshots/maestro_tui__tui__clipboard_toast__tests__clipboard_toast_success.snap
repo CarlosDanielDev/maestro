@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/clipboard_toast.rs
+expression: t.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                         ╭────────────────────────────────────╮ "
+"                                         │  ok  Response copied to clipboard │ "
+"                                         ╰────────────────────────────────────╯ "
+"                                                                                "

@@ -864,6 +864,18 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // #1254: Ctrl+Z undoes and Esc dismisses only while a matching toast
+    // is visible; otherwise the key falls through to the screen.
+    if key.code == KeyCode::Char('z')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && app.toast_ctrl_z(std::time::Instant::now())
+    {
+        return true;
+    }
+    if key.code == KeyCode::Esc && app.toast_esc(std::time::Instant::now()) {
+        return true;
+    }
+
     // Shift+Q opens TurboQuant A/B dashboard
     if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::TurboquantDashboard);

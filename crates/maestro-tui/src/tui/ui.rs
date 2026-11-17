@@ -159,16 +159,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Aged out before render so the empty-toast frame draws cleanly.
     app.tick_copy_toast(std::time::Instant::now());
     app.tick_notify_error();
-    if let Some(toast) = app.copy_toast.as_ref() {
-        let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
-        crate::tui::clipboard_toast::draw_copy_toast(
-            f,
-            banner_area,
-            toast.kind,
-            &toast.message,
-            &app.theme,
-        );
-    }
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -846,6 +836,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     draw_shell_row(f, app, shell_row, &theme);
     draw_footer(f, app, &mode_km, chunks[3], &theme);
+
+    // #1254: toasts sit above every screen, below the help overlay.
+    if let Some(toast) = app.copy_toast.as_ref() {
+        crate::tui::clipboard_toast::draw_copy_toast(
+            f,
+            f.area(),
+            toast.kind,
+            &toast.message,
+            &theme,
+        );
+    } else if let Some(view) = app.toasts.visible(std::time::Instant::now()) {
+        crate::tui::ds::toast::draw(f, f.area(), &view, &theme);
+    }
 
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);

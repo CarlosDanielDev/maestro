@@ -51,6 +51,7 @@ mod size_guard;
 mod status_chips;
 mod team_wizard;
 mod theme_presets;
+mod toasts;
 mod token_dashboard_provider_rollup;
 mod turboquant_dashboard;
 
