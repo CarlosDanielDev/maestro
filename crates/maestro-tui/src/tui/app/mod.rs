@@ -121,8 +121,9 @@ pub struct App {
     /// Per-session next-turn cost projection for the pre-spawn gate
     /// (#776/#850). `None` by default — when absent OR when
     /// `budget_enforcer` is also absent, the gate is a no-op (Allow).
-    /// Production wires `DefaultBudgetProjector` from config; tests
-    /// inject `FakeBudgetProjector` via `with_budget_projector`.
+    /// Production wires `DefaultBudgetProjector` from config via
+    /// `install_budget` (#1243); tests may inject `FakeBudgetProjector`
+    /// via `with_budget_projector`.
     pub budget_projector: Option<Box<dyn BudgetProjector>>,
     /// Session ids for which the pre-spawn gate (#776/#850) has been
     /// dismissed by the user (modal `[y]` or `[s]`). The next spawn
@@ -545,8 +546,9 @@ impl App {
     }
 
     /// Builder: inject a budget projector for the pre-spawn gate (#776/#850).
-    /// Production wires `DefaultBudgetProjector` from config; tests inject
-    /// `FakeBudgetProjector`. Default is `None` (gate is no-op).
+    /// Production wires `DefaultBudgetProjector` from config via
+    /// `install_budget` (#1243); tests inject `FakeBudgetProjector`.
+    /// Default is `None` (gate is no-op).
     pub fn with_budget_projector(mut self, projector: Box<dyn BudgetProjector>) -> Self {
         self.budget_projector = Some(projector);
         self

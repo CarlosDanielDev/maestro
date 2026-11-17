@@ -277,3 +277,12 @@ first. One entry per decision.
 - **Section:** `§02 Home: Mission Control` (Needs you), `§02.1 Dashboard: operations cockpit`.
 - **Rejected:** pushing `Dashboard` with no selection (the operator lands on a menu and must find the session again); `Detail(id)` (skips the fleet context and is not part of the Dashboard). Computing the grid position in the key handler from `crossterm::terminal::size()` (the arrow keys' layout): the Overview draws in the body area, not the whole terminal, so page and row could differ.
 - **Source:** #1264.
+
+## 2026-11-17 — Pre-spawn budget gate wired in production; Block offers only `n`
+
+- **What:** `App::install_budget(&[budget])` builds the `BudgetEnforcer` and a `DefaultBudgetProjector(per_session_usd, DEFAULT_FLOOR_PCT = 0.10)` together. Startup (`setup.rs`) and config reload (`screen_dispatch.rs`) both call it, so the gate and the modal's projected total use the same numbers. On Block (`spent + projected ≥ total_usd`), `y` and `s` do nothing and the modal footer reads `[n]o over the cap, cannot spawn`; Warn keeps `[y]es [n]o [s]kip`.
+- **Why:** the projector was only set by `with_budget_projector` in tests, so the gate never fired for users (§09 Budget row). A `y` that spawns past the cap would make Block the same as Warn; a footer that offers a key that does nothing is a lie.
+- **Section:** `§02.24 Guards, release notes and small modals` (modes table row `BudgetPreSpawn`, audit row 5, Implementation "Budget gate": "`S` → spawn (rejected on Block)"), `§09 Code findings & open questions` (Budget row: "the budget projector is only set in tests").
+- **Rejected:** wiring only in `setup.rs` (config reload would rebuild the enforcer and leave a projector from the old `per_session_usd`); a new `[budget]` key for the floor (no request for it; 0.10 is the value the projector tests use). The §02.24 queue-and-toast redesign (`Esc` keep, `d` drop, `b` settings) is not part of this change.
+- **Known gap:** the status-bar hints for `BudgetPreSpawn` (`navigation/mode_hints.rs`) still list `y Proceed` / `s Skip-once` on Block; that file is owned by the keymap work (#1248) in this wave.
+- **Source:** #1243.

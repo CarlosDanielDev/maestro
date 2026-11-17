@@ -17,6 +17,10 @@ pub trait BudgetProjector: Send + Sync {
     fn projected_turn_cost(&self, session: &Session) -> f64;
 }
 
+/// Floor for a fresh session's projection: 10% of `per_session_usd`.
+/// No `[budget]` key sets it; 10% is the value the projector tests use.
+pub const DEFAULT_FLOOR_PCT: f64 = 0.10;
+
 /// Production projector — returns `max(session.cost_usd, per_session_usd * floor_pct)`.
 /// NaN / negative `cost_usd` sanitized to the floor.
 #[derive(Debug, Clone, Copy)]

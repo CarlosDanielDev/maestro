@@ -14,7 +14,7 @@ expression: terminal.backend()
 "               │Pre-spawn cost exceeds the configured budget.   │               "
 "               │  Projected total: $52.00                       │               "
 "               │  Limit:           $50.00                       │               "
-"               │  [y]es [n]o [s]kip                             │               "
+"               │  [n]o over the cap, cannot spawn               │               "
 "               │                                                │               "
 "               │                                                │               "
 "               └────────────────────────────────────────────────┘               "
