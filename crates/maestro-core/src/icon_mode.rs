@@ -21,7 +21,7 @@ static MODE: AtomicU8 = AtomicU8::new(UNINITIALIZED);
 /// `MAESTRO_ASCII_ICONS=1` overrides `ascii_icons = false`; the env var is
 /// read here, once, so per-frame lookups stay a single atomic load.
 pub fn init_from_config(ascii_icons: bool) {
-    init_from_config_with_env(ascii_icons, |k| std::env::var(k).ok());
+    init_from_config_with_env(ascii_icons, process_env);
 }
 
 /// Testable version of `init_from_config`: accepts an env-var reader closure.
@@ -49,8 +49,26 @@ pub fn use_nerd_font() -> bool {
     match MODE.load(Ordering::Acquire) {
         NERD_FONT => true,
         ASCII => false,
-        _ => use_nerd_font_from_env(|k| std::env::var(k).ok()),
+        _ => use_nerd_font_from_env(process_env),
     }
+}
+
+/// The real process env, read by `init_from_config` and the uninitialized
+/// arm of `use_nerd_font`.
+#[cfg(not(any(test, feature = "test-util")))]
+fn process_env(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
+/// Test builds never read the real env, so the suite gives the same result
+/// whether or not a developer has `MAESTRO_ASCII_ICONS` exported (#1354).
+/// Tests that need the override inject it via `init_from_config_with_env`.
+/// The `maestro` binary that `cargo test` builds for `tests/*.rs` gets
+/// `test-util` too, so it ignores the env at startup: an e2e test of the
+/// #1091 override must inject it some other way.
+#[cfg(any(test, feature = "test-util"))]
+fn process_env(_key: &str) -> Option<String> {
+    None
 }
 
 /// Testable version: accepts an env-var reader closure.
