@@ -423,6 +423,30 @@ catch it before forwarding to the editor. Declare every key in
 Conventions: `j/k` or arrows move, `Enter` open/confirm, `Esc` back,
 `Tab` cycle focus, `Space` toggle.
 
+### Keymap registry — `crates/maestro-tui/src/tui/navigation/registry.rs` (#1248)
+
+Implements §06 Keymap and §07 "Keymap registry" of
+`docs/design-system/index.html`. It declares keys; it does not dispatch them.
+`handle_global_shortcuts` and the mode handlers still run the keys, and a
+screen moves into the registry one at a time.
+
+| Item | For |
+|---|---|
+| `Binding::new(chord, scope, action, danger, label)` | One declared key. `.hidden()` keeps an alias (`↑` next to `k`) out of the footer; `.exception(why)` documents a case-rule exception |
+| `Chord::key(code)` / `Chord::ctrl(c)` / `Chord::label()` | The key, and the text a hint shows (`⌃K`, `Enter`, `G`) |
+| `Scope::Global` / `Scope::Screen(mode)` / `Scope::Panel(mode, name)` | Where it applies. Global ⊃ Screen ⊃ Panel (`Scope::encloses`); a screen matches its mode with any payload |
+| `Danger::Safe` / `Danger::Destructive` | Drives the case rules |
+| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `Q M C P`), then one block per registered screen (`LogViewer`, `SessionSummary`) |
+| `check(bindings)` | The rules as `Violation`s: `Duplicate` (same chord twice in one scope), `Shadow` (an inner scope reuses an enclosing scope's chord), `LowercaseDestructive` (destructive on a bare lowercase letter), `UppercaseSafe` (safe on a bare uppercase letter with no `.exception`). Ctrl chords, digits and symbols skip the case rules |
+| `footer_hints(mode)` | The footer hints of a registered screen, in registry order; `mode_keymap` uses them in place of its own list |
+
+`keymap_is_poka_yoke_clean` runs `check(registry())` and must stay empty.
+To register a screen: add its block to `registry()`, give its `mode_keymap`
+arm an empty hint list, and keep the test green. Do not redeclare a Global
+key (`Esc` back, `/` filter) in a screen: that is a `Shadow`. The §06 rows
+`⌃K` (palette) and `⌃Q` (quit) are declared as the target; today `⌃K` is
+unbound and `⌃Q` toggles TurboQuant until #1260.
+
 ---
 
 ## 4. UX rules

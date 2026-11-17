@@ -417,49 +417,12 @@ pub fn mode_keymap(
         TuiMode::LogViewer(_) => (
             "Log Viewer",
             FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "j/k",
-                    action: "Scroll",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "G",
-                    action: "Bottom",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "g",
-                    action: "Top",
-                    priority: 3,
-                },
-            ],
+            &[], // hints: `registry::footer_hints`
         ),
         TuiMode::SessionSummary => (
             "Session Summary",
             FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "j/k",
-                    action: "Navigate",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Enter",
-                    action: "Expand",
-                    priority: 2,
-                },
-            ],
+            &[], // hints: `registry::footer_hints`
         ),
         TuiMode::SessionSwitcher => (
             "Session Switcher",
@@ -840,6 +803,9 @@ pub fn mode_keymap(
             ],
         ),
     };
+    // #1248: a screen registered in the keymap registry takes its footer
+    // hints from there.
+    let hints = super::registry::footer_hints(mode).unwrap_or(hints);
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);
 
