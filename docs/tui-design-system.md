@@ -328,7 +328,7 @@ Implements `AttentionQueue` (`ds::attention_queue`) from `docs/design-system/ind
 | `App::attention()` / `App::attention_input()` | The queue from App state: pool sessions, the Home doctor warnings, `gh_auth_ok`, the budget enforcer when it alerts, quota windows at 80% or more |
 | `App::sync_terminal_title(out)` | Writes the title only when it changed. The run loop calls it after each draw |
 
-Rules: one action per row, always `⏎` (no per-row letters; `p` already means PRD on Home). The Home layout that shows the panel and the `⏎` jump are the Home issue's work; today only the title is live.
+Rules: one action per row, always `⏎` (no per-row letters; `p` already means PRD on Home). Home shows the panel and runs the `⏎` jump: see "Home Mission Control and Fleet table" below (#1264).
 
 ### Home Mission Control and Fleet table (`screens/home/mission/`, `ds/fleet_table.rs`, #1264)
 
