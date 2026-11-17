@@ -119,4 +119,33 @@ mod tests {
 
         assert!(app.toasts.visible(Instant::now()).is_none());
     }
+
+    #[tokio::test]
+    async fn esc_reaches_the_screen_when_no_toast_is_visible() {
+        use crate::tui::app::TuiMode;
+        let mut app = crate::tui::make_test_app("maestro-toast-esc-passthrough");
+        app.navigate_to(TuiMode::TurboquantDashboard);
+        assert_eq!(app.tui_mode, TuiMode::TurboquantDashboard);
+
+        let _ = handle_key(&mut app, KeyEvent::from(KeyCode::Esc)).await;
+
+        assert_ne!(
+            app.tui_mode,
+            TuiMode::TurboquantDashboard,
+            "with no toast, Esc must go back as before"
+        );
+    }
+
+    #[tokio::test]
+    async fn esc_on_error_toast_only_dismisses_it() {
+        use crate::tui::app::TuiMode;
+        let mut app = crate::tui::make_test_app("maestro-toast-esc-first");
+        app.navigate_to(TuiMode::TurboquantDashboard);
+        app.push_toast(Toast::new(Severity::Error, "boom"), Instant::now());
+
+        let _ = handle_key(&mut app, KeyEvent::from(KeyCode::Esc)).await;
+
+        assert_eq!(app.tui_mode, TuiMode::TurboquantDashboard);
+        assert!(app.toasts.visible(Instant::now()).is_none());
+    }
 }
