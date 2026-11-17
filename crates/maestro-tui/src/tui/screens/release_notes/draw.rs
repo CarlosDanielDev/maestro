@@ -1,14 +1,8 @@
 use super::ReleaseNotesScreen;
 use crate::changelog;
 use crate::tui::markdown::render_markdown;
-use crate::tui::screens::draw_keybinds_bar;
 use crate::tui::theme::Theme;
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::Paragraph,
-};
+use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};
 
 pub fn draw_release_notes(
     screen: &mut ReleaseNotesScreen,
@@ -16,15 +10,10 @@ pub fn draw_release_notes(
     area: Rect,
     theme: &Theme,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(area);
-
     let block = theme
         .styled_block("Release Notes", false)
         .border_style(Style::default().fg(theme.accent_info));
-    let inner = block.inner(chunks[0]);
+    let inner = block.inner(area);
 
     if screen.cached_content.is_none() {
         let content = render_markdown(changelog::changelog_raw(), theme, inner.width);
@@ -40,13 +29,15 @@ pub fn draw_release_notes(
         Paragraph::new("Loading...").block(block)
     };
 
-    f.render_widget(paragraph, chunks[0]);
+    f.render_widget(paragraph, area);
+}
 
-    let bindings = vec![
+/// Footer hints (#1258).
+pub(super) fn footer_hints() -> Vec<(&'static str, &'static str)> {
+    vec![
         ("j/k", "Scroll"),
         ("PgDn/PgUp", "Page"),
         ("Home/End", "Jump"),
         ("Esc", "Back"),
-    ];
-    draw_keybinds_bar(f, chunks[1], &bindings, theme);
+    ]
 }

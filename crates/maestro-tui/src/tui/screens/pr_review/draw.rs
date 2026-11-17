@@ -2,12 +2,12 @@ use super::PrReviewScreen;
 use super::types::PrReviewStep;
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
-use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
+use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{BrailleSpinner, focused_selection_style};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
@@ -15,27 +15,24 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 pub fn draw_pr_review_screen(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(area);
-
     match screen.step {
-        PrReviewStep::Loading => draw_loading(screen, f, chunks[0], theme),
-        PrReviewStep::PrList => draw_pr_list(screen, f, chunks[0], theme),
-        PrReviewStep::PrDetail => draw_pr_detail(screen, f, chunks[0], theme),
-        PrReviewStep::SubmitReview => draw_submit_review(screen, f, chunks[0], theme),
-        PrReviewStep::Done => draw_done(f, chunks[0], theme),
+        PrReviewStep::Loading => draw_loading(screen, f, area, theme),
+        PrReviewStep::PrList => draw_pr_list(screen, f, area, theme),
+        PrReviewStep::PrDetail => draw_pr_detail(screen, f, area, theme),
+        PrReviewStep::SubmitReview => draw_submit_review(screen, f, area, theme),
+        PrReviewStep::Done => draw_done(f, area, theme),
     }
+}
 
-    let bindings = match screen.step {
+/// Footer hints for the current step (#1258).
+pub(super) fn footer_hints(screen: &PrReviewScreen) -> Vec<(&'static str, &'static str)> {
+    match screen.step {
         PrReviewStep::Loading => vec![("Esc", "Cancel")],
         PrReviewStep::PrList => vec![("Enter", "View"), ("j/k", "Navigate"), ("Esc", "Back")],
         PrReviewStep::PrDetail => vec![("r", "Review"), ("j/k", "Scroll"), ("Esc", "Back")],
         PrReviewStep::SubmitReview => vec![("Tab", "Type"), ("Enter", "Submit"), ("Esc", "Cancel")],
         PrReviewStep::Done => vec![("Enter/Esc", "Back")],
-    };
-    draw_keybinds_bar(f, chunks[1], &bindings, theme);
+    }
 }
 
 fn draw_loading(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {

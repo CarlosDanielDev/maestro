@@ -1,0 +1,8 @@
+---
+source: crates/maestro-tui/src/tui/ds/kpi_tile.rs
+expression: "draw(&empty(), &Theme::dark()).backend()"
+---
+"┌──────[ Runs / week ]───────┐"
+"│ no runs yet                │"
+"│                            │"
+"└────────────────────────────┘"

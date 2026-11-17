@@ -100,6 +100,14 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
+    // #1258: digits 1-7 switch tabs on a top-level screen.
+    if let Some(mode) = tab_key_target(app, &key) {
+        if mode != app.tui_mode {
+            handle_screen_action(app, screens::ScreenAction::Push(mode));
+        }
+        return KeyAction::Consumed;
+    }
+
     let event = Event::Key(key);
     if let Some(action) = dispatch_to_active_screen(app, &event) {
         handle_screen_action(app, action);
@@ -856,6 +864,18 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // #1254: Ctrl+Z undoes and Esc dismisses only while a matching toast
+    // is visible; otherwise the key falls through to the screen.
+    if key.code == KeyCode::Char('z')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && app.toast_ctrl_z(std::time::Instant::now())
+    {
+        return true;
+    }
+    if key.code == KeyCode::Esc && app.toast_esc(std::time::Instant::now()) {
+        return true;
+    }
+
     // Shift+Q opens TurboQuant A/B dashboard
     if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::TurboquantDashboard);
@@ -1043,6 +1063,28 @@ fn is_text_input_mode(app: &App) -> bool {
         app.tui_mode,
         app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings
     )
+}
+
+/// The tab a plain digit opens: only on a top-level screen (inside a flow
+/// digits are content, e.g. issue numbers) and never while a text field has
+/// focus.
+fn tab_key_target(app: &App, key: &KeyEvent) -> Option<app::TuiMode> {
+    let KeyCode::Char(c) = key.code else {
+        return None;
+    };
+    if !key.modifiers.is_empty()
+        || crate::tui::ds::tab_bar::tab_index(app.tui_mode).is_none()
+        || is_text_input_mode(app)
+    {
+        return None;
+    }
+    let state = &app.screen_state;
+    let editing = state.prd_screen.as_ref().is_some_and(|s| s.edit.is_some())
+        || (state.roadmap_screen.as_ref()).is_some_and(|s| s.editing_filter.is_some());
+    if editing {
+        return None;
+    }
+    crate::tui::ds::tab_bar::tab_for_digit(c)
 }
 
 /// Handle the confirm-exit dialog (y/n/Enter/Esc).
@@ -1237,6 +1279,10 @@ fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
 #[cfg(test)]
 #[path = "input_handler_size_guard_tests.rs"]
 mod size_guard_tests;
+
+#[cfg(test)]
+#[path = "input_handler_tab_tests.rs"]
+mod tab_tests;
 
 #[cfg(test)]
 mod tests {

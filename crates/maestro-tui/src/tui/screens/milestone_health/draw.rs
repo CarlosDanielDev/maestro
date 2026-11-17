@@ -2,7 +2,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, Paragraph, Wrap},
@@ -25,18 +25,13 @@ pub fn draw(
     screen: &MilestoneHealthScreen,
     spinner_tick: usize,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(2)])
-        .split(area);
-
     match &screen.state.step {
         HealthStep::Picker {
             milestones,
             selected,
-        } => draw_picker(f, chunks[0], theme, milestones, *selected),
+        } => draw_picker(f, area, theme, milestones, *selected),
         HealthStep::Loading { label, .. } => {
-            draw_loading(f, chunks[0], theme, "Milestone Health", label, spinner_tick)
+            draw_loading(f, area, theme, "Milestone Health", label, spinner_tick)
         }
         HealthStep::Empty { milestone } => EmptyState::idle(
             "Milestone Health",
@@ -46,7 +41,7 @@ pub fn draw(
             ),
             "Press any key to return.",
         )
-        .render(f, chunks[0], theme),
+        .render(f, area, theme),
         HealthStep::Healthy { milestone } => {
             let summary = screen
                 .state
@@ -56,7 +51,7 @@ pub fn draw(
                 .unwrap_or_default();
             draw_simple_message(
                 f,
-                chunks[0],
+                area,
                 theme,
                 &format!(
                     "Milestone '{}' is healthy. No changes needed.",
@@ -65,32 +60,30 @@ pub fn draw(
                 &summary,
             )
         }
-        HealthStep::Report { milestone, .. } => draw_report(f, chunks[0], theme, milestone, screen),
+        HealthStep::Report { milestone, .. } => draw_report(f, area, theme, milestone, screen),
         HealthStep::Patch {
             milestone, diff, ..
-        } => draw_patch(f, chunks[0], theme, milestone, diff, screen.scroll),
-        HealthStep::Confirm { milestone, .. } => draw_confirm(f, chunks[0], theme, milestone),
+        } => draw_patch(f, area, theme, milestone, diff, screen.scroll),
+        HealthStep::Confirm { milestone, .. } => draw_confirm(f, area, theme, milestone),
         HealthStep::Writing { milestone, .. } => draw_loading(
             f,
-            chunks[0],
+            area,
             theme,
             "Milestone Health",
             &format!("Updating milestone '{}'…", san(&milestone.title)),
             spinner_tick,
         ),
         HealthStep::Result { milestone, outcome } => {
-            draw_result(f, chunks[0], theme, milestone, outcome)
+            draw_result(f, area, theme, milestone, outcome)
         }
         HealthStep::FetchError { message } => draw_simple_message(
             f,
-            chunks[0],
+            area,
             theme,
             "Failed to fetch milestones from GitHub.",
             message,
         ),
     }
-
-    draw_footer(f, chunks[1], theme, &screen.state.step);
 }
 
 fn draw_picker(
@@ -384,8 +377,9 @@ fn draw_result(
     f.render_widget(para, area);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect, theme: &Theme, step: &HealthStep) {
-    let hints: &[(&str, &str)] = match step {
+/// Footer hints for the current step (#1258).
+pub(super) fn footer_hints(step: &HealthStep) -> Vec<(&'static str, &'static str)> {
+    let hints: &[(&'static str, &'static str)] = match step {
         HealthStep::Picker { .. } => &[
             ("↑/↓", "select"),
             ("Enter", "review"),
@@ -413,5 +407,5 @@ fn draw_footer(f: &mut Frame, area: Rect, theme: &Theme, step: &HealthStep) {
         HealthStep::Result { .. } => &[("any key", "back")],
         HealthStep::FetchError { .. } => &[("any key", "retry")],
     };
-    crate::tui::screens::draw_keybinds_bar(f, area, hints, theme);
+    hints.to_vec()
 }

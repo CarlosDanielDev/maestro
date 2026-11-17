@@ -3,6 +3,7 @@ source: crates/maestro-tui/src/tui/snapshot_tests/home_small_terminal.rs
 expression: t.backend()
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
 "────────────────────────────────────────────────────────────────────────────────"
 "  owner/repo   main   @carlos  │  Loading...                                 "
 "────────────────────────────────────────────────────────────────────────────────"
@@ -13,7 +14,6 @@ expression: t.backend()
 "┃  [r]  Run Prompt     ┃│                          ││                          │"
 "┃  [a]  Adapt Project  ┃│                          ││                          │"
 "┃  [p]  Review PRs     ┃│                          ││                          │"
-"┃  [s]  Status         ┃│                          ││                          │"
 "┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
 "┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
 "│10:00:00 [S-1] home-log-row-1157                                              │"
@@ -25,4 +25,4 @@ expression: t.backend()
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-"F1 Help F4 Costs F5 Tokens F6 Deps ^X Exit                                      "
+" i Issues   m Milestones   r Prompt   s Sessions   a Adapt               q quit "

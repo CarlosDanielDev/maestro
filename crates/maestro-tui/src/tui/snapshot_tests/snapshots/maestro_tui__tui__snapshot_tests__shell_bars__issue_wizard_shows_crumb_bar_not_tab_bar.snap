@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/shell_bars.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Home › New issue                                              Esc back  ? help "
+"┌────────────────────────────[ Step 1/10: Context ]────────────────────────────┐"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌─────────────────────────[ Issue Creation Contract ]──────────────────────────┐"
+"│Maestro issues are execution contracts. Write the smallest useful unit an     │"
+"│agent can ship, test, and review.                                             │"
+"│                                                                              │"
+"│1. Classify the work as feature or bug so the right DOR fields appear.        │"
+"│2. Describe expected behavior, acceptance criteria, files, and test hints.    │"
+"│3. Connect blockers so the queue respects sequencing instead of guessing.     │"
+"│4. Review the final markdown before it is sent to GitHub.                     │"
+"│                                                                              │"
+"│Press Enter when the issue should become clear enough for another session to  │"
+"│execute.                                                                      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                    [Enter] start issue contract   [Esc] back                   "
+"                                                                                "
+"                                                                         q quit "

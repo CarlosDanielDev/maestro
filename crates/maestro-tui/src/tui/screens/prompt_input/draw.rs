@@ -1,7 +1,5 @@
-use super::super::draw_keybinds_bar;
 use super::super::wrap::{scroll_offset_for_cursor, wrap_lines};
 use super::PromptInputScreen;
-use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -12,6 +10,29 @@ use ratatui::{
 };
 
 impl PromptInputScreen {
+    /// Footer hints (#1258). `Ctrl+U` shows only when the prompt names two or
+    /// more issues.
+    pub(super) fn footer_hints_impl(&self) -> Vec<(&'static str, &'static str)> {
+        // The `IconId::ArrowUp` / `ArrowDown` pair, joined.
+        let history = if crate::icon_mode::use_nerd_font() {
+            "↑/↓"
+        } else {
+            "^/v"
+        };
+        let mut hints = vec![("Enter", "Submit")];
+        if self.detected_issue_numbers.len() >= 2 {
+            hints.push(("Ctrl+U", "Unified PR"));
+        }
+        hints.extend([
+            ("Ctrl+J", "New line"),
+            (history, "History"),
+            ("Ctrl+V", "Paste"),
+            ("Tab", "Switch"),
+            ("Esc", "Cancel"),
+        ]);
+        hints
+    }
+
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let show_toggle = self.detected_issue_numbers.len() >= 2;
         let toggle_height = if show_toggle { 1 } else { 0 };
@@ -172,47 +193,13 @@ impl PromptInputScreen {
             theme,
         );
 
-        // Status message or keybinds bar
-        let history_keys = format!(
-            "{}/{}",
-            icons::get(IconId::ArrowUp),
-            icons::get(IconId::ArrowDown)
-        );
+        // Status message; key hints live in the footer (#1258).
         if let Some(ref msg) = self.status_message {
             let status = Paragraph::new(Line::from(Span::styled(
                 format!(" {} ", msg),
                 Style::default().fg(theme.accent_warning),
             )));
             f.render_widget(status, chunks[6]);
-        } else if show_toggle {
-            draw_keybinds_bar(
-                f,
-                chunks[6],
-                &[
-                    ("Enter", "Submit"),
-                    ("Ctrl+U", "Unified PR"),
-                    ("Ctrl+J", "New line"),
-                    (&history_keys, "History"),
-                    ("Ctrl+V", "Paste"),
-                    ("Tab", "Switch"),
-                    ("Esc", "Cancel"),
-                ],
-                theme,
-            );
-        } else {
-            draw_keybinds_bar(
-                f,
-                chunks[6],
-                &[
-                    ("Enter", "Submit"),
-                    ("Ctrl+J", "New line"),
-                    (&history_keys, "History"),
-                    ("Ctrl+V", "Paste"),
-                    ("Tab", "Switch"),
-                    ("Esc", "Cancel"),
-                ],
-                theme,
-            );
         }
     }
 }

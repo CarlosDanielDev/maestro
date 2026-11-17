@@ -230,6 +230,23 @@ fn no_new_hand_rolled_text_input() {
     );
 }
 
+/// Key hints live only in the footer (`ds::key_hints`, #1258): screens list
+/// them in `Screen::footer_hints` instead of drawing their own hint row.
+#[test]
+fn screens_draw_no_keybinds_bar() {
+    let offenders: Vec<String> = non_test_sources("crates/maestro-tui/src/tui/screens")
+        .into_iter()
+        .filter(|(_, body)| body.contains("draw_keybinds_bar"))
+        .map(|(name, _)| name)
+        .collect();
+    assert_ratchet(
+        &offenders,
+        &[],
+        "the keybinds-bar allowlist",
+        "Hint row drawn inside a screen — return the hints from `Screen::footer_hints` (docs/tui-design-system.md \"Shell rows\"):",
+    );
+}
+
 /// Every module declared in `crates/maestro-tui/src/tui/widgets/mod.rs` must be cited in the
 /// doc's inline code, so a new widget can't land unseen. Counts as cited: a
 /// code token starting with its CamelCase type (`CiMonitor` → `CiMonitorWidget`),

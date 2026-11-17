@@ -1,6 +1,5 @@
 use super::AdoptPickerScreen;
 use crate::tui::help::centered_rect;
-use crate::tui::screens::draw_keybinds_bar;
 use crate::tui::theme::Theme;
 use crate::util::sanitize::sanitize_log;
 use ratatui::{
@@ -18,14 +17,9 @@ use std::time::SystemTime;
 
 impl AdoptPickerScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let outer = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(6), Constraint::Length(1)])
-            .split(area);
-
         let block = theme.styled_block("Adopt Session", false);
-        let inner = block.inner(outer[0]);
-        f.render_widget(block, outer[0]);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
 
         if inner.height < 2 {
             return;
@@ -65,18 +59,6 @@ impl AdoptPickerScreen {
 
         self.draw_detail_line(f, chunks[2], theme);
         self.draw_status_line(f, chunks[3], theme);
-
-        draw_keybinds_bar(
-            f,
-            outer[1],
-            &[
-                ("↑/↓", "Navigate"),
-                ("Type", "Filter"),
-                ("Enter", "Adopt"),
-                ("Esc", "Back"),
-            ],
-            theme,
-        );
 
         if self.confirm_pending() {
             let directory = self

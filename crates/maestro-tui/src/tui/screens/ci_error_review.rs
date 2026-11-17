@@ -3,7 +3,7 @@
 //! Popup over the Overview that lets the user inspect failed-check logs
 //! and the planned local gate command before launching a fix session.
 
-use super::{CiFixConfig, Screen, ScreenAction, draw_keybinds_bar};
+use super::{CiFixConfig, Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -128,6 +128,10 @@ impl Screen for CiErrorReviewScreen {
         ScreenAction::None
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![("Enter", "Launch fix"), ("Esc", "Abort"), ("j/k", "Scroll")]
+    }
+
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let popup_width = 80.min(area.width.saturating_sub(4));
         let popup_height = 20.min(area.height.saturating_sub(4));
@@ -151,7 +155,6 @@ impl Screen for CiErrorReviewScreen {
                 Constraint::Length(3), // header
                 Constraint::Length(2), // gate cmd
                 Constraint::Min(3),    // log body
-                Constraint::Length(1), // keybinds
             ])
             .split(inner);
 
@@ -217,13 +220,6 @@ impl Screen for CiErrorReviewScreen {
             .wrap(Wrap { trim: true }),
         };
         f.render_widget(body, chunks[2]);
-
-        draw_keybinds_bar(
-            f,
-            chunks[3],
-            &[("Enter", "Launch fix"), ("Esc", "Abort"), ("j/k", "Scroll")],
-            theme,
-        );
     }
 }
 

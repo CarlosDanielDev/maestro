@@ -88,9 +88,10 @@ fn landing_log_keeps_the_old_height_from_40_rows() {
 }
 
 #[test]
-fn landing_80x27_shows_the_compact_console_above_the_log() {
+fn landing_80x28_shows_the_compact_console_above_the_log() {
+    // 28 rows, not 27: the TabBar row (#1258) takes one row from the landing.
     let mut app = landing_app();
-    let rows = draw_rows(&mut app, 80, 27);
+    let rows = draw_rows(&mut app, 80, 28);
     let text = rows.join("\n");
     for needle in [
         "Release Console v",
@@ -101,11 +102,12 @@ fn landing_80x27_shows_the_compact_console_above_the_log() {
     ] {
         assert!(text.contains(needle), "missing {needle:?}:\n{text}");
     }
-    // Status bar is row 0 (#1257); the compact header sits below one pad row.
+    // Status bar is row 0 (#1257), the TabBar row 1 (#1258); the compact
+    // header sits below one pad row.
     assert!(
-        rows[2].contains("MAESTRO  v"),
-        "row 2: {:?}\n{text}",
-        rows[2]
+        rows[3].contains("MAESTRO  v"),
+        "row 3: {:?}\n{text}",
+        rows[3]
     );
     assert!(!text.contains("|  \\/  |"), "big logo must be off:\n{text}");
 }

@@ -275,6 +275,10 @@ impl Screen for PromptInputScreen {
         self.draw_impl(f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        self.footer_hints_impl()
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         if self.is_prompt_editor_focused() {
             Some(InputMode::Insert)

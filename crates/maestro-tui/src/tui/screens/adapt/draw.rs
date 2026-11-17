@@ -1,11 +1,11 @@
 use super::AdaptScreen;
 use super::types::AdaptStep;
 use crate::tui::icons::{self, IconId};
-use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
+use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -14,20 +14,18 @@ use ratatui::{
 use crate::tui::spinner::spinner_frame;
 
 pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(area);
-
     match screen.step {
-        AdaptStep::Configure => draw_configure(screen, f, chunks[0], theme),
-        step if step.is_progress() => draw_progress(screen, f, chunks[0], theme),
-        AdaptStep::Complete => draw_complete(screen, f, chunks[0], theme),
-        AdaptStep::Failed => draw_failed(screen, f, chunks[0], theme),
+        AdaptStep::Configure => draw_configure(screen, f, area, theme),
+        step if step.is_progress() => draw_progress(screen, f, area, theme),
+        AdaptStep::Complete => draw_complete(screen, f, area, theme),
+        AdaptStep::Failed => draw_failed(screen, f, area, theme),
         _ => {}
     }
+}
 
-    let bindings = match screen.step {
+/// Footer hints for the current step (#1258).
+pub(super) fn footer_hints(screen: &AdaptScreen) -> Vec<(&'static str, &'static str)> {
+    match screen.step {
         AdaptStep::Configure => vec![
             ("Enter", "Start"),
             ("Space", "Toggle"),
@@ -38,8 +36,7 @@ pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme:
         AdaptStep::Complete => vec![("j/k", "Scroll"), ("Esc", "Back")],
         AdaptStep::Failed => vec![("r", "Retry"), ("Esc", "Back")],
         _ => vec![],
-    };
-    draw_keybinds_bar(f, chunks[1], &bindings, theme);
+    }
 }
 
 fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {

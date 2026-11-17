@@ -272,6 +272,10 @@ impl Screen for SettingsScreen {
         self.draw_screen(f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        self.footer_hints_impl()
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         if self.active_widget_needs_insert() {
             Some(InputMode::Insert)
