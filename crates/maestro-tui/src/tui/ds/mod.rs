@@ -10,4 +10,5 @@ pub mod panel;
 pub mod size_guard;
 pub mod status_chip;
 pub mod sub_tabs;
+pub mod toast;
 pub mod tree_prefix;

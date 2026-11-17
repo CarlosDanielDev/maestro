@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — toast: bottom right, ASCII-safe, one at a time
+
+- **What:** `ds::toast` draws bottom right (the design), not top right (the #1254 text), and shows one toast at a time instead of two stacked: a newer toast replaces the older, errors queue. The glyph is followed by the severity word (`ok`, `info`, `warn`, `error`). Glyphs come from existing `IconId`s (`CheckCircle`, `DotFill`, `Warning`, `XCircle`) and the countdown bar from `GaugeFilled` / `GaugeEmpty`, not the kit's `✓ · ! ✗` and `▰▱`; the key is written `^Z`, not `⌃Z`. The kit's per-toast right-side action (`l view log`, `⏎ fix`) is not built yet. The clipboard toast moved from the status row to the same bottom-right box.
+- **Why:** the issue asks for glyph + word so a toast reads under NO_COLOR; "one visible" is the issue's test hint. ASCII mode must work and raw glyphs are not allowed (same call as `ArmedBar`). Bottom right keeps the status row free for #1257.
+- **Section:** `§04 Components` (`toast`, Kit v2 `toast`), `§05 Losing a reversible action`.
+- **Rejected:** top right (covers the status bar and its banners); two stacked toasts (no caller needs it yet); new `IconId`s for `!` and `·` (more surface for no new meaning).
+- **Source:** #1254.
+
 ## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
 
 - **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border is the standard `styled_block` panel border, not the kit's per-state plain / thick / double. The state label is bold text, not the kit's reversed chip, and the working / done lines are fixed words (`writing to GitHub…`, `written to GitHub`) instead of a caller-set action word; the write itself is always in the caller's description.
