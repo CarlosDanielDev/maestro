@@ -303,7 +303,7 @@ impl RepoProvider for GhCliClient {
         // Parity with create_pr / create_issue / create_milestone — every
         // user-facing body that ships to GitHub is bounded at the same cap.
         validate_body(body, "PR review body")?;
-        let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
+        let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body, self.repo_arg());
         self.run_gh(&argv_refs(&argv), false).await?;
         Ok(())
     }
@@ -326,7 +326,7 @@ impl RepoProvider for GhCliClient {
     async fn create_label(&self, name: &str, color: &str) -> Result<()> {
         validate_gh_arg(name, "label name")?;
         validate_gh_arg(color, "label color")?;
-        let argv = gh_argv::build_create_label_argv(name, color);
+        let argv = gh_argv::build_create_label_argv(name, color, self.repo_arg());
         self.run_gh(&argv_refs(&argv), false).await?;
         Ok(())
     }
