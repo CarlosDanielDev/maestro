@@ -72,6 +72,25 @@ mod tests {
         IconId::Repo,
         IconId::User,
         IconId::Branch,
+        // Session status chips (#1251)
+        IconId::ChipQueued,
+        IconId::ChipSpawning,
+        IconId::ChipRunning,
+        IconId::ChipGatesRunning,
+        IconId::ChipNeedsReview,
+        IconId::ChipNeedsPr,
+        IconId::ChipCiFix,
+        IconId::ChipConflictFix,
+        IconId::ChipRetrying,
+        IconId::ChipStalled,
+        IconId::ChipPaused,
+        IconId::ChipCompleted,
+        IconId::ChipFailedGates,
+        IconId::ChipErrored,
+        IconId::ChipKilled,
+        IconId::ChipInteractive,
+        // Keys
+        IconId::Enter,
     ];
 
     // ── SessionStatus symbol tests ──────────────────────────────────────
@@ -182,6 +201,12 @@ mod tests {
                 "{id:?}: nerd and ascii variants must differ (got {nerd:?} for both)"
             );
         }
+    }
+
+    #[test]
+    fn enter_key_is_return_symbol_or_word() {
+        assert_eq!(get_for_mode(IconId::Enter, true), "\u{23ce}");
+        assert_eq!(get_for_mode(IconId::Enter, false), "Enter");
     }
 
     #[test]

@@ -42,18 +42,19 @@ impl<'a> ArmedBar<'a> {
     }
 
     fn render_in_mode(self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
+        let enter = icons::get_for_mode(IconId::Enter, nerd);
         let (icon, word, color, detail) = match self.armed.state() {
             ArmedState::Blocked(reason) => (
                 IconId::Warning,
                 "BLOCKED",
                 theme.accent_warning,
-                format!("{} · Enter does nothing", sanitize_for_terminal(reason)),
+                format!("{} · {enter} does nothing", sanitize_for_terminal(reason)),
             ),
             ArmedState::Ready => (
                 IconId::Play,
                 "READY",
                 theme.accent_success,
-                "Enter to arm · nothing written yet".to_string(),
+                format!("{enter} to arm · nothing written yet"),
             ),
             ArmedState::Armed(_) => {
                 let left = self.armed.remaining(self.now).unwrap_or_default();
@@ -62,7 +63,7 @@ impl<'a> ArmedBar<'a> {
                     IconId::Hourglass,
                     "ARMED",
                     theme.accent_warning,
-                    format!("Enter again to write · {secs}s · Esc disarms"),
+                    format!("{enter} again to write · {secs}s · Esc disarms"),
                 )
             }
             ArmedState::Working => (
@@ -176,6 +177,35 @@ mod tests {
         let mut armed = working(t0);
         armed.finish(Err("gh: HTTP 401 · run `gh auth login`, then Enter".into()));
         assert_snapshot!(draw(&armed, t0).backend());
+    }
+
+    fn text_in_nerd_mode(armed: &ArmedEnter, now: Instant) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(72, ARMED_BAR_HEIGHT)).unwrap();
+        let theme = Theme::dark();
+        terminal
+            .draw(|f| ArmedBar::new(armed, WRITE, now).render_in_mode(f, f.area(), &theme, true))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn armed_bar_nerd_mode_draws_return_symbol_for_every_key_label() {
+        let t0 = Instant::now();
+        let mut blocked = ArmedEnter::new();
+        blocked.block("nothing to write");
+        let mut armed = ArmedEnter::new();
+        armed.on_enter(t0);
+        for state in [blocked, ArmedEnter::new(), armed] {
+            let text = text_in_nerd_mode(&state, t0);
+            assert!(text.contains('\u{23ce}'), "no ⏎ in nerd mode: {text:?}");
+            assert!(!text.contains("Enter"), "key word in nerd mode: {text:?}");
+        }
     }
 
     #[test]
