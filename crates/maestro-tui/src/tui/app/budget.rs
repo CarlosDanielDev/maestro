@@ -1,6 +1,7 @@
 use super::App;
 use super::helpers::session_label;
 use super::types::PendingHook;
+use crate::budget::projector::{DEFAULT_FLOOR_PCT, DefaultBudgetProjector};
 use crate::budget::{BudgetAction, BudgetCheck, PreSpawnDecision};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::transition::TransitionReason;
@@ -8,10 +9,22 @@ use crate::session::types::{Session, SessionStatus};
 use crate::tui::activity_log::LogLevel;
 
 impl App {
-    /// Compute the pre-spawn budget decision for a session about to be
-    /// spawned. Returns `Allow` when either the enforcer or projector is
-    /// missing — the gate is a no-op until production wires both via
-    /// config + builder (#776/#850).
+    /// Build the budget enforcer and the pre-spawn projector from one
+    /// `[budget]` section (#1243). Called wherever the enforcer is built
+    /// (startup and config reload) so the gate and the displayed estimate
+    /// always use the same numbers.
+    pub fn install_budget(&mut self, budget: &crate::config::BudgetConfig) {
+        self.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
+            budget.per_session_usd,
+            budget.total_usd,
+            budget.alert_threshold_pct,
+        ));
+        self.budget_projector = Some(Box::new(DefaultBudgetProjector::new(
+            budget.per_session_usd,
+            DEFAULT_FLOOR_PCT,
+        )));
+    }
+
     /// Park the session under `id` in the pre-spawn modal if the gate
     /// returns Warn/Block. Returns `true` when parked (caller MUST break
     /// out of the spawn loop). Used by both `session_lifecycle.rs` and
@@ -40,6 +53,9 @@ impl App {
         true
     }
 
+    /// Compute the pre-spawn budget decision for a session about to be
+    /// spawned. Returns `Allow` when either the enforcer or projector is
+    /// missing; production sets both via [`App::install_budget`] (#1243).
     pub fn pre_spawn_decision(&self, session: &Session) -> PreSpawnDecision {
         if self.budget_skip_once.contains(&session.id) {
             return PreSpawnDecision::Allow;
@@ -57,10 +73,18 @@ impl App {
     /// Resolve the pre-spawn modal in response to a single-letter chord
     /// (#776/#850). `y`/`s` mark the session as gate-bypass for the next
     /// spawn attempt and resume from `BudgetPreSpawn`; `n` removes the
-    /// parked session from the pool. Other chords are ignored.
+    /// parked session from the pool. Other chords are ignored. On Block
+    /// (#1243) `y`/`s` are ignored too: only `n` leaves the modal.
     pub async fn resolve_budget_prespawn(&mut self, chord: char, session_id: uuid::Uuid) {
         use crate::tui::app::types::TuiMode;
+        let blocked = self.pool.get_session(session_id).is_some_and(|session| {
+            matches!(
+                self.pre_spawn_decision(session),
+                PreSpawnDecision::Block { .. }
+            )
+        });
         match chord {
+            'y' | 's' if blocked => {}
             'y' | 's' => {
                 self.budget_skip_once.insert(session_id);
                 self.tui_mode = TuiMode::Overview;
@@ -176,3 +200,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "budget_tests.rs"]
+mod tests;
