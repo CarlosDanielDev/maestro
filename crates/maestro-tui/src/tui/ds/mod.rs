@@ -5,6 +5,7 @@ pub mod breakpoint;
 pub mod checklist;
 pub mod crumb_bar;
 pub mod filter_chips;
+pub mod fleet_table;
 pub mod gauge;
 pub mod key_hints;
 pub mod kpi_tile;

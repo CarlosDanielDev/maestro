@@ -163,6 +163,10 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
             app, event,
         ));
     }
+    // #1264: Home is Mission Control; it reads the queue and the pool.
+    if matches!(app.tui_mode, app::TuiMode::Landing) {
+        return Some(crate::tui::screens::home::mission::dispatch::dispatch_input(app, event));
+    }
 
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.screen_state.home_screen.as_mut()?,

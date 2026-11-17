@@ -146,34 +146,36 @@ impl Default for LandingScreen {
     }
 }
 
+/// #1264: Home keys are Mission Control's (`home::mission`); the landing
+/// screen still lends Home its help entry.
 impl KeymapProvider for LandingScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
-            title: "Landing",
+            title: "Home",
             bindings: vec![
                 KeyBinding {
                     key: "j/Down",
-                    description: "Next entry",
+                    description: "Next row",
                 },
                 KeyBinding {
                     key: "k/Up",
-                    description: "Previous entry",
+                    description: "Previous row",
                 },
                 KeyBinding {
                     key: "Enter",
-                    description: "Activate selected",
+                    description: "Open the selected row",
                 },
                 KeyBinding {
-                    key: "d/i/m/s/p/r/h/q",
-                    description: "Direct shortcuts",
+                    key: "Tab",
+                    description: "Switch Needs you / Actions",
+                },
+                KeyBinding {
+                    key: "d/f/a/i/m/r/p/h/s/t",
+                    description: "Run an action",
                 },
                 KeyBinding {
                     key: "n",
                     description: "Release notes",
-                },
-                KeyBinding {
-                    key: "w",
-                    description: "Measure network",
                 },
             ],
         }]

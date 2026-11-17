@@ -30,6 +30,7 @@ mod interaction_pipeline_provider_tests;
 #[path = "interaction_pipeline_tests.rs"]
 mod interaction_pipeline_tests;
 mod issue_completion;
+mod mission;
 mod plugins;
 mod pr_retry;
 mod pushup_marker;

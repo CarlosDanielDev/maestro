@@ -330,6 +330,23 @@ Implements `AttentionQueue` (`ds::attention_queue`) from `docs/design-system/ind
 
 Rules: one action per row, always `⏎` (no per-row letters; `p` already means PRD on Home). The Home layout that shows the panel and the `⏎` jump are the Home issue's work; today only the title is live.
 
+### Home Mission Control and Fleet table (`screens/home/mission/`, `ds/fleet_table.rs`, #1264)
+
+Implements `§02 Home: Mission Control` of `docs/design-system/index.html` (the mock's home layout and its Actions, Fleet, quota panel, quota strip and Milestone drawings). `TuiMode::Landing` draws it; the Release Console no longer draws on Home. Decision: `docs/design-system/decisions.md` (2026-11-17, Home Mission Control). The Needs-you panel and its `⏎` jump from the section above are live here.
+
+| Item | For |
+|---|---|
+| `screens::home::mission::draw(f, area, &MissionView, &mut MissionControl, bp, theme, nerd_font)` | Wide: Actions + Milestone · Needs you / Fleet · Budget & quota (the rest of the right column is the Insight slot). Regular: right column drops, quota is a one-row strip on top. Compact: strip / Needs you / Fleet, Actions by key only. `bp` is the terminal's breakpoint (the body is shorter than 24 rows at 80x24). The Activity pane under it stays the shell's |
+| `App::mission_view(now)` / `MissionView` | Plain data Home draws: ranked `attention`, `FleetRow`s for every pool session, `fleet_busy`, budget rows (`spend` vs the global cap, then each fresh quota window), `MilestoneCard`, `ActionGate`, `now` |
+| `ACTION_GROUPS` / `actions()` | RUN `d f a` · PLAN `i m r p h` · INSIGHT `s t`. Labels and targets come from the landing `MENU_ITEMS`, so the letters stay the same. Quit is not an action (global `q`) |
+| `disabled_reason(key, &ActionGate)` | `i m h` → `gh signed out` when `gh_auth_ok` is false; `h` → `no milestones yet` once stats loaded with no open milestone (unknown is not "no"). A disabled row draws its key and label muted + DIM with `⊘` on the right, and one `⊘ key reason` line under the groups. Its letter and `⏎` on it do nothing |
+| `MissionControl` (`ScreenState.mission_control`) / `handle_key` | Needs you has focus on open. `Tab` / `BackTab` switch Needs you ⇄ Actions (not on Compact), `j k ↑ ↓` move, `⏎` runs the row, letters run actions from any panel, `n` release notes |
+| `mission::dispatch::dispatch_input(app, event)` | Home keys, routed like the PRD screen. `⏎` on a session row opens the session Overview with that session selected (`panel_view.selected`); doctor / gh auth / budget / quota rows open Dashboard. Ctrl / Alt chords are ignored here |
+| `ds::fleet_table::draw(f, area, &[FleetRow], compact, theme, nerd_font)` | `Fleet (n)` panel: `STATUS ISSUE TITLE MODEL CONTEXT COST TIME`, Compact `STATUS ISSUE TITLE CTX COST`. Chip via `status_chip_for_mode`, cost via `money` (`$?` unpriced), context with its 50% / 70% steps. Empty: `No agents yet. i new issue` |
+| `ds::gauge::bar(ratio, width, nerd_font)` | `(filled, empty)` cells from `GaugeFilled` / `GaugeEmpty` (`▓░`, ASCII `#-`); ratio clamped to `0..=1`, NaN empty. Colour the filled part with `gauge_level(ratio).style(theme)` |
+
+Rules: no key hints in Home panel titles (they live in the footer: `Enter Open  j/k Move  Tab Next panel`). Home draws no logo and no link chart (`home_no_decoration_after_first_run` guards it). Full-app Home snapshots leave session times unset so they do not depend on the clock.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`

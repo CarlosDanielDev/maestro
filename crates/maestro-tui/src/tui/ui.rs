@@ -27,7 +27,7 @@ use ratatui::{
 
 /// Render the entire TUI.
 /// #1226: on a terminal shorter than this, the landing's activity log
-/// shrinks to one content row so the Release Console fits. Taller terminals
+/// shrinks to one content row so Home (Mission Control, #1264) fits. Taller terminals
 /// keep the normal log (and every startup notice in view).
 const LANDING_COMPACT_LOG_BELOW_ROWS: u16 = 40;
 /// Border + one content row.
@@ -348,17 +348,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
-        TuiMode::Landing => {
-            if let Some(ref mut screen) = app.screen_state.landing_screen {
-                screen.set_mascot(
-                    app.mascot_animator.state(),
-                    app.mascot_animator.frame_index(),
-                    app.mascot_style,
-                );
-                screen.set_animation_context(spinner_tick);
-                screen.draw(f, chunks[1], &app.theme);
-            }
-        }
+        TuiMode::Landing => draw_home(f, app, chunks[1], &theme),
         TuiMode::IssueWizard => {
             if let Some(ref mut screen) = app.screen_state.issue_wizard_screen {
                 screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
@@ -611,17 +601,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         screen.draw(f, chunks[1], &theme);
                     }
                 }
-                Some(&TuiMode::Landing) => {
-                    if let Some(ref mut screen) = app.screen_state.landing_screen {
-                        screen.set_mascot(
-                            app.mascot_animator.state(),
-                            app.mascot_animator.frame_index(),
-                            app.mascot_style,
-                        );
-                        screen.set_animation_context(spinner_tick);
-                        screen.draw(f, chunks[1], &app.theme);
-                    }
-                }
+                Some(&TuiMode::Landing) => draw_home(f, app, chunks[1], &theme),
                 Some(&TuiMode::Prd) => {
                     if let (Some(prd), Some(screen)) =
                         (app.prd.as_ref(), app.screen_state.prd_screen.as_ref())
@@ -1182,6 +1162,24 @@ fn draw_mascot_block(
 fn draw_status_bar(f: &mut Frame, app: &App, _mode_km: ModeKeyMap, area: Rect) {
     let theme = app.active_theme().clone();
     draw_status_bar_inner(f, app, &theme, area);
+}
+
+/// #1264: Home is Mission Control. The Release Console no longer draws
+/// here; `LandingScreen` keeps its state for the first-run logo.
+fn draw_home(f: &mut Frame, app: &mut App, area: Rect, theme: &crate::tui::theme::Theme) {
+    use crate::tui::ds::breakpoint::Breakpoint;
+    // The body is shorter than the terminal; the breakpoint is by width.
+    let bp = Breakpoint::from_area(f.area());
+    let view = app.mission_view(chrono::Utc::now());
+    crate::tui::screens::home::mission::draw(
+        f,
+        area,
+        &view,
+        &mut app.screen_state.mission_control,
+        bp,
+        theme,
+        crate::icon_mode::use_nerd_font(),
+    );
 }
 
 /// #1257: state only. Breadcrumbs and key hints are not part of this row.

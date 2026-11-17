@@ -236,6 +236,8 @@ pub struct SessionUiState {
 pub struct ScreenState {
     pub home_screen: Option<crate::tui::screens::HomeScreen>,
     pub landing_screen: Option<crate::tui::screens::LandingScreen>,
+    /// Home Mission Control focus and selections (#1264).
+    pub mission_control: crate::tui::screens::home::mission::MissionControl,
     pub issue_wizard_screen: Option<crate::tui::screens::IssueWizardScreen>,
     pub project_stats_screen: Option<crate::tui::screens::ProjectStatsScreen>,
     pub milestone_wizard_screen: Option<crate::tui::screens::MilestoneWizardScreen>,

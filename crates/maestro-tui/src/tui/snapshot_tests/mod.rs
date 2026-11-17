@@ -14,6 +14,7 @@ mod dashboard;
 mod dep_graph;
 mod detail;
 mod fullscreen;
+mod home_mission;
 mod home_small_terminal;
 mod init_turboquant_header;
 mod interaction;

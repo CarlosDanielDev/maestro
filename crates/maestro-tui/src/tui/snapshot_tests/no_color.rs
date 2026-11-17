@@ -8,6 +8,7 @@
 
 use ratatui::Frame;
 use ratatui::style::Color;
+use ratatui::{Terminal, backend::TestBackend};
 
 use super::test_terminal;
 use crate::tui::theme::Theme;
@@ -16,7 +17,26 @@ use crate::tui::theme::Theme;
 /// and return the buffer's `Debug` output (content plus styles). Panics if
 /// any cell's fg, bg or underline colour is not `Reset`.
 pub fn no_color_snapshot(draw: impl FnOnce(&mut Frame, &Theme)) -> String {
-    let mut terminal = test_terminal();
+    no_color_in(test_terminal(), draw)
+}
+
+/// [`no_color_snapshot`] on a `width` x `height` terminal, for screens
+/// that lay out by breakpoint (Home Wide is 150+ columns, #1264).
+pub fn no_color_snapshot_sized(
+    width: u16,
+    height: u16,
+    draw: impl FnOnce(&mut Frame, &Theme),
+) -> String {
+    no_color_in(
+        Terminal::new(TestBackend::new(width, height)).unwrap(),
+        draw,
+    )
+}
+
+fn no_color_in(
+    mut terminal: Terminal<TestBackend>,
+    draw: impl FnOnce(&mut Frame, &Theme),
+) -> String {
     let theme = Theme::no_color();
     terminal
         .draw(|f| draw(f, &theme))

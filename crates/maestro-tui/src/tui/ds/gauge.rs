@@ -8,6 +8,7 @@
 
 use ratatui::style::{Modifier, Style};
 
+use crate::tui::icons::{IconId, get_for_mode};
 use crate::tui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +46,44 @@ impl GaugeLevel {
     }
 }
 
+/// `(filled, empty)` cells of a `width`-cell bar for a used/limit `ratio`
+/// (#1264), from `IconId::GaugeFilled` / `GaugeEmpty` (`▓░`, ASCII `#-`).
+/// The ratio is clamped to `0..=1`; NaN is empty.
+pub fn bar(ratio: f64, width: usize, nerd_font: bool) -> (String, String) {
+    let ratio = if ratio.is_nan() {
+        0.0
+    } else {
+        ratio.clamp(0.0, 1.0)
+    };
+    let filled = ((ratio * width as f64).round() as usize).min(width);
+    (
+        get_for_mode(IconId::GaugeFilled, nerd_font).repeat(filled),
+        get_for_mode(IconId::GaugeEmpty, nerd_font).repeat(width - filled),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bar_fills_by_ratio_and_clamps() {
+        let cases = [
+            (0.0, 10, 0),
+            (0.5, 10, 5),
+            (0.64, 10, 6),
+            (1.0, 4, 4),
+            (2.5, 4, 4),
+            (-1.0, 4, 0),
+            (f64::NAN, 4, 0),
+        ];
+        for (ratio, width, filled) in cases {
+            let (f, e) = bar(ratio, width, false);
+            assert_eq!(f, "#".repeat(filled), "ratio {ratio}");
+            assert_eq!(e, "-".repeat(width - filled), "ratio {ratio}");
+        }
+        assert_eq!(bar(0.5, 2, true), ("\u{2593}".into(), "\u{2591}".into()));
+    }
 
     #[test]
     fn gauge_thresholds() {

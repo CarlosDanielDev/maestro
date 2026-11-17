@@ -671,13 +671,18 @@ pub fn mode_keymap(
             &[
                 InlineHint {
                     key: "Enter",
-                    action: "Activate",
+                    action: "Open",
                     priority: 0,
                 },
                 InlineHint {
                     key: "j/k",
-                    action: "Navigate",
+                    action: "Move",
                     priority: 1,
+                },
+                InlineHint {
+                    key: "Tab",
+                    action: "Next panel",
+                    priority: 2,
                 },
             ],
         ),
