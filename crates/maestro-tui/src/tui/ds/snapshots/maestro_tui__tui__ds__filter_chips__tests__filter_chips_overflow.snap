@@ -1,0 +1,30 @@
+---
+source: crates/maestro-tui/src/tui/ds/filter_chips.rs
+expression: "format!(\"{:?}\", terminal.backend().buffer())"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 1 },
+    content: [
+        " label:tui ✕   is:open ✕   author:me ✕   milestone:v0.33.0 ✕  +3                ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 7, y: 0, fg: White, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 11, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 13, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 14, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 18, y: 0, fg: White, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 23, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 25, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 26, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 34, y: 0, fg: White, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 37, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 39, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 40, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 51, y: 0, fg: White, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 59, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 61, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 62, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 64, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

@@ -1,0 +1,30 @@
+---
+source: crates/maestro-tui/src/tui/ds/sub_tabs.rs
+expression: "format!(\"{:?}\", terminal.backend().buffer())"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 1 },
+    content: [
+        "  d Detail   f Output   l Log   v Gates ✗   e Events 12                         ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 4, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 10, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 15, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 21, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 24, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 26, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 29, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 31, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 32, y: 0, fg: White, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 39, y: 0, fg: White, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 42, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 44, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 46, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 52, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 55, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}
