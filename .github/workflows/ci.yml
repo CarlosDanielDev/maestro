@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/check-rules-drift.sh
 
-  # Shell-script tests (scripts/tests/*.bats). Not gated on `changes`: it is
+  # Shell-script and hook tests (scripts/tests/*.bats). Not gated on `changes`: it is
   # cheap, and bats fixtures under scripts/tests/ may be .md files the
   # docs-only filter would skip. No untrusted input.
   bats:
@@ -209,10 +209,17 @@ jobs:
           "${src}/install.sh" "${RUNNER_TEMP}/bats" > /dev/null
           echo "${RUNNER_TEMP}/bats/bin" >> "$GITHUB_PATH"
           "${RUNNER_TEMP}/bats/bin/bats" --version | grep -qx "Bats ${VERSION}"
+      - name: Check tools the bats tests need
+        # notify.bats needs jq (Slack payload tests) and shellcheck (lint
+        # test). Both ship on ubuntu-latest; fail here, loudly, if that ever
+        # changes, instead of a confusing bats failure or a silent skip (#1378).
+        run: |
+          jq --version
+          shellcheck --version
       - name: Run bats tests
-        # All script tests live in scripts/tests/ (fixtures in
-        # scripts/tests/fixtures/). Put new ones there: this glob is the only
-        # place CI picks them up (#1355).
+        # All bats tests live in scripts/tests/ (fixtures in
+        # scripts/tests/fixtures/), hook tests included. Put new ones there:
+        # this glob is the only place CI picks them up (#1355, #1378).
         run: bats scripts/tests/*.bats
 
   deny:

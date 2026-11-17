@@ -85,7 +85,6 @@ maestro/
 │   │   ├── preflight.sh                   # Preflight environment checks run before session launch
 │   │   ├── sentinel-path.sh               # Resolves the XDG-aware sentinel path chain ($XDG_RUNTIME_DIR → $HOME/.cache/maestro → $TMPDIR/tmp); used by implement-gates.sh and /implement recovery snippets  [Issue #545]
 │   │   └── tests/                         # Shell and Python smoke tests for hook scripts  [Issue #545, #759]
-│   │       ├── symlink-compat.bats        # Asserts that .claude/hooks is a symlink resolving to .maestro/hooks  [Issue #759]
 │   │       ├── test-sentinel.sh           # Integration test: exercises sentinel-path.sh across all three resolution candidates
 │   │       └── test_parse_gatekeeper_report.py  # Unit tests for parse_gatekeeper_report.py: happy path, bad enum, missing fence
 │   ├── templates.lock                     # SHA-256 checksums of all repo-relative files written by `maestro sync-templates`; TOML format, keys sorted deterministically; committed artifact — regenerated automatically on every sync run  [Issue #706]
@@ -900,19 +899,22 @@ maestro/
 │   ├── pr-skeleton.sh                     # /pushup helper: emits PR body skeleton with summary placeholders, Closes line, and test plan  [Issue #556]
 │   ├── regenerate-docs.sh                 # Convenience wrapper: runs `cargo test docs_gen_regenerate -- --ignored` to regenerate all AUTOGEN blocks in docs/configuration.md from schema  [Issue #717]
 │   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
-│   └── tests/                             # Pytest and bats coverage for scripts/. The one home for script bats tests: CI runs `bats scripts/tests/*.bats`; new script tests go here  [Issue #1355]
+│   └── tests/                             # Pytest and bats coverage for scripts/. The one home for script bats tests: CI runs `bats scripts/tests/*.bats`; new script and hook bats tests go here  [Issue #1355, #1378]
 │       ├── check-coverage-tiers.bats      # bats tests for check-coverage-tiers.sh (moved from tests/scripts/)  [Issue #1355]
 │       ├── check-file-size.bats           # bats tests for check-file-size.sh (moved from tests/scripts/)  [Issue #1355]
 │       ├── check-layers.bats              # bats tests for check-layers.sh (moved from tests/scripts/)  [Issue #1355]
+│       ├── implement-gates.bats           # bats tests for .maestro/hooks/implement-gates.sh; fakes gh/cargo via fixtures/, isolates XDG_RUNTIME_DIR (moved from tests/hooks/)  [Issue #1378]
+│       ├── notify.bats                    # bats tests for .maestro/hooks/notify.sh: Slack JSON payload, PowerShell escape, macOS/Linux regression, shellcheck (moved from tests/hooks/)  [Issue #583, #1378]
 │       ├── release.bats                   # bats tests for release.sh merge wait/fallback (moved from tests/scripts/)  [Issue #1355]
-│       ├── test_bats_location.bats        # Guard: fails if a tracked .bats file sits outside scripts/tests/ and tests/hooks/  [Issue #1355]
+│       ├── symlink-compat.bats            # Asserts that .claude/hooks is a symlink resolving to .maestro/hooks (moved from tests/hooks/)  [Issue #759, #1378]
+│       ├── test_bats_location.bats        # Guard: fails if a tracked .bats file sits outside scripts/tests/  [Issue #1355, #1378]
 │       ├── test_commit_helper.bats        # bats tests for label-to-prefix precedence, missing issue, gh availability, and draft-file writes  [Issue #556]
 │       ├── test_condense_issue.bats       # bats tests for deterministic condensed issue summaries  [Issue #555]
 │       ├── test_dor_lint.bats             # bats tests for DOR lint, blocker states, contracts, and label task-type mapping  [Issue #555]
 │       ├── test_gatekeeper_remediation.bats # bats tests with a stub gh logging argv: comment/label posting, flag-like and word-split injection rejection, caps, fail-closed  [Issue #1038]
 │       ├── test_pr_skeleton.bats          # bats tests for PR skeleton rendering, placeholders, Closes substitution, and draft-file writes  [Issue #556]
 │       ├── test_update_milestone_graph.py # Unit tests for idempotency, anchored replacement, roll-up, token boundaries, dry-run, and verification failure  [Issue #554]
-│       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint, summary, and /pushup helper tests  [Issues #554, #555, #556]; allowlist-*, layers-*, lcov-* inputs for the file-size/layers/coverage tests  [Issue #1355]
+│       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint, summary, and /pushup helper tests  [Issues #554, #555, #556]; allowlist-*, layers-*, lcov-* inputs for the file-size/layers/coverage tests  [Issue #1355]; fake-cargo.sh, fake-gh.sh, init-test-repo.sh shims for implement-gates.bats  [Issue #1378]
 │           ├── issue-conformant.json
 │           ├── issue-missing-ac.json
 │           ├── issue-with-contract-ref.json
@@ -969,9 +971,7 @@ maestro/
 │   │       ├── ship-it.toml               # Expedited pipeline preset skipping non-critical gates
 │   │       └── strict-reviewer.toml       # Reviewer preset with strict acceptance criteria
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
-│   ├── hooks/                             # Hook script bats tests (requires bats-core)
-│   │   ├── implement-gates.bats           # bats tests for implement-gates.sh
-│   │   └── notify.bats                    # 10 bats tests: Slack JSON payload construction, PowerShell escape, macOS regression, shellcheck  [Issue #583]
+│   ├── hooks/                             # Python unittests for parse_gatekeeper_report.py (hook bats tests moved to scripts/tests/)  [Issue #1378]
 │   └── manifests/                         # Test manifest fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
@@ -1018,7 +1018,7 @@ Edges to cut: TUI → `commands::setup` / `commands::agent_provider_map`; CLI �
 | `.maestro/hooks/` | Canonical home for all agent-agnostic hook scripts (moved from `.claude/hooks/` in #759) |
 | `.maestro/hooks/sentinel-path.sh` | Resolves XDG-aware sentinel path for `$GATE_LOG_DIR` persistence across non-persistent Bash tool shells |
 | `.maestro/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
-| `.maestro/hooks/tests/symlink-compat.bats` | Asserts that `.claude/hooks` is a valid symlink resolving to `.maestro/hooks` (#759) |
+| `scripts/tests/symlink-compat.bats` | Asserts that `.claude/hooks` is a valid symlink resolving to `.maestro/hooks` (#759) |
 | `.maestro/templates/` | Canonical template sources for the render engine; never edit rendered outputs under `.claude/commands/` directly; re-render with `maestro sync-templates`  [Issues #700, #706] |
 | `.maestro/templates.lock` | SHA-256 lockfile for repo-relative rendered outputs; committed, updated by every `maestro sync-templates` run; `--check` mode uses this to detect drift  [Issue #706] |
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
