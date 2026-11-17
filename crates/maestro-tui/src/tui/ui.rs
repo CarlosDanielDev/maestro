@@ -63,17 +63,42 @@ fn shows_log_pane(app: &App) -> bool {
 /// #1263: a modal or overlay is up. These take keys before (or instead of)
 /// the global `Ctrl+L` / `Esc`, so the log drawer is hidden under them and
 /// those keys go to the modal; the drawer comes back when the modal closes.
+/// Popups drawn over another screen and confirm screens count, and so do
+/// confirms drawn inside a screen.
 pub(crate) fn log_drawer_blocked(app: &App) -> bool {
+    let state = &app.screen_state;
     app.help_state.is_some()
-        || matches!(
-            app.tui_mode,
+        || match app.tui_mode {
             TuiMode::ConfirmExit
-                | TuiMode::ConfirmKill(_)
-                | TuiMode::BudgetPreSpawn { .. }
-                | TuiMode::QueueExecution
-                | TuiMode::CompletionSummary
-                | TuiMode::ContinuousPause
-        )
+            | TuiMode::ConfirmKill(_)
+            | TuiMode::BudgetPreSpawn { .. }
+            | TuiMode::QueueExecution
+            | TuiMode::QueueConfirmation
+            | TuiMode::CompletionSummary
+            | TuiMode::ContinuousPause
+            | TuiMode::HollowRetry
+            | TuiMode::AdaptFollowUp
+            | TuiMode::CiErrorReview
+            | TuiMode::SessionSwitcher
+            | TuiMode::BypassWarning => true,
+            TuiMode::Settings => state
+                .settings_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_discard_open()),
+            TuiMode::Interaction => state
+                .interaction_screen
+                .as_ref()
+                .is_some_and(|s| s.quit_modal_is_open()),
+            TuiMode::AdoptPicker => state
+                .adopt_picker_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_pending()),
+            TuiMode::FleetBoard => state
+                .fleet_board_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_pending()),
+            _ => false,
+        }
 }
 
 /// The log drawer is open and on screen.

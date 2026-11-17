@@ -302,6 +302,12 @@ fn log_drawer_hidden_under_modals() {
         TuiMode::QueueExecution,
         TuiMode::CompletionSummary,
         TuiMode::ContinuousPause,
+        TuiMode::HollowRetry,
+        TuiMode::AdaptFollowUp,
+        TuiMode::CiErrorReview,
+        TuiMode::SessionSwitcher,
+        TuiMode::BypassWarning,
+        TuiMode::QueueConfirmation,
     ] {
         let render = |open: bool| {
             let mut app = log_app(mode);
@@ -344,4 +350,75 @@ async fn esc_reaches_modal_while_drawer_hidden() {
         TuiMode::ConfirmKill(uuid::Uuid::nil()),
         "Esc closes the kill confirm"
     );
+}
+
+/// Confirms drawn inside a screen hide the drawer too, and take `Esc`.
+#[tokio::test]
+async fn log_drawer_hidden_under_screen_confirms() {
+    use crate::session::interaction::TurnState;
+    use crate::tui::navigation::InputMode;
+    use crate::tui::screens::settings::SettingsTab;
+    use crate::tui::screens::test_helpers::key_event;
+    use crate::tui::screens::{InteractionScreen, Screen};
+
+    // Settings: an unsaved edit, then Esc asks "discard?".
+    let settings = |open: bool| {
+        let mut app = log_app(TuiMode::Settings);
+        let screen = app.screen_state.settings_screen.as_mut().unwrap();
+        screen.jump_to_tab(SettingsTab::Notifications);
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        app.activity_log.drawer_open = open;
+        app
+    };
+    let mut app = settings(true);
+    assert!(
+        app.screen_state
+            .settings_screen
+            .as_ref()
+            .unwrap()
+            .confirm_discard_open()
+    );
+    let open = format!("{}", draw(&mut app, 80, 24).backend());
+    let closed = format!("{}", draw(&mut settings(false), 80, 24).backend());
+    assert_eq!(open, closed, "Settings discard confirm stays visible");
+    let _ = handle_key(&mut app, esc()).await;
+    assert!(
+        !app.screen_state
+            .settings_screen
+            .as_ref()
+            .unwrap()
+            .confirm_discard_open(),
+        "Esc reaches the discard confirm"
+    );
+
+    // Interaction: Ctrl+W opens the quit confirm.
+    let interaction = |open: bool| {
+        let mut app = log_app(TuiMode::Interaction);
+        let mut screen = InteractionScreen::test_fixture(
+            7,
+            true,
+            TurnState::Idle,
+            vec![],
+            "/tmp/maestro/wt-1263",
+        );
+        screen.handle_input(
+            &crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            InputMode::Insert,
+        );
+        app.screen_state.interaction_screen = Some(screen);
+        app.activity_log.drawer_open = open;
+        app
+    };
+    let mut app = interaction(true);
+    assert!(
+        app.screen_state
+            .interaction_screen
+            .as_ref()
+            .unwrap()
+            .quit_modal_is_open()
+    );
+    let open = format!("{}", draw(&mut app, 120, 40).backend());
+    let closed = format!("{}", draw(&mut interaction(false), 120, 40).backend());
+    assert_eq!(open, closed, "Interaction quit confirm stays visible");
 }

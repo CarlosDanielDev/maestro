@@ -7,6 +7,14 @@ use ratatui::{Frame, layout::Rect};
 use super::{SettingsScreen, SettingsTab};
 use crate::tui::screens::{Screen, ScreenAction};
 
+impl SettingsScreen {
+    /// The "discard unsaved changes?" confirm is showing (#1263: the log
+    /// drawer hides under it).
+    pub(crate) fn confirm_discard_open(&self) -> bool {
+        self.confirm_discard
+    }
+}
+
 impl Screen for SettingsScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
         let Event::Key(KeyEvent {
