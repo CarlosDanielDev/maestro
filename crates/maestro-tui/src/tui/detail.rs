@@ -1,7 +1,7 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
 use crate::state::progress::ProgressTracker;
-use crate::tui::agent_badge::{agent_color, agent_label};
+use crate::tui::agent_badge::agent_label;
 use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 use ratatui::{
@@ -170,7 +170,7 @@ fn draw_detail_header(
         Span::raw("  "),
         Span::styled(
             format!("Agent: {}", agent_label(session.agent_id.as_deref())),
-            Style::default().fg(agent_color(session.agent_id.as_deref())),
+            Style::default().fg(theme.agent_color(session.agent_id.as_deref())),
         ),
     ];
     if session.is_hollow_completion {
