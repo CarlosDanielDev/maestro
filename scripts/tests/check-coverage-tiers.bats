@@ -4,7 +4,7 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-coverage-tiers.sh"
   MANIFEST="$REPO_ROOT/scripts/coverage-tiers.yml"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   cd "$REPO_ROOT"
 }
 

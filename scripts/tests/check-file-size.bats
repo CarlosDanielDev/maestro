@@ -6,7 +6,7 @@
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-file-size.sh"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   TEST_REPO="$(mktemp -d -t file-size-test-XXXXXX)"
   mkdir -p "$TEST_REPO/src" "$TEST_REPO/scripts"
   cp "$SCRIPT" "$TEST_REPO/scripts/check-file-size.sh"

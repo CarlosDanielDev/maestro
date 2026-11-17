@@ -900,14 +900,19 @@ maestro/
 │   ├── pr-skeleton.sh                     # /pushup helper: emits PR body skeleton with summary placeholders, Closes line, and test plan  [Issue #556]
 │   ├── regenerate-docs.sh                 # Convenience wrapper: runs `cargo test docs_gen_regenerate -- --ignored` to regenerate all AUTOGEN blocks in docs/configuration.md from schema  [Issue #717]
 │   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
-│   └── tests/                             # Pytest and bats coverage for workflow automation scripts
+│   └── tests/                             # Pytest and bats coverage for scripts/. The one home for script bats tests: CI runs `bats scripts/tests/*.bats`; new script tests go here  [Issue #1355]
+│       ├── check-coverage-tiers.bats      # bats tests for check-coverage-tiers.sh (moved from tests/scripts/)  [Issue #1355]
+│       ├── check-file-size.bats           # bats tests for check-file-size.sh (moved from tests/scripts/)  [Issue #1355]
+│       ├── check-layers.bats              # bats tests for check-layers.sh (moved from tests/scripts/)  [Issue #1355]
+│       ├── release.bats                   # bats tests for release.sh merge wait/fallback (moved from tests/scripts/)  [Issue #1355]
+│       ├── test_bats_location.bats        # Guard: no bats left in tests/scripts/, CI glob still scripts/tests/*.bats  [Issue #1355]
 │       ├── test_commit_helper.bats        # bats tests for label-to-prefix precedence, missing issue, gh availability, and draft-file writes  [Issue #556]
 │       ├── test_condense_issue.bats       # bats tests for deterministic condensed issue summaries  [Issue #555]
 │       ├── test_dor_lint.bats             # bats tests for DOR lint, blocker states, contracts, and label task-type mapping  [Issue #555]
 │       ├── test_gatekeeper_remediation.bats # bats tests with a stub gh logging argv: comment/label posting, flag-like and word-split injection rejection, caps, fail-closed  [Issue #1038]
 │       ├── test_pr_skeleton.bats          # bats tests for PR skeleton rendering, placeholders, Closes substitution, and draft-file writes  [Issue #556]
 │       ├── test_update_milestone_graph.py # Unit tests for idempotency, anchored replacement, roll-up, token boundaries, dry-run, and verification failure  [Issue #554]
-│       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint, summary, and /pushup helper tests  [Issues #554, #555, #556]
+│       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint, summary, and /pushup helper tests  [Issues #554, #555, #556]; allowlist-*, layers-*, lcov-* inputs for the file-size/layers/coverage tests  [Issue #1355]
 │           ├── issue-conformant.json
 │           ├── issue-missing-ac.json
 │           ├── issue-with-contract-ref.json
@@ -967,8 +972,7 @@ maestro/
 │   ├── hooks/                             # Hook script bats tests (requires bats-core)
 │   │   ├── implement-gates.bats           # bats tests for implement-gates.sh
 │   │   └── notify.bats                    # 10 bats tests: Slack JSON payload construction, PowerShell escape, macOS regression, shellcheck  [Issue #583]
-│   ├── manifests/                         # Test manifest fixtures
-│   └── scripts/                           # Test script fixtures
+│   └── manifests/                         # Test manifest fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
 ├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section contains experimental-sanitizer = [] only (spike = [] feature and [[example]] agent_personalities_spike entry both removed in #539); flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy; toml_edit = "0.22" promoted to direct [dependencies] entry for comment-preserving config saves  [Issue #142, #233, #482, #499, #526, #536, #539, #712]
