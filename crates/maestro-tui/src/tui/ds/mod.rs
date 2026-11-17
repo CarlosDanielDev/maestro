@@ -7,6 +7,7 @@ pub mod filter_chips;
 pub mod gauge;
 pub mod key_hints;
 pub mod kpi_tile;
+pub mod log_drawer;
 pub mod md_block;
 pub mod money;
 pub mod panel;

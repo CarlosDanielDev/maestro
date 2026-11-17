@@ -24,6 +24,8 @@ mod issue_browser;
 mod issue_wizard;
 mod landing;
 mod landing_full_app;
+mod log_drawer;
+mod log_drawer_modals;
 mod milestone;
 mod milestone_wizard;
 mod no_color;

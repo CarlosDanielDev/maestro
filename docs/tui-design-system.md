@@ -300,6 +300,20 @@ Message text goes through `sanitize_for_terminal` inside `draw`. Glyphs and
 the countdown bar come from `icons::get_for_mode` (`CheckCircle`, `DotFill`,
 `Warning`, `XCircle`, `GaugeFilled`, `GaugeEmpty`), so ASCII mode works.
 
+### Activity log pane and log drawer (`crates/maestro-tui/src/tui/ds/log_drawer.rs`, #1263)
+
+Implements the Activity log row of "Shell rules" in `docs/design-system/index.html`. The pane is drawn only on Home, Dashboard and the session Overview; other screens draw no log row. Decision: `docs/design-system/decisions.md` (2026-11-17).
+
+| Item | For |
+|---|---|
+| `ActivityLog::take_alerts()` | WARN/ERR entries since the last call. `ui::draw` turns them into toasts (`App::push_toast`) when neither the pane nor the drawer is visible, and drops them when one is. Screens never call it |
+| `ActivityLog::drawer_open` | The drawer state. `Ctrl+L` opens it (`handle_global_shortcuts`). While shown it is modal: `handle_key` swallows every key except `Ctrl+L` / `Esc` (close) and the quit chords before it (`Ctrl+C`, `Ctrl+X`, `ConfirmExit`); the footer shows only `Esc Close log  ⌃L close` |
+| `ui::log_drawer_blocked(app)` / `ui::log_drawer_shown(app)` | Under the help overlay or a modal (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`, `QueueExecution`, `QueueConfirmation`, `CompletionSummary`, `ContinuousPause`, `HollowRetry`, `AdaptFollowUp`, `CiErrorReview`, `SessionSwitcher`, `BypassWarning`) or a confirm inside a screen (Settings discard, Interaction quit, Adopt picker / Fleet board live confirm) the drawer is hidden but stays open, and `Ctrl+L` / `Esc` go to the modal. It comes back when the modal closes |
+| `ds::log_drawer::draw(f, area, rows, &log, theme, nerd_font)` | Rounded `Focus::Overlay` box on `surface_overlay`, the last `rows` rows of `area` (clamped), local time. `ui::draw` passes the main area and `tui.layout.activity_log_height` (same rows as the pane) |
+| `ActivityLog::draw_block_in_zone(.., block, ..)` | The log lines inside a caller's block (the drawer's overlay panel) |
+
+The Interaction composer clears its input with `Ctrl+G` (`Ctrl+U` stays tui-textarea's undo). Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
@@ -353,6 +367,8 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode, not while a PRD goal or Roadmap filter is edited. Overview keeps `1`-`9` for session detail |
 | `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
 | `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
+| `Ctrl+L` | Open / close the log drawer (`ds::log_drawer`) | every screen, unless a modal hides the drawer (#1263) |
+| `Esc` | Close the log drawer | only while the drawer is shown; else the screen gets it |
 
 Before adding a key: grep `handle_global_shortcuts`. In text-input screens
 plain letters are typed, so use a free `Ctrl+letter` (e.g. `Ctrl+W`) and

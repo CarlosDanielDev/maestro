@@ -241,6 +241,11 @@ impl InteractionScreen {
         self.produce_pr && self.view.turn_state == TurnState::Idle && !self.terminated
     }
 
+    /// The quit confirm is showing (#1263: the log drawer hides under it).
+    pub(crate) fn quit_modal_is_open(&self) -> bool {
+        self.quit_modal_open
+    }
+
     /// Current editor contents joined into one string. Seam for #738's submit.
     pub fn editor_text(&self) -> String {
         self.editor.lines().join("\n")

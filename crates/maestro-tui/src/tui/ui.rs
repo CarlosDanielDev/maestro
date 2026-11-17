@@ -4,11 +4,13 @@ use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
 use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
+use crate::tui::activity_log::LogLevel;
 use crate::tui::agent_graph;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
 use crate::tui::detail;
+use crate::tui::ds::toast::{Severity, Toast};
 use crate::tui::ds::{size_guard, status_bar};
 use crate::tui::fullscreen;
 use crate::tui::help;
@@ -40,6 +42,101 @@ fn shows_landing(app: &App) -> bool {
     }
 }
 
+/// #1263: the Activity pane lives on Home and Dashboard only (the session
+/// Overview is part of the Dashboard). A modal keeps the screen under it.
+fn shows_log_pane(app: &App) -> bool {
+    let is_log_screen = |mode: &TuiMode| {
+        matches!(
+            mode,
+            TuiMode::Landing | TuiMode::Dashboard | TuiMode::Overview
+        )
+    };
+    match app.tui_mode {
+        TuiMode::ConfirmKill(_) => true,
+        TuiMode::ConfirmExit | TuiMode::BudgetPreSpawn { .. } => {
+            app.nav_stack.peek().is_some_and(is_log_screen)
+        }
+        ref mode => is_log_screen(mode),
+    }
+}
+
+/// #1263: a modal or overlay is up. These take keys before (or instead of)
+/// the global `Ctrl+L` / `Esc`, so the log drawer is hidden under them and
+/// those keys go to the modal; the drawer comes back when the modal closes.
+/// Popups drawn over another screen and confirm screens count, and so do
+/// confirms drawn inside a screen.
+pub(crate) fn log_drawer_blocked(app: &App) -> bool {
+    let state = &app.screen_state;
+    app.help_state.is_some()
+        || match app.tui_mode {
+            TuiMode::ConfirmExit
+            | TuiMode::ConfirmKill(_)
+            | TuiMode::BudgetPreSpawn { .. }
+            | TuiMode::QueueExecution
+            | TuiMode::QueueConfirmation
+            | TuiMode::CompletionSummary
+            | TuiMode::ContinuousPause
+            | TuiMode::HollowRetry
+            | TuiMode::AdaptFollowUp
+            | TuiMode::CiErrorReview
+            | TuiMode::SessionSwitcher
+            | TuiMode::BypassWarning => true,
+            TuiMode::Settings => state
+                .settings_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_discard_open()),
+            TuiMode::Interaction => state
+                .interaction_screen
+                .as_ref()
+                .is_some_and(|s| s.quit_modal_is_open()),
+            TuiMode::AdoptPicker => state
+                .adopt_picker_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_pending()),
+            TuiMode::FleetBoard => state
+                .fleet_board_screen
+                .as_ref()
+                .is_some_and(|s| s.confirm_pending()),
+            _ => false,
+        }
+}
+
+/// The log drawer is open and on screen.
+pub(crate) fn log_drawer_shown(app: &App) -> bool {
+    app.activity_log.drawer_open && !log_drawer_blocked(app)
+}
+
+/// Rows for the Activity pane and the log drawer, from
+/// `tui.layout.activity_log_height` (a percentage, clamped to 10..=50).
+fn configured_log_rows(app: &App, total: u16) -> u16 {
+    app.config
+        .as_ref()
+        .map(|c| {
+            let pct = c.tui.layout.activity_log_height.clamp(10, 50);
+            ((total as u32 * pct as u32) / 100).max(4) as u16
+        })
+        .unwrap_or(10)
+}
+
+/// #1263: off the log screens, each new WARN/ERR entry raises a toast.
+/// While the pane or the drawer shows the log, the entries are only seen.
+fn raise_log_toasts(app: &mut App, log_visible: bool) {
+    let alerts = app.activity_log.take_alerts();
+    if log_visible {
+        return;
+    }
+    let now = std::time::Instant::now();
+    for entry in alerts {
+        let severity = if entry.level == LogLevel::Error {
+            Severity::Error
+        } else {
+            Severity::Warn
+        };
+        let message = format!("[{}] {}", entry.session_label, entry.message);
+        app.push_toast(Toast::new(severity, message), now);
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Advance spinner animation on each draw cycle
     app.spinner_tick = app.spinner_tick.wrapping_add(1);
@@ -58,19 +155,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let log_height = if !app.show_activity_log {
+    let log_pane = app.show_activity_log && shows_log_pane(app);
+    let log_height = if !log_pane {
         0
     } else if shows_landing(app) && f.area().height < LANDING_COMPACT_LOG_BELOW_ROWS {
         LANDING_COMPACT_LOG_HEIGHT
     } else {
-        app.config
-            .as_ref()
-            .map(|c| {
-                let pct = c.tui.layout.activity_log_height.clamp(10, 50);
-                let total = f.area().height;
-                ((total as u32 * pct as u32) / 100).max(4) as u16
-            })
-            .unwrap_or(10)
+        configured_log_rows(app, f.area().height)
     };
 
     // #1257: the status bar is one state-only row (`ds::status_bar`); the
@@ -732,7 +823,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Only render activity log area when visible
-    if app.show_activity_log {
+    if log_pane {
         // Conditionally split activity area for CI monitor
         let has_ci_checks = app.gh_auth_ok && !app.ci_poller.ci_check_details.is_empty();
         if has_ci_checks {
@@ -831,6 +922,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     draw_shell_row(f, app, shell_row, &theme);
     draw_footer(f, app, &mode_km, chunks[3], &theme);
+
+    // #1263: the Ctrl+L drawer covers the bottom of the main area.
+    if log_drawer_shown(app) {
+        let rows = configured_log_rows(app, f.area().height);
+        crate::tui::ds::log_drawer::draw(
+            f,
+            chunks[1],
+            rows,
+            &app.activity_log,
+            &theme,
+            crate::icon_mode::use_nerd_font(),
+        );
+    }
+    raise_log_toasts(app, chunks[2].height > 0 || log_drawer_shown(app));
 
     // #1254: toasts sit above every screen, below the help overlay.
     if let Some(toast) = app.copy_toast.as_ref() {
@@ -1135,11 +1240,15 @@ fn draw_footer(
     let pairs = footer_screen(app)
         .map(|s| s.footer_hints())
         .unwrap_or_default();
-    let hints = if pairs.is_empty() {
+    let mut hints = if pairs.is_empty() {
         mode_km.hints.to_vec()
     } else {
         key_hints::from_pairs(&pairs)
     };
+    // #1263: the shown log drawer is modal; the footer shows only its keys.
+    if log_drawer_shown(app) {
+        hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
+    }
     let pin_quit = app.tui_mode != TuiMode::ConfirmExit;
     key_hints::draw(f, area, &hints, pin_quit, theme);
 }

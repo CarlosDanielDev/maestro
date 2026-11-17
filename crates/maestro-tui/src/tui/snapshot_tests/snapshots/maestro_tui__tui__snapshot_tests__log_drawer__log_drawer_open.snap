@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/log_drawer.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ 󰝦 Issues ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃  #1     Add login flow                                                      ┃"
+"┃   #2     Fix database crash                                                  ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"╭───────────────────────────────[ Activity Log ]───────────────────────────────╮"
+"│HH:MM:SS [S-1] seeded log line                                                │"
+"│HH:MM:SS [S-2] second line                                                    │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" Esc Close log   ⌃L close                                                q quit "

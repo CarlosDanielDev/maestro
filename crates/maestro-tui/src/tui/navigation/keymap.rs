@@ -133,6 +133,10 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         key: "q / Ctrl+c / ^X",
                         description: "Quit maestro",
                     },
+                    KeyBinding {
+                        key: "Ctrl+L",
+                        description: "Toggle the activity log drawer (Esc closes)",
+                    },
                 ],
             },
         ]

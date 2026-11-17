@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/log_drawer.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Settings                                                      Esc back  ? help "
+"┌─────────────────────────────────[ Settings ]─────────────────────────────────┐"
+"│Search: press /   │heavy_task_limit: < 2 >                                    │"
+"│──────────────────│work_tick_interval_secs: < 10 >                            │"
+"│▸ Advanced        │heavy_task_labels:                                         │"
+"│  Providers       │○ caveman_mode  false (default)                            │"
+"│  Budget          │                                                           │"
+"│  Flags           │                                                           │"
+"│  Gates           │                                                           │"
+"│  GitHub          │                                                           │"
+"│  Layout          │                                                           │"
+"│  Modes           │                                                           │"
+"│  Notifications   │                                                           │"
+"│  Project         │                                                           │"
+"│  Review          │                                                           │"
+"│  Sessions        │                                                           │"
+"│  Teams           │                                                           │"
+"│  Theme           │                                                           │"
+"│  TurboQuant      │                                                           │"
+"│                  │                                                           │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Tab Tab   ↑/↓ Field   ←/→ Adjust   Ctrl+s Save   Esc Back               q quit "

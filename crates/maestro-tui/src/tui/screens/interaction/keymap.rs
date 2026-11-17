@@ -22,7 +22,8 @@ pub(crate) enum InteractionIntent {
     SendPushup,
     /// `Ctrl+P` when `produce_pr` is false — greyed; log and ignore.
     PushupDisabled,
-    /// `Ctrl+L` in `Idle` — clear the input buffer (history untouched).
+    /// `Ctrl+G` in `Idle` — clear the input buffer (history untouched).
+    /// `Ctrl+L` is the global log drawer and `Ctrl+U` the editor's undo (#1263).
     ClearInput,
     /// `Esc` — return to the Issues list (honoured in every state).
     Back,
@@ -107,7 +108,7 @@ pub(crate) fn classify(
             PushupDisabled
         };
     }
-    if ctrl && code == KeyCode::Char('l') {
+    if ctrl && code == KeyCode::Char('g') {
         return ClearInput;
     }
     FeedEditor
@@ -149,7 +150,7 @@ impl KeymapProvider for InteractionScreen {
                     description: "Diff review",
                 },
                 KeyBinding {
-                    key: "Ctrl+L",
+                    key: "Ctrl+G",
                     description: "Clear input",
                 },
                 KeyBinding {
@@ -239,14 +240,14 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_l_idle_clears_input() {
-        let (c, m) = ctrl('l');
+    fn ctrl_g_idle_clears_input() {
+        let (c, m) = ctrl('g');
         assert_eq!(classify(Idle, false, true, c, m), ClearInput);
     }
 
     #[test]
-    fn ctrl_l_streaming_is_locked() {
-        let (c, m) = ctrl('l');
+    fn ctrl_g_streaming_is_locked() {
+        let (c, m) = ctrl('g');
         assert_eq!(classify(Streaming, false, true, c, m), Locked);
     }
 

@@ -7,7 +7,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, Paragraph},
+    widgets::{Block, List, ListItem, Paragraph},
 };
 
 /// Format an entry's `HH:MM:SS` stamp in `zone` (#1160: the log stores UTC,
@@ -106,6 +106,11 @@ pub struct ActivityLog {
     entries: Vec<LogEntry>,
     max_entries: usize,
     pub scroll_offset: usize,
+    /// #1263: the `Ctrl+L` drawer is open.
+    pub drawer_open: bool,
+    /// #1263: WARN/ERR entries not yet shown; `ui::draw` turns them into
+    /// toasts on screens without the pane. Capped like `entries`.
+    alerts: Vec<LogEntry>,
 }
 
 impl ActivityLog {
@@ -114,10 +119,18 @@ impl ActivityLog {
             entries: Vec::new(),
             max_entries,
             scroll_offset: 0,
+            drawer_open: false,
+            alerts: Vec::new(),
         }
     }
 
     pub fn push(&mut self, entry: LogEntry) {
+        if matches!(entry.level, LogLevel::Warn | LogLevel::Error) {
+            self.alerts.push(entry.clone());
+            if self.alerts.len() > self.max_entries {
+                self.alerts.drain(..self.alerts.len() - self.max_entries);
+            }
+        }
         self.entries.push(entry);
         if self.entries.len() > self.max_entries {
             self.entries.drain(..self.entries.len() - self.max_entries);
@@ -185,6 +198,11 @@ impl ActivityLog {
         &self.entries
     }
 
+    /// WARN/ERR entries pushed since the last call, oldest first.
+    pub fn take_alerts(&mut self) -> Vec<LogEntry> {
+        std::mem::take(&mut self.alerts)
+    }
+
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, use_nerd_font: bool) {
         self.draw_in_zone(f, area, theme, use_nerd_font, &Local);
     }
@@ -202,7 +220,21 @@ impl ActivityLog {
         Tz::Offset: std::fmt::Display,
     {
         let block = theme.styled_block("Activity Log", false);
+        self.draw_block_in_zone(f, area, block, theme, use_nerd_font, zone);
+    }
 
+    /// The log lines inside `block`; the drawer passes its own overlay block.
+    pub fn draw_block_in_zone<Tz: TimeZone>(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        block: Block<'_>,
+        theme: &Theme,
+        use_nerd_font: bool,
+        zone: &Tz,
+    ) where
+        Tz::Offset: std::fmt::Display,
+    {
         let inner_height = area.height.saturating_sub(2) as usize;
         let total = self.entries.len();
 
