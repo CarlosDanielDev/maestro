@@ -431,6 +431,10 @@ impl Screen for AdaptScreen {
         draw::draw_adapt_screen(self, f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints(self)
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Normal)
     }

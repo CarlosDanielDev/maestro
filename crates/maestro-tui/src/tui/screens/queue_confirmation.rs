@@ -1,4 +1,4 @@
-use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
+use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -309,27 +309,21 @@ impl Screen for QueueConfirmationScreen {
         ScreenAction::None
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![("Enter", "Confirm"), ("d", "Remove"), ("Esc", "Cancel")]
+    }
+
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let has_warnings = !self.conflict_report.is_safe;
         let conflict_height = if has_warnings { 8 } else { 3 };
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(6),
-                Constraint::Length(conflict_height),
-                Constraint::Length(1),
-            ])
+            .constraints([Constraint::Min(6), Constraint::Length(conflict_height)])
             .split(area);
 
         self.draw_issue_list(f, chunks[0], theme);
         self.draw_conflict_panel(f, chunks[1], theme);
-        draw_keybinds_bar(
-            f,
-            chunks[2],
-            &[("Enter", "Confirm"), ("d", "Remove"), ("Esc", "Cancel")],
-            theme,
-        );
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {

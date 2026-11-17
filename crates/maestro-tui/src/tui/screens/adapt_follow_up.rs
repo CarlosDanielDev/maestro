@@ -4,7 +4,7 @@
 //! Matches the pattern established by `HollowRetryScreen`: centered popup,
 //! j/k or number keys to select, Enter to confirm, Esc to dismiss.
 
-use super::{PromptSessionConfig, Screen, ScreenAction, draw_keybinds_bar};
+use super::{PromptSessionConfig, Screen, ScreenAction};
 use crate::adapt::suggestions::build_follow_up_prompt;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -120,10 +120,19 @@ impl Screen for AdaptFollowUpScreen {
         ScreenAction::None
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("j/k", "Move"),
+            ("1-9", "Pick"),
+            ("Enter", "Execute"),
+            ("Esc", "Dismiss"),
+        ]
+    }
+
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let items = self.suggestions.len() as u16;
         let popup_width = 80.min(area.width.saturating_sub(4));
-        let popup_height = (7 + items).min(area.height.saturating_sub(4));
+        let popup_height = (6 + items).min(area.height.saturating_sub(4));
         let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
         let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
         let popup_area = Rect::new(x, y, popup_width, popup_height);
@@ -148,7 +157,6 @@ impl Screen for AdaptFollowUpScreen {
                 Constraint::Length(1),  // blank
                 Constraint::Min(items), // list
                 Constraint::Length(1),  // blank
-                Constraint::Length(1),  // keybinds
             ])
             .split(inner);
 
@@ -194,18 +202,6 @@ impl Screen for AdaptFollowUpScreen {
 
         let list = Paragraph::new(list_lines).wrap(Wrap { trim: false });
         f.render_widget(list, chunks[2]);
-
-        draw_keybinds_bar(
-            f,
-            chunks[4],
-            &[
-                ("j/k", "Move"),
-                ("1-9", "Pick"),
-                ("Enter", "Execute"),
-                ("Esc", "Dismiss"),
-            ],
-            theme,
-        );
     }
 }
 

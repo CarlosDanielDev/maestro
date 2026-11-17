@@ -321,6 +321,10 @@ impl Screen for PrReviewScreen {
         draw::draw_pr_review_screen(self, f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints(self)
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         match self.step {
             PrReviewStep::SubmitReview => Some(InputMode::Insert),

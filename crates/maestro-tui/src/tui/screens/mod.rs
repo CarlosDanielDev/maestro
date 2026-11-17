@@ -59,13 +59,7 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::KeymapProvider;
 use crate::tui::theme::Theme;
 use crossterm::event::Event;
-use ratatui::{
-    Frame,
-    layout::Rect,
-    style::Style,
-    text::{Line, Span},
-    widgets::Paragraph,
-};
+use ratatui::{Frame, layout::Rect};
 
 /// Trait that all interactive screens implement.
 pub trait Screen: KeymapProvider {
@@ -79,6 +73,12 @@ pub trait Screen: KeymapProvider {
     /// Returns None to leave the mode unchanged (defer to current global mode).
     fn desired_input_mode(&self) -> Option<InputMode> {
         None
+    }
+
+    /// Key hints for the footer (`ds::key_hints`), most important first.
+    /// Empty means the footer shows the mode's hints from `mode_keymap`.
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        Vec::new()
     }
 }
 
@@ -104,23 +104,6 @@ pub(crate) fn strip_fences(s: &str) -> &str {
         t = stripped;
     }
     t.trim()
-}
-
-/// Render a keybindings help bar at the bottom of a screen.
-pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)], theme: &Theme) {
-    let spans: Vec<Span> = bindings
-        .iter()
-        .flat_map(|(key, label)| {
-            vec![
-                Span::styled(
-                    format!("[{}]", key),
-                    Style::default().fg(theme.accent_success),
-                ),
-                Span::raw(format!(" {}  ", label)),
-            ]
-        })
-        .collect();
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 /// Action returned by a screen's input handler to drive navigation.

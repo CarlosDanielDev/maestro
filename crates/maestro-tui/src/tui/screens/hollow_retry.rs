@@ -1,4 +1,4 @@
-use super::{Screen, ScreenAction, draw_keybinds_bar};
+use super::{Screen, ScreenAction};
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -83,6 +83,10 @@ impl Screen for HollowRetryScreen {
         ScreenAction::None
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![("r", "Retry"), ("s", "Skip"), ("v", "View Logs")]
+    }
+
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         // Center a box in the area
         let popup_width = 50.min(area.width.saturating_sub(4));
@@ -108,8 +112,7 @@ impl Screen for HollowRetryScreen {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(2), // info
-                Constraint::Length(3), // message
-                Constraint::Min(1),    // keybinds
+                Constraint::Min(3),    // message
             ])
             .split(inner);
 
@@ -138,13 +141,6 @@ impl Screen for HollowRetryScreen {
                 .style(Style::default().fg(theme.accent_warning))
                 .wrap(Wrap { trim: true });
         f.render_widget(message, chunks[1]);
-
-        draw_keybinds_bar(
-            f,
-            chunks[2],
-            &[("r", "Retry"), ("s", "Skip"), ("v", "View Logs")],
-            theme,
-        );
     }
 }
 

@@ -6,7 +6,7 @@ use crate::tui::help::centered_rect;
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
-use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
+use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::focused_selection_style;
 use crossterm::event::KeyCode;
@@ -25,12 +25,6 @@ impl IssueBrowserScreen {
 
         let preview_pct = self.layout.preview_ratio.clamp(10, 90) as u16;
 
-        // Split off keybinds bar at the bottom
-        let outer = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(6), Constraint::Length(1)])
-            .split(area);
-
         match self.layout.mode {
             LayoutMode::Vertical => {
                 let chunks = Layout::default()
@@ -39,7 +33,7 @@ impl IssueBrowserScreen {
                         Constraint::Percentage(100 - preview_pct),
                         Constraint::Percentage(preview_pct),
                     ])
-                    .split(outer[0]);
+                    .split(area);
                 self.draw_issue_list(f, chunks[0], theme);
                 self.draw_preview(f, chunks[1], theme);
             }
@@ -50,24 +44,39 @@ impl IssueBrowserScreen {
                         Constraint::Percentage(100 - preview_pct),
                         Constraint::Percentage(preview_pct),
                     ])
-                    .split(outer[0]);
+                    .split(area);
                 self.draw_issue_list(f, chunks[0], theme);
                 self.draw_preview(f, chunks[1], theme);
             }
         }
+    }
 
-        draw_keybinds_bar(
-            f,
-            outer[1],
-            &[
+    /// Footer hints: the launch dialog's while it is open, else the list's
+    /// (#1258).
+    pub(super) fn footer_hints_impl(&self) -> Vec<(&'static str, &'static str)> {
+        match self.prompt_overlay.as_ref() {
+            Some(overlay) if overlay.is_multi() => vec![
+                ("Enter", "Launch all"),
+                ("Tab", "Next field"),
+                ("Space", "Toggle"),
+                ("Ctrl+U", "Unified PR"),
+                ("Shift+Enter", "New line"),
+                ("Esc", "Cancel"),
+            ],
+            Some(_) => vec![
+                ("Tab", "Cycle"),
+                ("Space", "Toggle"),
+                ("Enter", "Launch"),
+                ("Esc", "Cancel"),
+            ],
+            None => vec![
                 ("Tab", "Switch pane"),
                 ("Enter", "Run"),
                 ("Space", "Select"),
                 ("/", "Filter"),
                 ("Esc", "Back"),
             ],
-            theme,
-        );
+        }
     }
 
     pub fn set_milestone_filter(&mut self, milestone: Option<u64>) {
@@ -460,7 +469,6 @@ impl IssueBrowserScreen {
                     Constraint::Length(1),                 // Produce PR checkbox
                     Constraint::Length(1),                 // Interaction checkbox
                     Constraint::Length(1),                 // Launch button
-                    Constraint::Length(1),                 // keybinds
                 ])
                 .split(inner);
 
@@ -543,20 +551,6 @@ impl IssueBrowserScreen {
                 )));
                 f.render_widget(launch_button, chunks[7]);
             }
-
-            draw_keybinds_bar(
-                f,
-                chunks[8],
-                &[
-                    ("Enter", "Launch all"),
-                    ("Tab", "Next field"),
-                    ("Space", "Toggle"),
-                    ("Ctrl+U", "Unified PR"),
-                    ("Shift+Enter", "New line"),
-                    ("Esc", "Cancel"),
-                ],
-                theme,
-            );
         } else {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -567,7 +561,6 @@ impl IssueBrowserScreen {
                     Constraint::Length(1), // Produce PR checkbox
                     Constraint::Length(1), // Interaction checkbox
                     Constraint::Length(1), // Launch button
-                    Constraint::Length(1), // keybinds
                 ])
                 .split(inner);
 
@@ -625,18 +618,6 @@ impl IssueBrowserScreen {
                 )));
                 f.render_widget(launch_button, chunks[5]);
             }
-
-            draw_keybinds_bar(
-                f,
-                chunks[6],
-                &[
-                    ("Tab", "Cycle"),
-                    ("Space", "Toggle"),
-                    ("Enter", "Launch"),
-                    ("Esc", "Cancel"),
-                ],
-                theme,
-            );
         }
     }
 

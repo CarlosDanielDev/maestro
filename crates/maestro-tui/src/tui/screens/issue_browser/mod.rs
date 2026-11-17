@@ -467,6 +467,10 @@ impl Screen for IssueBrowserScreen {
         }
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        self.footer_hints_impl()
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         if self.prompt_overlay.is_some() || self.filter_mode != FilterMode::None {
             Some(InputMode::Insert)

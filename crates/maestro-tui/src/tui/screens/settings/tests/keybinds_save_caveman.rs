@@ -20,23 +20,23 @@ fn render_settings_to_string(screen: &mut SettingsScreen, width: u16, height: u1
     out
 }
 
-/// Return the keybinds bar row — the second-to-last line of the rendered
-/// output. The final line is the outer block's bottom border.
-fn keybinds_row(s: &str) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    lines
-        .get(lines.len().saturating_sub(2))
-        .copied()
-        .unwrap_or("")
-        .to_string()
+/// The footer row (`ds::key_hints`, #1258) the screen's hints render to.
+fn keybinds_row(screen: &SettingsScreen, width: u16) -> String {
+    let hints = crate::tui::ds::key_hints::from_pairs(&screen.footer_hints());
+    let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
+    let theme = Theme::dark();
+    terminal
+        .draw(|f| crate::tui::ds::key_hints::draw(f, f.area(), &hints, true, &theme))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    (0..width).map(|x| buf[(x, 0)].symbol()).collect()
 }
 
 #[test]
 fn keybind_bar_project_text_input_shows_enter_edit() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     screen.jump_to_tab(SettingsTab::Project);
-    let output = render_settings_to_string(&mut screen, 80, 10);
-    let row = keybinds_row(&output);
+    let row = keybinds_row(&screen, 80);
     assert!(
         row.contains("Enter"),
         "expected 'Enter' in keybinds row: {row}"
@@ -52,8 +52,7 @@ fn keybind_bar_turboquant_toggle_shows_space_toggle() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     screen.jump_to_tab(SettingsTab::TurboQuant);
     assert_eq!(screen.field_index, 0);
-    let output = render_settings_to_string(&mut screen, 80, 10);
-    let row = keybinds_row(&output);
+    let row = keybinds_row(&screen, 80);
     assert!(
         row.contains("Space"),
         "expected 'Space' in keybinds row: {row}"
@@ -71,8 +70,7 @@ fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     assert_eq!(screen.field_index, 2);
-    let output = render_settings_to_string(&mut screen, 80, 10);
-    let row = keybinds_row(&output);
+    let row = keybinds_row(&screen, 80);
     assert!(row.contains("←/→"), "expected '←/→' in keybinds row: {row}");
     assert!(
         row.contains("Change"),
@@ -85,8 +83,7 @@ fn keybind_bar_flags_tab_has_no_widget_hints() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     screen.jump_to_tab(SettingsTab::Flags);
     assert_eq!(screen.active_tab(), SettingsTab::Flags);
-    let output = render_settings_to_string(&mut screen, 80, 10);
-    let row = keybinds_row(&output);
+    let row = keybinds_row(&screen, 80);
     assert!(
         !row.contains("Space"),
         "Flags bar must not contain 'Space': {row}"
@@ -105,8 +102,7 @@ fn keybind_bar_list_editor_still_shows_save_esc_at_80_cols() {
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     assert_eq!(screen.field_index, 2);
-    let output = render_settings_to_string(&mut screen, 80, 10);
-    let row = keybinds_row(&output);
+    let row = keybinds_row(&screen, 80);
     assert!(
         row.contains("Ctrl+s"),
         "expected 'Ctrl+s' in keybinds row: {row}"

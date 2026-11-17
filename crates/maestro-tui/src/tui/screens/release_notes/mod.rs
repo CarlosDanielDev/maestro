@@ -114,6 +114,10 @@ impl Screen for ReleaseNotesScreen {
         draw::draw_release_notes(self, f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints()
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Normal)
     }

@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/shell_bars.rs
+expression: t.backend()
+---
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│ MAESTRO v0.33.1  ══ Dashboard ══ 󰙍 0 agents (0 active) ══ $0.00 spent ══  00│"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"────────────────────────────────────────────────────────────────────────────────"
+"  owner/repo   main   @carlos  │  Loading...                                 "
+"────────────────────────────────────────────────────────────────────────────────"
+"┏━━[ Quick Actions ]━━━┓┌─────[ Suggestions ]──────┐┌───[ Recent Activity ]────┐"
+"┃  [i]  Browse Issues  ┃│  No suggestions — everyth││                          │"
+"┃  [m]  Browse Milesto…┃│                          ││                          │"
+"┃  [M]  Review Milesto…┃│                          ││                          │"
+"┃  [r]  Run Prompt     ┃│                          ││                          │"
+"┃  [a]  Adapt Project  ┃│                          ││                          │"
+"┃  [p]  Review PRs     ┃│                          ││                          │"
+"┃  [s]  Status         ┃│                          ││    No recent sessions.   │"
+"┃  [c]  Cost Report    ┃│                          ││ Press [r] to launch one. │"
+"┃  [t]  Token Report   ┃│                          ││                          │"
+"┃  [Q]  TurboQuant Sav…┃│                          ││                          │"
+"┃  [S]  Settings       ┃│                          ││                          │"
+"┃  [u]  Update Maestro ┃│                          ││                          │"
+"┃  [q]  Quit           ┃│                          ││                          │"
+"┃                      ┃│                          ││                          │"
+"┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
+" i Issues   m Milestones   r Prompt   s Sessions   a Adapt               q quit "
