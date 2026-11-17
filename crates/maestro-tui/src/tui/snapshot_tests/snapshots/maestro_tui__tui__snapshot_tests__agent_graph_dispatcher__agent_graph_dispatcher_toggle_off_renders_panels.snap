@@ -2,9 +2,7 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/agent_graph_dispatcher.rs
 expression: t.backend()
 ---
-"┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"│ MAESTRO v0.33.1  ══ Agent Graph ══ 󰙍 2 agents (0 active) ══ $0.00 spent ══  00:00:00 ══ RAM: 22MB ══ TQ:OFF ══ MOD:O│"
-"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
+" MAESTRO  0.33.1 │ ● 2 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF                                                     "
 " Agent Graph                                                                                           Esc back  ? help "
 "╔═════════════════════════[ #101 ]═════════════════════════╗╔═════════════════════════[ #102 ]═════════════════════════╗"
 "║ RUNNING 2m30s  agent:claude  $0.00                      ║║ RUNNING 2m30s  agent:claude  $0.00                      ║"
@@ -13,6 +11,8 @@ expression: t.backend()
 "║1 files (+1)                                              ║║1 files (+1)                                              ║"
 "║> -                                                       ║║> -                                                       ║"
 "║Waiting for output...                                     ║║Waiting for output...                                     ║"
+"║                                                          ║║                                                          ║"
+"║                                                          ║║                                                          ║"
 "║                                                          ║║                                                          ║"
 "║                                                          ║║                                                          ║"
 "║                                                          ║║                                                          ║"

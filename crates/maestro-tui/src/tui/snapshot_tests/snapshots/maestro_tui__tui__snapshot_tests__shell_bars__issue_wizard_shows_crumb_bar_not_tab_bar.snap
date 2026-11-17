@@ -2,9 +2,7 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/shell_bars.rs
 expression: t.backend()
 ---
-"┌──────────────────────────────────────────────────────────────────────────────┐"
-"│ MAESTRO v0.33.1  ══ Welcome  New issue ══ 󰙍 0 agents (0 active) ══ $0.00 spe│"
-"└──────────────────────────────────────────────────────────────────────────────┘"
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
 " Home › New issue                                              Esc back  ? help "
 "┌────────────────────────────[ Step 1/10: Context ]────────────────────────────┐"
 "│                                                                              │"
@@ -20,6 +18,8 @@ expression: t.backend()
 "│                                                                              │"
 "│Press Enter when the issue should become clear enough for another session to  │"
 "│execute.                                                                      │"
+"│                                                                              │"
+"│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"

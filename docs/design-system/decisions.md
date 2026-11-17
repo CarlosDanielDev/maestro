@@ -215,6 +215,15 @@ first. One entry per decision.
 - **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
 - **Source:** #1247 (judge finding on PR #1345).
 
+## 2026-11-16 — StatusBar: one row, chips replace the banners
+
+- **What:** `ds::status_bar` is one row with no border. The `▲ BYPASS` banner overlay is gone (the chip replaces it, no coexistence). An available update is only the `↑ <version> u` chip; the "New version X available" banner arm is removed and the activity-log line no longer names the version. Downloading / restart / failed upgrade states keep their banner, drawn left of the pinned safety chips. Drop order is update, TurboQuant, quota, continuous-run chip, budget, fleet; the issue's "update then quota" order wins over the mock, where the update chip never drops. Uptime, RAM and `MOD:` are not in the bar. `CONTINUOUS: n/m done` stays as a chip only while a continuous run is active (owner decision on PR #1360): it drops after quota and before budget, because run progress is live state you act on while quota is a slower signal, and money and fleet counts matter more. It is reverse `accent_info` + bold, so it reads under NO_COLOR; `TQ:ON` stays (pinned by the #1162 header test, and the mock shows TurboQuant). Fleet `run` also counts CI fix, conflict fix and retry; `wait` also counts interactive sessions (the chat section counts its turn as `◐ wait`).
+- **Why:** the shell rule puts state in one place; two places for one fact is what the redesign removes. The upgrade progress states carry prompts (`[y]/[n]`) that are not state, so they stay until the upgrade issue.
+- **Section:** `§04 StatusBar`, `Shell rules`, `§08` metric "Places the update notice appears".
+- **Rejected:** keeping the bypass banner during a migration (two places for one fact); width breakpoints instead of greedy dropping (a long quota badge would still overflow); mode chip (`NORMAL` / `INSERT`) — no App state for it yet.
+- **Known gap:** the budget alert banner (`draw_budget_banner_if_alerting`) still overlays the bar row and can hide the safety chips while it shows; it is outside #1257's ownership.
+- **Source:** #1257.
+
 ## 2026-11-16 — Kit v2 pieces: `+n` overflow, three-column tree, no loading/error tile yet
 
 - **What:** `ds::filter_chips` ends with `+n` (hidden count) instead of the mock's `…`. `ds::tree_prefix` uses three columns per level (`├─ `, `└─ `, `│  `, blank under a last ancestor) instead of the mock's two (`├ `, `│ `), and has no `▾ ▸` expander. `ds::kpi_tile` ships the ready and empty forms only; the delta is drawn in a neutral colour.

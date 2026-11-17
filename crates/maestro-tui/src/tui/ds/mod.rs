@@ -11,6 +11,7 @@ pub mod md_block;
 pub mod money;
 pub mod panel;
 pub mod size_guard;
+pub mod status_bar;
 pub mod status_chip;
 pub mod sub_tabs;
 pub mod tab_bar;

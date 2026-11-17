@@ -102,9 +102,13 @@ fn landing_80x28_shows_the_compact_console_above_the_log() {
     ] {
         assert!(text.contains(needle), "missing {needle:?}:\n{text}");
     }
-    // Status bar is rows 0..3, the TabBar row 3 (#1258); the compact header
-    // is the landing's first line.
-    assert!(rows[4].contains("MAESTRO"), "row 4: {:?}\n{text}", rows[4]);
+    // Status bar is row 0 (#1257), the TabBar row 1 (#1258); the compact
+    // header sits below one pad row.
+    assert!(
+        rows[3].contains("MAESTRO  v"),
+        "row 3: {:?}\n{text}",
+        rows[3]
+    );
     assert!(!text.contains("|  \\/  |"), "big logo must be off:\n{text}");
 }
 

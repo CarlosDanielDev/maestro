@@ -2,11 +2,10 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/home_small_terminal.rs
 expression: t.backend()
 ---
-"┌──────────────────────────────────────────────────────────────────────────────┐"
-"│ MAESTRO v0.33.1  ══ Dashboard ══ 󰙍 0 agents (0 active) ══ $0.00 spent ══  00│"
-"└──────────────────────────────────────────────────────────────────────────────┘"
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
 "  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
 "────────────────────────────────────────────────────────────────────────────────"
+"  owner/repo   main   @carlos  │  Loading...                                 "
 "────────────────────────────────────────────────────────────────────────────────"
 "┏━━[ Quick Actions ]━━━┓┌─────[ Suggestions ]──────┐┌───[ Recent Activity ]────┐"
 "┃  [i]  Browse Issues  ┃│  󰝦 3 issues labeled ready││   #2 Start the work  $0.│"
@@ -18,6 +17,7 @@ expression: t.backend()
 "┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
 "┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
 "│10:00:00 [S-1] home-log-row-1157                                              │"
+"│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
