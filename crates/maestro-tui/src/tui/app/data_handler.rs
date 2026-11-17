@@ -704,6 +704,11 @@ impl App {
                     screen.apply_launch_result(summary);
                 }
             }
+            TuiDataEvent::TeamWaveStarted(wave) => {
+                if let Some(ref mut screen) = self.screen_state.team_wizard_screen {
+                    screen.apply_wave_started(wave);
+                }
+            }
             TuiDataEvent::InteractionTurnEvent {
                 issue_number: _,
                 event,

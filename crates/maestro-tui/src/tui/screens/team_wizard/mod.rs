@@ -15,6 +15,7 @@ mod draw;
 mod issue_paste;
 mod launch;
 mod launch_plan;
+mod launch_waves;
 mod manage;
 pub mod types;
 

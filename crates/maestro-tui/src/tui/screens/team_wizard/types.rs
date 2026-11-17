@@ -295,6 +295,8 @@ pub struct LaunchPayload {
     /// Reset to `None` on every buffer mutation; advanced by `Up`/`Down`;
     /// consumed by `Tab` (#876).
     pub autocomplete_focus: Option<usize>,
+    /// Wave (0-based) the running team launch is on (#1246).
+    pub running_wave: Option<usize>,
 }
 
 impl LaunchPayload {

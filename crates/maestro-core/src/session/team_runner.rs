@@ -4,9 +4,11 @@
 //!
 //! `run_team` walks a `Scheduler`'s level DAG, spawning one session per
 //! planned issue via a `TeamLauncher` trait. Per-level concurrency is
-//! bounded by `Scheduler.max_parallel`. A level-internal failure
-//! short-circuits the run and the downstream levels are marked
-//! `skipped_due_to_upstream`.
+//! bounded by `Scheduler.max_parallel`. A level starts only when every
+//! session of the previous level is terminal (#1246). A level-internal
+//! failure (spawn error, or a session that ends killed, errored, hollow or
+//! with failed gates) short-circuits the run and the downstream levels are
+//! marked `skipped_due_to_upstream`.
 //!
 //! Replaces the placeholder fan-out in `screen_dispatch.rs::LaunchTeam`
 //! that flattened every level into a single `LaunchSessions` push. See
@@ -15,15 +17,61 @@
 //! sub-agent routing remains a follow-up.
 
 use crate::orchestration::scheduler::Scheduler;
+use crate::session::types::SessionStatus;
 use crate::state::types::IssueNumber;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use uuid::Uuid;
 
 #[async_trait]
 pub trait TeamLauncher: Send + Sync {
     async fn spawn_for_issue(&self, issue: IssueNumber, agent_id: String) -> Result<Uuid, String>;
+
+    /// Resolve once the session spawned for `issue` is terminal (#1246).
+    /// `Ok` only for a clean finish; `Err` carries the failure reason.
+    async fn wait_until_terminal(&self, issue: IssueNumber) -> Result<(), String>;
+
+    /// Called when wave `wave` (0-based) starts spawning, so a UI can show
+    /// which waves are still waiting.
+    fn wave_started(&self, _wave: usize) {}
+}
+
+/// What a session's status means for the team gate (#1246). `None` while
+/// the session can still move (Paused and Stalled included), so the next
+/// wave keeps waiting. A hollow completion counts as a failure.
+pub fn team_verdict(status: SessionStatus, hollow: bool) -> Option<Result<(), String>> {
+    use SessionStatus::*;
+    match status {
+        Completed if hollow => Some(Err("session ended hollow (no real work)".to_string())),
+        Completed | NeedsReview => Some(Ok(())),
+        Killed => Some(Err("session was killed".to_string())),
+        FailedGates => Some(Err("session failed its gates".to_string())),
+        // A retry moves the session to Retrying before the feed sees it,
+        // so an Errored session here has no retry left.
+        Errored => Some(Err("session errored".to_string())),
+        Queued | Spawning | Running | GatesRunning | Paused | Stalled | Retrying | CiFix
+        | NeedsPr | ConflictFix | Interactive => None,
+    }
+}
+
+/// Wait on a status feed until `verdict` decides. A closed feed is a
+/// failure: nobody can report the session's end any more.
+pub async fn wait_for_verdict<T>(
+    mut rx: watch::Receiver<T>,
+    mut verdict: impl FnMut(&T) -> Option<Result<(), String>>,
+) -> Result<(), String> {
+    let mut decided = None;
+    let waited = rx
+        .wait_for(|value| {
+            decided = verdict(value);
+            decided.is_some()
+        })
+        .await;
+    match (waited, decided) {
+        (Ok(_), Some(result)) => result,
+        _ => Err("session feed closed before the session finished".to_string()),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +86,8 @@ pub struct TeamOutcome {
     pub succeeded: Vec<IssueNumber>,
     pub failed: Vec<IssueFailure>,
     pub skipped_due_to_upstream: Vec<IssueNumber>,
+    /// Why the downstream waves were skipped, e.g. `wave 1 failed: #10 ...`.
+    pub skip_reason: Option<String>,
 }
 
 impl TeamOutcome {
@@ -47,6 +97,7 @@ impl TeamOutcome {
             succeeded: Vec::new(),
             failed: Vec::new(),
             skipped_due_to_upstream: Vec::new(),
+            skip_reason: None,
         }
     }
 
@@ -68,7 +119,8 @@ impl TeamOutcome {
 }
 
 /// Walk `scheduler.levels()` level-by-level, spawning one session per
-/// issue via `launcher` with the team's resolved `agent_id`. Per-level
+/// issue via `launcher` with the team's resolved `agent_id` and waiting
+/// until each session is terminal before the next level. Per-level
 /// concurrency is capped at `scheduler.max_parallel`. On any failure in
 /// a level, the remaining levels are recorded as
 /// `skipped_due_to_upstream` and the walk stops.
@@ -86,6 +138,7 @@ pub async fn run_team(
     let mut outcome = TeamOutcome::new(team_name);
 
     for (idx, level) in levels.iter().enumerate() {
+        launcher.wave_started(idx);
         let mut handles: Vec<(IssueNumber, tokio::task::JoinHandle<Result<Uuid, String>>)> =
             Vec::with_capacity(level.len());
         for &issue in level {
@@ -109,8 +162,12 @@ pub async fn run_team(
             handles.push((
                 issue,
                 tokio::spawn(async move {
+                    // The permit spans the whole session, so `max_parallel`
+                    // bounds running sessions, not only spawns.
                     let _permit = permit;
-                    launcher.spawn_for_issue(issue, aid).await
+                    let session_id = launcher.spawn_for_issue(issue, aid).await?;
+                    launcher.wait_until_terminal(issue).await?;
+                    Ok(session_id)
                 }),
             ));
         }
@@ -135,6 +192,14 @@ pub async fn run_team(
             }
         }
         if level_had_failure {
+            if let Some(first) = outcome.failed.first() {
+                outcome.skip_reason = Some(format!(
+                    "wave {} failed: #{} {}",
+                    idx + 1,
+                    first.issue,
+                    first.reason
+                ));
+            }
             for downstream in &levels[idx + 1..] {
                 outcome
                     .skipped_due_to_upstream

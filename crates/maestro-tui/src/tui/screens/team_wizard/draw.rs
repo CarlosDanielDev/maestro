@@ -302,14 +302,18 @@ impl TeamWizardScreen {
                 LaunchStep::IssuePicker => self.draw_launch_issue_picker(f, body_area, theme),
                 LaunchStep::PlanPreview => self.draw_launch_plan_preview(f, body_area, theme),
                 LaunchStep::Confirm => self.draw_launch_confirm(f, body_area, theme),
-                LaunchStep::Executing => self.draw_terminal_state(
-                    f,
-                    body_area,
-                    theme,
-                    "Executing",
-                    "Dispatching team run…",
-                    theme.accent_info,
-                ),
+                LaunchStep::Executing => {
+                    if !self.draw_launch_waves(f, body_area, theme) {
+                        self.draw_terminal_state(
+                            f,
+                            body_area,
+                            theme,
+                            "Executing",
+                            "Dispatching team run…",
+                            theme.accent_info,
+                        );
+                    }
+                }
                 LaunchStep::LaunchSuccess => self.draw_terminal_state(
                     f,
                     body_area,

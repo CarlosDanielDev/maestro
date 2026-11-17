@@ -10,7 +10,11 @@ use crate::orchestration::types::{Primitive, TeamInput, TeamRole};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
+use tokio::sync::watch;
 use tokio::time::{Duration, sleep};
+
+/// Per-issue `(status, hollow)` the fake's sessions report.
+type StatusFeed = HashMap<IssueNumber, (SessionStatus, bool)>;
 
 /// Records every spawn call. Optionally fails specific issue numbers
 /// and adds a per-spawn delay so concurrency assertions are observable.
@@ -18,6 +22,9 @@ struct FakeLauncher {
     calls: Mutex<Vec<(IssueNumber, String, Instant)>>,
     fail_issues: HashMap<IssueNumber, String>,
     delay_ms: u64,
+    /// `None`: every session finishes the moment it spawns.
+    statuses: Option<watch::Receiver<StatusFeed>>,
+    waves: Mutex<Vec<usize>>,
 }
 
 impl FakeLauncher {
@@ -26,7 +33,21 @@ impl FakeLauncher {
             calls: Mutex::new(Vec::new()),
             fail_issues: HashMap::new(),
             delay_ms: 0,
+            statuses: None,
+            waves: Mutex::new(Vec::new()),
         }
+    }
+
+    fn with_statuses(mut self, rx: watch::Receiver<StatusFeed>) -> Self {
+        self.statuses = Some(rx);
+        self
+    }
+
+    fn spawned(&self) -> Vec<IssueNumber> {
+        self.calls()
+            .into_iter()
+            .map(|(issue, _, _)| issue)
+            .collect()
     }
 
     fn with_failure(mut self, issue: IssueNumber, reason: &str) -> Self {
@@ -59,6 +80,21 @@ impl TeamLauncher for FakeLauncher {
             return Err(reason.clone());
         }
         Ok(Uuid::new_v4())
+    }
+
+    async fn wait_until_terminal(&self, issue: IssueNumber) -> Result<(), String> {
+        let Some(rx) = self.statuses.clone() else {
+            return Ok(());
+        };
+        wait_for_verdict(rx, |feed| {
+            feed.get(&issue)
+                .and_then(|&(status, hollow)| team_verdict(status, hollow))
+        })
+        .await
+    }
+
+    fn wave_started(&self, wave: usize) {
+        self.waves.lock().unwrap().push(wave);
     }
 }
 
@@ -265,3 +301,8 @@ async fn run_team_passes_implementer_binding_as_agent_id() {
         );
     }
 }
+
+// #1246 wave-gating tests live in a child module to keep this file under
+// the 400-line cap; they reuse `FakeLauncher` and the scheduler helpers.
+#[path = "team_runner_wave_tests.rs"]
+mod waves;

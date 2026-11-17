@@ -277,3 +277,12 @@ first. One entry per decision.
 - **Section:** `§02 Home: Mission Control` (Needs you), `§02.1 Dashboard: operations cockpit`.
 - **Rejected:** pushing `Dashboard` with no selection (the operator lands on a menu and must find the session again); `Detail(id)` (skips the fleet context and is not part of the Dashboard). Computing the grid position in the key handler from `crossterm::terminal::size()` (the arrow keys' layout): the Overview draws in the body area, not the whole terminal, so page and row could differ.
 - **Source:** #1264.
+
+## 2026-11-17 — Teams Launch Executing step lists waves; a wave waits for the previous one to finish
+
+- **What:** `run_team` starts wave n+1 only when every session of wave n is terminal (`TeamLauncher::wait_until_terminal`, `team_verdict`). Paused, stalled and retrying sessions keep the next wave waiting; a killed, errored, hollow or gates-failed session fails the wave and skips the waves after it (`skip_reason: wave n failed: #N …`). The Executing step (`team_wizard/launch_waves.rs`) draws one line per wave: `Wave n  #a #b  finished | running | waiting on wave n-1`, fed by `TuiDataEvent::TeamWaveStarted`. Without a plan it keeps the old `Dispatching team run…` state.
+- **Why:** waves exist because later issues depend on earlier ones; starting them on spawn ran dependents on a base without their blocker's work (#1246). The flow map edge `wave spawned → next wave starts (bug)` becomes `wave finished → next wave`.
+- **Section:** `§02.17 Teams: Launch` (result panel, "spawned ≠ finished"), flow map node `team.waves`.
+- **Rejected:** having the TUI push terminal transitions into the runner per session (the runner already owns the level loop, so a completion wait per spawned session is simpler); drawing waves with `status_chip` (that chip is for a `SessionStatus`, a wave is not one).
+- **Known gap:** the Launched step still reads `Team run dispatched.`; it now shows only after the last wave finished. The per-issue result panel of §02.17 is not drawn yet. If the fetched issue never becomes a pool session (for example a launch guard refuses it), the wave waits until maestro quits.
+- **Source:** #1246.

@@ -276,6 +276,7 @@ impl TeamWizardScreen {
             LaunchInputKind::IdeaInbox => TeamInput::IdeaInbox,
         };
         self.launch_step = LaunchStep::Executing;
+        self.launch.running_wave = None;
         ScreenAction::LaunchTeam {
             team_name,
             input: team_input,
