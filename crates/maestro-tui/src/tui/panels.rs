@@ -116,6 +116,18 @@ impl GridState {
             + self.selected_col
     }
 
+    /// Inverse of [`selected_index`](Self::selected_index): put the cursor
+    /// on the flat session `index` (page, row, column) for `layout` (#1264).
+    pub fn select_index(&mut self, index: usize, layout: &GridLayout) {
+        if layout.sessions_per_page == 0 || layout.cols == 0 {
+            return;
+        }
+        let on_page = index % layout.sessions_per_page;
+        self.current_page = index / layout.sessions_per_page;
+        self.selected_row = on_page / layout.cols;
+        self.selected_col = on_page % layout.cols;
+    }
+
     pub fn move_left(&mut self) {
         self.selected_col = self.selected_col.saturating_sub(1);
     }
@@ -195,6 +207,9 @@ impl Default for GridState {
 
 pub struct PanelView {
     pub selected: Option<usize>,
+    /// One-shot (#1264): a session index to put the grid cursor on at the
+    /// next Overview draw, where the grid layout is known.
+    pub pending_reveal: Option<usize>,
     /// Scroll offset for the message area in agent panels.
     pub scroll_offset: u16,
     pub grid_state: GridState,
@@ -204,6 +219,7 @@ impl PanelView {
     pub fn new() -> Self {
         Self {
             selected: None,
+            pending_reveal: None,
             scroll_offset: 0,
             grid_state: GridState::new(),
         }
@@ -219,6 +235,23 @@ impl PanelView {
 
     pub fn selected_index(&self) -> usize {
         self.selected.unwrap_or(0)
+    }
+
+    /// Select session `index` now and move the grid cursor to it at the
+    /// next draw (`apply_reveal`), so the highlight follows the selection.
+    pub fn reveal(&mut self, index: usize) {
+        self.selected = Some(index);
+        self.pending_reveal = Some(index);
+    }
+
+    /// Apply a pending [`reveal`](Self::reveal) with the layout the grid is
+    /// drawn with (`session_count` sessions in `area`).
+    pub fn apply_reveal(&mut self, session_count: usize, area: Rect) {
+        if let Some(index) = self.pending_reveal.take() {
+            let layout = GridLayout::calculate(session_count, area.width, area.height);
+            self.grid_state.select_index(index, &layout);
+            self.scroll_offset = 0;
+        }
     }
 
     pub fn draw(
@@ -673,6 +706,47 @@ pub(crate) fn compact_gauge_bar_counts(pct: f64, bar_width: usize) -> (usize, us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_state_select_index_is_the_inverse_of_selected_index() {
+        for (count, w, h) in [(2, 120, 40), (4, 80, 24), (6, 120, 40), (15, 120, 23)] {
+            let layout = GridLayout::calculate(count, w, h);
+            for index in 0..count {
+                let mut g = GridState::new();
+                g.select_index(index, &layout);
+                assert_eq!(g.selected_index(&layout), index, "{count} in {w}x{h}");
+                assert!(g.selected_col < layout.cols && g.selected_row < layout.rows);
+            }
+        }
+    }
+
+    #[test]
+    fn grid_state_select_index_past_the_first_page_turns_the_page() {
+        let layout = GridLayout::calculate(15, 120, 40);
+        assert!(layout.total_pages > 1, "{layout:?}");
+        let mut g = GridState::new();
+        g.select_index(layout.sessions_per_page + 1, &layout);
+        assert_eq!(g.current_page, 1);
+        assert_eq!((g.selected_row, g.selected_col), (0, 1));
+    }
+
+    #[test]
+    fn panel_view_reveal_moves_the_cursor_once_at_draw() {
+        let mut v = PanelView::new();
+        v.reveal(4);
+        assert_eq!(v.selected_index(), 4);
+        let area = Rect::new(0, 0, 120, 40);
+        v.apply_reveal(6, area);
+        let layout = GridLayout::calculate(6, 120, 40);
+        assert_eq!(v.grid_state.selected_index(&layout), 4);
+        v.grid_state.move_left();
+        v.apply_reveal(6, area);
+        assert_eq!(
+            v.grid_state.selected_index(&layout),
+            3,
+            "one-shot: arrows win after"
+        );
+    }
 
     #[test]
     fn grid_layout_zero_sessions() {

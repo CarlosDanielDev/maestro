@@ -69,6 +69,12 @@ fn local_ten_am() -> chrono::DateTime<chrono::Utc> {
 }
 
 fn busy_app() -> App {
+    busy_app_after(0)
+}
+
+/// [`busy_app`] with `runners` extra running agents enqueued first, so the
+/// failed-gates session sits further down the pool (page 2 of Overview).
+fn busy_app_after(runners: u128) -> App {
     let mut app = make_test_app("home-mission");
     app.show_mascot = false;
     app.show_activity_log = true;
@@ -80,6 +86,11 @@ fn busy_app() -> App {
         22 * 1024 * 1024,
         16 * 1024 * 1024 * 1024,
     ));
+    for i in 0..runners {
+        let issue = 600 + i as u64;
+        app.pool
+            .enqueue(agent(SessionStatus::Running, issue, "Runner", 0x600 + i));
+    }
     for s in [
         agent(SessionStatus::Running, 409, "Token refresh", 0x409),
         agent(SessionStatus::Running, 410, "Fleet board filters", 0x410),
@@ -264,9 +275,35 @@ async fn home_disabled_action_inert() {
     assert_eq!(app.tui_mode, TuiMode::Prd);
 }
 
-#[tokio::test]
-async fn home_enter_attention_opens_dashboard_row() {
-    let mut app = busy_app();
+/// The Overview panel whose title holds `needle` is the highlighted one:
+/// its top-left corner has `border_active` + BOLD (`panels::draw_single_panel`).
+fn highlighted(t: &Terminal<TestBackend>, theme: &Theme, needle: &str) -> bool {
+    let buf = t.backend().buffer();
+    let r = rows(t);
+    let y = r
+        .iter()
+        .position(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("no panel {needle:?} on screen:\n{}", r.join("\n")));
+    let title_x = (0..buf.area.width)
+        .find(|x| {
+            let rest: String = (*x..buf.area.width)
+                .map(|x| buf[(x, y as u16)].symbol())
+                .collect();
+            rest.starts_with(needle)
+        })
+        .unwrap_or(0);
+    let corner = (0..title_x)
+        .rev()
+        .find(|x| buf[(*x, y as u16)].symbol() == "╔")
+        .unwrap_or_else(|| panic!("no corner left of {needle:?}"));
+    let cell = &buf[(corner, y as u16)];
+    cell.fg == theme.border_active && cell.modifier.contains(ratatui::style::Modifier::BOLD)
+}
+
+/// ⏎ on the top Needs-you row (gates failed, #412) opens the session
+/// Overview and highlights #412's panel, also when it is on page 2.
+async fn enter_opens_overview_on(runners: u128) {
+    let mut app = busy_app_after(runners);
     let t = draw(&mut app, 120, 36);
     let r = rows(&t);
     let title = r
@@ -285,7 +322,31 @@ async fn home_enter_attention_opens_dashboard_row() {
         .session_at_index(app.panel_view.selected_index())
         .map(|s| s.id);
     assert_eq!(selected, Some(Uuid::from_u128(FAILED_ID)));
-    assert_ne!(app.panel_view.selected_index(), 0, "not the default row");
+
+    let t = draw(&mut app, 120, 36);
+    if runners > 0 {
+        assert!(
+            app.panel_view.grid_state.current_page > 0,
+            "#412 is past the first page"
+        );
+    }
+    let theme = app.theme.clone();
+    assert!(
+        highlighted(&t, &theme, "#412 — Auth refactor"),
+        "#412 must be the highlighted panel (runners {runners}):\n{}",
+        rows(&t).join("\n")
+    );
+    assert!(
+        runners > 0 || !highlighted(&t, &theme, "#409 — Token refresh"),
+        "only one panel is highlighted"
+    );
+}
+
+#[tokio::test]
+async fn home_enter_attention_opens_dashboard_row() {
+    enter_opens_overview_on(0).await;
+    // 9 more agents first: #412 is index 11, past the first page.
+    enter_opens_overview_on(9).await;
 }
 
 /// Rows that carry only branding or the link chart of the old landing.

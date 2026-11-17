@@ -241,6 +241,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let spinner_tick = app.spinner_tick;
     match app.tui_mode {
         TuiMode::Overview => {
+            // #1264: a Home `⏎` jump puts the grid cursor on its session.
+            app.panel_view
+                .apply_reveal(app.pool.all_sessions().len(), chunks[1]);
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
                 f,

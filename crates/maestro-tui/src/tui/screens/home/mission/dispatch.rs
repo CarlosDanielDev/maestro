@@ -38,14 +38,14 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
 }
 
 /// `⏎` on a Needs-you row: a session opens the session Overview with that
-/// row selected; doctor, gh auth, budget and quota rows open Dashboard,
+/// row selected and highlighted (the grid cursor moves at the next draw); doctor, gh auth, budget and quota rows open Dashboard,
 /// where the warnings and the spend live.
 fn open(app: &mut App, item: &AttentionItem) -> ScreenAction {
     let Subject::Session { id, .. } = item.subject else {
         return ScreenAction::Push(TuiMode::Dashboard);
     };
     if let Some(index) = app.pool.all_sessions().iter().position(|s| s.id == id) {
-        app.panel_view.selected = Some(index);
+        app.panel_view.reveal(index);
     }
     ScreenAction::Push(TuiMode::Overview)
 }
