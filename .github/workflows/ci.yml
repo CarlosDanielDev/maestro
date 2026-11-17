@@ -66,6 +66,13 @@ jobs:
         env:
           INSTA_UPDATE: "no"
         run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4
+      # Wall-clock perf tests (#1356) are #[ignore]d so a loaded local gate
+      # does not flake on them. They run here, one at a time, after the shard.
+      - name: Run perf tests alone
+        if: matrix.shard == 1
+        run: >-
+          cargo nextest run --workspace --locked --run-ignored only --test-threads 1
+          -E 'test(syntax_highlighting_200_lines_performance) | test(scan_120_transcripts_completes_under_1s)'
 
   test-full:
     name: Doctests

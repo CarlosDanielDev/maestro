@@ -1137,7 +1137,10 @@ mod tests {
         );
     }
 
+    // Wall-clock budget: flaked the gate under parallel-build load (#1356),
+    // so it is opt-in and CI runs it alone (`ci.yml`, "Run perf tests alone").
     #[test]
+    #[ignore = "perf: wall-clock budget, run alone (#1356)"]
     fn syntax_highlighting_200_lines_performance() {
         // Warm up lazy statics (one-time init cost excluded from benchmark).
         let _ = render_markdown("```rust\nlet x = 1;\n```", &theme(), 80);
