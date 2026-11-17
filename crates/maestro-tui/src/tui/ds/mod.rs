@@ -1,6 +1,8 @@
 pub mod armed;
 pub mod breakpoint;
+pub mod checklist;
 pub mod gauge;
+pub mod md_block;
 pub mod money;
 pub mod panel;
 pub mod size_guard;

@@ -30,6 +30,14 @@ first. One entry per decision.
 - **Rejected:** raw kit glyphs (break ASCII mode); a new `IconId` (out of scope, `icons.rs` is owned by #1251 this wave).
 - **Source:** #1250. Follow-ups: `IconId::Enter` for `⏎`; a reversed chip and a caller-set action word when a screen adopts the bar and needs them.
 
+## 2026-11-16 — md_block and checklist: where #1252 differs from the mocks
+
+- **What:** (1) `ds::checklist` counts `○` (Pending) rows in the `n/m` total; the `checklistPanel` / `readyStrip` mocks leave "optional" rows out. (2) `#ref` in `ds::md_block` uses `accent_identifier`, not the info colour of the `md()` mock, and detection is `extract_issue_refs` (`#1` to `#999999999`, not after a letter), not the mock's `#\d{2,5}\b`, so `#1` is a ref here. (3) The `✓ ✗ ! ○` glyphs are plain characters, with no `IconId` ASCII fallback yet. (4) `checklist_panel` draws with `theme.styled_block`, which is `ds::panel` since #1253: plain border (thick when focused), as the mock, but a centred `[ Draft ]` title where the mock's `E.block` has a left-aligned ` Draft `. Bare headings (bold `accent_warning`) and the plain space after the TODO chip match the mock.
+- **Why:** (1) a `○` row is a required item of a later step; leaving it out would show `3/3 ready` on a draft that is not ready. (2) the issue (#1252) names `accent_identifier`; one ref detector for prompt input and markdown keeps the two from disagreeing, and single-digit issues exist. (3) `crates/maestro-core/src/icons.rs` was owned by #1251 in this wave. (4) the title style belongs to `ds::panel`; changing it for one panel would fork the panel look.
+- **Section:** `§04 Kit v2` (`mdBlock`, `readyStrip`), `§02.2 Issue wizard` (Draft checklist), `§03 Borders & focus`.
+- **Rejected:** excluding `○` from the total (overstates readiness); a second `#\d{2,5}` regex for markdown only; adding `IconId` variants here (file owned by another agent this wave); a custom left-aligned title block for the checklist.
+- **Source:** #1252 (PR #1349, judge nits).
+
 ## 2026-11-16 — Keys are swallowed while the SizeGuard is shown
 
 - **What:** below 80x24, a key goes only to a `TuiMode` confirm drawn on top of the guard (`ConfirmExit`, `ConfirmKill`, `BudgetPreSpawn`). Every other key is ignored, global chords included (`Ctrl+Q`, `Ctrl+B`, `Ctrl+X`, `q`, F-keys, the upgrade-restart `y`), except `Ctrl+C`. Resize events are never swallowed. The check sits at the single input dispatch point (the run loop, before the upgrade check and `handle_key`) and uses `ds::size_guard::is_shown`, the same size test as `ui::draw`.
