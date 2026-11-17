@@ -27,7 +27,7 @@ Buffer {
         "│                  │                                                           │",
         "│                  │                                                           │",
         "│                  │                                                           │",
-        "│[Tab] Tab  [↑/↓] Field  [Space] Toggle  [Ctrl+s] Save  [Esc] Back             │",
+        "│                                                                              │",
         "└──────────────────────────────────────────────────────────────────────────────┘",
     ],
     styles: [
@@ -140,15 +140,7 @@ Buffer {
         x: 19, y: 21, fg: Rgb(196, 196, 196), bg: Reset, underline: Reset, modifier: NONE,
         x: 20, y: 21, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 79, y: 21, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
-        x: 6, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 12, y: 22, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
-        x: 17, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 25, y: 22, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
-        x: 32, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 41, y: 22, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
-        x: 49, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 56, y: 22, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
-        x: 61, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 1, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 79, y: 22, fg: Rgb(184, 255, 61), bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

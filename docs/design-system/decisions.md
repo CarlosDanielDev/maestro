@@ -22,6 +22,14 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-16 — Shell rows: the footer replaces the F-key bar; digits only on tab screens
+
+- **What:** (1) The bottom F-key bar is gone; that row is now the one `ds::key_hints` footer. F-keys still work and are listed in help (`?` / F1). (2) Digits `1`-`7` switch tabs only on the seven tab screens, never in a flow (CrumbBar) and never while a text field has focus; on Milestones this shadows the old `1` / `2` sub-tab keys (`Tab` still switches). (3) The TabBar and CrumbBar right side say `? help`, not `⌃K palette`, because the palette does not exist yet. (4) The footer draws `⌃Q quit` as the issue asks, but until #1260 lands `⌃Q` still toggles TurboQuant. (5) Footer hints are cut at their drawn width; `fit_hints_to_width` is not used because it counts bytes and the `[k] label` form, and dropped `Esc Back` from Settings at 80 columns. (6) `›` and `⌃Q` are literal characters, like the existing `↑/↓` hints; they are text, not Nerd Font icons.
+- **Why:** "one footer" in Shell rules; inside wizards digits are content (issue numbers); a key hint must not advertise a key that does nothing.
+- **Section:** `Shell rules`, `§04 Components` (`tab_bar`, `key_hints`), `§02.2 Issue wizard` (CrumbBar).
+- **Rejected:** keeping the F-key bar under the footer (two hint rows); digits as global keys (they would eat issue numbers in wizards); changing `fit_hints_to_width` (the status bar, owned by #1257, uses it).
+- **Source:** #1258.
+
 ## 2026-11-16 — armedBar keys and glyphs are ASCII-safe
 
 - **What:** `ArmedBar` writes the key as the word `Enter`, not `⏎`, and takes its state glyphs from `icons::get` (`Warning`, `Play`, `Hourglass`, `Sync`, `CheckCircle`, `XCircle`) instead of the kit's `⊘ ⏎ ⣾ ✓ ✗`. It has no countdown bar: the seconds left are printed. The border colour follows the state; the border is the standard `styled_block` panel border, not the kit's per-state plain / thick / double. The state label is bold text, not the kit's reversed chip, and the working / done lines are fixed words (`writing to GitHub…`, `written to GitHub`) instead of a caller-set action word; the write itself is always in the caller's description.

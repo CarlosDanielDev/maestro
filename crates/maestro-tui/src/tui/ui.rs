@@ -13,9 +13,7 @@ use crate::tui::ds::size_guard;
 use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::icons::{self, IconId};
-use crate::tui::navigation::keymap::{
-    self, InlineHint, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width,
-};
+use crate::tui::navigation::keymap::{self, InlineHint, KeyBindingGroup, ModeKeyMap};
 use crate::tui::screens::Screen;
 use chrono::Utc;
 use ratatui::{
@@ -89,17 +87,29 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let main_min = f
         .area()
         .height
-        .saturating_sub(status_bar_height + log_floor + 1)
+        .saturating_sub(status_bar_height + log_floor + 2)
         .min(10);
-    let chunks = Layout::default()
+    // #1258: the shell row costs one row; on short terminals take it from
+    // the log, never from the status bar or the main minimum.
+    let log_height = log_height.min(
+        f.area()
+            .height
+            .saturating_sub(status_bar_height + main_min + 2),
+    );
+    let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(status_bar_height), // status bar (includes inline hints)
+            Constraint::Length(status_bar_height), // status bar
+            Constraint::Length(1),                 // TabBar or CrumbBar (#1258)
             Constraint::Min(main_min),             // main content
             Constraint::Length(log_height),        // activity log
-            Constraint::Length(1),                 // F-key bar
+            Constraint::Length(1),                 // footer of key hints (#1258)
         ])
         .split(f.area());
+    // The shell row is kept apart so `chunks[0..4]` keep their meaning:
+    // status bar, main content, activity log, footer.
+    let shell_row = rows[1];
+    let chunks = [rows[0], rows[2], rows[3], rows[4]];
 
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
@@ -834,7 +844,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    draw_fkey_bar(f, &mode_km, chunks[3], &theme);
+    draw_shell_row(f, app, shell_row, &theme);
+    draw_footer(f, app, &mode_km, chunks[3], &theme);
 
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);
@@ -851,6 +862,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 }
 
 /// Resolve the active screen (if any) to extract keybindings and input mode.
+/// `footer_screen` adds the screens missing here; a screen added to one
+/// match may belong in the other.
 pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
     match app.tui_mode {
         TuiMode::Dashboard => app
@@ -1327,45 +1340,50 @@ fn draw_status_bar_inner(
     }
 }
 
-fn draw_fkey_bar(
+/// TabBar on the seven top-level screens, CrumbBar inside flows (#1258).
+fn draw_shell_row(f: &mut Frame, app: &App, area: Rect, theme: &crate::tui::theme::Theme) {
+    use crate::tui::ds::{crumb_bar, tab_bar};
+    match tab_bar::tab_index(app.tui_mode) {
+        Some(active) => tab_bar::draw(f, area, active, theme),
+        None => {
+            let crumbs = crumb_bar::crumbs(app.nav_stack.breadcrumbs(), app.tui_mode);
+            crumb_bar::draw(f, area, &crumbs, None, theme);
+        }
+    }
+}
+
+/// The one footer (#1258): the screen's own hints (`Screen::footer_hints`),
+/// else the mode's inline hints, with `⌃Q quit` pinned right except inside
+/// the quit dialog.
+fn draw_footer(
     f: &mut Frame,
+    app: &App,
     mode_km: &ModeKeyMap,
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
-    let fitted = fit_fkeys_to_width(&mode_km.fkeys, area.width);
+    use crate::tui::ds::key_hints;
+    let pairs = footer_screen(app)
+        .map(|s| s.footer_hints())
+        .unwrap_or_default();
+    let hints = if pairs.is_empty() {
+        mode_km.hints.to_vec()
+    } else {
+        key_hints::from_pairs(&pairs)
+    };
+    let pin_quit = app.tui_mode != TuiMode::ConfirmExit;
+    key_hints::draw(f, area, &hints, pin_quit, theme);
+}
 
-    let mut spans: Vec<Span> = Vec::new();
-    for (i, (key, label, active)) in fitted.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw(" "));
-        }
-        // Key badge: amber bg, black fg (dimmed if inactive)
-        let badge_style = if *active {
-            Style::default()
-                .fg(theme.fkey_badge_fg)
-                .bg(theme.fkey_badge_bg)
-        } else {
-            Style::default()
-                .fg(theme.text_muted)
-                .bg(theme.keybind_label_bg)
-        };
-        spans.push(Span::styled(*key, badge_style));
-        // Action label (if present)
-        if let Some(lbl) = label {
-            let label_color = if *active {
-                theme.keybind_label_fg
-            } else {
-                theme.text_muted
-            };
-            spans.push(Span::styled(
-                format!(" {}", lbl),
-                Style::default().fg(label_color),
-            ));
-        }
-    }
-
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+/// [`active_screen`] plus the screens it leaves out, for footer hints only.
+fn footer_screen(app: &App) -> Option<&dyn Screen> {
+    let state = &app.screen_state;
+    active_screen(app).or_else(|| match app.tui_mode {
+        TuiMode::MilestoneHealth => state.milestone_health_screen.as_ref().map(|s| s as _),
+        TuiMode::AdoptPicker => state.adopt_picker_screen.as_ref().map(|s| s as _),
+        TuiMode::FleetBoard => state.fleet_board_screen.as_ref().map(|s| s as _),
+        _ => None,
+    })
 }
 
 fn draw_gh_auth_warning(f: &mut Frame, area: Rect, theme: &crate::tui::theme::Theme) {

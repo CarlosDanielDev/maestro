@@ -185,7 +185,6 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 
 | Module | Item | For |
 |---|---|---|
-| `screens/mod.rs` | `draw_keybinds_bar(f, area, &[(key, label)], theme)` | Simple `[key] label` bottom bar |
 | `keybinding_hints.rs` | `keybinding_hints_spans(fitted, copy_enabled, theme)` | Hint bar with dimmed inactive keys; pre-fit with `navigation::keymap::fit_hints_to_width` |
 | `screens/mod.rs` | `sanitize_for_terminal(s)` | **Always** on text from GitHub / git / AI output before rendering |
 | `icons.rs` | `icons::get(IconId::..)` | Nerd Font or ASCII icon (respects `tui.ascii_icons` / `MAESTRO_ASCII_ICONS=1`). Never paste raw glyphs |
@@ -196,6 +195,30 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
+
+### Shell rows: TabBar, CrumbBar, footer (`crates/maestro-tui/src/tui/ds/`, #1258)
+
+Implements "Shell rules" and §04 `tab_bar` / `key_hints` from
+`docs/design-system/index.html`. `ui::draw` lays out every mode as: status
+bar, one shell row, main content, activity log, footer. Screens draw none of
+these rows.
+
+| Item | For |
+|---|---|
+| `ds::tab_bar::TABS` | The seven top-level screens: `1 Home` (`Landing`), `2 Dashboard`, `3 Issues`, `4 Milestones`, `5 Roadmap`, `6 Stats`, `7 PRD` |
+| `ds::tab_bar::draw(f, area, active, theme)` | The shell row on a tab screen. Active tab is REVERSED + bold (reads under NO_COLOR); `? help` on the right when it fits |
+| `ds::tab_bar::tab_for_digit(c)` / `tab_index(mode)` / `tab_label(mode)` | Digit → mode, and "is this mode a tab?" |
+| `ds::crumb_bar::draw(f, area, &crumbs, state, theme)` | The shell row inside a flow (any mode that is not a tab): `Home › New issue`, elided with `elide_breadcrumbs`. `state` is the right-aligned slot (draft saved, fetch age, write state); `None` shows `Esc back  ? help` |
+| `ds::crumb_bar::crumbs(stack, current)` / `crumb_label(mode)` | Crumb labels from the nav stack: tab name for a tab, else `breadcrumb_label` |
+| `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, `⌃Q quit` pinned right (`pin_quit = false` only in the quit dialog) |
+| `ds::key_hints::from_pairs(&[(key, label)])` | A screen's `(key, label)` list as `InlineHint`s, in order |
+| `ds::bar_row::draw_left_right(f, area, left, right)` | One row with a flush-right part that drops when it does not fit |
+| `Screen::footer_hints(&self)` | A screen's footer hints for its current state, most important first. Empty (the default) means the footer shows the mode's `mode_keymap` hints |
+
+Rules: never draw a hint row inside a screen. Return the hints from
+`footer_hints`; `screens_draw_no_keybinds_bar` in `tests/tui_design_system.rs`
+fails CI on a screen that draws its own. Digits `1`-`7` switch tabs only on a
+tab screen with no text field focused (see §3 Keybindings).
 
 ### Markdown block and readiness checklist (`crates/maestro-tui/src/tui/ds/`, #1252)
 
@@ -276,6 +299,7 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Shift+M` | Session-complete modal | skipped in text-input mode |
 | `Shift+C` | Auto-review concerns panel | when pending |
 | `Shift+P` | Retry PR creation | skipped in text-input mode |
+| `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode, not while a PRD goal or Roadmap filter is edited. Overview keeps `1`-`9` for session detail |
 
 Before adding a key: grep `handle_global_shortcuts`. In text-input screens
 plain letters are typed, so use a free `Ctrl+letter` (e.g. `Ctrl+W`) and

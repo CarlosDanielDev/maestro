@@ -1,6 +1,5 @@
 use super::{FleetBoardScreen, FleetKind, FleetRow, FleetSort};
 use crate::tui::screens::adopt_picker::{draw_live_confirm, relative_time};
-use crate::tui::screens::draw_keybinds_bar;
 use crate::tui::theme::Theme;
 use crate::util::sanitize::sanitize_log;
 use ratatui::{
@@ -17,18 +16,13 @@ use ratatui::{
 
 impl FleetBoardScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let outer = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(6), Constraint::Length(1)])
-            .split(area);
-
         let title = match self.sort() {
             FleetSort::ActivityDesc => "Fleet Board (last active first)",
             FleetSort::StaleFirst => "Fleet Board (stale first)",
         };
         let block = theme.styled_block(title, false);
-        let inner = block.inner(outer[0]);
-        f.render_widget(block, outer[0]);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
 
         if inner.height < 2 {
             return;
@@ -68,19 +62,6 @@ impl FleetBoardScreen {
 
         self.draw_detail_line(f, chunks[2], theme);
         self.draw_status_line(f, chunks[3], theme);
-
-        draw_keybinds_bar(
-            f,
-            outer[1],
-            &[
-                ("↑/↓", "Navigate"),
-                ("Type", "Filter"),
-                ("Tab", "Sort"),
-                ("Enter", "Open/Adopt"),
-                ("Esc", "Back"),
-            ],
-            theme,
-        );
 
         let cwd = self.selected_row().and_then(|row| row.cwd.as_ref());
         if let (true, Some(cwd)) = (self.confirm_pending(), cwd) {

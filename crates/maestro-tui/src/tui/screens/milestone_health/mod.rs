@@ -139,4 +139,8 @@ impl Screen for MilestoneHealthScreen {
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         crate::tui::screens::milestone_health::draw::draw(f, area, theme, self, 0);
     }
+
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints(&self.state.step)
+    }
 }

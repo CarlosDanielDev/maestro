@@ -1,6 +1,5 @@
 ---
-source: src/tui/screens/fleet_board/snapshot_tests.rs
-assertion_line: 173
+source: crates/maestro-tui/src/tui/screens/fleet_board/snapshot_tests.rs
 expression: footer.trim_end()
 ---
-[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open/Adopt  [Esc] Back
+" ↑/↓ Navigate   Type Filter   Tab Sort   Enter Open/Adopt   Esc Back                                  ⌃Q quit "

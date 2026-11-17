@@ -286,6 +286,15 @@ impl Screen for AdoptPickerScreen {
         self.draw_impl(f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("↑/↓", "Navigate"),
+            ("Type", "Filter"),
+            ("Enter", "Adopt"),
+            ("Esc", "Back"),
+        ]
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Insert)
     }

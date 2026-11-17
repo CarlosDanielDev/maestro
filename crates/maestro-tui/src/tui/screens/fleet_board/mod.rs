@@ -316,6 +316,16 @@ impl Screen for FleetBoardScreen {
         self.draw_impl(f, area, theme);
     }
 
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("↑/↓", "Navigate"),
+            ("Type", "Filter"),
+            ("Tab", "Sort"),
+            ("Enter", "Open/Adopt"),
+            ("Esc", "Back"),
+        ]
+    }
+
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Insert)
     }

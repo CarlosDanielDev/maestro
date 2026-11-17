@@ -1,4 +1,4 @@
-use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
+use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
 use crate::provider::types::{Issue, Milestone};
 use crate::tui::app::TuiMode;
 use crate::tui::icons::{self, IconId};
@@ -146,30 +146,14 @@ impl MilestoneScreen {
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         // #325 compact layout: left = milestone list, right = tabbed
-        // (issue list / preview). Bottom row is keybindings.
-        let outer = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(6), Constraint::Length(1)])
-            .split(area);
-
+        // (issue list / preview). Key hints live in the footer (#1258).
         let body = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-            .split(outer[0]);
+            .split(area);
 
         self.draw_milestone_list(f, body[0], theme);
         self.draw_right_pane(f, body[1], theme);
-        draw_keybinds_bar(
-            f,
-            outer[1],
-            &[
-                ("Enter", "View Issues"),
-                ("Tab", "Switch Tab"),
-                ("r", "Run All Open"),
-                ("Esc", "Back"),
-            ],
-            theme,
-        );
     }
 
     fn draw_right_pane(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -797,6 +781,15 @@ impl Screen for MilestoneScreen {
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         self.draw_impl(f, area, theme);
+    }
+
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("Enter", "View Issues"),
+            ("Tab", "Switch Tab"),
+            ("r", "Run All Open"),
+            ("Esc", "Back"),
+        ]
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {

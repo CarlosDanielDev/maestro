@@ -188,12 +188,21 @@ fn live_confirm_renders_hostile_cwd_without_control_bytes() {
 }
 
 /// The footer names every board action: adopt or open, sort, filter, back.
+/// The hints render in the app footer (`ds::key_hints`, #1258).
 #[test]
 fn fleet_board_footer_keymap() {
-    let mut screen = FleetBoardScreen::new(fixture(), now());
+    use crate::tui::ds::key_hints;
+    use crate::tui::screens::Screen;
+    let screen = FleetBoardScreen::new(fixture(), now());
 
-    let rendered = render(&mut screen, 110, 10);
-    let footer = rendered.lines().last().expect("board has rows");
+    let hints = key_hints::from_pairs(&screen.footer_hints());
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(110, 1)).unwrap();
+    let theme = crate::tui::theme::Theme::dark();
+    terminal
+        .draw(|f| key_hints::draw(f, f.area(), &hints, true, &theme))
+        .unwrap();
+    let rendered = format!("{}", terminal.backend());
+    let footer = rendered.lines().next().expect("one footer row");
 
     for token in ["Navigate", "Filter", "Sort", "Open/Adopt", "Back"] {
         assert!(footer.contains(token), "footer lacks {token}: {footer}");

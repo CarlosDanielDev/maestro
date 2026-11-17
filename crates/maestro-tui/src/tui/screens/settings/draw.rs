@@ -1,6 +1,6 @@
 use crate::flags::FlagSource;
 use crate::tui::icons::{self, IconId};
-use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
+use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::WidgetKind;
 use ratatui::{
@@ -458,26 +458,25 @@ impl SettingsScreen {
                 ])),
                 vertical[1],
             );
-        } else if self.active_tab() == SettingsTab::Flags {
-            draw_keybinds_bar(
-                f,
-                vertical[1],
-                &[("Tab", "Tab"), ("↑/↓", "Navigate"), ("Esc", "Back")],
-                theme,
-            );
-        } else {
-            let edit_hints: &'static [(&'static str, &'static str)] = self
-                .current_fields()
-                .get(self.field_index)
-                .map(|field| field.widget.edit_hint())
-                .unwrap_or(&[]);
-            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(4 + edit_hints.len());
-            entries.push(("Tab", "Tab"));
-            entries.push(("↑/↓", "Field"));
-            entries.extend(edit_hints.iter().copied());
-            entries.push(("Ctrl+s", "Save"));
-            entries.push(("Esc", "Back"));
-            draw_keybinds_bar(f, vertical[1], &entries, theme);
         }
+    }
+
+    /// Footer hints for the active tab and field (#1258).
+    pub(super) fn footer_hints_impl(&self) -> Vec<(&'static str, &'static str)> {
+        if self.active_tab() == SettingsTab::Flags {
+            return vec![("Tab", "Tab"), ("↑/↓", "Navigate"), ("Esc", "Back")];
+        }
+        let edit_hints: &'static [(&'static str, &'static str)] = self
+            .current_fields()
+            .get(self.field_index)
+            .map(|field| field.widget.edit_hint())
+            .unwrap_or(&[]);
+        let mut entries = Vec::with_capacity(4 + edit_hints.len());
+        entries.push(("Tab", "Tab"));
+        entries.push(("↑/↓", "Field"));
+        entries.extend(edit_hints.iter().copied());
+        entries.push(("Ctrl+s", "Save"));
+        entries.push(("Esc", "Back"));
+        entries
     }
 }
