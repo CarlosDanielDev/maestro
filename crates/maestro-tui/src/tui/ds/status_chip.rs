@@ -3,7 +3,7 @@
 //! without Nerd Fonts (ASCII icons). Glyphs and words follow the StatusChip
 //! table in `docs/design-system/index.html` §04.
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
 use crate::session::types::SessionStatus;
@@ -25,7 +25,7 @@ pub fn status_chip_for_mode(
     nerd_font: bool,
 ) -> Span<'static> {
     let glyph = icons::get_for_mode(chip_icon(status), nerd_font);
-    let mut style = Style::new().fg(theme.status_color(status));
+    let mut style = Style::new().fg(chip_color(status, theme));
     if matches!(
         status,
         SessionStatus::NeedsReview | SessionStatus::FailedGates | SessionStatus::Errored
@@ -33,6 +33,17 @@ pub fn status_chip_for_mode(
         style = style.add_modifier(Modifier::BOLD);
     }
     Span::styled(format!("{glyph} {}", status_word(status)), style)
+}
+
+/// The chip colour: the design's v1 tokens for `NeedsPr` / `ConflictFix`
+/// (#1353), `theme.status_color` for the rest. `status_color` still maps
+/// those two to `status_stalled` / `status_ci_fix` for the older screens.
+fn chip_color(status: SessionStatus, theme: &Theme) -> Color {
+    match status {
+        SessionStatus::NeedsPr => theme.status_needs_pr,
+        SessionStatus::ConflictFix => theme.status_conflict,
+        _ => theme.status_color(status),
+    }
 }
 
 /// The chip word for `status`, lower case, as people say it.
@@ -157,16 +168,44 @@ mod tests {
         }
     }
 
+    /// Every preset that has colours (`no_color` maps all to `Reset`).
+    fn colour_themes() -> [Theme; 4] {
+        [
+            Theme::dark(),
+            Theme::light(),
+            Theme::retro(),
+            Theme::high_contrast(),
+        ]
+    }
+
+    #[test]
+    fn status_chip_needs_pr_uses_status_needs_pr_token() {
+        for theme in colour_themes() {
+            let chip = status_chip_for_mode(SessionStatus::NeedsPr, &theme, true);
+            assert_eq!(chip.style.fg, Some(theme.status_needs_pr));
+        }
+    }
+
+    #[test]
+    fn status_chip_conflict_fix_uses_status_conflict_token() {
+        for theme in colour_themes() {
+            let chip = status_chip_for_mode(SessionStatus::ConflictFix, &theme, true);
+            assert_eq!(chip.style.fg, Some(theme.status_conflict));
+        }
+    }
+
     #[test]
     fn status_chip_uses_status_color_and_bolds_statuses_that_need_a_human() {
         let theme = Theme::dark();
         for status in ALL_STATUSES {
             let chip = status_chip_for_mode(status, &theme, true);
-            assert_eq!(
-                chip.style.fg,
-                Some(theme.status_color(status)),
-                "{status:?}"
-            );
+            if !matches!(status, SessionStatus::NeedsPr | SessionStatus::ConflictFix) {
+                assert_eq!(
+                    chip.style.fg,
+                    Some(theme.status_color(status)),
+                    "{status:?}"
+                );
+            }
             let needs_human = matches!(
                 status,
                 SessionStatus::NeedsReview | SessionStatus::FailedGates | SessionStatus::Errored
