@@ -36,6 +36,7 @@ mod review;
 mod session_lifecycle;
 mod session_spawners;
 mod settings_actions;
+pub(crate) mod toasts;
 pub mod types;
 pub mod work_assigner;
 
@@ -232,6 +233,8 @@ pub struct App {
     pub(crate) shell_launcher: Box<dyn crate::tui::shell_launcher::ShellLauncher>,
     /// Transient (~2 s) banner shown after a copy action.
     pub(crate) copy_toast: Option<crate::tui::app::clipboard_action::CopyToast>,
+    /// `ds::toast` queue (#1254): one visible toast, errors wait their turn.
+    pub(crate) toasts: crate::tui::ds::toast::ToastQueue<toasts::ToastUndo>,
     /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
     /// tests inject `FakeNotifier` via `with_desktop_notifier`.
     pub(crate) desktop_notifier: std::sync::Arc<dyn DesktopNotifier>,
@@ -430,6 +433,7 @@ impl App {
             clipboard: Box::new(crate::tui::clipboard::SystemClipboard),
             shell_launcher: Box::new(crate::tui::shell_launcher::OsShellLauncher),
             copy_toast: None,
+            toasts: Default::default(),
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::sync::Arc::new(std::sync::Mutex::new(
                 std::collections::HashSet::new(),

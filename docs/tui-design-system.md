@@ -193,7 +193,7 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 | `marquee.rs` | `MarqueeState`, `visible_slice`, `needs_scroll` | Scroll text that overflows |
 | `breadcrumb.rs` | `elide_breadcrumbs(labels, max_width, sep)` | Fit breadcrumb to width |
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
-| `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation |
+| `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
 
@@ -226,6 +226,21 @@ total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
 
 Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
 
+
+### Toast (`crates/maestro-tui/src/tui/ds/toast.rs`, #1254)
+
+Implements `toast` from `docs/design-system/index.html` §04 (Components, Kit v2). The one toast: never draw a second banner.
+
+| Item | For |
+|---|---|
+| `Toast::new(Severity, message)` / `Toast::undoable(message, undo)` | Build a toast. `Severity::{Success, Info, Warn, Error}`. An undoable toast is a success toast with a `^Z undo` countdown for `UNDO_WINDOW` (5 s) |
+| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue |
+| `ToastUndo` | `Box<dyn FnOnce(&mut App)>`: what `Ctrl+Z` runs. Which actions get one is each screen's call |
+| `ds::toast::draw(f, area, &ToastView, theme)` / `draw_for_mode(.., nerd_font)` | Rounded `surface_overlay` box at the bottom right of `area`, above its last row; glyph + severity word (`ok`, `info`, `warn`, `error`) in the severity colour, bold. `ui::draw` draws `app.toasts` after every screen, so screens never call it |
+
+Message text goes through `sanitize_for_terminal` inside `draw`. Glyphs and
+the countdown bar come from `icons::get_for_mode` (`CheckCircle`, `DotFill`,
+`Warning`, `XCircle`, `GaugeFilled`, `GaugeEmpty`), so ASCII mode works.
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
@@ -276,6 +291,8 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Shift+M` | Session-complete modal | skipped in text-input mode |
 | `Shift+C` | Auto-review concerns panel | when pending |
 | `Shift+P` | Retry PR creation | skipped in text-input mode |
+| `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
+| `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
 
 Before adding a key: grep `handle_global_shortcuts`. In text-input screens
 plain letters are typed, so use a free `Ctrl+letter` (e.g. `Ctrl+W`) and
