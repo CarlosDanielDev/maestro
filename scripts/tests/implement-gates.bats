@@ -48,11 +48,16 @@ teardown() {
 }
 
 @test "exits 1 when gh CLI is not installed" {
-  # Use a clean PATH without the shim dir.
-  export PATH="/bin:/usr/bin"
-  run bash "$HOOK" 123
+  # PATH holds only what the hook runs before Gate 2. "/bin:/usr/bin" is not
+  # enough: ubuntu CI runners ship gh in /usr/bin.
+  local no_gh_dir
+  no_gh_dir="$(mktemp -d)"
+  ln -s "$(command -v git)" "$no_gh_dir/git"
+  ln -s "$(command -v dirname)" "$no_gh_dir/dirname"
+  PATH="$no_gh_dir" run "$BASH" "$HOOK" 123
+  rm -rf "$no_gh_dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"gh CLI not installed"* ]]
+  [[ "$output" == *"gh CLI not installed"* ]] || false
   [[ "$output" == *"brew install gh"* ]]
 }
 
