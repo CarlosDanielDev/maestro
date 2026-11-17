@@ -35,7 +35,7 @@ fn header_shows_tq_on_for_freshly_initialised_project() {
 
     let header: String = format!("{}", t.backend())
         .lines()
-        .take(3)
+        .take(1) // #1257: the status bar is one row
         .collect::<Vec<_>>()
         .join("\n");
     assert!(header.contains("TQ:ON"), "{header}");

@@ -161,7 +161,7 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `StatsBar::new(StatsBarData, theme)` | Top stats row with marquee overflow |
 | `CiMonitorWidget::new(checks, theme).pr_number(n).max_visible_rows(n)` | CI check list |
 | `unified_pr_toggle::{draw_unified_pr_toggle, draw_checkbox, focus_bar}` | Checkbox row + focus bar |
-| `bypass_indicator::{draw, render_line}` | Header badge when bypass mode is on |
+| `bypass_indicator::render_line` | The `▲ BYPASS` chip (`BYPASS_CHIP`, reverse warn + bold). Only `ds::status_bar` draws it; no screen draws its own bypass banner |
 
 ### Armed-Enter — the only way a screen starts a GitHub write (#1250)
 
@@ -225,6 +225,24 @@ total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
 | `money::money(Option<f64>)` | `String` | The only dollar formatter: `$12.40`, `$0.00`, `<$0.01` under one cent, `$?` for `None` (unpriced). NaN, negatives, `-0.0` print `$0.00` (via `sanitize_cost`) |
 
 Chip glyphs are `IconId::Chip*` in `crates/maestro-core/src/icons.rs` (Unicode with an ASCII fallback such as `[E]`). Context gauges do **not** use `gauge_level`: they keep the 50% / 70% thresholds that match the overflow actions (`compact_gauge_color`). Existing gauges and `format!("${:.2}")` call sites move to these helpers in the screen issues, not here.
+
+### Status bar — `crates/maestro-tui/src/tui/ds/status_bar.rs` (#1257)
+
+The one state-only row at the top of every mode (design `§04 StatusBar`,
+Shell rules). `ui::draw` draws it for every screen, so no screen draws
+budget, bypass or update state of its own. No key hints and no actions here.
+
+| Item | For |
+|---|---|
+| `status_bar::StatusModel` | Plain data the bar shows: version, `FleetCounts`, spent / cap, quota badges, TurboQuant, `untrusted`, `bypass`, `update` |
+| `FleetCounts::from_statuses(statuses)` | `● run` (spawning, running, gates, CI / conflict fix, retry) · `◐ wait` (needs review, PR ready, interactive) · `✗ fail` (gates failed, errored). Empty pool shows `○ no agents` |
+| `status_bar::draw(f, area, &model, theme)` / `draw_for_mode(.., nerd_font)` | One row on `surface_bar`. Left: brand, fleet, budget (`money` + `gauge_level`), quota, `TQ:ON`. Right: `▲ BYPASS`, `UNTRUSTED`, `↑ <version> u` |
+| `status_bar::segments(&model, width, theme, nerd_font)` | The `(left, right)` spans after dropping. Whole segments drop, never a cut value: update first, then TurboQuant, quota, budget, fleet. Brand, `▲ BYPASS` and `UNTRUSTED` never drop |
+| `status_bar::pinned_width(&model, nerd_font)` | Columns of the safety chips; an overlay on the bar row (upgrade progress) stays left of them |
+
+Rules: `UNTRUSTED` shows exactly when `App.workspace_trusted` is false. The
+update notice has one place: the `↑ <version> u` chip (the activity log line
+carries no version). Breadcrumbs and key hints are not part of this row.
 
 ---
 

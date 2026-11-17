@@ -9,15 +9,12 @@ use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
 use crate::tui::detail;
-use crate::tui::ds::size_guard;
+use crate::tui::ds::{size_guard, status_bar};
 use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::icons::{self, IconId};
-use crate::tui::navigation::keymap::{
-    self, InlineHint, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width,
-};
+use crate::tui::navigation::keymap::{self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width};
 use crate::tui::screens::Screen;
-use chrono::Utc;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -76,12 +73,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             .unwrap_or(10)
     };
 
-    // #893: bypass-mode banner overlays the top status-bar row, eating the
-    // width budget the hint fitter relies on. When bypass is active, grow
-    // the status bar by one extra inner row so dropped hints can render
-    // beneath the main status line. Non-bypass layouts stay at 3 rows so
-    // existing snapshots remain stable.
-    let status_bar_height: u16 = if app.bypass_active { 4 } else { 3 };
+    // #1257: the status bar is one state-only row (`ds::status_bar`); the
+    // bypass chip lives inside it, so bypass no longer changes the layout.
+    let status_bar_height: u16 = 1;
     // #1157: on short terminals the main area's minimum would otherwise eat
     // every activity-log row; shrink it so a visible log keeps one content
     // row (3 rows with borders).
@@ -123,16 +117,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let mode_km = app.cached_mode_km.as_ref().unwrap().clone();
 
     draw_status_bar(f, app, mode_km.clone(), chunks[0]);
-    if app.bypass_active {
-        // Overlay the bypass banner on the top row of the status bar so
-        // the indicator is impossible to miss without disturbing layout.
-        let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
-        crate::tui::widgets::bypass_indicator::draw(
-            f,
-            banner_area,
-            crate::tui::widgets::bypass_indicator::BypassIndicatorState::Active,
-        );
-    }
 
     // Budget alert banner (#776/#850) — overlays the top status bar
     // row when the global budget enforcer reports `Alert(pct)` or `Kill`.
@@ -831,8 +815,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_notification_banner(f, banners[0], chunks[2], &app.theme);
     }
 
-    // Draw upgrade banner if visible (overlays status bar)
-    draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
+    // Upgrade progress (downloading / restart / failed) overlays the status
+    // bar left of the pinned safety chips, so BYPASS and UNTRUSTED stay
+    // visible. An available update is only the bar's chip (#1257).
+    let pinned = status_bar::pinned_width(&status_model(app), icons::use_nerd_font());
+    let upgrade_area = Rect::new(
+        chunks[0].x,
+        chunks[0].y,
+        chunks[0].width.saturating_sub(pinned),
+        chunks[0].height.min(1),
+    );
+    draw_upgrade_banner(f, &app.upgrade_state, upgrade_area, &app.theme);
 
     draw_fkey_bar(f, &mode_km, chunks[3], &theme);
 
@@ -1063,267 +1056,34 @@ fn draw_mascot_block(
     }
 }
 
-fn draw_status_bar(f: &mut Frame, app: &mut App, mode_km: ModeKeyMap, area: Rect) {
+fn draw_status_bar(f: &mut Frame, app: &App, _mode_km: ModeKeyMap, area: Rect) {
     let theme = app.active_theme().clone();
-    draw_status_bar_inner(f, app, &theme, &mode_km, area);
+    draw_status_bar_inner(f, app, &theme, area);
 }
 
-fn draw_status_bar_inner(
-    f: &mut Frame,
-    app: &mut App,
-    theme: &crate::tui::theme::Theme,
-    mode_km: &ModeKeyMap,
-    area: Rect,
-) {
-    let elapsed = Utc::now() - app.start_time;
-    let elapsed_str = format!(
-        "{:02}:{:02}:{:02}",
-        elapsed.num_hours(),
-        elapsed.num_minutes() % 60,
-        elapsed.num_seconds() % 60
-    );
+/// #1257: state only. Breadcrumbs and key hints are not part of this row.
+fn draw_status_bar_inner(f: &mut Frame, app: &App, theme: &crate::tui::theme::Theme, area: Rect) {
+    status_bar::draw(f, area, &status_model(app), theme);
+}
 
-    let active = app.active_count();
-    let total = app.pool.total_count();
-
-    let cost = app.total_cost + 0.0; // normalize -0.0 → 0.0
-    let budget_display = match &app.budget_enforcer {
-        Some(enforcer) => format!("{cost:.2}/{:.2}", enforcer.total_limit()),
-        None => format!("{cost:.2} spent"),
+/// What the status bar shows, read from the App (fleet counts from the pool).
+fn status_model(app: &App) -> status_bar::StatusModel {
+    let update = match &app.upgrade_state {
+        crate::updater::UpgradeState::Available(info) => {
+            Some(crate::tui::screens::sanitize_for_terminal(&info.version))
+        }
+        _ => None,
     };
-
-    let budget_color = match &app.budget_enforcer {
-        Some(enforcer) => {
-            let pct = if enforcer.total_limit() > 0.0 {
-                ((app.total_cost / enforcer.total_limit()) * 100.0) as u8
-            } else {
-                0
-            };
-            theme.budget_color(pct)
-        }
-        None => theme.accent_warning,
-    };
-
-    let sep = Span::styled(
-        format!(" {} ", icons::get(IconId::SeparatorH)),
-        Style::default().fg(theme.border_inactive),
-    );
-
-    let mut spans = vec![
-        Span::styled(
-            concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(theme.branding_bg)
-                .add_modifier(Modifier::BOLD),
-        ),
-        sep.clone(),
-    ];
-
-    // Breadcrumb trail — elide the middle with `…` on narrow widths (#867)
-    // to keep the rightmost crumb (current screen) visible. The budget is
-    // ~1/3 of the header width; the rest of the bar (agents / cost / clock)
-    // takes the remaining 2/3.
-    {
-        let crumb_sep = format!(" {} ", icons::get(IconId::ChevronRight));
-        let parents: Vec<&str> = app
-            .nav_stack
-            .breadcrumbs()
-            .iter()
-            .map(|m| m.breadcrumb_label())
-            .collect();
-        let current_label = app.tui_mode.breadcrumb_label();
-        let mut labels = parents.clone();
-        labels.push(current_label);
-        let max_breadcrumb_width = (area.width / 3).max(20);
-        let displayed =
-            crate::tui::breadcrumb::elide_breadcrumbs(&labels, max_breadcrumb_width, &crumb_sep);
-        let last_idx = displayed.len().saturating_sub(1);
-        for (i, label) in displayed.iter().enumerate() {
-            let style = if i == last_idx {
-                Style::default()
-                    .fg(theme.accent_info)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.text_muted)
-            };
-            spans.push(Span::styled(label.clone(), style));
-            if i != last_idx {
-                spans.push(Span::styled(
-                    crumb_sep.clone(),
-                    Style::default().fg(theme.border_inactive),
-                ));
-            }
-        }
-        spans.push(sep.clone());
-    }
-
-    spans.push(Span::styled(
-        format!(
-            "{} {} agent{} ({} active)",
-            icons::get(IconId::Agents),
-            total,
-            if total != 1 { "s" } else { "" },
-            active
-        ),
-        Style::default().fg(theme.accent_info),
-    ));
-    spans.push(sep.clone());
-    spans.push(Span::styled(
-        format!("{}{}", icons::get(IconId::Cost), budget_display),
-        Style::default().fg(budget_color),
-    ));
-    spans.push(sep.clone());
-    spans.push(Span::styled(
-        format!("{} {}", icons::get(IconId::Clock), elapsed_str),
-        Style::default().fg(theme.text_primary),
-    ));
-
-    // RAM widget
-    {
-        let snap = app.resource_monitor.snapshot();
-        let rss_mb = snap.rss_mb();
-        let ram_color = {
-            let pct = snap.memory_pct();
-            if pct > 80.0 {
-                theme.accent_error
-            } else if pct > 50.0 {
-                theme.accent_warning
-            } else {
-                theme.accent_success
-            }
-        };
-        let ram_text = if let Some(delta) = snap.tq_delta_pct() {
-            format!("RAM: {:.0}MB (↓{:.0}% TQ)", rss_mb, delta)
-        } else {
-            format!("RAM: {:.0}MB", rss_mb)
-        };
-        spans.push(sep.clone());
-        spans.push(Span::styled(ram_text, Style::default().fg(ram_color)));
-    }
-
-    // TQ badge
-    {
-        spans.push(sep.clone());
-        let tq_enabled = app.flags.is_enabled(crate::flags::Flag::TurboQuant);
-        spans.push(if tq_enabled {
-            Span::styled(
-                "TQ:ON",
-                Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            )
-        } else {
-            Span::styled("TQ:OFF", Style::default().fg(theme.text_secondary))
-        });
-    }
-
-    // MOD badge — session-complete modal on/off (#866). Shift+M toggles.
-    {
-        spans.push(sep.clone());
-        let modal_on = app
-            .config
-            .as_ref()
-            .map(|c| c.tui.modal_on_complete)
-            .unwrap_or(true);
-        spans.push(if modal_on {
-            Span::styled(
-                "MOD:ON",
-                Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            )
-        } else {
-            Span::styled("MOD:OFF", Style::default().fg(theme.text_secondary))
-        });
-    }
-
-    if let Some(ref cont) = app.continuous_mode {
-        spans.push(sep.clone());
-        spans.push(Span::styled(
-            format!(
-                "CONTINUOUS: {}/{} done",
-                cont.completed_count,
-                cont.total_attempted()
-            ),
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(theme.accent_info)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-
-    // Walk the spans once for the hint-fitting check; reuse the result
-    // for the marquee fingerprint below (this is hot — runs every frame).
-    let inner_width = area.width.saturating_sub(2);
-    let status_used: usize = spans.iter().map(|s| s.width()).sum();
-    let remaining = inner_width.saturating_sub(status_used as u16);
-    // #893: track whether any hints had to be dropped by `fit_hints_to_width`
-    // so we can render the full set on a dedicated overflow row when the
-    // status bar was grown to accommodate (bypass-mode layouts only).
-    let mut dropped_hints: &[InlineHint] = &[];
-    if remaining > 10 && !mode_km.hints.is_empty() {
-        let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
-        if !fitted.is_empty() {
-            let copy_enabled = app.copy_focused_response_enabled();
-            let hint_spans =
-                crate::tui::keybinding_hints::keybinding_hints_spans(&fitted, copy_enabled, theme);
-            spans.push(sep.clone());
-            spans.extend(hint_spans);
-        }
-        if fitted.len() < mode_km.hints.len() {
-            dropped_hints = &mode_km.hints[fitted.len()..];
-        }
-    } else if !mode_km.hints.is_empty() {
-        // No budget at all for inline hints — everything overflows.
-        dropped_hints = mode_km.hints;
-    }
-
-    let block = theme
-        .styled_block_plain(false)
-        .border_style(Style::default().fg(theme.border_active));
-
-    let inner_area = block.inner(area);
-    f.render_widget(block, area);
-
-    // Recompute total_width because hint-spans may have been appended.
-    let total_width: usize = spans.iter().map(|s| s.width()).sum();
-    if total_width != app.status_bar_marquee_fingerprint {
-        app.status_bar_marquee.reset();
-        app.status_bar_marquee_fingerprint = total_width;
-    }
-
-    // The main status line lives on the first inner row.
-    let main_line_area = Rect::new(inner_area.x, inner_area.y, inner_area.width, 1);
-    let viewport_width = main_line_area.width as usize;
-    if total_width <= viewport_width {
-        app.status_bar_marquee.reset();
-        f.render_widget(Paragraph::new(Line::from(spans)), main_line_area);
-    } else {
-        let overflow = total_width.saturating_sub(viewport_width);
-        app.status_bar_marquee
-            .advance(overflow, &crate::tui::marquee::MarqueeConfig::default());
-        let windowed = crate::tui::marquee::visible_spans(
-            &spans,
-            app.status_bar_marquee.offset,
-            viewport_width,
-        );
-        f.render_widget(Paragraph::new(Line::from(windowed)), main_line_area);
-    }
-
-    // #893: render any dropped hints on the second inner row when the
-    // status bar was grown to make space (bypass-mode layouts).
-    if inner_area.height >= 2 && !dropped_hints.is_empty() {
-        let overflow_area = Rect::new(inner_area.x, inner_area.y + 1, inner_area.width, 1);
-        let fitted = keymap::fit_hints_to_width(dropped_hints, overflow_area.width);
-        if !fitted.is_empty() {
-            let copy_enabled = app.copy_focused_response_enabled();
-            let hint_spans =
-                crate::tui::keybinding_hints::keybinding_hints_spans(&fitted, copy_enabled, theme);
-            f.render_widget(Paragraph::new(Line::from(hint_spans)), overflow_area);
-        }
+    status_bar::StatusModel {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        fleet: status_bar::FleetCounts::from_statuses(app.pool.all_statuses()),
+        spent: app.total_cost,
+        cap: app.budget_enforcer.as_ref().map(|e| e.total_limit()),
+        quota: app.quota_badges(),
+        turboquant: app.flags.is_enabled(crate::flags::Flag::TurboQuant),
+        untrusted: !app.workspace_trusted,
+        bypass: app.bypass_active,
+        update,
     }
 }
 
@@ -1957,24 +1717,8 @@ fn draw_upgrade_banner(
 
     let spans = match state {
         UpgradeState::Hidden => return,
-        UpgradeState::Available(info) => vec![
-            Span::styled(
-                " UPDATE ",
-                Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(theme.accent_info)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-            Span::styled(
-                format!("New version {} available", info.tag),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::raw("  "),
-            Span::styled("[u]pgrade", Style::default().fg(theme.text_secondary)),
-            Span::raw("  "),
-            Span::styled("[Esc] dismiss", Style::default().fg(theme.text_secondary)),
-        ],
+        // #1257: an available update is the status bar chip, not a banner.
+        UpgradeState::Available(_) => return,
         UpgradeState::Downloading { version } => vec![
             Span::styled(
                 " DOWNLOADING ",

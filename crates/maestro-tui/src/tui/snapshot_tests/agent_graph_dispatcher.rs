@@ -121,9 +121,11 @@ fn agent_graph_dispatcher_completed_empty_agent_shows_terminal_state() {
     t.draw(|f| ui::draw(f, &mut app)).unwrap();
 
     let output = format!("{}", t.backend());
+    // #1257: the "Agent Graph" crumb left the status row (the CrumbBar owns
+    // it now), so the graph block title is what proves the shell rendered.
     assert!(
-        output.contains("Agent Graph") && output.contains("agent graph"),
-        "Agent Graph shell and graph block must remain visible"
+        output.contains("agent graph"),
+        "Agent Graph graph block must remain visible"
     );
     assert!(
         output.contains("COMPLETED") && output.contains("Status: completed"),

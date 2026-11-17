@@ -190,3 +190,12 @@ first. One entry per decision.
 - **Rejected:** fixing `agent_badge.rs` inside #1247 (scope); making `no_color_snapshot` assert no colour now (it would fail on this known gap and block the harness).
 - **Follow-up:** a new issue to route `agent_color` through the theme (Reset under NoColor). The badge already carries the agent's name as text, so no meaning is lost.
 - **Source:** #1247 (judge finding on PR #1345).
+
+## 2026-11-16 — StatusBar: one row, chips replace the banners
+
+- **What:** `ds::status_bar` is one row with no border. The `▲ BYPASS` banner overlay is gone (the chip replaces it, no coexistence). An available update is only the `↑ <version> u` chip; the "New version X available" banner arm is removed and the activity-log line no longer names the version. Downloading / restart / failed upgrade states keep their banner, drawn left of the pinned safety chips. Drop order is update, TurboQuant, quota, budget, fleet; the issue's "update then quota" order wins over the mock, where the update chip never drops. Uptime, RAM, `MOD:` and `CONTINUOUS:` are not in the bar; `TQ:ON` stays (pinned by the #1162 header test, and the mock shows TurboQuant). Fleet `run` also counts CI fix, conflict fix and retry; `wait` also counts interactive sessions (the chat section counts its turn as `◐ wait`).
+- **Why:** the shell rule puts state in one place; two places for one fact is what the redesign removes. The upgrade progress states carry prompts (`[y]/[n]`) that are not state, so they stay until the upgrade issue.
+- **Section:** `§04 StatusBar`, `Shell rules`, `§08` metric "Places the update notice appears".
+- **Rejected:** keeping the bypass banner during a migration (two places for one fact); width breakpoints instead of greedy dropping (a long quota badge would still overflow); mode chip (`NORMAL` / `INSERT`) — no App state for it yet.
+- **Known gap:** the budget alert banner (`draw_budget_banner_if_alerting`) still overlays the bar row and can hide the safety chips while it shows; it is outside #1257's ownership.
+- **Source:** #1257.

@@ -1,0 +1,17 @@
+---
+source: crates/maestro-tui/src/tui/ds/status_bar_tests.rs
+expression: out
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 1 },
+    content: [
+        " MAESTRO  0.0.0 | [*] 2 run [?] 1 wait [E] 1 fail      ▲ BYPASS   [E] UNTRUSTED ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 9, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 54, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 64, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 65, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+    ]
+}

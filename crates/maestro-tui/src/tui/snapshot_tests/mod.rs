@@ -47,6 +47,7 @@ mod settings_teams_warnings_parity;
 mod settings_theme_parity;
 mod settings_turboquant_parity;
 mod size_guard;
+mod status_bar;
 mod status_chips;
 mod team_wizard;
 mod theme_presets;

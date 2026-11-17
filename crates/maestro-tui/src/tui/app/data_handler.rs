@@ -272,7 +272,8 @@ impl App {
             TuiDataEvent::VersionCheckResult(Some(info)) => {
                 self.activity_log.push_simple(
                     "UPDATE".into(),
-                    format!("New version {} available", info.tag),
+                    // #1257: the version shows once, in the status bar chip.
+                    "Update available: press u to upgrade.".into(),
                     LogLevel::Info,
                 );
                 self.upgrade_state = crate::updater::UpgradeState::Available(info);

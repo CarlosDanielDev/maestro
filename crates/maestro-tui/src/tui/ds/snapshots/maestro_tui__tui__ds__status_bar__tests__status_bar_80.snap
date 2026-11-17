@@ -1,0 +1,5 @@
+---
+source: crates/maestro-tui/src/tui/ds/status_bar_tests.rs
+expression: row
+---
+ MAESTRO  0.0.0 │ ● 2 run ◐ 1 wait ✗ 1 fail │ $12.40/50  ▲ BYPASS   ✗ UNTRUSTED
