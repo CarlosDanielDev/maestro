@@ -364,11 +364,23 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Shift+M` | Session-complete modal | skipped in text-input mode |
 | `Shift+C` | Auto-review concerns panel | when pending |
 | `Shift+P` | Retry PR creation | skipped in text-input mode |
-| `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode, not while a PRD goal or Roadmap filter is edited. Overview keeps `1`-`9` for session detail |
+| `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode. Overview keeps `1`-`9` for session detail |
 | `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
 | `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
 | `Ctrl+L` | Open / close the log drawer (`ds::log_drawer`) | every screen, unless a modal hides the drawer (#1263) |
 | `Esc` | Close the log drawer | only while the drawer is shown; else the screen gets it |
+
+Text-input mode is one check: `is_text_input_mode` in `input_handler.rs`
+(#1377). It is true when the active screen reports `InputMode::Insert`, in
+`PromptInput`, `SessionSwitcher` and `Settings`, while the help overlay search
+is active, while a PRD field is edited and while a Roadmap label or assignee
+filter is edited. Every global bare-key handler asks it: the upgrade keys
+`u` / `n` / `Esc` (bare only), the run loop's `y` restart
+(`is_restart_key`, bare only), `q`, `?`, `A`, `e`, the Shift globals above and
+the `1`-`7` tab switch. A new text field whose screen does not report `Insert`
+must be added there; `global_bare_keys_never_fire_on_any_text_input_surface`
+in `input_handler_text_input_tests.rs` walks every surface, so add it to
+that list too.
 
 Before adding a key: grep `handle_global_shortcuts`. In text-input screens
 plain letters are typed, so use a free `Ctrl+letter` (e.g. `Ctrl+W`) and

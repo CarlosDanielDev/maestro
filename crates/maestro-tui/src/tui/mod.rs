@@ -51,7 +51,7 @@ use background_tasks::{spawn_issue_fetch, spawn_version_check};
 use crossterm::{
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyCode, MouseEventKind,
+        Event, MouseEventKind,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -275,9 +275,7 @@ async fn event_loop(
                         }
                         continue;
                     }
-                    if let crate::updater::UpgradeState::ReadyToRestart { .. } = &app.upgrade_state
-                        && key.code == KeyCode::Char('y')
-                    {
+                    if input_handler::is_restart_key(app, &key) {
                         disable_raw_mode().ok();
                         leave_tui_mode(terminal.backend_mut()).ok();
                         terminal.show_cursor().ok();
