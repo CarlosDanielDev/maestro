@@ -1,0 +1,5 @@
+---
+source: crates/maestro-tui/src/tui/ds/checklist_tests.rs
+expression: "draw_strip(&theme, 60, true).backend()"
+---
+" Draft 3/5 ready   ✗ Acceptance   ! No [TODO] placeholders  "

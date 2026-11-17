@@ -179,6 +179,22 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
 | `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
 
+### Markdown block and readiness checklist (`crates/maestro-tui/src/tui/ds/`, #1252)
+
+Implements `mdBlock`, `checklistPanel` and `readyStrip` from
+`docs/design-system/index.html` (§04 Kit v2, §02.2 Issue wizard).
+
+| Item | For |
+|---|---|
+| `render_markdown_with(input, theme, width, MarkdownOptions)` | The one markdown renderer with options. `MarkdownOptions::default()` is exactly `render_markdown`. `HeadingStyle::Bare` drops the `#` and draws the heading bold `accent_warning`; `inline_marks` turns `[TODO: x]` into a reversed warn chip (plus a plain space) and `#123` into `accent_identifier` (via `extract_issue_refs`) |
+| `ds::md_block::md_block(input, theme, width)` | Preset `MD_BLOCK` (bare headings + inline marks) for wizard previews, critiques and issue bodies. Use this, not a second renderer |
+| `ds::checklist::checklist_panel(f, area, title, &[CheckItem], focused, theme)` | Live checklist panel (Wide): `✓ ✗ ! ○` rows (`CheckState::{Ok, Missing, Warn, Pending}`), `n/m ready` on the top-right border |
+| `ds::checklist::ready_strip(label, &[CheckItem], compact, width, theme)` | Its one-line form (Regular, Compact): `Draft 3/5 ready   ✗ Acceptance   …`. Lists only `Missing` and `Warn`; `compact` hides notes; cut with `…` at `width` |
+
+Rules: `Pending` (`○`) is for steps not reached yet and is never red.
+`ready_count` counts only `Ok` as ready, and every row (also `Pending`) in the
+total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
+
 ### Status chip, gauge level, money (`crates/maestro-tui/src/tui/ds/`, #1251)
 
 | Item | Returns | For |
