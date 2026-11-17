@@ -240,7 +240,7 @@ total. Meaning rides on glyph + BOLD/REVERSED, so both read under NO_COLOR.
 
 | Item | Returns | For |
 |---|---|---|
-| `status_chip::status_chip(status, theme)` | `Span` | `glyph word` for any `SessionStatus`, coloured by `status_color`; `NeedsReview` / `FailedGates` / `Errored` are bold. Reads the global icon mode |
+| `status_chip::status_chip(status, theme)` | `Span` | `glyph word` for any `SessionStatus`, coloured by `status_color`, except `NeedsPr` (`status_needs_pr`) and `ConflictFix` (`status_conflict`) (#1353); `NeedsReview` / `FailedGates` / `Errored` are bold. Reads the global icon mode |
 | `status_chip::status_chip_for_mode(status, theme, nerd_font)` | `Span` | Same, icon mode passed in (use it in tests) |
 | `status_chip::status_word(status)` | `&str` | The chip word alone (`needs you`, `PR ready`, `gates failed`, ...) |
 | `gauge::gauge_level(ratio)` | `GaugeLevel` | Spend and quota gauges: `< 0.6` `Low`, `0.6` `Medium`, `0.8` `High`, `>= 1.0` `Critical`. NaN / negative = `Low` |
