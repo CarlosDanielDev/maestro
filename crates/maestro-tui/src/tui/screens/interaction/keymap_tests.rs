@@ -153,17 +153,6 @@ fn ctrl_g_clears_editor_leaves_history() {
     assert_eq!(s.history_len(), 3);
 }
 
-/// #1263: Ctrl+U stays the composer's undo (tui-textarea's default), so
-/// "clear input" lives on Ctrl+G instead.
-#[test]
-fn ctrl_u_still_undoes_in_composer() {
-    let mut s = screen_for(7, true, TurnState::Idle);
-    type_text(&mut s, "abc");
-    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
-    assert_eq!(action, ScreenAction::None);
-    assert_eq!(s.editor_text(), "ab", "Ctrl+U undoes the last edit");
-}
-
 #[test]
 fn esc_idle_returns_pop() {
     let mut s = screen_for(7, true, TurnState::Idle);

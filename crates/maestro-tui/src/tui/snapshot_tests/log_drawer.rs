@@ -242,7 +242,7 @@ fn activity_log_height_sizes_drawer() {
 }
 
 /// Ctrl+L reaches the drawer from a live Interaction composer and leaves the
-/// typed text alone; Ctrl+G still clears it.
+/// typed text alone; Ctrl+U still undoes and Ctrl+G clears.
 #[tokio::test]
 async fn ctrl_l_opens_drawer_from_interaction_composer() {
     use crate::session::interaction::TurnState;
@@ -277,6 +277,10 @@ async fn ctrl_l_opens_drawer_from_interaction_composer() {
 
     let _ = handle_key(&mut app, esc()).await;
     assert!(!app.activity_log.drawer_open);
+    // Ctrl+U stays tui-textarea's undo in the composer.
+    let ctrl_u = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+    let _ = handle_key(&mut app, ctrl_u).await;
+    assert_eq!(text(&app), "draf", "Ctrl+U undoes the last edit");
     let _ = handle_key(
         &mut app,
         KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
