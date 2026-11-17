@@ -130,6 +130,7 @@ impl OllamaHttpClient {
         model: &str,
         prompt: &str,
     ) -> Result<mpsc::Receiver<Result<StreamEvent, OllamaError>>, OllamaError> {
+        self.ensure_secure_transport_allowed()?;
         let body = json!({
             "model": model,
             "stream": true,
@@ -246,6 +247,27 @@ impl OllamaHttpClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
+    }
+
+    fn ensure_secure_transport_allowed(&self) -> Result<(), OllamaError> {
+        let is_insecure_http = self.base_url.starts_with("http://");
+        if !is_insecure_http {
+            return Ok(());
+        }
+
+        let is_loopback_http = self.base_url.starts_with("http://localhost")
+            || self.base_url.starts_with("http://127.0.0.1")
+            || self.base_url.starts_with("http://[::1]")
+            || self.base_url.starts_with("http://::1");
+
+        if is_loopback_http {
+            Ok(())
+        } else {
+            Err(OllamaError::Request(
+                "refusing insecure HTTP transport for non-loopback Ollama host; use HTTPS"
+                    .to_string(),
+            ))
+        }
     }
 
     fn api_key(&self) -> Option<String> {
