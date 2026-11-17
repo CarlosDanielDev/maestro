@@ -12,7 +12,7 @@ pub fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Resu
         if export.as_deref() == Some("json") {
             let lines: Vec<&str> = content.lines().collect();
             let json = serde_json::json!({
-                "session_id": session_id_str,
+                "session_id": mask_session_id(&session_id_str),
                 "lines": lines,
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
@@ -31,7 +31,7 @@ pub fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Resu
                 .iter()
                 .map(|l| {
                     serde_json::json!({
-                        "session_id": l.session_id,
+                        "session_id": mask_session_id(&l.session_id.to_string()),
                         "size_bytes": l.size_bytes,
                         "path": l.path.display().to_string(),
                     })
