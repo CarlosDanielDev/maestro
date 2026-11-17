@@ -44,7 +44,7 @@ pub fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Resu
             for log in &logs {
                 println!(
                     "{:<40} {:>10}",
-                    log.session_id,
+                    mask_session_id(&log.session_id.to_string()),
                     format_bytes(log.size_bytes)
                 );
             }
@@ -60,6 +60,16 @@ pub fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Resu
 /// Tabs and CR are dropped too; the JSON export keeps the raw bytes.
 fn render_log(content: &str) -> String {
     crate::util::sanitize::strip_ansi(content)
+}
+
+fn mask_session_id(session_id: &str) -> String {
+    const VISIBLE_PREFIX: usize = 8;
+    if session_id.len() <= VISIBLE_PREFIX {
+        return "********".to_string();
+    }
+
+    let prefix = &session_id[..VISIBLE_PREFIX];
+    format!("{prefix}********************************")
 }
 
 fn format_bytes(bytes: u64) -> String {
