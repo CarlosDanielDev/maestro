@@ -4,7 +4,7 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-layers.sh"
   MANIFEST="$REPO_ROOT/scripts/architecture-layers.yml"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   # Each test runs in a clean tempdir with a faked src/ layout.
   TEST_ROOT="$(mktemp -d -t layers-test-XXXXXX)"
   cd "$TEST_ROOT"

@@ -787,11 +787,11 @@ Same layered approach as the `/implement` harness.
 
 **Layer 1 — Shell-script tests via `bats`:**
 
-- `tests/scripts/check-file-size.bats` — old-format migration,
+- `scripts/tests/check-file-size.bats` — old-format migration,
   deadline-past failure, deadline-future pass, missing-deadline error.
-- `tests/scripts/check-layers.bats` — same-layer pass, lower-layer
+- `scripts/tests/check-layers.bats` — same-layer pass, lower-layer
   pass, higher-layer fail, forbidden-pair fail.
-- `tests/scripts/check-coverage-tiers.bats` — synthetic lcov inputs at
+- `scripts/tests/check-coverage-tiers.bats` — synthetic lcov inputs at
   various tier percentages.
 
 **Layer 2 — YAML manifest schema tests:**
@@ -835,10 +835,10 @@ Same layered approach as the `/implement` harness.
 | `scripts/check-layers.sh` | Layer violation enforcement |
 | `docs/layers-debt.txt` | Deadlined debt file for existing layer violations |
 | `docs/ci-smoke-check.md` | Manual smoke procedure |
-| `tests/scripts/check-file-size.bats` | Bats tests for file-size script |
-| `tests/scripts/check-layers.bats` | Bats tests for layers script |
-| `tests/scripts/check-coverage-tiers.bats` | Bats tests for coverage script |
-| `tests/scripts/fixtures/*` | Test-data inputs |
+| `scripts/tests/check-file-size.bats` | Bats tests for file-size script |
+| `scripts/tests/check-layers.bats` | Bats tests for layers script |
+| `scripts/tests/check-coverage-tiers.bats` | Bats tests for coverage script |
+| `scripts/tests/fixtures/*` | Test-data inputs |
 | `tests/manifests/validate-manifests.py` | Python unittest for manifest schemas |
 | `.cargo/mutants.toml` | cargo-mutants config |
 

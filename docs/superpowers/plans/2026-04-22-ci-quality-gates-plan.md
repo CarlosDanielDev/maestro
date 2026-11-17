@@ -29,10 +29,10 @@
 | `scripts/check-layers.sh` | 2.3 | Layer violation enforcement |
 | `docs/layers-debt.txt` | 2.3 | Deadlined debt file for existing layer violations |
 | `docs/ci-smoke-check.md` | 3 | Manual smoke-check procedure |
-| `tests/scripts/check-file-size.bats` | 1 | Bats tests for file-size script (incl. deadline parsing) |
-| `tests/scripts/check-layers.bats` | 2.3 | Bats tests for layers script |
-| `tests/scripts/check-coverage-tiers.bats` | 2.1 | Bats tests for coverage script |
-| `tests/scripts/fixtures/` | 1+2 | Shared test fixtures (lcov samples, stub manifests) |
+| `scripts/tests/check-file-size.bats` | 1 | Bats tests for file-size script (incl. deadline parsing) |
+| `scripts/tests/check-layers.bats` | 2.3 | Bats tests for layers script |
+| `scripts/tests/check-coverage-tiers.bats` | 2.1 | Bats tests for coverage script |
+| `scripts/tests/fixtures/` | 1+2 | Shared test fixtures (lcov samples, stub manifests) |
 | `tests/manifests/validate_manifests_test.py` | 2 | Python unittest for YAML manifest schemas |
 | `.cargo/mutants.toml` | 3 | cargo-mutants config (excludes, timeout) |
 
@@ -74,7 +74,7 @@ Each chunk → one PR per the user's isolation rule. Chunks 2, 3, 4 can run in p
 - Modify: `clippy.toml`, `deny.toml`, `src/lib.rs`, `src/main.rs`
 - Modify: `scripts/check-file-size.sh` (deadline parsing)
 - Modify: `scripts/allowlist-large-files.txt` (format migration + stale-path cleanup)
-- Create: `tests/scripts/check-file-size.bats` + fixtures
+- Create: `scripts/tests/check-file-size.bats` + fixtures
 - Create: `.claude/hooks/preflight.sh` (populate empty file from harness spec)
 - Modify: `docs/RUST-GUARDRAILS.md` (append new section)
 
@@ -83,20 +83,20 @@ Each chunk → one PR per the user's isolation rule. Chunks 2, 3, 4 can run in p
 This is the TDD-heaviest task in Wave 1. The existing `check-file-size.sh` strips comments before populating `allowed[]`, so we need a parallel raw-line array. Test-first.
 
 **Files:**
-- Create: `tests/scripts/check-file-size.bats`
-- Create: `tests/scripts/fixtures/allowlist-sample-valid.txt`
-- Create: `tests/scripts/fixtures/allowlist-sample-expired.txt`
-- Create: `tests/scripts/fixtures/allowlist-sample-legacy.txt`
-- Create: `tests/scripts/fixtures/allowlist-sample-nostraightforward-structure.txt`
+- Create: `scripts/tests/check-file-size.bats`
+- Create: `scripts/tests/fixtures/allowlist-sample-valid.txt`
+- Create: `scripts/tests/fixtures/allowlist-sample-expired.txt`
+- Create: `scripts/tests/fixtures/allowlist-sample-legacy.txt`
+- Create: `scripts/tests/fixtures/allowlist-sample-nostraightforward-structure.txt`
 - Modify: `scripts/check-file-size.sh`
 
 - [ ] **Step 1: Scaffold bats test file**
 
 ```bash
-mkdir -p tests/scripts/fixtures
+mkdir -p scripts/tests/fixtures
 ```
 
-File: `tests/scripts/check-file-size.bats`
+File: `scripts/tests/check-file-size.bats`
 
 ```bash
 #!/usr/bin/env bats
@@ -107,7 +107,7 @@ File: `tests/scripts/check-file-size.bats`
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-file-size.sh"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   TEST_REPO="$(mktemp -d -t file-size-test-XXXXXX)"
   mkdir -p "$TEST_REPO/src" "$TEST_REPO/scripts"
   cp "$SCRIPT" "$TEST_REPO/scripts/check-file-size.sh"
@@ -122,7 +122,7 @@ teardown() {
 
 - [ ] **Step 2: Create a legacy-format allowlist fixture (current format)**
 
-File: `tests/scripts/fixtures/allowlist-sample-legacy.txt`
+File: `scripts/tests/fixtures/allowlist-sample-legacy.txt`
 
 ```
 # Old-format allowlist — bare paths with freeform comments.
@@ -147,12 +147,12 @@ Append to `check-file-size.bats`:
 
 - [ ] **Step 4: Run to verify it passes against current script**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: 1 passing test (legacy allowlist works — this is a no-change regression check).
 
 - [ ] **Step 5: Create a deadline-valid-future fixture**
 
-File: `tests/scripts/fixtures/allowlist-sample-valid.txt`
+File: `scripts/tests/fixtures/allowlist-sample-valid.txt`
 
 Use a date far in the future (2099-12-31) so this fixture never expires.
 
@@ -175,12 +175,12 @@ Append to `.bats`:
 
 - [ ] **Step 7: Run — expect pass (script still ignores comment syntax gracefully)**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: 2 passing tests.
 
 - [ ] **Step 8: Create a deadline-expired fixture**
 
-File: `tests/scripts/fixtures/allowlist-sample-expired.txt`
+File: `scripts/tests/fixtures/allowlist-sample-expired.txt`
 
 Use a date safely in the past:
 
@@ -202,7 +202,7 @@ src/big_expired.rs # deadline: 2000-01-01, owner: @testuser, ticket: #OLD, plan:
 
 - [ ] **Step 10: Run — expect FAIL (script does not yet parse deadlines)**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: test 3 FAILS because the current script returns 0 for any allowlisted entry regardless of deadline.
 
 - [ ] **Step 11: Modify `scripts/check-file-size.sh` — add deadline parsing**
@@ -241,7 +241,7 @@ done
 
 - [ ] **Step 12: Run — expect all 3 tests pass**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: 3 passing tests.
 
 - [ ] **Step 13: Add test — missing-deadline legacy entry emits no warning**
@@ -258,7 +258,7 @@ Expected: 3 passing tests.
 
 - [ ] **Step 14: Run — expect pass**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: 4 passing tests.
 
 - [ ] **Step 15: Add test — file NOT on allowlist and over cap fails as before**
@@ -275,13 +275,13 @@ Expected: 4 passing tests.
 
 - [ ] **Step 16: Run — expect pass (4-line regression check)**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: 5 passing tests.
 
 - [ ] **Step 17: Commit**
 
 ```bash
-git add tests/scripts/ scripts/check-file-size.sh
+git add scripts/tests/ scripts/check-file-size.sh
 git commit -m "$(cat <<'EOF'
 feat(scripts): add deadline parsing to file-size allowlist
 
@@ -739,7 +739,7 @@ cargo clippy -- -D warnings -A dead_code
 cargo test
 bash scripts/check-file-size.sh
 cargo deny check
-bats tests/scripts/check-file-size.bats
+bats scripts/tests/check-file-size.bats
 bash .claude/hooks/preflight.sh
 ```
 
@@ -781,7 +781,7 @@ Within 14 days of this PR merging: triage the allowlist. Replace placeholder dea
 - [x] `cargo fmt -- --check` → clean
 - [x] `cargo clippy -- -D warnings -A dead_code` → clean (post-refactors for nursery lints)
 - [x] `cargo test` → all pass
-- [x] `bats tests/scripts/check-file-size.bats` → 5/5 pass
+- [x] `bats scripts/tests/check-file-size.bats` → 5/5 pass
 - [x] `cargo deny check` → clean (with new skip list)
 - [x] `.claude/hooks/preflight.sh` → end-to-end green
 PRBODY
@@ -874,7 +874,7 @@ gh pr create --title "chore(allowlist): Phase 1b triage" --body "Phase 1b follow
 - `docs/RUST-GUARDRAILS.md` documents the new gates.
 - Phase 1b triage replaces placeholders with real values.
 
-Total LOC change: modest in production code (lint fixes); new infrastructure in `tests/scripts/` and `.claude/hooks/`.
+Total LOC change: modest in production code (lint fixes); new infrastructure in `scripts/tests/` and `.claude/hooks/`.
 
 ---
 
@@ -886,8 +886,8 @@ Total LOC change: modest in production code (lint fixes); new infrastructure in 
 - Modify: `.github/workflows/ci.yml` (add `coverage` job)
 - Create: `scripts/coverage-tiers.yml`
 - Create: `scripts/check-coverage-tiers.sh`
-- Create: `tests/scripts/check-coverage-tiers.bats`
-- Create: `tests/scripts/fixtures/lcov-sample-*.info`
+- Create: `scripts/tests/check-coverage-tiers.bats`
+- Create: `scripts/tests/fixtures/lcov-sample-*.info`
 - Create: `tests/manifests/validate_manifests_test.py`
 - Modify: `docs/RUST-GUARDRAILS.md` (append coverage section)
 
@@ -961,15 +961,15 @@ git commit -m "feat(scripts): add coverage tier manifest"
 This task builds the coverage enforcement script test-first. The script is a bash+`yq` parser that reads lcov, groups files by tier, computes weighted means, asserts floors.
 
 **Files:**
-- Create: `tests/scripts/check-coverage-tiers.bats`
-- Create: `tests/scripts/fixtures/lcov-100pct-core.info`
-- Create: `tests/scripts/fixtures/lcov-70pct-core.info`
-- Create: `tests/scripts/fixtures/lcov-mixed-tiers.info`
+- Create: `scripts/tests/check-coverage-tiers.bats`
+- Create: `scripts/tests/fixtures/lcov-100pct-core.info`
+- Create: `scripts/tests/fixtures/lcov-70pct-core.info`
+- Create: `scripts/tests/fixtures/lcov-mixed-tiers.info`
 - Create: `scripts/check-coverage-tiers.sh`
 
 - [ ] **Step 1: Create a minimal lcov fixture at 100% coverage**
 
-File: `tests/scripts/fixtures/lcov-100pct-core.info`
+File: `scripts/tests/fixtures/lcov-100pct-core.info`
 
 ```
 TN:
@@ -987,7 +987,7 @@ lcov format: `LF` is lines found, `LH` is lines hit. This fixture: 80 lines tota
 
 - [ ] **Step 2: Write failing test — 100% lcov against core floor of 90% passes**
 
-File: `tests/scripts/check-coverage-tiers.bats`
+File: `scripts/tests/check-coverage-tiers.bats`
 
 ```bash
 #!/usr/bin/env bats
@@ -996,7 +996,7 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-coverage-tiers.sh"
   MANIFEST="$REPO_ROOT/scripts/coverage-tiers.yml"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   cd "$REPO_ROOT"
 }
 
@@ -1009,7 +1009,7 @@ setup() {
 
 - [ ] **Step 3: Run — expect FAIL (script doesn't exist)**
 
-Run: `bats tests/scripts/check-coverage-tiers.bats`
+Run: `bats scripts/tests/check-coverage-tiers.bats`
 Expected: error (`check-coverage-tiers.sh` not found).
 
 - [ ] **Step 4: Create the script — minimal implementation for first test**
@@ -1154,12 +1154,12 @@ chmod +x scripts/check-coverage-tiers.sh
 
 - [ ] **Step 6: Run — expect PASS**
 
-Run: `bats tests/scripts/check-coverage-tiers.bats`
+Run: `bats scripts/tests/check-coverage-tiers.bats`
 Expected: 1/1 pass (core at 100% ≥ 90% floor).
 
 - [ ] **Step 7: Add 70% fixture + failing test**
 
-File: `tests/scripts/fixtures/lcov-70pct-core.info`
+File: `scripts/tests/fixtures/lcov-70pct-core.info`
 
 ```
 TN:
@@ -1182,12 +1182,12 @@ Append to `.bats`:
 
 - [ ] **Step 8: Run — expect PASS**
 
-Run: `bats tests/scripts/check-coverage-tiers.bats`
+Run: `bats scripts/tests/check-coverage-tiers.bats`
 Expected: 2/2 pass.
 
 - [ ] **Step 9: Add mixed-tier fixture — core 95% + tui 50%**
 
-File: `tests/scripts/fixtures/lcov-mixed-tiers.info`
+File: `scripts/tests/fixtures/lcov-mixed-tiers.info`
 
 ```
 TN:
@@ -1225,13 +1225,13 @@ Append to `.bats`:
 
 - [ ] **Step 10: Run — expect PASS**
 
-Run: `bats tests/scripts/check-coverage-tiers.bats`
+Run: `bats scripts/tests/check-coverage-tiers.bats`
 Expected: 3/3 pass.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add scripts/check-coverage-tiers.sh tests/scripts/
+git add scripts/check-coverage-tiers.sh scripts/tests/
 git commit -m "$(cat <<'EOF'
 feat(scripts): add check-coverage-tiers.sh with bats coverage
 
@@ -1496,7 +1496,7 @@ git commit -m "test(manifests): validate coverage-tiers.yml schema"
 cargo fmt -- --check
 cargo clippy -- -D warnings -A dead_code
 cargo test
-bats tests/scripts/check-coverage-tiers.bats
+bats scripts/tests/check-coverage-tiers.bats
 python3 -m unittest discover -s tests -p "*_test.py"
 bash scripts/check-coverage-tiers.sh <(cargo llvm-cov --lcov)
 ```
@@ -1522,7 +1522,7 @@ Job is `continue-on-error: true`. Once baseline reaches each tier's floor, a fol
 
 ## Test plan
 
-- [x] `bats tests/scripts/check-coverage-tiers.bats` → 3/3
+- [x] `bats scripts/tests/check-coverage-tiers.bats` → 3/3
 - [x] `python3 -m unittest discover -s tests` → schema tests pass
 - [x] CI coverage job runs and reports tier percentages
 
@@ -1544,7 +1544,7 @@ PRBODY
 **Files:**
 - Modify: `scripts/check-file-size.sh` (`MAX_LINES` 500 → 400)
 - Modify: `scripts/allowlist-large-files.txt` (add 400-500 band entries)
-- Modify: `tests/scripts/check-file-size.bats` (new cap scenario)
+- Modify: `scripts/tests/check-file-size.bats` (new cap scenario)
 - Modify: `docs/RUST-GUARDRAILS.md` (update §1 file-size cap reference, append Wave 2.2 section)
 
 ### Task 3.1: Enumerate 400-500 band files and triage
@@ -1600,11 +1600,11 @@ EOF
 
 **Files:**
 - Modify: `scripts/check-file-size.sh`
-- Modify: `tests/scripts/check-file-size.bats`
+- Modify: `scripts/tests/check-file-size.bats`
 
 - [ ] **Step 1: Add bats test for new cap**
 
-Append to `tests/scripts/check-file-size.bats`:
+Append to `scripts/tests/check-file-size.bats`:
 
 ```bash
 @test "new 400 LOC cap: file at 450 LOC not on allowlist fails" {
@@ -1627,7 +1627,7 @@ Append to `tests/scripts/check-file-size.bats`:
 
 - [ ] **Step 2: Run — expect FAIL (current cap is 500)**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: the two new tests fail; older tests still pass.
 
 - [ ] **Step 3: Flip the cap**
@@ -1640,7 +1640,7 @@ MAX_LINES=400   # was 500
 
 - [ ] **Step 4: Re-run — expect PASS**
 
-Run: `bats tests/scripts/check-file-size.bats`
+Run: `bats scripts/tests/check-file-size.bats`
 Expected: all tests pass.
 
 - [ ] **Step 5: Run full file-size check on real repo**
@@ -1653,7 +1653,7 @@ If violations appear for files NOT in the updated allowlist — that file was mi
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/check-file-size.sh tests/scripts/check-file-size.bats
+git add scripts/check-file-size.sh scripts/tests/check-file-size.bats
 git commit -m "$(cat <<'EOF'
 feat(scripts): flip file-size MAX_LINES 500 → 400
 
@@ -1720,7 +1720,7 @@ git commit -m "docs(rust-guardrails): update file-size cap to 400 + append Wave 
 - [ ] **Step 1: Verify**
 
 ```bash
-bats tests/scripts/check-file-size.bats
+bats scripts/tests/check-file-size.bats
 bash scripts/check-file-size.sh
 cargo fmt -- --check
 cargo test
@@ -1746,7 +1746,7 @@ gh pr create --title "feat(ci): Wave 2.2 — file-size cap 500 → 400" --body "
 
 ## Test plan
 
-- [x] `bats tests/scripts/check-file-size.bats` → all pass
+- [x] `bats scripts/tests/check-file-size.bats` → all pass
 - [x] `bash scripts/check-file-size.sh` on real repo → exit 0 (every 400+ file is either allowlisted or intentionally-sized)
 
 ## Rollout
@@ -1765,8 +1765,8 @@ PRBODY
 **Files:**
 - Create: `scripts/architecture-layers.yml`
 - Create: `scripts/check-layers.sh`
-- Create: `tests/scripts/check-layers.bats`
-- Create: `tests/scripts/fixtures/layers-sample-*.rs`
+- Create: `scripts/tests/check-layers.bats`
+- Create: `scripts/tests/fixtures/layers-sample-*.rs`
 - Create: `docs/layers-debt.txt`
 - Modify: `.github/workflows/ci.yml` (add `layers` job)
 - Modify: `docs/RUST-GUARDRAILS.md` (append Wave 2.3 section)
@@ -1860,36 +1860,36 @@ git commit -m "feat(scripts): add architecture-layers.yml manifest"
 ### Task 4.2: TDD — `check-layers.sh` with bats
 
 **Files:**
-- Create: `tests/scripts/check-layers.bats`
-- Create: `tests/scripts/fixtures/layers-*.rs`
+- Create: `scripts/tests/check-layers.bats`
+- Create: `scripts/tests/fixtures/layers-*.rs`
 - Create: `scripts/check-layers.sh`
 
 - [ ] **Step 1: Create fixture Rust files**
 
 Each fixture represents a minimal Rust file with specific imports.
 
-File: `tests/scripts/fixtures/layers-samelayer-ok.rs`
+File: `scripts/tests/fixtures/layers-samelayer-ok.rs`
 
 ```rust
 // A domain-layer file importing another domain-layer module → should pass.
 use crate::session::manager::SessionManager;
 ```
 
-File: `tests/scripts/fixtures/layers-lowerlayer-ok.rs`
+File: `scripts/tests/fixtures/layers-lowerlayer-ok.rs`
 
 ```rust
 // A UI-layer file importing a domain-layer module → should pass.
 use crate::session::manager::SessionManager;
 ```
 
-File: `tests/scripts/fixtures/layers-higherlayer-fail.rs`
+File: `scripts/tests/fixtures/layers-higherlayer-fail.rs`
 
 ```rust
 // A domain-layer file importing a UI-layer module → should fail.
 use crate::tui::theme::ThemeConfig;
 ```
 
-File: `tests/scripts/fixtures/layers-forbiddenpair-fail.rs`
+File: `scripts/tests/fixtures/layers-forbiddenpair-fail.rs`
 
 ```rust
 // A state-layer file importing tui (forbidden pair) → should fail.
@@ -1898,7 +1898,7 @@ use crate::tui::theme::SerializableColor;
 
 - [ ] **Step 2: Write failing test — higher-layer import fails**
 
-File: `tests/scripts/check-layers.bats`
+File: `scripts/tests/check-layers.bats`
 
 ```bash
 #!/usr/bin/env bats
@@ -1907,7 +1907,7 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/check-layers.sh"
   MANIFEST="$REPO_ROOT/scripts/architecture-layers.yml"
-  FIXTURES="$REPO_ROOT/tests/scripts/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
   # Each test runs in a clean tempdir with a faked src/ layout.
   TEST_ROOT="$(mktemp -d -t layers-test-XXXXXX)"
   cd "$TEST_ROOT"
@@ -1929,7 +1929,7 @@ teardown() {
 
 - [ ] **Step 3: Run — expect FAIL (script doesn't exist)**
 
-Run: `bats tests/scripts/check-layers.bats`
+Run: `bats scripts/tests/check-layers.bats`
 Expected: script-not-found error.
 
 - [ ] **Step 4: Create the script — minimal for first test**
@@ -2095,7 +2095,7 @@ chmod +x scripts/check-layers.sh
 
 - [ ] **Step 6: Run — expect PASS (first test)**
 
-Run: `bats tests/scripts/check-layers.bats`
+Run: `bats scripts/tests/check-layers.bats`
 Expected: 1/1 pass.
 
 - [ ] **Step 7: Add more tests progressively**
@@ -2134,13 +2134,13 @@ Append to `.bats`:
 
 - [ ] **Step 8: Run — expect PASS**
 
-Run: `bats tests/scripts/check-layers.bats`
+Run: `bats scripts/tests/check-layers.bats`
 Expected: 4/4 pass.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add scripts/check-layers.sh tests/scripts/check-layers.bats tests/scripts/fixtures/layers-*.rs
+git add scripts/check-layers.sh scripts/tests/check-layers.bats scripts/tests/fixtures/layers-*.rs
 git commit -m "$(cat <<'EOF'
 feat(scripts): add check-layers.sh with bats coverage
 
@@ -2240,7 +2240,7 @@ Add deadline enforcement for the debt file (same pattern as allowlist).
 
 - [ ] **Step 4: Add bats test — debt entry tolerated when in future**
 
-Append to `tests/scripts/check-layers.bats`:
+Append to `scripts/tests/check-layers.bats`:
 
 ```bash
 @test "known-debt entry with future deadline is tolerated" {
@@ -2273,7 +2273,7 @@ EOF
 
 - [ ] **Step 5: Run — expect PASS**
 
-Run: `bats tests/scripts/check-layers.bats`
+Run: `bats scripts/tests/check-layers.bats`
 Expected: 6/6 pass.
 
 - [ ] **Step 6: Run on real repo — expect PASS**
@@ -2284,7 +2284,7 @@ Expected: exit 0 (all violations are in debt file with future deadlines).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/layers-debt.txt scripts/check-layers.sh tests/scripts/check-layers.bats
+git add docs/layers-debt.txt scripts/check-layers.sh scripts/tests/check-layers.bats
 git commit -m "$(cat <<'EOF'
 feat(scripts): add layer-debt file mechanism + check-layers tolerance
 
@@ -2379,7 +2379,7 @@ git commit -m "docs(rust-guardrails): append Wave 2.3 section (layer violations)
 
 ```bash
 bash scripts/check-layers.sh
-bats tests/scripts/check-layers.bats
+bats scripts/tests/check-layers.bats
 python3 -m unittest discover -s tests
 cargo test
 ```
@@ -2401,7 +2401,7 @@ gh pr create --title "feat(ci): Wave 2.3 — layer violations with YAML manifest
 
 ## Test plan
 
-- [x] `bats tests/scripts/check-layers.bats` → 6/6
+- [x] `bats scripts/tests/check-layers.bats` → 6/6
 - [x] `bash scripts/check-layers.sh` on real repo → exit 0 (debt file absorbs known violations)
 - [x] Layer manifest validated via Python unittest (extended from Wave 2.1)
 
@@ -3014,7 +3014,7 @@ git commit -m "docs(rust-guardrails): append Wave 3 section (nightly + freshness
 cargo fmt -- --check
 cargo clippy -- -D warnings -A dead_code
 cargo test
-bats tests/scripts/
+bats scripts/tests/
 node --test .github/actions/freshness/test/
 python3 -m unittest discover -s tests
 ```
@@ -3052,7 +3052,7 @@ If nightly produces too much merge-blocking friction, flip `required` on branch 
 ## Test plan
 
 - [x] `node --test .github/actions/freshness/test/` → 5/5 pass
-- [x] `bats tests/scripts/` (extended suite) → all pass
+- [x] `bats scripts/tests/` (extended suite) → all pass
 - [x] `cargo mutants --list --shard 0/4 --baseline=skip` → produces expected mutant list (local dry-run)
 - [ ] Nightly workflow runs at least once before merging this PR (manual trigger via `workflow_dispatch`)
 PRBODY

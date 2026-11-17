@@ -210,6 +210,9 @@ jobs:
           echo "${RUNNER_TEMP}/bats/bin" >> "$GITHUB_PATH"
           "${RUNNER_TEMP}/bats/bin/bats" --version | grep -qx "Bats ${VERSION}"
       - name: Run bats tests
+        # All script tests live in scripts/tests/ (fixtures in
+        # scripts/tests/fixtures/). Put new ones there: this glob is the only
+        # place CI picks them up (#1355).
         run: bats scripts/tests/*.bats
 
   deny:
