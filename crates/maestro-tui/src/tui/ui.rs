@@ -1245,10 +1245,9 @@ fn draw_footer(
     } else {
         key_hints::from_pairs(&pairs)
     };
-    // #1263: while the log drawer is open, Esc closes it.
+    // #1263: the shown log drawer is modal; the footer shows only its keys.
     if log_drawer_shown(app) {
-        hints.retain(|h| h.key != "Esc");
-        hints.splice(0..0, key_hints::from_pairs(&[("Esc", "Close log")]));
+        hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
     }
     let pin_quit = app.tui_mode != TuiMode::ConfirmExit;
     key_hints::draw(f, area, &hints, pin_quit, theme);

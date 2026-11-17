@@ -61,6 +61,18 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return handle_confirm_exit(app, &key);
     }
 
+    // #1263: the shown log drawer is modal. Only Ctrl+L and Esc (close)
+    // act; every other key is swallowed so nothing under it fires. The
+    // quit chords above still win.
+    if crate::tui::ui::log_drawer_shown(app) {
+        let ctrl_l =
+            key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl_l || key.code == KeyCode::Esc {
+            app.activity_log.drawer_open = false;
+        }
+        return KeyAction::Consumed;
+    }
+
     if handle_upgrade_keys(app, &key) {
         return KeyAction::Consumed;
     }
@@ -876,17 +888,13 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
-    // #1263: Ctrl+L toggles the log drawer on any screen; Esc closes it.
-    // Under a modal the drawer is hidden and both keys go to the modal.
+    // #1263: Ctrl+L opens the log drawer on any screen (`handle_key`
+    // closes it while shown). Under a modal the key goes to the modal.
     if key.code == KeyCode::Char('l')
         && key.modifiers.contains(KeyModifiers::CONTROL)
         && !crate::tui::ui::log_drawer_blocked(app)
     {
-        app.activity_log.drawer_open = !app.activity_log.drawer_open;
-        return true;
-    }
-    if key.code == KeyCode::Esc && crate::tui::ui::log_drawer_shown(app) {
-        app.activity_log.drawer_open = false;
+        app.activity_log.drawer_open = true;
         return true;
     }
 
