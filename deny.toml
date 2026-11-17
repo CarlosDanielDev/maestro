@@ -34,6 +34,11 @@ ignore = [
     # known vulnerability. syntect hasn't migrated to yaml-rust2 yet.
     # RUSTSEC-2024-0320: https://rustsec.org/advisories/RUSTSEC-2024-0320
     "RUSTSEC-2024-0320",
+    # Direct dependency of maestro, maestro-cli, maestro-core and maestro-tui —
+    # chrono is flagged unmaintained, with no known vulnerability and no
+    # patched version. Moving to `jiff` or `time` is tracked as a follow-up.
+    # RUSTSEC-2026-0543: https://rustsec.org/advisories/RUSTSEC-2026-0543
+    "RUSTSEC-2026-0543",
 ]
 
 [licenses]
