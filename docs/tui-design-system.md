@@ -51,6 +51,7 @@ from colour alone.
 | F-key badges | `fkey_badge_bg`, `fkey_badge_fg` | F-key bar |
 | Surfaces (#1247) | `surface_bar`, `surface_overlay` | status bar background; dialog / palette background |
 | PR states (#1247) | `status_needs_pr`, `status_conflict` | PR-ready and conflict-fix states (not yet wired into `status_color`) |
+| Agent badges (#1346) | `agent_claude`, `agent_codex`, `agent_qwen`, `agent_opencode`, `agent_ollama`, `agent_minimax`, `agent_unknown` | use via `agent_color(agent_id)`; all `Reset` under no-color; not in `ThemeOverrides` |
 
 `border_focused` is retired: `ThemeOverrides` still parses it so old
 `maestro.toml` files load, but `Theme` has no such field and nothing draws it.
@@ -61,7 +62,8 @@ Dark values for the four v1 tokens (§03): `surface_bar` = `Indexed(236)`,
 
 NO_COLOR snapshots: `snapshot_tests::no_color::no_color_snapshot(|f, theme| ..)`
 draws any screen with `Theme::no_color()` and returns the buffer with styles,
-so a screen adds its NO_COLOR snapshot in one line.
+so a screen adds its NO_COLOR snapshot in one line. It panics if any cell's
+fg, bg or underline colour is not `Reset` (#1346).
 
 Adding a token means touching: `Theme`, `ThemeOverrides`, the five presets,
 `from_config`, `apply_capability`, and the `tui.theme.overrides` schema. Prefer an existing token first.
@@ -194,7 +196,7 @@ The description is plain text (no GitHub types) and is sanitized by the bar.
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
-| `agent_badge.rs` | `agent_color`, `agent_label` | Per-agent color/label |
+| `agent_badge.rs` | `agent_label`, `agent_kind_for_id` | Per-agent label and kind; the colour is `theme.agent_color(agent_id)` |
 
 ### Shell rows: TabBar, CrumbBar, footer (`crates/maestro-tui/src/tui/ds/`, #1258)
 
