@@ -13,7 +13,7 @@
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   HOOK="$REPO_ROOT/.maestro/hooks/implement-gates.sh"
-  FIXTURES="$REPO_ROOT/tests/hooks/fixtures"
+  FIXTURES="$REPO_ROOT/scripts/tests/fixtures"
 
   # Make the fakes visible as `gh` and `cargo` on PATH.
   SHIM_DIR="$(mktemp -d)"
@@ -22,6 +22,12 @@ setup() {
   PATH="$SHIM_DIR:$PATH"
   export PATH
 
+  # The hook writes its gate dir and sentinel under $XDG_RUNTIME_DIR when set
+  # (sentinel-path.sh). Point it at a scratch dir so tests never touch the
+  # real ~/.cache/maestro sentinel.
+  XDG_RUNTIME_DIR="$(mktemp -d)"
+  export XDG_RUNTIME_DIR
+
   # Scratch git repo.
   TEST_REPO="$("$FIXTURES/init-test-repo.sh")"
   cd "$TEST_REPO" || exit
@@ -29,7 +35,7 @@ setup() {
 
 teardown() {
   cd /
-  rm -rf "$TEST_REPO" "$SHIM_DIR"
+  rm -rf "$TEST_REPO" "$SHIM_DIR" "$XDG_RUNTIME_DIR"
 }
 
 # --- tests defined below, one per task ---
@@ -60,8 +66,10 @@ teardown() {
 
 @test "caches issue JSON to GATE_LOG_DIR/issue.json" {
   run bash "$HOOK" 123
-  [[ "$output" == *"/tmp/maestro-123-"* ]]
-  log_dir=$(echo "$output" | grep -oE '/tmp/maestro-123-[0-9]+' | head -1)
+  # The gate dir is mktemp -d "$SENTINEL_DIR/maestro-<issue>-XXXXXX" (HOOK-2).
+  log_dir=$(echo "$output" | sed -n 's/^gate log dir: //p' | head -1)
+  # `|| false`: under bash 3.2 (macOS) a failing [[ ]] mid-test does not fail it.
+  [[ "$log_dir" == "$XDG_RUNTIME_DIR/maestro-123-"* ]] || false
   [ -f "$log_dir/issue.json" ]
   [ -f "$log_dir/issue-summary.md" ]
   python3 -c "import json; json.load(open('$log_dir/issue.json'))"
