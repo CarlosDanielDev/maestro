@@ -144,7 +144,7 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
         spans.push(Span::styled(" /pushup (off)  ", muted));
     }
     spans.extend([
-        Span::styled("[Ctrl+L]", active),
+        Span::styled("[Ctrl+U]", active),
         Span::raw(" Clear input  "),
         Span::styled("[Ctrl+W]", active),
         Span::raw(" Quit  "),

@@ -876,6 +876,16 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // #1263: Ctrl+L toggles the log drawer on any screen; Esc closes it.
+    if key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.activity_log.drawer_open = !app.activity_log.drawer_open;
+        return true;
+    }
+    if key.code == KeyCode::Esc && app.activity_log.drawer_open {
+        app.activity_log.drawer_open = false;
+        return true;
+    }
+
     // Shift+Q opens TurboQuant A/B dashboard
     if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::TurboquantDashboard);

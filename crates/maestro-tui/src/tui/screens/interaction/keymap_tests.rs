@@ -138,7 +138,7 @@ fn ctrl_p_produce_pr_false_logs_and_does_not_send() {
 }
 
 #[test]
-fn ctrl_l_clears_editor_leaves_history() {
+fn ctrl_u_clears_editor_leaves_history() {
     let mut s = InteractionScreen::test_fixture(
         7,
         true,
@@ -147,7 +147,7 @@ fn ctrl_l_clears_editor_leaves_history() {
         "/tmp/maestro/wt-x",
     );
     type_text(&mut s, "partial");
-    let action = s.handle_input(&ctrl('l'), InputMode::Insert);
+    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.editor_text(), "");
     assert_eq!(s.history_len(), 3);
@@ -177,9 +177,9 @@ fn streaming_ignores_enter() {
 }
 
 #[test]
-fn streaming_ignores_ctrl_l() {
+fn streaming_ignores_ctrl_u() {
     let mut s = screen_for(7, true, TurnState::Streaming);
-    let action = s.handle_input(&ctrl('l'), InputMode::Insert);
+    let action = s.handle_input(&ctrl('u'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
 }
 
@@ -290,7 +290,7 @@ fn keybindings_list_expected_keys() {
         "Enter",
         "Shift+Enter",
         "Ctrl+P",
-        "Ctrl+L",
+        "Ctrl+U",
         "Ctrl+W",
         "Esc",
         "Up/Down/PgUp/PgDn",
