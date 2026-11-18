@@ -306,3 +306,12 @@ first. One entry per decision.
 - **Waits with no end of their own:** a wave can hold forever on a Paused session (only a resume or a kill moves it), a Stalled session past its retries (only a kill), or a NeedsPr session whose PR retries ran out (it cannot even be killed today). `Esc` on Executing is the way out: it cancels the run (`run_team_until` + `CancellationToken`), starts no later wave, aborts the tasks still spawning or waiting, leaves running sessions alone (kill them from the Dashboard), and lands on Launch Failed with `cancelled by user while waiting on wave n`. The footer reads `Waves run in order   [Esc] cancel run`. A failed wave's banner now reads its `skip_reason` (`wave n failed: #N …; k downstream issue(s) skipped`), and the terminal-state banner wraps so long reasons are not cut.
 - **Rejected (Esc):** Esc leaves the wizard while the run goes on (no screen would show the waves or offer a cancel); aborting only the outer task handle (the per-issue tasks would be orphaned and could still spawn).
 - **Source:** #1246.
+
+## 2026-11-18 — Interaction quit modal says what `y` removes
+
+- **What:** the `Ctrl+W` modal on the Interaction screen now has two lines: `Quit interaction? Removes worktree <path> and local branch <branch>.` and `Unpushed commits are lost; any remote branch or PR stays. Press y to quit, N to keep working.` With no trusted worktree root it reads `Quit interaction? No isolated worktree, so nothing is removed.` The copy comes from `InteractionScreen::quit_modal_lines`, which checks the same empty-`worktree_root` test as `begin_quit_teardown`. The RC4 "Unpushed work will be LOST" second-`y` line is unchanged.
+- **Why:** the old text said the worktree was "kept for manual inspection", but `y` wiped the worktree and deleted the local branch (#1242). A confirm that promises the opposite of what happens is the worst kind of dialog.
+- **Section:** `§09 Code findings & open questions` (Interaction audit row 1: "The dialog promises the opposite of what happens"), `§02.21` End chat dialog ("deleted / lost / kept" rows).
+- **Rejected:** keeping the worktree on quit (teardown on quit is the designed behaviour, #941, and kept worktrees leak disk); building the §02.21 End chat TypedConfirm dialog now (it belongs to the redesigned Interaction screen, out of scope here).
+- **Known gap:** the modal is still `Ctrl+W` + `y`, one line per fact, and does not read git for the real unpushed-commit count; the §02.21 dialog replaces it.
+- **Source:** #1242.

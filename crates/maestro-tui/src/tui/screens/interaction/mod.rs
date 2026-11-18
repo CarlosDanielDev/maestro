@@ -60,7 +60,7 @@ pub struct InteractionScreen {
     issue_number: u64,
     /// Launch-time "Produce PR" choice. Gates the `Ctrl+P` pushup chord.
     produce_pr: bool,
-    /// Worktree shown in the quit-confirm modal ("kept for manual inspection").
+    /// Worktree the quit-confirm modal names; `y` removes it (#1242).
     worktree_path: PathBuf,
     /// Per-frame projection of the live `Session` (#950): transcript +
     /// `turn_state` (input lock) + `settled_from`/`pr_linked` (status banner).

@@ -217,7 +217,7 @@ fn interaction_screen_settled_failed_gates_banner() {
 }
 
 #[test]
-fn interaction_screen_quit_modal_open() {
+fn interaction_quit_modal() {
     let mut screen = screen(42, true, TurnState::Idle, vec![]);
     screen.handle_input(
         &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
@@ -228,6 +228,11 @@ fn interaction_screen_quit_modal_open() {
     assert!(
         rendered.contains("Quit interaction?"),
         "quit modal must show the confirm prompt:\n{rendered}"
+    );
+    // #1242: `y` wipes the worktree, so the copy must say so.
+    assert!(
+        rendered.contains("Removes worktree"),
+        "quit modal must name the worktree removal:\n{rendered}"
     );
     with_time_mask(|| assert_snapshot!(terminal.backend()));
 }

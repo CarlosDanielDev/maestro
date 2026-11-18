@@ -14,7 +14,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
-use std::path::Path;
 use tui_textarea::TextArea;
 
 /// Render the header naming the agent/CLI, model, and issue the chat is bound
@@ -165,36 +164,63 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Render the `Ctrl+W` quit-confirm modal centered over `area`.
-pub(super) fn draw_quit_modal(
-    f: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    worktree: &Path,
-    warn_unsaved: bool,
-) {
-    let text = if warn_unsaved {
-        // RC4: this session has unpushed work and no linked PR. Quitting
-        // deletes the worktree branch — say so plainly and require a
-        // deliberate second confirm.
-        "Unpushed work will be LOST — no PR was created. Press y again to discard, N to keep working."
-            .to_string()
-    } else {
-        format!(
-            "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",
-            worktree.display()
-        )
-    };
-    let modal = centered_rect(area, (text.len() as u16 + 6).min(area.width), 3);
+impl super::InteractionScreen {
+    /// Lines of the `Ctrl+W` quit-confirm modal (#1242). The copy keys off
+    /// the same predicate `begin_quit_teardown` uses (a non-empty trusted
+    /// `worktree_root`), so it names the wipe exactly when `y` runs it.
+    pub(super) fn quit_modal_lines(&self) -> Vec<String> {
+        if self.quit_loss_acknowledged {
+            // RC4: this session has unpushed work and no linked PR. Quitting
+            // deletes the worktree branch — say so plainly and require a
+            // deliberate second confirm.
+            return vec![
+                "Unpushed work will be LOST — no PR was created. Press y again to discard, N to keep working."
+                    .to_string(),
+            ];
+        }
+        if self.worktree_root.as_os_str().is_empty() {
+            return vec![
+                "Quit interaction? No isolated worktree, so nothing is removed.".to_string(),
+                "Press y to quit, N to keep working.".to_string(),
+            ];
+        }
+        let branch = if self.branch.is_empty() {
+            String::new()
+        } else {
+            format!(" and local branch {}", self.branch)
+        };
+        vec![
+            format!(
+                "Quit interaction? Removes worktree {}{branch}.",
+                self.worktree_path.display()
+            ),
+            "Unpushed commits are lost; any remote branch or PR stays. Press y to quit, N to keep working."
+                .to_string(),
+        ]
+    }
+}
+
+/// Render the `Ctrl+W` quit-confirm modal centered over `area`, one row per
+/// line of `lines`.
+pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, lines: &[String]) {
+    let widest = lines.iter().map(String::len).max().unwrap_or(0) as u16;
+    let modal = centered_rect(
+        area,
+        widest.saturating_add(6).min(area.width),
+        lines.len() as u16 + 2,
+    );
     f.render_widget(Clear, modal);
     let block = theme.styled_block("Confirm", true);
     let inner = block.inner(modal);
     f.render_widget(block, modal);
+    let style = Style::default().fg(theme.text_primary);
     f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            text,
-            Style::default().fg(theme.text_primary),
-        )))
+        Paragraph::new(
+            lines
+                .iter()
+                .map(|l| Line::from(Span::styled(l.clone(), style)))
+                .collect::<Vec<_>>(),
+        )
         .alignment(Alignment::Center),
         inner,
     );
