@@ -231,6 +231,7 @@ impl App {
                     format!("Failed to fetch issue: {}", e),
                     LogLevel::Error,
                 );
+                self.fail_queue_fetch(&e);
             }
             TuiDataEvent::SuggestionData(Ok(payload)) => {
                 let active = self.pool.active_count();

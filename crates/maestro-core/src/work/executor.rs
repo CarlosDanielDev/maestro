@@ -143,11 +143,14 @@ impl QueueExecutor {
         }
     }
 
-    /// Whether `issue_number` is one of this queue's items.
-    pub fn contains_issue(&self, issue_number: u64) -> bool {
-        self.items
-            .iter()
-            .any(|i| i.queued.issue_number == issue_number)
+    /// Session id recorded for the item the executor is still deciding on:
+    /// the running item, or the failed one awaiting the user's decision.
+    pub fn deciding_session_id(&self) -> Option<uuid::Uuid> {
+        match self.phase {
+            ExecutorPhase::Running { current_index: i }
+            | ExecutorPhase::AwaitingDecision { failed_index: i } => self.items[i].session_id,
+            _ => None,
+        }
     }
 
     /// Notify the executor that the current session completed successfully.

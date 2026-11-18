@@ -446,6 +446,11 @@ impl App {
             }
         } else if let Some(ref mut exec) = self.queue_executor {
             exec.mark_failure();
+            // The queue screen owns this decision; the hollow modal must
+            // not reopen for the session once a retry clears the record.
+            if let Some(session) = self.pool.get_session_mut(session_id) {
+                session.hollow_dismissed = true;
+            }
         }
     }
 
@@ -460,12 +465,30 @@ impl App {
         }
     }
 
-    /// Whether `session` runs an item of the queue executor (#1244).
-    fn is_queue_item(&self, session: &crate::session::types::Session) -> bool {
-        match (self.queue_executor.as_ref(), session.issue_number) {
-            (Some(exec), Some(n)) => exec.contains_issue(n),
-            _ => false,
+    /// #1244: a failed launch fetch for the running queue item fails the
+    /// item, so the queue screen offers retry / skip / abort instead of
+    /// waiting forever for a session that will never start.
+    pub(crate) fn fail_queue_fetch(&mut self, error: &anyhow::Error) {
+        let Some(failed) = error.downcast_ref::<crate::tui::background_tasks::IssueFetchError>()
+        else {
+            return;
+        };
+        if let Some(exec) = self.queue_executor.as_mut()
+            && exec.running_issue() == Some(failed.issue_number)
+            && exec.running_session_id().is_none()
+        {
+            exec.mark_failure();
         }
+    }
+
+    /// Whether the queue executor is still deciding on `session` (#1244):
+    /// it is the running item's session, or the failed item's awaiting
+    /// retry / skip / abort. Any other session, even on a queue issue,
+    /// keeps the hollow modal.
+    fn is_queue_item(&self, session: &crate::session::types::Session) -> bool {
+        self.queue_executor
+            .as_ref()
+            .is_some_and(|e| e.deciding_session_id() == Some(session.id))
     }
 }
 

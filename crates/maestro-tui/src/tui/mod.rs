@@ -2,7 +2,7 @@ pub mod activity_log;
 pub(crate) mod agent_badge;
 pub(crate) mod agent_graph;
 pub mod app;
-mod background_tasks;
+pub(crate) mod background_tasks;
 pub mod breadcrumb;
 pub mod budget_banner;
 pub mod budget_prespawn;

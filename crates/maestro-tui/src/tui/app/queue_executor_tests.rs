@@ -193,11 +193,22 @@ async fn hollow_queue_item_does_not_open_hollow_modal() {
     assert!(app.screen_state.hollow_retry_screen.is_none());
 }
 
+/// The Issues browser holds the list the user multi-selects from; the
+/// fetch cache is empty until an issue is launched.
+fn app_with_browser(issues: Vec<Issue>) -> App {
+    let mut app = make_app();
+    app.state.issue_cache.clear();
+    app.screen_state.issue_browser_screen =
+        Some(crate::tui::screens::IssueBrowserScreen::new(issues));
+    app
+}
+
 #[test]
 fn launch_queue_keeps_issue_bodies() {
-    let mut cache = std::collections::HashMap::new();
-    cache.insert(5, issue(5, "First."));
-    cache.insert(6, issue(6, "Second.\n\nBlocked-by: #4"));
+    let app = app_with_browser(vec![
+        issue(5, "First."),
+        issue(6, "Second.\n\nBlocked-by: #4"),
+    ]);
     let configs = vec![
         SessionConfig {
             issue_number: Some(5),
@@ -211,7 +222,7 @@ fn launch_queue_keeps_issue_bodies() {
         },
     ];
 
-    let items = crate::tui::screen_dispatch::queue_work_items(&configs, &cache);
+    let items = crate::tui::screen_dispatch::queue_work_items(&app, &configs);
 
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].issue.body, "First.");
@@ -223,11 +234,10 @@ fn launch_queue_keeps_issue_bodies() {
 fn launch_queue_refuses_dependent_selection() {
     // #6 is blocked by #5 and both are selected. Launching them all at once
     // would run #6 before its blocker is done.
-    let mut app = make_app();
-    app.state.issue_cache.insert(5, issue(5, "First."));
-    app.state
-        .issue_cache
-        .insert(6, issue(6, "Second.\n\nBlocked-by: #5"));
+    let mut app = app_with_browser(vec![
+        issue(5, "First."),
+        issue(6, "Second.\n\nBlocked-by: #5"),
+    ]);
     app.tui_mode = TuiMode::QueueConfirmation;
     let configs = vec![
         SessionConfig {
@@ -254,5 +264,92 @@ fn launch_queue_refuses_dependent_selection() {
     assert!(
         screen.contains("Queue not started: Issue #6 depends on #5"),
         "the refusal must be visible on screen:\n{screen}"
+    );
+}
+
+#[tokio::test]
+async fn manual_hollow_session_on_past_queue_issue_opens_hollow_modal() {
+    // #5 already succeeded in the queue. A later manual session on #5 that
+    // ends hollow is not the queue's decision: the hollow modal must open.
+    let mut app = make_app();
+    let mut exec = running_executor(&[5, 6]);
+    let queued = session_for(Some(5));
+    exec.set_session_id(queued.id);
+    exec.mark_success();
+    app.queue_executor = Some(exec);
+    finish(&mut app, queued, SessionStatus::Completed, false);
+    finish(
+        &mut app,
+        session_for(Some(5)),
+        SessionStatus::Completed,
+        true,
+    );
+
+    app.check_completions().await.expect("check_completions");
+
+    assert!(app.screen_state.hollow_retry_screen.is_some());
+    let screen = draw(&mut app);
+    assert!(
+        screen.contains("Hollow Completion Detected"),
+        "hollow modal not drawn:\n{screen}"
+    );
+}
+
+#[tokio::test]
+async fn queue_hollow_session_stays_closed_after_queue_retry() {
+    // The queue decided on the hollow session; after [r] Retry clears the
+    // item's record, the old session must not pop the modal a second time.
+    let mut app = make_app();
+    let mut exec = running_executor(&[5, 6]);
+    let hollow = session_for(Some(5));
+    exec.set_session_id(hollow.id);
+    app.queue_executor = Some(exec);
+    finish(&mut app, hollow, SessionStatus::Completed, true);
+    app.settle_queue_item();
+    if let Some(exec) = app.queue_executor.as_mut() {
+        exec.apply_decision(crate::work::executor::FailureAction::Retry);
+        exec.advance().expect("advance after retry");
+    }
+
+    app.check_completions().await.expect("check_completions");
+
+    assert!(app.screen_state.hollow_retry_screen.is_none());
+}
+
+#[test]
+fn failed_fetch_of_running_item_offers_decision() {
+    let mut app = make_app();
+    app.queue_executor = Some(running_executor(&[5, 6]));
+    // A failed fetch for an unrelated issue leaves the item running.
+    app.handle_data_event(crate::tui::app::TuiDataEvent::Issue(
+        Err(crate::tui::background_tasks::IssueFetchError::wrap(
+            9,
+            anyhow::anyhow!("not found"),
+        )),
+        None,
+        None,
+    ));
+    let exec = app.queue_executor.as_ref().expect("executor");
+    assert_eq!(exec.phase(), ExecutorPhase::Running { current_index: 0 });
+
+    app.handle_data_event(crate::tui::app::TuiDataEvent::Issue(
+        Err(crate::tui::background_tasks::IssueFetchError::wrap(
+            5,
+            anyhow::anyhow!("not found"),
+        )),
+        None,
+        None,
+    ));
+
+    let exec = app.queue_executor.as_ref().expect("executor");
+    assert_eq!(
+        exec.phase(),
+        ExecutorPhase::AwaitingDecision { failed_index: 0 }
+    );
+    app.tui_mode = TuiMode::QueueExecution;
+    let screen = draw(&mut app);
+    assert!(
+        screen.contains("#5 failed — choose action") && screen.contains("Abort"),
+        "fetch failure must reach the r/s/a decision:\n{screen}"
     );
 }

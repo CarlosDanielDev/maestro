@@ -1545,7 +1545,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // Build a WorkQueue from the session configs for the executor
             let issue_numbers: Vec<u64> = configs.iter().filter_map(|c| c.issue_number).collect();
 
-            let items = queue_work_items(&configs, &app.state.issue_cache);
+            let items = queue_work_items(app, &configs);
             let graph = DependencyGraph::build(&items);
 
             match WorkQueue::validate_selection(&issue_numbers, &graph) {
@@ -1581,18 +1581,19 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     }
 }
 
-/// Work items for a LaunchQueue (#1244). Each item keeps its cached issue
-/// (body, labels) so its `Blocked-by` reaches the dependency graph; an
-/// issue missing from the cache falls back to its number and title.
+/// Work items for a LaunchQueue (#1244). Each item keeps its issue (body,
+/// labels) from the fetch cache or the Issues browser list, so its
+/// `Blocked-by` reaches the dependency graph; an issue in neither falls
+/// back to its number and title.
 pub(crate) fn queue_work_items(
+    app: &app::App,
     configs: &[screens::SessionConfig],
-    issue_cache: &std::collections::HashMap<u64, Issue>,
 ) -> Vec<crate::work::types::WorkItem> {
     configs
         .iter()
         .filter_map(|c| {
             c.issue_number.map(|n| {
-                let issue = issue_cache.get(&n).cloned().unwrap_or_else(|| Issue {
+                let issue = app.lookup_issue(n).cloned().unwrap_or_else(|| Issue {
                     number: n,
                     title: c.title.clone(),
                     body: String::new(),
