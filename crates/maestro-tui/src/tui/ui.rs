@@ -1374,16 +1374,11 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
     use crate::tui::ds::panel::{Focus, panel};
     use ratatui::widgets::Clear;
 
-    let live = crate::tui::input_handler::live_agents(app);
     let bold = |fg| Style::default().fg(fg).add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     let focus = if crate::tui::input_handler::has_live_work(app) {
         let now = crate::tui::input_handler::quit_now(app);
-        let question = if live > 0 {
-            format!("{live} session(s) still running. Exit anyway?")
-        } else {
-            "A queue or PR job is still running. Exit anyway?".to_string()
-        };
+        let question = crate::tui::input_handler::live_work_question(app);
         lines.push(Line::from(Span::styled(
             question,
             bold(theme.accent_warning),

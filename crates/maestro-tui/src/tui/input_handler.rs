@@ -1131,6 +1131,36 @@ pub(crate) fn has_live_work(app: &App) -> bool {
             .queue_executor
             .as_ref()
             .is_some_and(|q| !q.is_finished())
+        || team_run_live(app)
+}
+
+/// A team run (`run_team_until`, detached) until its result lands; between
+/// waves the pool is empty while it fetches the next issue.
+fn team_run_live(app: &App) -> bool {
+    app.screen_state
+        .team_wizard_screen
+        .as_ref()
+        .is_some_and(|w| w.team_run_live())
+}
+
+/// The Confirm Exit question while there is live work: the most specific
+/// thing a quit would cut off.
+pub(crate) fn live_work_question(app: &App) -> String {
+    use crate::work::executor::ExecutorPhase;
+    let live = live_agents(app);
+    let awaiting = app
+        .queue_executor
+        .as_ref()
+        .is_some_and(|q| matches!(q.phase(), ExecutorPhase::AwaitingDecision { .. }));
+    if live > 0 {
+        format!("{live} session(s) still running. Exit anyway?")
+    } else if awaiting {
+        "A queue is waiting for your decision. Exit anyway?".into()
+    } else if team_run_live(app) {
+        "A team run is between waves. Exit anyway?".into()
+    } else {
+        "A queue or PR job is still running. Exit anyway?".into()
+    }
 }
 
 /// #1260: ⌃C, ⌃X and ⌃Q, outside Confirm Exit. ⌃C and ⌃X always open it;

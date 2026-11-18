@@ -7,15 +7,20 @@ use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
 use super::confirm_exit::{app, ctrl, key, text};
 use crate::provider::types::Issue;
+use crate::provider::types::ProviderKind;
+use crate::session::team_runner::CancellationToken;
 use crate::state::types::PendingIssueCompletion;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::{KeyAction, handle_key};
+use crate::tui::screens::TeamWizardScreen;
 use crate::work::dependencies::DependencyGraph;
-use crate::work::executor::QueueExecutor;
+use crate::work::executor::{ExecutorPhase, QueueExecutor};
 use crate::work::queue::WorkQueue;
 use crate::work::types::WorkItem;
 
 const LIVE_WORK: &str = "A queue or PR job is still running. Exit anyway?";
+const TEAM_RUN: &str = "A team run is between waves. Exit anyway?";
+const AWAITING: &str = "A queue is waiting for your decision. Exit anyway?";
 
 /// A two-item queue whose first item succeeded: the pool is empty and the
 /// next item is not spawned yet.
@@ -60,6 +65,10 @@ fn completion_in_flight() -> PendingIssueCompletion {
 /// `q` and ⌃Q on Home with only `setup`'s work running open Confirm Exit,
 /// which names the work, and `y` does not quit.
 async fn assert_asks(setup: fn(&mut App), what: &str) {
+    assert_asks_with(setup, what, LIVE_WORK).await;
+}
+
+async fn assert_asks_with(setup: fn(&mut App), what: &str, question: &str) {
     for chord in [key('q'), ctrl('q')] {
         let mut app = app(TuiMode::Landing, 0);
         setup(&mut app);
@@ -71,7 +80,7 @@ async fn assert_asks(setup: fn(&mut App), what: &str) {
         assert!(app.running, "{what}: {chord:?}");
         assert_eq!(app.tui_mode, TuiMode::ConfirmExit, "{what}: {chord:?}");
         let out = text(&mut app, 80, 24);
-        assert!(out.contains(LIVE_WORK), "{what}:\n{out}");
+        assert!(out.contains(question), "{what}:\n{out}");
         let action = handle_key(&mut app, key('y')).await;
         assert!(matches!(action, KeyAction::Consumed), "{what}: y quit");
     }
@@ -91,6 +100,51 @@ async fn running_completion_job_counts_as_live_work() {
     assert_asks(
         |app| app.completions_in_flight.push(completion_in_flight()),
         "completion job",
+    )
+    .await;
+}
+
+fn team_run(app: &mut App) {
+    let mut wizard = TeamWizardScreen::new(ProviderKind::default());
+    wizard.set_run_cancel(CancellationToken::new());
+    app.screen_state.team_wizard_screen = Some(wizard);
+}
+
+/// `run_team_until` runs detached and fetches the next wave's issue while
+/// the pool is empty: the run counts until its result lands.
+#[tokio::test]
+async fn team_run_between_waves_counts_as_live_work() {
+    assert_asks_with(team_run, "team run", TEAM_RUN).await;
+
+    let mut app = app(TuiMode::Landing, 0);
+    team_run(&mut app);
+    if let Some(wizard) = app.screen_state.team_wizard_screen.as_mut() {
+        wizard.apply_launch_result(Ok(()));
+    }
+    let action = handle_key(&mut app, key('q')).await;
+    assert!(
+        matches!(action, KeyAction::Quit),
+        "a finished run is not live"
+    );
+}
+
+/// A queue paused on a failed item is live, but nothing is running: the
+/// dialog says it waits for a decision.
+#[tokio::test]
+async fn queue_awaiting_decision_says_waiting() {
+    assert_asks_with(
+        |app| {
+            let mut exec = queue_between_items();
+            exec.advance().expect("second item");
+            exec.mark_failure();
+            assert!(matches!(
+                exec.phase(),
+                ExecutorPhase::AwaitingDecision { .. }
+            ));
+            app.queue_executor = Some(exec);
+        },
+        "queue awaiting decision",
+        AWAITING,
     )
     .await;
 }

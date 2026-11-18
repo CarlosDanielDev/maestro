@@ -219,8 +219,10 @@ User today: Confirm Exit (`input_handler::QUIT_HOLD`, state in
 `ScreenState::exit_hold`, drawn last by `ui::draw_typed_confirm`, sized from
 its lines). Exit chords: ⌃Q and `q` quit at once when there is no live work.
 Live work (`input_handler::has_live_work`) = pool active + queued sessions, a
-queue executor that has not finished (also between items), or a completion /
-auto-PR job in flight. With live work, ⌃Q opens the dialog armed, `q` / ⌃C /
+queue executor that has not finished (also between items or awaiting a
+decision), a completion / auto-PR job in flight, or a team run until its
+result lands (`TeamWizardScreen::team_run_live`). The question names the most
+specific work (`input_handler::live_work_question`). With live work, ⌃Q opens the dialog armed, `q` / ⌃C /
 ⌃X open it unarmed, and only the hold quits (`y` and `⏎` do nothing). In the
 idle dialog `y` and ⌃Q quit. Exit chords ignore key release events. Once per
 launch the run loop calls `announce_quit_key` (toast + activity log: ⌃Q quits,
