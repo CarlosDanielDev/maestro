@@ -443,18 +443,7 @@ pub fn mode_keymap(
         TuiMode::ConfirmKill(_) => (
             "Confirm Kill",
             FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "y",
-                    action: "Confirm",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "n",
-                    action: "Cancel",
-                    priority: 1,
-                },
-            ],
+            &[], // hints: `registry::footer_hints` (#1261)
         ),
         TuiMode::ConfirmExit => (
             "Confirm Exit",

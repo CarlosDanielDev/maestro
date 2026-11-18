@@ -58,6 +58,7 @@ mod theme_presets;
 mod toasts;
 mod token_dashboard_provider_rollup;
 mod turboquant_dashboard;
+mod typed_confirm;
 
 use chrono::{TimeZone, Utc};
 use ratatui::{Terminal, backend::TestBackend};

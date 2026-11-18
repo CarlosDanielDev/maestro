@@ -196,6 +196,7 @@ fn footer_hints_from_registry() {
     for mode in [
         TuiMode::LogViewer(uuid::Uuid::new_v4()),
         TuiMode::SessionSummary,
+        TuiMode::ConfirmKill(uuid::Uuid::new_v4()),
     ] {
         let hints = footer_hints(mode).expect("registered screen");
         let want: Vec<(&str, &str)> = registry()

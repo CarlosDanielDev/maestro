@@ -6,10 +6,30 @@
 use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
-use crate::tui::screens::bypass_warning::BypassWarningOutcome;
+use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningState};
 
 /// Activity-log source for a bypass turned on from Settings (#1239).
 const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
+
+/// The bypass warning opened from Settings. Unlike ⌃B it says the real
+/// scope: Ctrl+S writes the value to the committed `maestro.toml`.
+fn settings_bypass_warning() -> BypassWarningState {
+    let row = |label: &str, text: &str| (label.to_string(), text.to_string());
+    BypassWarningState::with_text(
+        "DANGER: enable bypass for every future session?",
+        vec![
+            row("", "Bypass auto-accepts EVERY review concern."),
+            row("", ""),
+            row("does", "edits files, commits and pushes, no asking"),
+            row(
+                "writes",
+                "sessions.permission_mode to maestro.toml (committed)",
+            ),
+            row("scope", "every future session after Ctrl+S; this run now"),
+            row("or", "Ctrl+B turns it on for this run only"),
+        ],
+    )
+}
 
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
@@ -64,8 +84,7 @@ impl App {
     }
 
     fn open_bypass_warning(&mut self) {
-        self.screen_state.bypass_warning_screen =
-            Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
+        self.screen_state.bypass_warning_screen = Some(BypassWarningState::new());
     }
 
     /// #1239: the Settings › Sessions bypass toggle was flipped on. It
@@ -84,7 +103,7 @@ impl App {
             self.drop_settings_bypass_request();
             return;
         }
-        self.open_bypass_warning();
+        self.screen_state.bypass_warning_screen = Some(settings_bypass_warning());
         self.navigate_to(TuiMode::BypassWarning);
     }
 

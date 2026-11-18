@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/typed_confirm.rs
+expression: terminal.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Overview › Bypass Warning                                     Esc back  ? help "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"        ╔═══════════════[ DANGER: enable bypass mode? ]════════════════╗        "
+"        ║ Bypass auto-accepts EVERY review concern.                    ║        "
+"        ║                                                              ║        "
+"        ║ does   edits files, commits and pushes, no asking            ║        "
+"        ║ scope  THIS session only                                     ║        "
+"        ║ trust  use only when you trust the reviewer fully            ║        "
+"        ║                                                              ║        "
+"        ║ Type CONFIRM to confirm:                                     ║        "
+"        ║ › CONFIRM                                             7 of 7 ║        "
+"        ║                                                              ║        "
+"        ║  Esc  cancel (default)    ⏎  enable                          ║        "
+"        ╚══════════════════════════════════════════════════════════════╝        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                         q quit "

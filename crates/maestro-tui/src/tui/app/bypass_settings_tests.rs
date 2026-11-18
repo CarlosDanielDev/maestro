@@ -1,14 +1,13 @@
 //! #1239: the Settings › Sessions bypass toggle goes through the same
-//! typed-CONFIRM warning as ⌃B. Keys go through the real `handle_key`
-//! path and the screen is drawn at 100x30 (above the 80x24 SizeGuard).
+//! typed-CONFIRM warning as ⌃B, with its own scope text. Every key,
+//! CONFIRM and ⏎ included, goes through the real `handle_key` path, and the
+//! screen is drawn at 80x24 or larger (the SizeGuard minimum).
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
-use crate::tui::screen_dispatch::handle_screen_action;
-use crate::tui::screens::bypass_dispatch;
 use crate::tui::screens::settings::{SettingsScreen, SettingsTab};
 use crate::tui::{make_test_app, ui};
 
@@ -21,7 +20,8 @@ const SETTINGS_TOML: &str = concat!(
     "[tui]\nascii_icons = false\n",
 );
 
-const WARNING_MARK: &str = "DANGER — BYPASS MODE";
+/// In both titles: the ⌃B one and the Settings one.
+const WARNING_MARK: &str = "enable bypass";
 
 fn settings_app() -> App {
     let mut app = make_test_app("settings-bypass");
@@ -47,20 +47,21 @@ async fn toggle_bypass_row(app: &mut App) {
     press(app, KeyCode::Char(' ')).await;
 }
 
-/// Types CONFIRM straight into the warning's dispatcher. Not through
-/// `handle_key`: there the global Shift+M chord eats the `M` because
-/// BypassWarning is not a text-input mode yet (same for ⌃B; #1261 owns
-/// that allowlist).
-fn type_confirm(app: &mut App) {
+/// Types CONFIRM (Shift letters, as a terminal sends them), then ⏎,
+/// through the full `handle_key` path.
+async fn type_confirm(app: &mut App) {
     for c in "CONFIRM".chars() {
-        let event = Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT));
-        let action = bypass_dispatch::dispatch_input(app, &event);
-        handle_screen_action(app, action);
+        handle_key(app, KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT)).await;
     }
+    press(app, KeyCode::Enter).await;
 }
 
 fn drawn(app: &mut App) -> String {
-    let mut t = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+    drawn_at(app, 100, 30)
+}
+
+fn drawn_at(app: &mut App, w: u16, h: u16) -> String {
+    let mut t = Terminal::new(TestBackend::new(w, h)).expect("terminal");
     t.draw(|f| ui::draw(f, app)).expect("draw");
     let buf = t.backend().buffer();
     let mut out = String::new();
@@ -94,7 +95,7 @@ async fn settings_bypass_toggle_requires_confirm() {
     assert_eq!(staged_mode(&app), before, "not staged before CONFIRM");
     assert!(!app.bypass_active);
 
-    type_confirm(&mut app);
+    type_confirm(&mut app).await;
 
     assert_eq!(app.tui_mode, TuiMode::Settings);
     assert!(!drawn(&mut app).contains(WARNING_MARK));
@@ -133,7 +134,7 @@ async fn settings_bypass_logs_source() {
     let mut app = settings_app();
 
     toggle_bypass_row(&mut app).await;
-    type_confirm(&mut app);
+    type_confirm(&mut app).await;
 
     let last_bypass = app
         .activity_log
@@ -171,7 +172,7 @@ async fn settings_bypass_stale_request_not_inherited_by_ctrl_b() {
     .await;
     assert_eq!(app.tui_mode, TuiMode::BypassWarning);
     assert!(drawn(&mut app).contains(WARNING_MARK));
-    type_confirm(&mut app);
+    type_confirm(&mut app).await;
 
     let last_bypass = (app.activity_log.entries().iter().rev())
         .find(|e| e.message.starts_with("Bypass mode enabled"))
@@ -233,4 +234,31 @@ async fn ctrl_b_keeps_a_saved_settings_bypass_row_on() {
         "bypassPermissions",
         "⌃B must not touch it"
     );
+}
+
+#[tokio::test]
+async fn settings_bypass_warning_states_the_repo_scope() {
+    let mut app = settings_app();
+    toggle_bypass_row(&mut app).await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+
+    let screen = drawn_at(&mut app, 80, 24);
+    assert!(screen.contains("maestro.toml (committed)"), "{screen}");
+    assert!(screen.contains("every future session"), "{screen}");
+    assert!(!screen.contains("THIS session only"), "{screen}");
+}
+
+#[tokio::test]
+async fn ctrl_b_warning_keeps_the_session_scope() {
+    let mut app = settings_app();
+    app.tui_mode = TuiMode::Landing;
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+
+    let screen = drawn_at(&mut app, 80, 24);
+    assert!(screen.contains("THIS session only"), "{screen}");
+    assert!(!screen.contains("maestro.toml (committed)"), "{screen}");
 }

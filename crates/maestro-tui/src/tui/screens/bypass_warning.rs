@@ -1,7 +1,7 @@
 //! First-time danger-warning modal for bypass mode (#328).
 //!
-//! The user must literally type `CONFIRM` to enable bypass mode the first
-//! time they activate it in a session. Any other input cancels.
+//! The user must type `CONFIRM`, then press `⏎`, to enable bypass mode the
+//! first time they activate it in a session. `Esc` cancels (#1261).
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Reason: Phase 1 foundation for #328. The screen is routed from `app.rs`
@@ -9,35 +9,42 @@
 // CONFIRM-typing state machine today.
 #![allow(dead_code)]
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
+
+use crate::tui::ds::confirm::TypedConfirm;
 
 const CONFIRM_PHRASE: &str = "CONFIRM";
 
-pub const WARNING_TEXT: &str = "\
-╔══════════════════════════════════════════════════════════════════╗
-║  ⚠  DANGER — BYPASS MODE                                          ║
-║                                                                  ║
-║  Bypass mode auto-accepts EVERY review concern without           ║
-║  confirmation, edits files, commits, and pushes.                 ║
-║                                                                  ║
-║  Use only when you trust the reviewer fully.                     ║
-║                                                                  ║
-║  Type 'CONFIRM' to enable for THIS session only.                 ║
-║  Press Esc to cancel.                                            ║
-╚══════════════════════════════════════════════════════════════════╝
-";
+/// `Confirmed` / `Cancelled` / `Pending`, the same as every typed confirm.
+pub use crate::tui::ds::confirm::ConfirmOutcome as BypassWarningOutcome;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BypassWarningState {
-    AwaitingConfirmation { typed: String },
-    Confirmed,
-    Cancelled,
+/// The warning dialog: type `CONFIRM`, then `⏎` (#1261). Built on
+/// `ds::confirm::TypedConfirm`.
+pub struct BypassWarningState {
+    pub confirm: TypedConfirm,
 }
 
 impl BypassWarningState {
+    /// The `⌃B` warning: bypass for THIS session only.
     pub fn new() -> Self {
-        Self::AwaitingConfirmation {
-            typed: String::new(),
+        let row = |label: &str, text: &str| (label.to_string(), text.to_string());
+        Self::with_text(
+            "DANGER: enable bypass mode?",
+            vec![
+                row("", "Bypass auto-accepts EVERY review concern."),
+                row("", ""),
+                row("does", "edits files, commits and pushes, no asking"),
+                row("scope", "THIS session only"),
+                row("trust", "use only when you trust the reviewer fully"),
+            ],
+        )
+    }
+
+    /// The same `CONFIRM` dialog with another title and consequences, for a
+    /// caller whose scope differs from `⌃B` (e.g. a write to `maestro.toml`).
+    pub fn with_text(title: impl Into<String>, consequences: Vec<(String, String)>) -> Self {
+        Self {
+            confirm: TypedConfirm::new(title, CONFIRM_PHRASE, "enable", consequences),
         }
     }
 }
@@ -48,143 +55,85 @@ impl Default for BypassWarningState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BypassWarningOutcome {
-    Confirmed,
-    Cancelled,
-    Pending,
-}
-
+/// `⏎` confirms only once the typed text is `CONFIRM`; `Esc` cancels.
 pub fn handle_key(state: &mut BypassWarningState, key: KeyEvent) -> BypassWarningOutcome {
-    if matches!(key.code, KeyCode::Esc) {
-        *state = BypassWarningState::Cancelled;
-        return BypassWarningOutcome::Cancelled;
-    }
-
-    let BypassWarningState::AwaitingConfirmation { typed } = state else {
-        return current_outcome(state);
-    };
-
-    let KeyCode::Char(c) = key.code else {
-        return BypassWarningOutcome::Pending;
-    };
-
-    typed.push(c);
-
-    let next_index = typed.len();
-    let expected = &CONFIRM_PHRASE[..next_index.min(CONFIRM_PHRASE.len())];
-
-    if !typed.starts_with(expected) {
-        *state = BypassWarningState::Cancelled;
-        return BypassWarningOutcome::Cancelled;
-    }
-
-    if typed == CONFIRM_PHRASE {
-        *state = BypassWarningState::Confirmed;
-        return BypassWarningOutcome::Confirmed;
-    }
-
-    BypassWarningOutcome::Pending
-}
-
-fn current_outcome(state: &BypassWarningState) -> BypassWarningOutcome {
-    match state {
-        BypassWarningState::Confirmed => BypassWarningOutcome::Confirmed,
-        BypassWarningState::Cancelled => BypassWarningOutcome::Cancelled,
-        BypassWarningState::AwaitingConfirmation { .. } => BypassWarningOutcome::Pending,
-    }
+    state.confirm.handle_key(key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyModifiers};
 
-    fn key(c: char) -> KeyEvent {
-        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn esc() -> KeyEvent {
-        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
-    }
-
-    #[test]
-    fn typing_confirm_sequentially_confirms() {
-        let mut state = BypassWarningState::new();
-        let mut last = BypassWarningOutcome::Pending;
-        for c in "CONFIRM".chars() {
-            last = handle_key(&mut state, key(c));
+    fn type_str(state: &mut BypassWarningState, s: &str) {
+        for c in s.chars() {
+            assert_eq!(
+                handle_key(state, key(KeyCode::Char(c))),
+                BypassWarningOutcome::Pending
+            );
         }
-        assert_eq!(last, BypassWarningOutcome::Confirmed);
-        assert_eq!(state, BypassWarningState::Confirmed);
     }
 
     #[test]
-    fn wrong_first_char_cancels() {
+    fn typing_confirm_then_enter_confirms() {
         let mut state = BypassWarningState::new();
-        let outcome = handle_key(&mut state, key('X'));
-        assert_eq!(outcome, BypassWarningOutcome::Cancelled);
-        assert_eq!(state, BypassWarningState::Cancelled);
+        type_str(&mut state, "CONFIRM");
+        assert_eq!(
+            handle_key(&mut state, key(KeyCode::Enter)),
+            BypassWarningOutcome::Confirmed
+        );
     }
 
     #[test]
-    fn partial_then_wrong_cancels() {
+    fn enter_before_the_word_is_inert() {
         let mut state = BypassWarningState::new();
-        handle_key(&mut state, key('C'));
-        handle_key(&mut state, key('O'));
-        let outcome = handle_key(&mut state, key('X'));
-        assert_eq!(outcome, BypassWarningOutcome::Cancelled);
+        type_str(&mut state, "CONF");
+        assert_eq!(
+            handle_key(&mut state, key(KeyCode::Enter)),
+            BypassWarningOutcome::Pending
+        );
     }
 
     #[test]
-    fn esc_at_start_cancels() {
+    fn lowercase_word_does_not_confirm() {
         let mut state = BypassWarningState::new();
-        let outcome = handle_key(&mut state, esc());
-        assert_eq!(outcome, BypassWarningOutcome::Cancelled);
+        type_str(&mut state, "confirm");
+        assert_eq!(
+            handle_key(&mut state, key(KeyCode::Enter)),
+            BypassWarningOutcome::Pending
+        );
     }
 
     #[test]
     fn esc_mid_typing_cancels() {
         let mut state = BypassWarningState::new();
-        handle_key(&mut state, key('C'));
-        handle_key(&mut state, key('O'));
-        let outcome = handle_key(&mut state, esc());
-        assert_eq!(outcome, BypassWarningOutcome::Cancelled);
-    }
-
-    #[test]
-    fn lowercase_input_cancels() {
-        let mut state = BypassWarningState::new();
-        // The literal phrase is uppercase. Lowercase 'c' breaks the prefix.
-        let outcome = handle_key(&mut state, key('c'));
-        assert_eq!(outcome, BypassWarningOutcome::Cancelled);
-    }
-
-    #[test]
-    fn non_char_keys_are_ignored_until_esc() {
-        let mut state = BypassWarningState::new();
-        let outcome = handle_key(&mut state, KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE));
-        assert_eq!(outcome, BypassWarningOutcome::Pending);
+        type_str(&mut state, "CO");
         assert_eq!(
-            state,
-            BypassWarningState::AwaitingConfirmation {
-                typed: String::new()
-            }
+            handle_key(&mut state, key(KeyCode::Esc)),
+            BypassWarningOutcome::Cancelled
         );
     }
 
     #[test]
-    fn confirmed_state_is_terminal() {
-        let mut state = BypassWarningState::Confirmed;
-        let outcome = handle_key(&mut state, key('X'));
-        assert_eq!(outcome, BypassWarningOutcome::Confirmed);
-        assert_eq!(state, BypassWarningState::Confirmed);
+    fn with_text_keeps_the_confirm_phrase() {
+        let mut state = BypassWarningState::with_text(
+            "Turn on bypass for new sessions?",
+            vec![("scope".into(), "maestro.toml is committed".into())],
+        );
+        assert_eq!(state.confirm.expected(), "CONFIRM");
+        type_str(&mut state, "CONFIRM");
+        assert_eq!(
+            handle_key(&mut state, key(KeyCode::Enter)),
+            BypassWarningOutcome::Confirmed
+        );
     }
 
     #[test]
-    fn warning_text_mentions_session_only() {
-        assert!(WARNING_TEXT.contains("THIS session"));
-        assert!(WARNING_TEXT.contains("CONFIRM"));
-        assert!(WARNING_TEXT.contains("DANGER"));
+    fn token_is_the_confirm_phrase() {
+        assert_eq!(BypassWarningState::new().confirm.expected(), "CONFIRM");
     }
 }

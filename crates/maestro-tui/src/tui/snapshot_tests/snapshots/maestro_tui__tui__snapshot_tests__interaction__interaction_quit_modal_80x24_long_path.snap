@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/interaction.rs
+expression: terminal.backend()
+---
+"┌─ agent agent  ·  model default  ·  #1242 ────────────────────────────────────┐"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Working on issue #1242                                                         "
+"                                                                                "
+" No messages yet — type a prompt below to start.                                "
+" Try: "Summarize this issue and propose a step-by-step plan."                   "
+"                                                                                "
+"                                                                                "
+"        ┏━━━━━━━━━━━━━━━━━━━━━━━━━[ Confirm ]━━━━━━━━━━━━━━━━━━━━━━━━━┓         "
+"        ┃             Quit interaction? Removes worktree              ┃         "
+"        ┃   /Users/x/projects/maestro/.maestro/worktrees/issue-1242   ┃         "
+"        ┃              and local branch feat/issue-1242.              ┃         "
+"        ┃  Unpushed commits are lost; any remote branch or PR stays.  ┃         "
+"        ┃             Press y to quit, N to keep working.             ┃         "
+"        ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛         "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+G] Clear input  ["
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Message ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃Type a prompt to begin…                                                       ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
