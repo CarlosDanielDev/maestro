@@ -1,6 +1,5 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/home_mission.rs
-assertion_line: 186
 expression: t.backend()
 ---
 " MAESTRO  0.33.1 │ ● 2 run ◐ 2 wait ✗ 1 fail │ $4.82/20 │ TQ:OFF                                                        "
@@ -38,4 +37,4 @@ expression: t.backend()
 "┌───────────────────────────────────────────────────[ Activity Log ]───────────────────────────────────────────────────┐"
 "│10:00:00 [S-1] home-mission-log-1264                                                                                  │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" Enter Open   j/k Move   Tab Next panel                                                                          q quit "
+" Enter Open   j/k Move   Tab Next panel                                                                         ⌃Q quit "

@@ -258,6 +258,12 @@ pub struct ScreenState {
     pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
     /// The open kill dialog and the session it kills (#1261).
     pub kill_confirm: Option<(uuid::Uuid, crate::tui::ds::confirm::TypedConfirm)>,
+    /// The hold on the open Confirm Exit while agents run (#1260).
+    pub exit_hold: Option<crate::tui::ds::confirm::HoldToConfirm>,
+    /// One-time hints about the quit keys (#1260).
+    pub quit_hints: QuitHints,
+    /// Clock for the quit hold; `None` = `Instant::now`. Tests inject one.
+    pub quit_clock: Option<fn() -> std::time::Instant>,
     pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
     pub milestone_health_screen:
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
@@ -265,6 +271,15 @@ pub struct ScreenState {
     pub team_wizard_screen: Option<crate::tui::screens::TeamWizardScreen>,
     pub adopt_picker_screen: Option<crate::tui::screens::AdoptPickerScreen>,
     pub fleet_board_screen: Option<crate::tui::screens::FleetBoardScreen>,
+}
+
+/// One-time hints about the quit keys (#1260), kept per launch:
+/// `ctrl_q_shown` = the launch notice (⌃Q quits, TurboQuant is in
+/// Settings) was shown; `ctrl_x_shown` = the first ⌃X pointed to ⌃Q.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct QuitHints {
+    pub ctrl_q_shown: bool,
+    pub ctrl_x_shown: bool,
 }
 
 /// Effective session defaults and limits used by TUI-launched sessions.

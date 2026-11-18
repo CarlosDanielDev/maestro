@@ -227,6 +227,8 @@ async fn event_loop(
 ) -> anyhow::Result<()> {
     spawn_version_check(app.data_tx.clone());
     app.start_quota_refresh();
+    // #1260: once per launch, say that ⌃Q quits and where TurboQuant went.
+    input_handler::announce_quit_key(app, std::time::Instant::now());
     // Session feed for team runs (#1246); only published while one listens.
     let (team_sessions, _) = tokio::sync::watch::channel(Vec::new());
 

@@ -1,11 +1,14 @@
-//! Typed confirm for destructive actions (design §04 `confirm`, §05
-//! "Killing the wrong agent", #1261).
+//! Confirms for destructive actions (design §04 `confirm`): the typed
+//! confirm (§05 "Killing the wrong agent", #1261) and [`HoldToConfirm`]
+//! (§05 "Quitting while agents run", #1260).
 //!
 //! The dialog states what is kept and lost, then asks you to type a token
 //! (the issue number, or a word for a global action). `Esc` cancels and is
 //! the default; `⏎` does nothing until the typed text equals the token.
 
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use std::time::{Duration, Instant};
+
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -189,6 +192,116 @@ impl TypedConfirm {
             spans.push(Span::styled(format!(" {} (locked)", self.action), locked));
         }
         Line::from(spans)
+    }
+}
+
+/// How long the key must be held (key repeats) to confirm.
+pub const HOLD: Duration = Duration::from_millis(500);
+/// How long after the first press a second press still confirms.
+pub const WINDOW: Duration = Duration::from_secs(2);
+/// Cells in the progress bar.
+const BAR: usize = 16;
+
+/// Hold-to-confirm (design §04 `confirm`, §05 "Quitting while agents run",
+/// #1260). Terminals report no key release unless the kitty protocol is on
+/// (maestro does not turn it on), so a hold is a run of key repeats, and a
+/// second press inside [`WINDOW`] is the fallback. The first press only
+/// arms. `Esc` cancels; `⏎` and every other key do nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HoldToConfirm {
+    code: KeyCode,
+    mods: KeyModifiers,
+    armed_at: Option<Instant>,
+    held: Duration,
+}
+
+impl HoldToConfirm {
+    /// A hold on `code` with `mods` (`⌃Q` = `Char('q')` + `CONTROL`).
+    pub const fn new(code: KeyCode, mods: KeyModifiers) -> Self {
+        Self {
+            code,
+            mods,
+            armed_at: None,
+            held: Duration::ZERO,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.armed_at = None;
+        self.held = Duration::ZERO;
+    }
+
+    /// True while a second press would confirm.
+    pub fn is_armed(&self, now: Instant) -> bool {
+        self.armed_at
+            .is_some_and(|at| now.saturating_duration_since(at) <= WINDOW)
+    }
+
+    /// `0.0` idle, `0.5` armed, rising to `1.0` as the hold nears [`HOLD`].
+    pub fn progress(&self, now: Instant) -> f64 {
+        if !self.is_armed(now) {
+            return 0.0;
+        }
+        let held = self.held.as_secs_f64() / HOLD.as_secs_f64();
+        0.5 + 0.5 * held.min(1.0)
+    }
+
+    pub fn handle_key(&mut self, key: &KeyEvent, now: Instant) -> ConfirmOutcome {
+        if key.code == KeyCode::Esc {
+            return ConfirmOutcome::Cancelled;
+        }
+        let is_hold_key = key.code == self.code && key.modifiers.contains(self.mods);
+        if !is_hold_key || key.kind == KeyEventKind::Release {
+            return ConfirmOutcome::Pending;
+        }
+        match self.armed_at.filter(|_| self.is_armed(now)) {
+            Some(at) if key.kind == KeyEventKind::Repeat => {
+                self.held = now.saturating_duration_since(at);
+                if self.held >= HOLD {
+                    ConfirmOutcome::Confirmed
+                } else {
+                    ConfirmOutcome::Pending
+                }
+            }
+            Some(_) => ConfirmOutcome::Confirmed,
+            None => {
+                self.armed_at = Some(now);
+                self.held = Duration::ZERO;
+                ConfirmOutcome::Pending
+            }
+        }
+    }
+
+    /// The hold row and the fallback line: ` ⌃Q   hold to quit  ████░░░░`.
+    /// `key` is how the hold key is drawn, `action` what it does.
+    pub fn lines(
+        &self,
+        key: &str,
+        action: &str,
+        now: Instant,
+        theme: &Theme,
+    ) -> Vec<Line<'static>> {
+        let danger = Style::default()
+            .fg(theme.accent_error)
+            .add_modifier(Modifier::BOLD);
+        let text = Style::default().fg(theme.text_primary);
+        let muted = Style::default().fg(theme.text_muted);
+        let filled = (self.progress(now) * BAR as f64).round() as usize;
+        let second = if self.is_armed(now) {
+            format!("       press {key} again to {action}")
+        } else {
+            format!("       or press {key} twice within {}s", WINDOW.as_secs())
+        };
+        vec![
+            Line::from(vec![
+                Span::styled(format!(" {key} "), danger.add_modifier(Modifier::REVERSED)),
+                Span::styled(format!("   hold to {action}  "), text),
+                Span::styled("█".repeat(filled), Style::default().fg(theme.accent_error)),
+                Span::styled("░".repeat(BAR - filled), muted),
+                Span::styled(format!(" {:.1}s", HOLD.as_secs_f64()), muted),
+            ]),
+            Line::from(Span::styled(second, muted)),
+        ]
     }
 }
 

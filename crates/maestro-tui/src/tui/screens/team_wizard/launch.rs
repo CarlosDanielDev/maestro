@@ -285,6 +285,8 @@ impl TeamWizardScreen {
     }
 
     pub fn apply_launch_result(&mut self, result: Result<(), String>) {
+        // The run ended: nothing left to cancel, and quitting no longer asks.
+        self.launch.run_cancel = None;
         match result {
             Ok(()) => {
                 self.launch_step = LaunchStep::LaunchSuccess;

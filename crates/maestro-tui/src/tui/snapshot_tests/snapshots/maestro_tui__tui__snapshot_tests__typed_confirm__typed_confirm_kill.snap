@@ -25,4 +25,4 @@ expression: terminal.backend()
 "║                                                                              ║"
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
-" Enter kill                                                              q quit "
+" Enter kill                                                             ⌃Q quit "

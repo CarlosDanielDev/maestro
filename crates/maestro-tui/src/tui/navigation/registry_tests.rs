@@ -47,6 +47,46 @@ fn registry_has_section_06_globals() {
     }
 }
 
+/// #1260 (and the #1248 judge note): the keys taken before any screen
+/// today are declared, `A` as a documented Shift-global exception.
+#[test]
+fn registry_declares_quit_keys_and_cycle_agent() {
+    let has = |chord: Chord, action| {
+        registry()
+            .iter()
+            .any(|b| b.scope == Scope::Global && b.chord == chord && b.action == action)
+    };
+    for chord in [
+        Chord::ctrl('q'),
+        Chord::ctrl('x'),
+        Chord::ctrl('c'),
+        ch('q'),
+    ] {
+        assert!(has(chord, Action::Quit), "{} → Quit", chord.label());
+    }
+    assert!(has(ch('A'), Action::CycleAgent));
+    let a = registry().iter().find(|b| b.chord == ch('A')).unwrap();
+    assert!(
+        a.exception.is_some(),
+        "A breaks the uppercase rule on purpose"
+    );
+}
+
+/// #1260: ⌃Q is Quit only; the TurboQuant toggle is the Settings field
+/// [`TURBOQUANT_TOGGLE`], so no chord toggles TurboQuant.
+#[test]
+fn registry_turboquant_toggle_is_a_settings_field() {
+    let q = registry().iter().filter(|b| b.chord == Chord::ctrl('q'));
+    assert!(q.clone().count() == 1 && q.into_iter().all(|b| b.action == Action::Quit));
+    assert!(
+        registry()
+            .iter()
+            .filter(|b| b.label.contains("TurboQuant"))
+            .all(|b| b.action == Action::TurboquantDashboard)
+    );
+    assert_eq!(TURBOQUANT_TOGGLE, "Settings › TurboQuant › Enabled");
+}
+
 #[test]
 fn registry_tab_labels_match_tab_bar() {
     for (i, (_, label, _)) in crate::tui::ds::tab_bar::TABS.iter().enumerate() {

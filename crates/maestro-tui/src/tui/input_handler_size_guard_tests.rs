@@ -133,12 +133,16 @@ async fn confirm_exit_drawn_on_the_guard_still_quits_on_y() {
     assert!(!app.running);
 }
 
+/// #1260: Ctrl+C opens Confirm Exit (drawn on the guard), then `y` quits.
 #[tokio::test]
-async fn ctrl_c_still_quits_under_the_guard() {
+async fn ctrl_c_under_the_guard_opens_confirm_exit() {
     let mut app = app();
     app.tui_mode = TuiMode::Dashboard;
     let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     let action = press_at(&mut app, ctrl_c, SMALL).await;
+    assert!(matches!(action, KeyAction::Consumed));
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    let action = press(&mut app, KeyCode::Char('y')).await;
     assert!(matches!(action, KeyAction::Quit));
 }
 
@@ -153,6 +157,12 @@ async fn global_chords_are_swallowed_under_the_guard() {
     ];
     for mode in [TuiMode::Dashboard, TuiMode::ConfirmExit] {
         for chord in chords {
+            // #1260: inside an idle Confirm Exit, ⌃Q is the quit key (like `y`).
+            let ctrl_q =
+                chord.code == KeyCode::Char('q') && chord.modifiers.contains(KeyModifiers::CONTROL);
+            if mode == TuiMode::ConfirmExit && ctrl_q {
+                continue;
+            }
             let mut app = app();
             app.tui_mode = mode;
             let flags_before = format!("{:?}", app.flags);
@@ -164,6 +174,15 @@ async fn global_chords_are_swallowed_under_the_guard() {
             assert!(!app.bypass_active, "{chord:?} toggled bypass");
         }
     }
+}
+
+#[tokio::test]
+async fn idle_confirm_exit_on_the_guard_quits_on_ctrl_q() {
+    let mut app = app();
+    app.tui_mode = TuiMode::ConfirmExit;
+    let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+    let action = press_at(&mut app, ctrl_q, SMALL).await;
+    assert!(matches!(action, KeyAction::Quit));
 }
 
 #[tokio::test]

@@ -19,6 +19,12 @@ impl TeamWizardScreen {
         self.launch.running_wave = Some(wave);
     }
 
+    /// A team launch is running: its cancel token is held until the result
+    /// lands or Esc cancels it. Confirm Exit counts it as live work (#1260).
+    pub fn team_run_live(&self) -> bool {
+        self.launch.run_cancel.is_some()
+    }
+
     /// The event loop hands over the running launch's cancel token.
     pub fn set_run_cancel(&mut self, cancel: CancellationToken) {
         self.launch.run_cancel = Some(cancel);

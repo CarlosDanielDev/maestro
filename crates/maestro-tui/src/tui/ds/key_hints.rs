@@ -19,9 +19,9 @@ use super::bar_row::{draw_left_right, key_style};
 use crate::tui::navigation::keymap::InlineHint;
 use crate::tui::theme::Theme;
 
-/// The pinned quit hint, `(key, label)`: the key that quits today (`q`,
-/// outside text input). #1260 makes ⌃Q quit; change this one const then.
-pub const QUIT: (&str, &str) = ("q", "quit");
+/// The pinned quit hint, `(key, label)`: ⌃Q quits from every screen, text
+/// input included (#1260).
+pub const QUIT: (&str, &str) = ("⌃Q", "quit");
 
 /// Turn a screen's `(key, label)` list into hints, first = highest priority.
 pub fn from_pairs(pairs: &[(&'static str, &'static str)]) -> Vec<InlineHint> {

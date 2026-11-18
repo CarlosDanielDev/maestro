@@ -4,7 +4,7 @@ use crate::tui::screen_dispatch::{
     dispatch_to_active_screen_then_hook as dispatch_to_active_screen, handle_screen_action,
 };
 use crate::tui::screens;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// Result of handling a key event in the TUI loop.
 pub(super) enum KeyAction {
@@ -27,9 +27,12 @@ pub(super) async fn handle_key_under_size_guard(
     if !crate::tui::ds::size_guard::is_shown(area) {
         return None;
     }
-    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.running = false;
-        return Some(KeyAction::Quit);
+    // #1260: Ctrl+C opens Confirm Exit, which is drawn on the guard.
+    if key.code == KeyCode::Char('c')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && app.tui_mode != app::TuiMode::ConfirmExit
+    {
+        return handle_exit_chord(app, &key);
     }
     Some(match app.tui_mode {
         app::TuiMode::ConfirmExit => handle_confirm_exit(app, &key),
@@ -44,21 +47,14 @@ pub(super) async fn handle_key_under_size_guard(
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
 /// global shortcuts, and screen dispatch in priority order.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
-    // Ctrl+C always exits immediately (power-user bypass) — HIGHEST PRIORITY
-    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.running = false;
-        return KeyAction::Quit;
-    }
-
-    // Ctrl+X also exits immediately
-    if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.running = false;
-        return KeyAction::Quit;
-    }
-
     // If confirm exit dialog is showing, handle it
     if app.tui_mode == app::TuiMode::ConfirmExit {
         return handle_confirm_exit(app, &key);
+    }
+
+    // #1260: ⌃C, ⌃X and ⌃Q go through Confirm Exit — HIGHEST PRIORITY.
+    if let Some(action) = handle_exit_chord(app, &key) {
+        return action;
     }
 
     // #1263: the shown log drawer is modal. Only Ctrl+L and Esc (close)
@@ -106,9 +102,13 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
-    // 'q' triggers confirm exit (except in text input modes)
+    // 'q' quits an idle fleet, else opens Confirm Exit (not in text input).
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
-        app.navigate_to(app::TuiMode::ConfirmExit);
+        if !has_live_work(app) {
+            app.running = false;
+            return KeyAction::Quit;
+        }
+        open_confirm_exit(app, None);
         return KeyAction::Consumed;
     }
 
@@ -865,26 +865,6 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
 
 /// Handle global shortcuts that apply before screen dispatch (help, F-keys, Ctrl-X).
 fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
-    // Ctrl+q toggles TurboQuant from any screen
-    if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        let new_state = app.flags.toggle(crate::flags::Flag::TurboQuant);
-        // Keep config in sync so Settings screen opens with correct state
-        if let Some(ref mut config) = app.config {
-            config.turboquant.enabled = new_state;
-        }
-        let label = if new_state {
-            "[TurboQuant] Enabled"
-        } else {
-            "[TurboQuant] Disabled"
-        };
-        app.activity_log
-            .push_simple("TQ".into(), label.into(), LogLevel::Info);
-        if let Some(ref mut screen) = app.screen_state.settings_screen {
-            screen.sync_tq_enabled(new_state);
-        }
-        return true;
-    }
-
     // #1254: Ctrl+Z undoes and Esc dismisses only while a matching toast
     // is visible; otherwise the key falls through to the screen.
     if key.code == KeyCode::Char('z')
@@ -1136,8 +1116,158 @@ fn tab_key_target(app: &App, key: &KeyEvent) -> Option<app::TuiMode> {
     crate::tui::ds::tab_bar::tab_for_digit(c)
 }
 
-/// Handle the confirm-exit dialog (y/n/Enter/Esc).
+/// Agent sessions that may still be running (pool active + queued).
+pub(crate) fn live_agents(app: &App) -> usize {
+    app.pool.active_count() + app.pool.queued_count()
+}
+
+/// Work a quit would cut off (#1260): live sessions, a queue that has not
+/// finished (also between items), or a completion / auto-PR job still in
+/// flight. With any of it, quitting asks for the ⌃Q hold.
+pub(crate) fn has_live_work(app: &App) -> bool {
+    live_agents(app) > 0
+        || !app.completions_in_flight.is_empty()
+        || app
+            .queue_executor
+            .as_ref()
+            .is_some_and(|q| !q.is_finished())
+        || team_run_live(app)
+}
+
+/// A team run (`run_team_until`, detached) until its result lands; between
+/// waves the pool is empty while it fetches the next issue.
+fn team_run_live(app: &App) -> bool {
+    app.screen_state
+        .team_wizard_screen
+        .as_ref()
+        .is_some_and(|w| w.team_run_live())
+}
+
+/// The Confirm Exit question while there is live work: the most specific
+/// thing a quit would cut off.
+pub(crate) fn live_work_question(app: &App) -> String {
+    use crate::work::executor::ExecutorPhase;
+    let live = live_agents(app);
+    let awaiting = app
+        .queue_executor
+        .as_ref()
+        .is_some_and(|q| matches!(q.phase(), ExecutorPhase::AwaitingDecision { .. }));
+    if live > 0 {
+        format!("{live} session(s) still running. Exit anyway?")
+    } else if awaiting {
+        "A queue is waiting for your decision. Exit anyway?".into()
+    } else if team_run_live(app) {
+        "A team run is between waves. Exit anyway?".into()
+    } else {
+        "A queue or PR job is still running. Exit anyway?".into()
+    }
+}
+
+/// #1260: ⌃C, ⌃X and ⌃Q, outside Confirm Exit. ⌃C and ⌃X always open it;
+/// ⌃Q quits when there is no live work ([`has_live_work`]) and otherwise
+/// opens it armed (the press counts). The first ⌃X points to ⌃Q.
+fn handle_exit_chord(app: &mut App, key: &KeyEvent) -> Option<KeyAction> {
+    let ctrl = |c| key.code == KeyCode::Char(c) && key.modifiers.contains(KeyModifiers::CONTROL);
+    if !(ctrl('q') || ctrl('c') || ctrl('x')) {
+        return None;
+    }
+    // Terminals that report releases send one after every press.
+    if key.kind == KeyEventKind::Release {
+        return Some(KeyAction::Consumed);
+    }
+    let now = quit_now(app);
+    if ctrl('q') {
+        if !has_live_work(app) {
+            app.running = false;
+            return Some(KeyAction::Quit);
+        }
+        open_confirm_exit(app, Some((key, now)));
+        return Some(KeyAction::Consumed);
+    }
+    if ctrl('x') && !app.screen_state.quit_hints.ctrl_x_shown {
+        app.screen_state.quit_hints.ctrl_x_shown = true;
+        quit_hint(app, QUIT_HINT_CTRL_X, now);
+    }
+    open_confirm_exit(app, None);
+    Some(KeyAction::Consumed)
+}
+
+/// Once per launch (the run loop calls it before the first frame): say
+/// that ⌃Q quits now and where the TurboQuant toggle went. It never
+/// blocks a quit.
+pub(crate) fn announce_quit_key(app: &mut App, now: std::time::Instant) {
+    if app.screen_state.quit_hints.ctrl_q_shown {
+        return;
+    }
+    app.screen_state.quit_hints.ctrl_q_shown = true;
+    app.activity_log
+        .push_simple("KEY".into(), QUIT_HINT_CTRL_Q.into(), LogLevel::Info);
+    quit_hint(app, QUIT_HINT_CTRL_Q, now);
+}
+
+const QUIT_HINT_CTRL_Q: &str = "⌃Q quits now. TurboQuant: Settings › TurboQuant";
+const QUIT_HINT_CTRL_X: &str = "⌃Q quits from anywhere";
+
+fn quit_hint(app: &mut App, message: &str, now: std::time::Instant) {
+    use crate::tui::ds::toast::{Severity, Toast};
+    app.push_toast(Toast::new(Severity::Info, message), now);
+}
+
+/// The time the quit hold reads: `ScreenState::quit_clock` when a test
+/// injects one, else the wall clock.
+pub(crate) fn quit_now(app: &App) -> std::time::Instant {
+    app.screen_state
+        .quit_clock
+        .map_or_else(std::time::Instant::now, |clock| clock())
+}
+
+/// The Confirm Exit hold: ⌃Q, the key that quits.
+pub(crate) const QUIT_HOLD: crate::tui::ds::confirm::HoldToConfirm =
+    crate::tui::ds::confirm::HoldToConfirm::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+/// Open Confirm Exit with a fresh hold. `press` is the ⌃Q that opened it,
+/// which arms the hold.
+fn open_confirm_exit(app: &mut App, press: Option<(&KeyEvent, std::time::Instant)>) {
+    let mut hold = QUIT_HOLD;
+    if let Some((key, now)) = press {
+        hold.handle_key(key, now);
+    }
+    app.screen_state.exit_hold = Some(hold);
+    if app.tui_mode != app::TuiMode::ConfirmExit {
+        app.navigate_to(app::TuiMode::ConfirmExit);
+    }
+}
+
+fn close_confirm_exit(app: &mut App) -> KeyAction {
+    app.screen_state.exit_hold = None;
+    if let Some(prev) = app.nav_stack.pop() {
+        app.tui_mode = prev;
+    } else {
+        app.tui_mode = app::TuiMode::Overview;
+    }
+    KeyAction::Consumed
+}
+
+/// Handle the confirm-exit dialog (the ⌃Q hold, or y/n/Enter/Esc when idle).
 fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
+    // #1260: while agents run only the ⌃Q hold quits; Esc (default) and
+    // `n` stay. `y` and Enter do nothing.
+    if has_live_work(app) {
+        use crate::tui::ds::confirm::ConfirmOutcome;
+        let now = quit_now(app);
+        let hold = app.screen_state.exit_hold.get_or_insert(QUIT_HOLD);
+        return match hold.handle_key(key, now) {
+            ConfirmOutcome::Confirmed => {
+                app.running = false;
+                KeyAction::Quit
+            }
+            ConfirmOutcome::Cancelled => close_confirm_exit(app),
+            ConfirmOutcome::Pending if matches!(key.code, KeyCode::Char('n' | 'N')) => {
+                close_confirm_exit(app)
+            }
+            ConfirmOutcome::Pending => KeyAction::Consumed,
+        };
+    }
     // Enter is deliberately NOT an affirmative here. The dialog is often
     // opened by a menu-Enter (e.g. Quick Action "Quit"), and reflex-pressing
     // Enter again would silently destroy the session. Require explicit `y`.
@@ -1147,12 +1277,15 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
             KeyAction::Quit
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Enter => {
-            if let Some(prev) = app.nav_stack.pop() {
-                app.tui_mode = prev;
-            } else {
-                app.tui_mode = app::TuiMode::Overview;
-            }
-            KeyAction::Consumed
+            close_confirm_exit(app)
+        }
+        // Nothing to lose: ⌃Q, the quit key, quits here too.
+        KeyCode::Char('q')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && key.kind != KeyEventKind::Release =>
+        {
+            app.running = false;
+            KeyAction::Quit
         }
         _ => KeyAction::Consumed, // unrelated keys: stay in the dialog
     }
@@ -1625,28 +1758,38 @@ mod tests {
 
     // ── Group 7: Ctrl+C bypass (async integration) ────────────────────
 
+    // #1260: Ctrl+C no longer quits directly; it opens Confirm Exit.
     #[tokio::test]
-    async fn ctrl_c_always_quits_immediately() {
+    async fn ctrl_c_opens_confirm_exit() {
         let mut app = make_app();
         app.tui_mode = TuiMode::Overview;
         handle_key(&mut app, ctrl_c_event()).await;
-        assert!(!app.running);
-        assert!(!matches!(app.tui_mode, TuiMode::ConfirmExit));
+        assert!(app.running);
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
     }
 
     #[tokio::test]
-    async fn ctrl_c_from_confirm_exit_quits() {
+    async fn ctrl_c_in_confirm_exit_stays() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
         app.nav_stack.push(TuiMode::Overview);
         handle_key(&mut app, ctrl_c_event()).await;
-        assert!(!app.running);
+        assert!(app.running);
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
     }
 
     #[tokio::test]
     async fn q_in_overview_enters_confirm_exit() {
         let mut app = make_app();
         app.tui_mode = TuiMode::Overview;
+        // #1260: an idle `q` quits at once; with a live agent it asks.
+        app.pool.enqueue(crate::session::types::Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        ));
         handle_key(&mut app, key('q')).await;
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
         assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
@@ -1981,7 +2124,8 @@ mod tests {
 
         let _ = handle_key(&mut app, ctrl_c_event()).await;
 
-        assert!(!app.running);
+        // #1260: Ctrl+C opens Confirm Exit; it never copies.
+        assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
         assert_eq!(mock.write_count(), 0);
         assert!(app.copy_toast.is_none());
     }

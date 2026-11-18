@@ -142,6 +142,7 @@ pub enum Action {
     Bottom,
     Expand,
     Kill,
+    CycleAgent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +208,12 @@ pub enum Violation {
     UppercaseSafe(Action),
 }
 
+/// Where the TurboQuant on/off toggle lives since ⌃Q quits (#1260): a
+/// Settings field, not a chord. Settings › TurboQuant › Enabled
+/// (`turboquant.enabled`, built in `screens/settings/tabs/turboquant.rs`),
+/// saved with ⌃S. No binding toggles it; `Q` opens its dashboard.
+pub const TURBOQUANT_TOGGLE: &str = "Settings › TurboQuant › Enabled";
+
 /// Kept until the Shift globals are retired (out of scope for #1248).
 const SHIFT_GLOBAL: &str = "Shift global from before §06, checked before every screen";
 
@@ -223,8 +230,10 @@ pub fn registry() -> &'static [Binding] {
             Binding::new(chord, Scope::Global, action, danger, label)
         };
         let ch = |c| Chord::key(KeyCode::Char(c));
-        // §06 Global. ⌃K (palette) and ⌃Q (quit) are the target: today ⌃K is
-        // unbound and ⌃Q toggles TurboQuant (#1260 flips it).
+        // §06 Global. ⌃K (palette) is the target and still unbound. ⌃Q quits
+        // (#1260): an idle fleet at once, else through the Confirm Exit hold.
+        // The TurboQuant toggle it replaced is [`TURBOQUANT_TOGGLE`] (a
+        // Settings field, no chord); `Q` still opens the TurboQuant dashboard.
         let mut v = vec![
             g(Chord::ctrl('k'), A::Palette, Safe, "palette"),
             g(Chord::ctrl('q'), A::Quit, Destructive, "quit"),
@@ -250,8 +259,12 @@ pub fn registry() -> &'static [Binding] {
             // Taken before any screen today, not in the §06 table.
             g(Chord::ctrl('l'), A::ToggleLogDrawer, Safe, "log"),
             g(Chord::ctrl('b'), A::ToggleBypass, Destructive, "bypass"),
+            // #1260: ⌃X and ⌃C always open Confirm Exit; `q` quits only an
+            // idle fleet (nothing is lost) and asks otherwise, so it is Safe.
             g(Chord::ctrl('x'), A::Quit, Destructive, "quit"),
             g(Chord::ctrl('c'), A::Quit, Destructive, "quit"),
+            g(ch('q'), A::Quit, Safe, "quit").hidden(),
+            g(ch('A'), A::CycleAgent, Safe, "next agent").exception(SHIFT_GLOBAL),
             g(ch('Q'), A::TurboquantDashboard, Safe, "TurboQuant").exception(SHIFT_GLOBAL),
             g(ch('M'), A::ToggleCompleteModal, Safe, "complete modal").exception(SHIFT_GLOBAL),
             g(ch('C'), A::ReviewConcerns, Safe, "concerns").exception(SHIFT_GLOBAL),
