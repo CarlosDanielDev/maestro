@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/gh_auth_expired.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"────────────────────────────────────────────────────────────────────────────────"
+"  owner/repo   main   @carlos  │  Loading...                                 "
+"────────────────────────────────────────────────────────────────────────────────"
+"┏━━[ Quick Actions ]━━━┓┌─────[ Suggestions ]──────┐┌───[ Recent Activity ]────┐"
+"┃  [i]  Browse Issues  ┃│  No suggestions — everyth││                          │"
+"┃  [m]  Browse Milesto…┃│                          ││                          │"
+"┃  [M]  Review Milesto…┃│                          ││    No recent sessions.   │"
+"┃  [r]  Run Prompt     ┃│                          ││ Press [r] to launch one. │"
+"┃  [a]  Adapt Project  ┃│                          ││                          │"
+"┃  [p]  Review PRs     ┃│                          ││                          │"
+"┗━━━━━━━━━━━━ ↓ 7 more ┛└──────────────────────────┘└──────────────────────────┘"
+" ⊘ gh auth expired  PR create paused · fix: gh auth login, then Shift+P────────┐"
+"│No activity yet                                                               │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" i Issues   m Milestones   r Prompt   s Sessions   a Adapt               q quit "

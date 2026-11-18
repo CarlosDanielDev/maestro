@@ -68,6 +68,7 @@ impl App {
             branch: worktree_branch,
             worktree_path,
             gh_auth_ok: self.gh_auth_ok,
+            gh_auth_probe: std::sync::Arc::clone(&self.gh_auth_probe),
             auto_pr,
             base_branch,
             repo_slug,

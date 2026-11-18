@@ -871,7 +871,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Draw gh auth warning banner if authentication lost
     if !app.gh_auth_ok {
-        draw_gh_auth_warning(f, chunks[2], &app.theme);
+        crate::tui::gh_auth_warning::draw(f, chunks[2], &app.theme);
     }
 
     // Draw notification banner overlay if any
@@ -1257,24 +1257,6 @@ fn footer_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::FleetBoard => state.fleet_board_screen.as_ref().map(|s| s as _),
         _ => None,
     })
-}
-
-fn draw_gh_auth_warning(f: &mut Frame, area: Rect, theme: &crate::tui::theme::Theme) {
-    let banner = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " AUTH ",
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(theme.accent_error)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(
-            "GitHub CLI not authenticated. Run `gh auth login` to restore GitHub operations.",
-            Style::default().fg(theme.accent_error),
-        ),
-    ]));
-    f.render_widget(banner, area);
 }
 
 fn draw_notification_banner(

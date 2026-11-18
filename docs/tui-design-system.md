@@ -246,6 +246,7 @@ TurboQuant on/off toggle is the Settings › TurboQuant › Enabled field
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
+| `gh_auth_warning.rs` | `draw(f, area, theme)`, `line(theme)`, `GH_AUTH_EXPIRED` | The one-line `⊘ gh auth expired · PR create paused · fix: gh auth login, then Shift+P` drawn on the log row while `App::gh_auth_ok` is false (#1241). Pure draw: the recheck is `app/gh_auth.rs` (one `gh auth status` on the blocking pool, before a PR action is refused), never the draw path |
 | `agent_badge.rs` | `agent_label`, `agent_kind_for_id` | Per-agent label and kind; the colour is `theme.agent_color(agent_id)` |
 
 ### Shell rows: TabBar, CrumbBar, footer (`crates/maestro-tui/src/tui/ds/`, #1258)
