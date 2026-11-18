@@ -175,6 +175,7 @@ pub(super) async fn run(
     events: mpsc::UnboundedSender<AgentProviderEvent>,
     cancel: CancellationToken,
 ) -> Result<AgentRunResult, AgentError> {
+    super::permission_guard::check(&request)?;
     let mut cmd = Command::new(binary);
     match request.output_format {
         AgentOutputFormat::StreamJson => {

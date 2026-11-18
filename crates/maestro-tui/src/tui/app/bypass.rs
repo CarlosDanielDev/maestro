@@ -34,12 +34,12 @@ fn settings_bypass_warning() -> BypassWarningState {
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
     /// source (#1148): the `--bypass-review` CLI flag or the
-    /// `[sessions].permission_mode` config value. Both are session-only by
-    /// construction — the warning screen is acknowledged by virtue of the
-    /// source being explicit (a typed flag or an authored config file).
+    /// `[sessions].permission_mode` config value. Neither counts as
+    /// accepting the warning (#1395): the config file can come from a cloned
+    /// repo the user did not write. Only a typed CONFIRM does, so after this
+    /// bypass is turned off, the next ⌃B opens the warning.
     pub fn activate_bypass(&mut self, source: BypassSource) {
         self.bypass_active = true;
-        self.bypass_warning_acknowledged = true;
         self.session_config.permission_mode = "bypassPermissions".to_string();
         self.activity_log.push_simple(
             "BYPASS".into(),
@@ -160,6 +160,10 @@ impl App {
 mod settings_tests;
 
 #[cfg(test)]
+#[path = "bypass_ctrl_b_tests.rs"]
+mod ctrl_b_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::worktree::MockWorktreeManager;
@@ -179,11 +183,70 @@ mod tests {
     }
 
     #[test]
-    fn cli_activation_sets_active_and_acknowledged() {
+    fn cli_activation_sets_active() {
         let mut app = make_app();
         app.activate_bypass(BypassSource::Cli);
         assert!(app.bypass_active);
-        assert!(app.bypass_warning_acknowledged);
+    }
+
+    /// #1395: a config file can come from a cloned repo, so neither a
+    /// config nor a CLI bypass counts as accepting the warning.
+    #[test]
+    fn config_or_cli_bypass_does_not_acknowledge_warning() {
+        for source in [BypassSource::Config, BypassSource::Cli] {
+            let mut app = make_app();
+            app.activate_bypass(source);
+            assert!(app.bypass_active, "{} bypass is on", source.label());
+            assert!(
+                !app.bypass_warning_acknowledged,
+                "{} bypass must not acknowledge the warning",
+                source.label()
+            );
+        }
+    }
+
+    /// Every `permission_mode` in a TOML tree, with its dotted path.
+    fn permission_modes(value: &toml::Value, path: &str, out: &mut Vec<(String, String)>) {
+        let Some(table) = value.as_table() else {
+            return;
+        };
+        for (key, child) in table {
+            let child_path = format!("{path}{key}");
+            match (key.as_str(), child.as_str()) {
+                ("permission_mode", Some(mode)) => out.push((child_path, mode.to_string())),
+                _ => permission_modes(child, &format!("{child_path}."), out),
+            }
+        }
+    }
+
+    /// #1395: this repo is public; a fresh clone must not start in bypass
+    /// (`[sessions]`) and must not turn it on when Settings is saved, which
+    /// reads `agents.<default>.permission_mode` (screen_dispatch.rs).
+    #[test]
+    fn committed_maestro_toml_does_not_ship_bypass() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../maestro.toml");
+        let text = std::fs::read_to_string(&path).expect("repo maestro.toml is readable");
+        let doc: toml::Value = toml::from_str(&text).expect("repo maestro.toml parses");
+        let sessions = doc
+            .get("sessions")
+            .and_then(|s| s.get("permission_mode"))
+            .and_then(|v| v.as_str());
+        assert_eq!(sessions, Some("default"));
+
+        let config: crate::config::Config = toml::from_str(&text).expect("repo config parses");
+        assert_ne!(
+            config.effective_default_permission_mode(),
+            "bypassPermissions",
+            "the default agent's mode is what sessions get"
+        );
+
+        let mut modes = Vec::new();
+        permission_modes(&doc, "", &mut modes);
+        let bypass: Vec<_> = modes
+            .iter()
+            .filter(|(_, mode)| mode == "bypassPermissions")
+            .collect();
+        assert!(bypass.is_empty(), "maestro.toml ships bypass at {bypass:?}");
     }
 
     #[test]
@@ -267,6 +330,5 @@ mod tests {
         let mut app = make_app();
         app.activate_bypass(BypassSource::Config);
         assert!(app.bypass_active);
-        assert!(app.bypass_warning_acknowledged);
     }
 }

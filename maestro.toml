@@ -13,7 +13,12 @@ max_concurrent = 3
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
-permission_mode = "bypassPermissions"
+# The committed "default" is safe for a fresh clone (#1395). Headless Claude
+# cannot ask for permissions, so set agents.<id>.permission_mode = "acceptEdits"
+# or agents.<id>.allowed_tools in your local copy; agents.<id> wins over
+# [sessions]. "bypassPermissions" shows the ▲ BYPASS chip and asks for the
+# typed CONFIRM on a later Ctrl+B.
+permission_mode = "default"
 allowed_tools = []
 max_retries = 2
 retry_cooldown_secs = 60
@@ -134,7 +139,8 @@ kind = "claude"
 enabled = true
 command = "claude"
 model = "opus"
-permission_mode = "bypassPermissions"
+# Safe default (#1395); see the note in [sessions].
+permission_mode = "default"
 allowed_tools = []
 sandbox = ""
 
@@ -159,5 +165,6 @@ kind = "opencode"
 enabled = true
 command = "opencode"
 model = "opencode-go/deepseek-v4-pro"
-permission_mode = "bypassPermissions"
+# Safe default (#1395); see the note in [sessions].
+permission_mode = "default"
 sandbox = ""

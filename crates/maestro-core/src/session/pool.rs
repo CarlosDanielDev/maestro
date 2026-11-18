@@ -2072,6 +2072,8 @@ pub(in crate::session) mod tests {
     async fn spawn_stub_until_completed(pool: &mut SessionPool, script: &std::path::Path) -> u32 {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut managed = ManagedSession::new(make_session("stub linger check"));
+        // Headless Claude refuses a run with no permission mode (#1395).
+        managed.permission_mode = Some("acceptEdits".to_string());
         managed.set_provider(Arc::new(ClaudeProvider::new(
             script.to_string_lossy().into_owned(),
         )));
@@ -2248,6 +2250,8 @@ pub(in crate::session) mod tests {
         let mut pool = make_pool(2);
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut managed = ManagedSession::new(make_session("stub slow check"));
+        // Headless Claude refuses a run with no permission mode (#1395).
+        managed.permission_mode = Some("acceptEdits".to_string());
         managed.set_provider(Arc::new(ClaudeProvider::new(
             script.to_string_lossy().into_owned(),
         )));

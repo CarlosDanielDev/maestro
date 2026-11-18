@@ -32,7 +32,10 @@ fn write_config(dir: &Path, stub: &Path) {
         r#"[project]
 repo = "owner/repo"
 
+# Headless Claude refuses to start with no permission mode and no allowed
+# tools (#1395).
 [sessions]
+permission_mode = "acceptEdits"
 
 [budget]
 per_session_usd = 5.0

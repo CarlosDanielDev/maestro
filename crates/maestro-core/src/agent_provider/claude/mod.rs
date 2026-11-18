@@ -12,8 +12,11 @@
 mod headless;
 mod interactive;
 mod interactive_types;
+mod permission_guard;
 mod pty_backend;
 mod transcript_parser;
+
+pub use permission_guard::HEADLESS_NO_PERMISSION;
 
 // Curated re-export: the adopt pipeline (#1053) stats the transcript the
 // interactive transport will read, via the same path rule.
