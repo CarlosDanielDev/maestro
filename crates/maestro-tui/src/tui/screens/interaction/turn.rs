@@ -12,7 +12,7 @@ use crate::session::interaction::TurnRole;
 use crate::tui::screens::ScreenAction;
 use crossterm::event::KeyCode;
 use ratatui::style::Style;
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 impl InteractionScreen {
     /// Inject the global animation tick so the "agent responding" spinner

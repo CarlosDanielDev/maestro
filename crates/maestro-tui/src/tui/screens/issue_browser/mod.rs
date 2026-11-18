@@ -7,8 +7,8 @@ use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Frame, layout::Rect, style::Style};
+use ratatui_textarea::{CursorMove, TextArea};
 use std::collections::HashSet;
-use tui_textarea::{CursorMove, TextArea};
 
 /// Action returned by the prompt overlay's input handler.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +57,7 @@ impl LaunchFocus {
 #[derive(Debug, Clone)]
 pub(crate) struct IssuePromptOverlay {
     /// Multi-line prompt editor — owns cursor + arrow/Home/End navigation via
-    /// `tui-textarea` (same backend as the free-form prompt screen).
+    /// `ratatui-textarea` (same backend as the free-form prompt screen).
     pub editor: TextArea<'static>,
     /// One entry per selected issue: `(issue_number, issue_title)`.
     /// Always has at least one entry.
@@ -159,7 +159,7 @@ impl IssuePromptOverlay {
             // focus, so checkbox/Launch stops don't capture typing.
             _ => {
                 if self.focus == LaunchFocus::Prompt {
-                    self.editor.input(event.clone());
+                    crate::tui::widgets::input::feed(&mut self.editor, event);
                 }
             }
         }

@@ -241,9 +241,9 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 /// A text-input surface: its name and how to open it.
 type Surface = (&'static str, fn() -> App);
 
-#[tokio::test]
-async fn global_bare_keys_never_fire_on_any_text_input_surface() {
-    let surfaces: [Surface; 12] = [
+/// Every text-input surface the walk covers.
+fn text_surfaces() -> [Surface; 12] {
+    [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
         ("session switcher", on_session_switcher),
@@ -260,9 +260,13 @@ async fn global_bare_keys_never_fire_on_any_text_input_surface() {
         ("help overlay search", on_help_search),
         ("kill confirm", on_kill_confirm),
         ("bypass warning", on_bypass_warning),
-    ];
+    ]
+}
+
+#[tokio::test]
+async fn global_bare_keys_never_fire_on_any_text_input_surface() {
     let keys = ['u', 'n', 'y', '1', '2', '3', '4', '5', '6', '7'];
-    for (name, make) in surfaces {
+    for (name, make) in text_surfaces() {
         for state in [available(), ready_to_restart()] {
             for c in keys {
                 let mut app = make();
@@ -274,5 +278,55 @@ async fn global_bare_keys_never_fire_on_any_text_input_surface() {
                 assert_eq!(global_state(&app), before, "{name}: `{c}` fired a global");
             }
         }
+    }
+}
+
+/// The full frame at the laid-out size: cells, styles and the cursor.
+fn frame(app: &mut App) -> (ratatui::buffer::Buffer, ratatui::layout::Position) {
+    let backend = ratatui::backend::TestBackend::new(AREA.width, AREA.height);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
+    let cursor = terminal.get_cursor_position().unwrap();
+    (terminal.backend().buffer().clone(), cursor)
+}
+
+/// #1413: ratatui-textarea reads crossterm's `BackTab` as Shift+Tab and
+/// inserts a tab. On every text surface Shift+Tab must not type: the frame
+/// stays the same, except on the two surfaces where it moves focus back.
+#[tokio::test]
+async fn shift_tab_never_types_on_any_text_input_surface() {
+    let shift_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+    for (name, make) in text_surfaces() {
+        let mut app = make();
+        for c in "ab".chars() {
+            send(&mut app, KeyCode::Char(c)).await;
+        }
+        let mut ring =
+            (app.screen_state.prompt_input_screen.as_ref()).map(|s| s.focus_ring.clone());
+        let before = frame(&mut app);
+        assert!(
+            handle_key_under_size_guard(&mut app, shift_tab, AREA)
+                .await
+                .is_none()
+        );
+        handle_key(&mut app, shift_tab).await;
+        match name {
+            "prompt input" => {
+                let screen = app.screen_state.prompt_input_screen.as_ref().unwrap();
+                let back = ring.as_mut().unwrap().previous();
+                assert_eq!(screen.focus_ring.current(), back, "{name}: focus back");
+                assert_eq!(screen.editor_text(), "ab", "{name}: no tab typed");
+            }
+            "issue wizard basic info" => {
+                use crate::tui::screens::issue_wizard::FieldId;
+                let wizard = app.screen_state.issue_wizard_screen.as_ref().unwrap();
+                assert_eq!(wizard.focused_field(), Some(FieldId::Overview), "{name}");
+            }
+            _ => assert!(
+                frame(&mut app) == before,
+                "{name}: Shift+Tab changed the frame"
+            ),
+        }
+        assert!(is_text_input_mode(&app), "{name}: still a text field");
     }
 }

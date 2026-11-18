@@ -1,6 +1,6 @@
 //! Backend + editing logic for the canonical `Input` widget (#963).
 //!
-//! Wraps `tui_textarea::TextArea` with the two behaviours every maestro
+//! Wraps `ratatui_textarea::TextArea` with the two behaviours every maestro
 //! input site needs on top of the raw editor: a single-line mode that never
 //! holds a newline, and an optional max-length clamp. Rendering lives in
 //! `super::render`; this module is a pure editing engine, unit-testable
@@ -8,7 +8,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Style;
-use tui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::{CursorMove, DataCursor, TextArea};
 
 /// Builder for an [`Input`]. All fields are optional.
 #[derive(Debug, Clone, Default)]
@@ -96,9 +96,10 @@ impl Input {
     }
 
     /// Cursor as a logical `(row, col)`, col a character index — matches
-    /// `tui_textarea::TextArea::cursor`.
+    /// `ratatui_textarea::TextArea::cursor`.
     pub fn cursor(&self) -> (usize, usize) {
-        self.area.cursor()
+        let DataCursor(row, col) = self.area.cursor();
+        (row, col)
     }
 
     /// True when the input holds no text.
@@ -166,9 +167,9 @@ impl Input {
                 {
                     return false;
                 }
-                self.area.input(event)
+                feed(&mut self.area, &event)
             }
-            _ => self.area.input(event),
+            _ => feed(&mut self.area, &event),
         }
     }
 
@@ -221,6 +222,18 @@ pub(crate) fn collapse_newlines_to_space(s: &str) -> String {
         }
     }
     out
+}
+
+/// The one key mapping every maestro editor uses to feed a `TextArea`:
+/// `TextArea::input`, except Shift+Tab. crossterm reports Shift+Tab as
+/// `BackTab`; ratatui-textarea 0.9 reads that as Shift+Tab and inserts a tab,
+/// while tui-textarea 0.7 ignored it. It stays ignored here, so it never types
+/// and screens keep it for moving focus back. Returns `true` on a change.
+pub fn feed(area: &mut TextArea<'_>, event: &Event) -> bool {
+    if matches!(event, Event::Key(key) if key.code == KeyCode::BackTab) {
+        return false;
+    }
+    area.input(event.clone())
 }
 
 #[cfg(test)]
@@ -339,9 +352,20 @@ mod tests {
         assert_eq!(input.cursor(), (0, 0));
         input.input(key_code(KeyCode::End));
         assert_eq!(input.cursor(), (0, 11));
-        // Ctrl+Left is a word jump in tui-textarea's default keymap.
+        // Ctrl+Left is a word jump in ratatui-textarea's default keymap.
         input.input(ctrl(KeyCode::Left));
         assert_eq!(input.cursor(), (0, 6));
+    }
+
+    #[test]
+    fn shift_tab_never_types_into_the_field() {
+        // crossterm reports Shift+Tab as BackTab. The editor must ignore it
+        // (Tab-focus screens use it to move focus back), never insert a tab.
+        let mut input = Input::multi_line(InputConfig::new());
+        type_str(&mut input, "a");
+        let back_tab = Event::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert!(!input.input(back_tab));
+        assert_eq!(input.text(), "a");
     }
 
     #[test]

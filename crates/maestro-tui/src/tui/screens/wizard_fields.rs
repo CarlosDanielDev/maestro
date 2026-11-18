@@ -3,7 +3,7 @@
 //!
 //! Historically each wizard maintained a `String` buffer per field and
 //! hand-rolled character append / backspace / newline / paste handling.
-//! That duplicated the work `tui_textarea` already does — cursor
+//! That duplicated the work `ratatui_textarea` already does — cursor
 //! movement, selection, undo, word-wise deletion — and every missing
 //! nicety showed up as a bug report (issue #447). This module wraps
 //! `TextArea` with two concessions the wizards need on top of the raw
@@ -18,10 +18,10 @@
 //!    screen applies to bracketed-paste payloads.
 
 use ratatui::style::{Modifier, Style};
-use tui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::{CursorMove, TextArea};
 
 /// One focusable text field inside a wizard step. Wraps a
-/// `tui_textarea::TextArea` with the wizard-specific single-line vs
+/// `ratatui_textarea::TextArea` with the wizard-specific single-line vs
 /// multi-line distinction and paste sanitizer.
 pub struct TextAreaField {
     area: TextArea<'static>,

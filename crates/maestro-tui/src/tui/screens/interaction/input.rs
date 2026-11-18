@@ -1,6 +1,6 @@
 //! Input pane, keybind footer, and overlays for the Interaction screen.
 //!
-//! Renders the multi-line `tui-textarea` editor (locked greyed-out while a
+//! Renders the multi-line `ratatui-textarea` editor (locked greyed-out while a
 //! turn streams, #738), a one-line keybind footer with the `Ctrl+P` chord
 //! greyed when `produce_pr` was unchecked, the quit-confirm modal, and the
 //! terminated banner. The editor owns the text buffer and cursor logic.
@@ -14,7 +14,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
 /// Render the header naming the agent/CLI, model, and issue the chat is bound
@@ -112,7 +112,7 @@ pub(super) fn draw_input(
     // where they are typing. Skipped while locked (input is ignored anyway).
     // `cursor()` is a (row, col) char index; clamp into the inner viewport.
     if !locked && inner.width > 0 && inner.height > 0 {
-        let (row, col) = editor.cursor();
+        let ratatui_textarea::DataCursor(row, col) = editor.cursor();
         let x = inner.x + (col as u16).min(inner.width - 1);
         let y = inner.y + (row as u16).min(inner.height - 1);
         f.set_cursor_position(Position::new(x, y));
