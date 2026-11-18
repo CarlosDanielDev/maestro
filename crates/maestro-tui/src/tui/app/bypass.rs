@@ -5,7 +5,31 @@
 
 use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
-use crate::tui::app::App;
+use crate::tui::app::{App, TuiMode};
+use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningState};
+
+/// Activity-log source for a bypass turned on from Settings (#1239).
+const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
+
+/// The bypass warning opened from Settings. Unlike ⌃B it says the real
+/// scope: Ctrl+S writes the value to the committed `maestro.toml`.
+fn settings_bypass_warning() -> BypassWarningState {
+    let row = |label: &str, text: &str| (label.to_string(), text.to_string());
+    BypassWarningState::with_text(
+        "DANGER: enable bypass for every future session?",
+        vec![
+            row("", "Bypass auto-accepts EVERY review concern."),
+            row("", ""),
+            row("does", "edits files, commits and pushes, no asking"),
+            row(
+                "writes",
+                "sessions.permission_mode to maestro.toml (committed)",
+            ),
+            row("scope", "every future session after Ctrl+S; this run now"),
+            row("or", "Ctrl+B turns it on for this run only"),
+        ],
+    )
+}
 
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
@@ -46,17 +70,74 @@ impl App {
     /// this session, push the BypassWarning screen; otherwise toggle
     /// directly. Returns true when the caller should push the warning.
     pub fn request_bypass_toggle(&mut self) -> bool {
+        self.drop_settings_bypass_request();
         if self.bypass_active {
             self.deactivate_bypass("tui");
             return false;
         }
         if !self.bypass_warning_acknowledged {
-            self.screen_state.bypass_warning_screen =
-                Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
+            self.open_bypass_warning();
             return true;
         }
         self.confirm_bypass_activation("tui");
         false
+    }
+
+    fn open_bypass_warning(&mut self) {
+        self.screen_state.bypass_warning_screen = Some(BypassWarningState::new());
+    }
+
+    /// #1239: the Settings › Sessions bypass toggle was flipped on. It
+    /// writes the committed `maestro.toml`, so it always asks for the typed
+    /// CONFIRM, even when ⌃B was acknowledged earlier this session.
+    pub fn process_pending_settings_bypass(&mut self) {
+        let pending = (self.screen_state.settings_screen.as_ref())
+            .is_some_and(|s| s.bypass_request_pending());
+        if !pending {
+            return;
+        }
+        if self.screen_state.bypass_warning_screen.is_some() {
+            // Back in Settings with the warning still open: it was left
+            // through a global chord, unanswered. Treat that as a cancel.
+            self.screen_state.bypass_warning_screen = None;
+            self.drop_settings_bypass_request();
+            return;
+        }
+        self.screen_state.bypass_warning_screen = Some(settings_bypass_warning());
+        self.navigate_to(TuiMode::BypassWarning);
+    }
+
+    /// Turn a pending Settings bypass toggle back off, so no later answer
+    /// to the warning (for example a ⌃B one) is taken as a Settings confirm.
+    fn drop_settings_bypass_request(&mut self) {
+        if let Some(screen) =
+            (self.screen_state.settings_screen.as_mut()).filter(|s| s.bypass_request_pending())
+        {
+            screen.resolve_bypass_request(false);
+        }
+    }
+
+    /// The bypass warning was answered. When a Settings request is
+    /// pending, stage it (confirmed) or turn its toggle back off
+    /// (cancelled) and return true; the caller pops the warning. Returns
+    /// false on `Pending` and on the ⌃B path, which keeps its own branches.
+    pub fn answer_settings_bypass(&mut self, outcome: BypassWarningOutcome) -> bool {
+        let confirmed = match outcome {
+            BypassWarningOutcome::Pending => return false,
+            BypassWarningOutcome::Confirmed => true,
+            BypassWarningOutcome::Cancelled => false,
+        };
+        let Some(screen) =
+            (self.screen_state.settings_screen.as_mut()).filter(|s| s.bypass_request_pending())
+        else {
+            return false;
+        };
+        screen.resolve_bypass_request(confirmed);
+        self.screen_state.bypass_warning_screen = None;
+        if confirmed {
+            self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
+        }
+        true
     }
 
     /// Final activation step after the warning has been confirmed.
@@ -73,6 +154,10 @@ impl App {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "bypass_settings_tests.rs"]
+mod settings_tests;
 
 #[cfg(test)]
 mod tests {

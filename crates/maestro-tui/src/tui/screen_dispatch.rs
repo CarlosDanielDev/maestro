@@ -139,6 +139,7 @@ pub(super) fn dispatch_to_active_screen_then_hook(
     tick_wizard_step_hooks(app);
     if matches!(app.tui_mode, app::TuiMode::Settings) {
         app.process_pending_caveman_toggle();
+        app.process_pending_settings_bypass();
     }
     action
 }
