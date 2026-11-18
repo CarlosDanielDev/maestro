@@ -144,7 +144,7 @@ with `f.set_cursor_position`.
 
 Enforced by `no_new_hand_rolled_text_input`: a file outside `widgets/input/`
 that matches `KeyCode::Char(c)` and pushes or inserts `c` into a string fails
-CI. The 13 existing sites are in `HAND_ROLLED_INPUT_ALLOWLIST`. Migrating one
+CI. The 12 existing sites are in `HAND_ROLLED_INPUT_ALLOWLIST`. Migrating one
 to `Input` means removing it from that list (stale entries fail too). Known
 gap: input sent through a helper method (`push_char` in `help.rs`) is not
 caught, so review still applies.
@@ -182,6 +182,25 @@ Rules: Blocked is inert (Enter returns `Ignored`), so show the fix in the
 reason. On `EnterOutcome::Commit` start the write, then call `finish`.
 Any other key or Esc calls `disarm()`; the app tick calls `tick(now)`.
 The description is plain text (no GitHub types) and is sanitized by the bar.
+
+### Typed confirm — `crates/maestro-tui/src/tui/ds/confirm.rs` (#1261)
+
+Implements §04 `confirm` and §05 "Killing the wrong agent" of
+`docs/design-system/index.html`. Destructive actions ask you to type a
+token; `Esc` cancels and is the default.
+
+| Item | For |
+|---|---|
+| `TypedConfirm::new(title, expected, action, consequences)` | `consequences` = `(label, text)` rows (`("kept", "…")`); an empty label draws the text alone. `action` names `⏎` (`kill`, `enable`). Field = `Input::single_line` (max 16) |
+| `handle_key(key) -> ConfirmOutcome` | `Pending` / `Confirmed` / `Cancelled`. `Esc` cancels; `⏎` is inert until `matches()` (typed text == `expected`, case-sensitive); every other key edits the field |
+| `render(f, area, theme)` | Centred in `area`, `ds::panel` `Focus::Danger` (Double). Consequences, `Type <token> to confirm:`, the field with `n of m`, then `Esc cancel (default)` and `⏎ <action> (locked)` until it matches |
+
+Token rule (the #1261 ADR): the issue number for a per-session action
+(kill), a word for a global one (bypass: `CONFIRM`). Users today: kill
+(`App::open_kill_confirm`, state in `ScreenState::kill_confirm`) and the
+bypass warning (`BypassWarningState::confirm`). `ui::draw_typed_confirm`
+draws both last, over the whole frame. Both modes are text-input modes
+(`is_text_input_mode`), so typed `q`, `M`, digits never reach a global key.
 
 ### Other shared helpers (`crates/maestro-tui/src/tui/`)
 
@@ -457,7 +476,8 @@ unbound and `⌃Q` toggles TurboQuant until #1260.
 - **Empty states say what to do**: key + outcome, never just `(empty)`.
 - **First entry** to a feature screen: one-line "what is this" intro.
 - **Destructive actions** need a confirm step (see `queue_confirmation.rs`,
-  `bypass_warning.rs`).
+  `bypass_warning.rs`). Killing or an action with a big blast radius uses
+  `ds::confirm::TypedConfirm` (§2 "Typed confirm").
 - **Small terminals**: test narrow sizes; fit hints with
   `fit_hints_to_width`, elide breadcrumbs, marquee long text.
 - **ASCII mode** must work: icons only through `icons::get`.

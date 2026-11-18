@@ -127,6 +127,19 @@ fn on_help_search() -> App {
     app
 }
 
+/// #1261: the kill dialog's typed issue number.
+fn on_kill_confirm() -> App {
+    base_app(TuiMode::ConfirmKill(uuid::Uuid::nil()))
+}
+
+/// #1261: the bypass warning's typed `CONFIRM`.
+fn on_bypass_warning() -> App {
+    let mut app = base_app(TuiMode::BypassWarning);
+    app.screen_state.bypass_warning_screen =
+        Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
+    app
+}
+
 #[test]
 fn text_input_mode_true_for_prd_edit_field() {
     assert!(is_text_input_mode(&on_prd_edit()));
@@ -230,7 +243,7 @@ type Surface = (&'static str, fn() -> App);
 
 #[tokio::test]
 async fn global_bare_keys_never_fire_on_any_text_input_surface() {
-    let surfaces: [Surface; 10] = [
+    let surfaces: [Surface; 12] = [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
         ("session switcher", on_session_switcher),
@@ -245,6 +258,8 @@ async fn global_bare_keys_never_fire_on_any_text_input_surface() {
             on_roadmap_filter(FilterField::Assignee)
         }),
         ("help overlay search", on_help_search),
+        ("kill confirm", on_kill_confirm),
+        ("bypass warning", on_bypass_warning),
     ];
     let keys = ['u', 'n', 'y', '1', '2', '3', '4', '5', '6', '7'];
     for (name, make) in surfaces {

@@ -190,7 +190,6 @@ fn screens_use_theme_colors_only() {
 /// `String`). Migrate to `widgets::input::Input` (#964–#974), then remove.
 const HAND_ROLLED_INPUT_ALLOWLIST: &[&str] = &[
     "crates/maestro-tui/src/tui/screens/adapt/mod.rs",
-    "crates/maestro-tui/src/tui/screens/bypass_warning.rs",
     "crates/maestro-tui/src/tui/screens/interaction/diff_review.rs",
     "crates/maestro-tui/src/tui/screens/issue_browser/draw.rs",
     "crates/maestro-tui/src/tui/screens/pr_review/mod.rs",
