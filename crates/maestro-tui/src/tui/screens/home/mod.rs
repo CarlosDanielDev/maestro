@@ -1,5 +1,7 @@
 mod draw;
 pub mod mission;
+#[cfg(test)]
+mod quick_actions_tests;
 pub mod types;
 
 pub use types::*;
