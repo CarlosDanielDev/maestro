@@ -72,6 +72,21 @@ fn registry_declares_quit_keys_and_cycle_agent() {
     );
 }
 
+/// #1260: ⌃Q is Quit only; the TurboQuant toggle is the Settings field
+/// [`TURBOQUANT_TOGGLE`], so no chord toggles TurboQuant.
+#[test]
+fn registry_turboquant_toggle_is_a_settings_field() {
+    let q = registry().iter().filter(|b| b.chord == Chord::ctrl('q'));
+    assert!(q.clone().count() == 1 && q.into_iter().all(|b| b.action == Action::Quit));
+    assert!(
+        registry()
+            .iter()
+            .filter(|b| b.label.contains("TurboQuant"))
+            .all(|b| b.action == Action::TurboquantDashboard)
+    );
+    assert_eq!(TURBOQUANT_TOGGLE, "Settings › TurboQuant › Enabled");
+}
+
 #[test]
 fn registry_tab_labels_match_tab_bar() {
     for (i, (_, label, _)) in crate::tui::ds::tab_bar::TABS.iter().enumerate() {

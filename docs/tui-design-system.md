@@ -221,7 +221,10 @@ its lines). Exit chords: ⌃Q and `q` quit an idle fleet at once; with live
 agents (`input_handler::live_agents` = active + queued) ⌃Q opens the dialog
 armed, `q` / ⌃C / ⌃X open it unarmed, and only the hold quits (`y` and `⏎`
 do nothing). The first ⌃Q of a run and the first ⌃X show a one-time toast
-(`ScreenState::quit_hints`).
+(`ScreenState::quit_hints`). The hold reads `input_handler::quit_now`:
+`ScreenState::quit_clock` when a test injects one, else `Instant::now`. The
+TurboQuant on/off toggle is the Settings › TurboQuant › Enabled field
+(`navigation::registry::TURBOQUANT_TOGGLE`); no chord toggles it.
 
 ### Other shared helpers (`crates/maestro-tui/src/tui/`)
 

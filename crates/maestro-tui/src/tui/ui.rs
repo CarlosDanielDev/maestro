@@ -1378,7 +1378,7 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
     let bold = |fg| Style::default().fg(fg).add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     let focus = if live > 0 {
-        let now = std::time::Instant::now();
+        let now = crate::tui::input_handler::quit_now(app);
         lines.push(Line::from(Span::styled(
             format!("{live} session(s) still running. Exit anyway?"),
             bold(theme.accent_warning),

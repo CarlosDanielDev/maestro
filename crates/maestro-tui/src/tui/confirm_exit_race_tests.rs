@@ -156,6 +156,23 @@ mod hold {
         );
     }
 
+    /// No kitty protocol (plain terminal, tmux): holding the key sends
+    /// only `Press` events (auto-repeat), never `Repeat` or `Release`.
+    #[test]
+    fn hold_without_kitty_auto_repeat_presses_confirm() {
+        let t0 = Instant::now();
+        let mut h = hold();
+        assert_eq!(
+            h.handle_key(&ctrl_q(KeyEventKind::Press), t0),
+            ConfirmOutcome::Pending
+        );
+        assert_eq!(
+            h.handle_key(&ctrl_q(KeyEventKind::Press), at(t0, 33)),
+            ConfirmOutcome::Confirmed,
+            "the first auto-repeat press confirms"
+        );
+    }
+
     #[test]
     fn hold_release_never_counts_as_a_press() {
         // Windows reports a release for every tap: one tap must not confirm.

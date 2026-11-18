@@ -1128,7 +1128,7 @@ pub(crate) fn live_agents(app: &App) -> usize {
 /// to toggle TurboQuant); the first ⌃X also points to ⌃Q.
 fn handle_exit_chord(app: &mut App, key: &KeyEvent) -> Option<KeyAction> {
     let ctrl = |c| key.code == KeyCode::Char(c) && key.modifiers.contains(KeyModifiers::CONTROL);
-    let now = std::time::Instant::now();
+    let now = quit_now(app);
     if ctrl('q') {
         if !app.screen_state.quit_hints.ctrl_q_shown {
             app.screen_state.quit_hints.ctrl_q_shown = true;
@@ -1159,6 +1159,14 @@ const QUIT_HINT_CTRL_X: &str = "⌃Q quits from anywhere";
 fn quit_hint(app: &mut App, message: &str, now: std::time::Instant) {
     use crate::tui::ds::toast::{Severity, Toast};
     app.push_toast(Toast::new(Severity::Info, message), now);
+}
+
+/// The time the quit hold reads: `ScreenState::quit_clock` when a test
+/// injects one, else the wall clock.
+pub(crate) fn quit_now(app: &App) -> std::time::Instant {
+    app.screen_state
+        .quit_clock
+        .map_or_else(std::time::Instant::now, |clock| clock())
 }
 
 /// The Confirm Exit hold: ⌃Q, the key that quits.
@@ -1194,7 +1202,7 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     // `n` stay. `y` and Enter do nothing.
     if live_agents(app) > 0 {
         use crate::tui::ds::confirm::ConfirmOutcome;
-        let now = std::time::Instant::now();
+        let now = quit_now(app);
         let hold = app.screen_state.exit_hold.get_or_insert(QUIT_HOLD);
         return match hold.handle_key(key, now) {
             ConfirmOutcome::Confirmed => {

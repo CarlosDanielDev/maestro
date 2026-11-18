@@ -3,6 +3,10 @@
 //! fleet ⌃Q and `q` quit at once. The popup is sized from its content, so
 //! the question and its key row show at 80 columns (B1, B2 of #1394).
 
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::log_drawer::{draw, log_app};
@@ -31,6 +35,31 @@ fn app(mode: TuiMode, live: usize) -> App {
             .enqueue(make_session(SessionStatus::Running, Some(400 + i as u64)));
     }
     app.screen_state.quit_hints.ctrl_q_shown = true;
+    app.screen_state.quit_clock = Some(fixed_clock);
+    app
+}
+
+/// No wall clock in these tests: every key and draw reads one instant.
+fn fixed_clock() -> Instant {
+    static T0: OnceLock<Instant> = OnceLock::new();
+    *T0.get_or_init(Instant::now)
+}
+
+/// [`fixed_clock`] plus `LATE_MS`, for the window-expiry test only.
+static LATE_MS: AtomicU64 = AtomicU64::new(0);
+fn late_clock() -> Instant {
+    fixed_clock() + Duration::from_millis(LATE_MS.load(Ordering::SeqCst))
+}
+
+/// `mode` (Home or Dashboard, reached as a user does) with `open` pressed.
+async fn opened(mode: TuiMode, live: usize, open: KeyEvent) -> App {
+    let mut app = app(TuiMode::Landing, live);
+    if mode == TuiMode::Dashboard {
+        let _ = handle_key(&mut app, key('2')).await;
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+    }
+    let _ = handle_key(&mut app, open).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit, "{mode:?} {open:?}");
     app
 }
 
@@ -163,52 +192,75 @@ async fn footer_pins_quit() {
     }
 }
 
+/// B1: the box holds its question and key row at 80x24 and 80x27, from
+/// Home and Dashboard. An idle `q` quits at once, so the idle dialog comes
+/// from ⌃C; with one running session it comes from `q`.
 #[tokio::test]
 async fn confirm_exit_popup_fits_content_at_80x24_dashboard() {
-    // An idle `q` quits at once, so the idle dialog comes from ⌃C.
-    for (live, open, want) in [(0, ctrl('c'), IDLE), (1, key('q'), RUNNING)] {
-        for h in [24, 27] {
-            let mut app = app(TuiMode::Landing, live);
-            let _ = handle_key(&mut app, key('2')).await;
-            assert_eq!(app.tui_mode, TuiMode::Dashboard);
-            let _ = handle_key(&mut app, open).await;
-            assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
-            let out = text(&mut app, 80, h);
-            let rows = popup_rows(&out).join("\n");
-            assert!(rows.contains(want), "80x{h}, {live} live:\n{out}");
-            let keys = if live == 0 { "[y]es" } else { "hold to quit" };
-            assert!(rows.contains(keys), "80x{h}, {live} live:\n{out}");
+    for mode in [TuiMode::Landing, TuiMode::Dashboard] {
+        for (live, open, want, keys) in [
+            (0, ctrl('c'), IDLE, "[y]es"),
+            (1, key('q'), RUNNING, "hold to quit"),
+        ] {
+            for h in [24, 27] {
+                let mut app = opened(mode, live, open).await;
+                let out = text(&mut app, 80, h);
+                let rows = popup_rows(&out).join("\n");
+                assert!(rows.contains(want), "{mode:?} 80x{h}, {live} live:\n{out}");
+                assert!(rows.contains(keys), "{mode:?} 80x{h}, {live} live:\n{out}");
+            }
         }
     }
 }
 
+/// B2: every key row is drawn between the top and bottom borders, at
+/// 80x24 and 80x27, from Home and Dashboard.
 #[tokio::test]
 async fn confirm_exit_popup_shows_key_hint_row() {
-    // With an agent running, `q` on Home opens the hold dialog; an idle
-    // `q` quits at once, so the idle dialog comes from ⌃C.
-    let cases: [(usize, KeyEvent, &str, &str); 2] = [
-        (1, key('q'), RUNNING, "hold to quit"),
-        (0, ctrl('c'), IDLE, "[y]es"),
+    let cases: [(usize, KeyEvent, &str, &[&str]); 2] = [
+        (0, ctrl('c'), IDLE, &["[y]es", "[n]o", "[Esc]"]),
+        (
+            1,
+            key('q'),
+            "1 session(s) still running",
+            &["hold to quit", "Esc"],
+        ),
     ];
-    for (live, open, question, keys) in cases {
-        for h in [24, 27] {
-            let mut app = app(TuiMode::Landing, live);
-            let _ = handle_key(&mut app, open).await;
-            assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
-            let out = text(&mut app, 80, h);
-            let rows = popup_rows(&out);
-            let inner = &rows[1..rows.len() - 1];
-            assert!(inner.iter().any(|r| r.contains(question)), "80x{h}:\n{out}");
-            assert!(
-                inner.iter().any(|r| r.contains(keys)),
-                "80x{h}: key row inside the box:\n{out}"
-            );
-            assert!(
-                inner.iter().any(|r| r.contains("Esc")),
-                "80x{h}: Esc row inside the box:\n{out}"
-            );
+    for mode in [TuiMode::Landing, TuiMode::Dashboard] {
+        for (live, open, question, keys) in cases {
+            for h in [24, 27] {
+                let mut app = opened(mode, live, open).await;
+                let out = text(&mut app, 80, h);
+                let rows = popup_rows(&out);
+                let inner = &rows[1..rows.len() - 1];
+                let at = |s: &str| inner.iter().any(|r| r.contains(s));
+                assert!(at(question), "{mode:?} 80x{h}:\n{out}");
+                for k in keys {
+                    assert!(at(k), "{mode:?} 80x{h}: {k} inside the box:\n{out}");
+                }
+            }
         }
     }
+}
+
+/// No kitty protocol (plain terminal, tmux): no release events, and key
+/// auto-repeat arrives as more `Press` events. A late second ⌃Q only
+/// re-arms; one inside the window quits. The clock is injected.
+#[tokio::test]
+async fn exit_hold_press_only_window_on_injected_clock() {
+    let mut app = app(TuiMode::Dashboard, 1);
+    app.screen_state.quit_clock = Some(late_clock);
+    LATE_MS.store(0, Ordering::SeqCst);
+    let press = ctrl('q'); // KeyEvent::new = KeyEventKind::Press
+    let _ = handle_key(&mut app, press).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    LATE_MS.store(2_500, Ordering::SeqCst);
+    let action = handle_key(&mut app, press).await;
+    assert!(matches!(action, KeyAction::Consumed), "late press re-arms");
+    assert!(app.running);
+    LATE_MS.store(2_530, Ordering::SeqCst); // an auto-repeat 30 ms later
+    let action = handle_key(&mut app, press).await;
+    assert!(matches!(action, KeyAction::Quit), "press inside the window");
 }
 
 #[tokio::test]

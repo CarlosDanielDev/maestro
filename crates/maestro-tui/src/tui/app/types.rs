@@ -262,6 +262,8 @@ pub struct ScreenState {
     pub exit_hold: Option<crate::tui::ds::confirm::HoldToConfirm>,
     /// One-time hints about the quit keys (#1260).
     pub quit_hints: QuitHints,
+    /// Clock for the quit hold; `None` = `Instant::now`. Tests inject one.
+    pub quit_clock: Option<fn() -> std::time::Instant>,
     pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
     pub milestone_health_screen:
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,

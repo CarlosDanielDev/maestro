@@ -208,6 +208,12 @@ pub enum Violation {
     UppercaseSafe(Action),
 }
 
+/// Where the TurboQuant on/off toggle lives since ⌃Q quits (#1260): a
+/// Settings field, not a chord. Settings › TurboQuant › Enabled
+/// (`turboquant.enabled`, built in `screens/settings/tabs/turboquant.rs`),
+/// saved with ⌃S. No binding toggles it; `Q` opens its dashboard.
+pub const TURBOQUANT_TOGGLE: &str = "Settings › TurboQuant › Enabled";
+
 /// Kept until the Shift globals are retired (out of scope for #1248).
 const SHIFT_GLOBAL: &str = "Shift global from before §06, checked before every screen";
 
@@ -226,8 +232,8 @@ pub fn registry() -> &'static [Binding] {
         let ch = |c| Chord::key(KeyCode::Char(c));
         // §06 Global. ⌃K (palette) is the target and still unbound. ⌃Q quits
         // (#1260): an idle fleet at once, else through the Confirm Exit hold.
-        // The TurboQuant toggle it replaced is the Settings › TurboQuant
-        // field (no chord); `Q` still opens the TurboQuant dashboard.
+        // The TurboQuant toggle it replaced is [`TURBOQUANT_TOGGLE`] (a
+        // Settings field, no chord); `Q` still opens the TurboQuant dashboard.
         let mut v = vec![
             g(Chord::ctrl('k'), A::Palette, Safe, "palette"),
             g(Chord::ctrl('q'), A::Quit, Destructive, "quit"),
