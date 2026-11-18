@@ -14,7 +14,7 @@ expression: t.backend()
 "┃  [r]  Run Prompt     ┃│                          ││ Press [r] to launch one. │"
 "┃  [a]  Adapt Project  ┃│                          ││                          │"
 "┃  [p]  Review PRs     ┃│                          ││                          │"
-"┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
+"┗━━━━━━━━━━━━ ↓ 7 more ┛└──────────────────────────┘└──────────────────────────┘"
 " ⊘ gh auth expired  PR create paused · fix: gh auth login, then Shift+P────────┐"
 "│No activity yet                                                               │"
 "│                                                                              │"
