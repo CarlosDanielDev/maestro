@@ -6,6 +6,7 @@
 use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
+use crate::tui::screens::bypass_warning::BypassWarningOutcome;
 
 /// Activity-log source for a bypass turned on from Settings (#1239).
 const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
@@ -78,23 +79,27 @@ impl App {
         }
     }
 
-    /// The bypass warning was answered. A pending Settings request is
-    /// staged (confirmed) or its toggle reverted (cancelled); otherwise
-    /// this is the ⌃B path.
-    pub fn finish_bypass_warning(&mut self, confirmed: bool) {
-        self.screen_state.bypass_warning_screen = None;
-        if let Some(screen) =
+    /// The bypass warning was answered. When a Settings request is
+    /// pending, stage it (confirmed) or turn its toggle back off
+    /// (cancelled) and return true; the caller pops the warning. Returns
+    /// false on `Pending` and on the ⌃B path, which keeps its own branches.
+    pub fn answer_settings_bypass(&mut self, outcome: BypassWarningOutcome) -> bool {
+        let confirmed = match outcome {
+            BypassWarningOutcome::Pending => return false,
+            BypassWarningOutcome::Confirmed => true,
+            BypassWarningOutcome::Cancelled => false,
+        };
+        let Some(screen) =
             (self.screen_state.settings_screen.as_mut()).filter(|s| s.bypass_request_pending())
-        {
-            screen.resolve_bypass_request(confirmed);
-            if confirmed {
-                self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
-            }
-            return;
-        }
+        else {
+            return false;
+        };
+        screen.resolve_bypass_request(confirmed);
+        self.screen_state.bypass_warning_screen = None;
         if confirmed {
-            self.confirm_bypass_activation("tui");
+            self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
         }
+        true
     }
 
     /// Final activation step after the warning has been confirmed.
