@@ -377,7 +377,7 @@ impl Screen for InteractionScreen {
                 }
             }
             InteractionIntent::FeedEditor => {
-                self.editor.input(event.clone());
+                crate::tui::widgets::input::feed(&mut self.editor, event);
                 ScreenAction::None
             }
             InteractionIntent::Locked => ScreenAction::None,

@@ -211,7 +211,7 @@ impl Screen for PromptInputScreen {
                             }
                         } else {
                             // Multi-line: move cursor up
-                            self.editor.input(event.clone());
+                            crate::tui::widgets::input::feed(&mut self.editor, event);
                         }
                     }
                     // Down → history navigation when cursor is on last line
@@ -232,12 +232,12 @@ impl Screen for PromptInputScreen {
                             }
                         } else {
                             // Multi-line: move cursor down
-                            self.editor.input(event.clone());
+                            crate::tui::widgets::input::feed(&mut self.editor, event);
                         }
                     }
                     // All other keys → delegate to TextArea
                     _ => {
-                        self.editor.input(event.clone());
+                        crate::tui::widgets::input::feed(&mut self.editor, event);
                         self.history_cursor = None;
                         self.refresh_detected_refs();
                     }

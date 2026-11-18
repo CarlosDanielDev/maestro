@@ -159,7 +159,7 @@ impl IssuePromptOverlay {
             // focus, so checkbox/Launch stops don't capture typing.
             _ => {
                 if self.focus == LaunchFocus::Prompt {
-                    self.editor.input(event.clone());
+                    crate::tui::widgets::input::feed(&mut self.editor, event);
                 }
             }
         }

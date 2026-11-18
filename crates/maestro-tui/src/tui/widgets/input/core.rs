@@ -156,10 +156,6 @@ impl Input {
                 true
             }
             Event::Key(key) => {
-                // Shift+Tab is focus navigation, never text.
-                if is_back_tab(&event) {
-                    return false;
-                }
                 // Single-line: Enter must never insert a newline.
                 if self.single_line && is_bare_enter(key) {
                     return false;
@@ -171,9 +167,9 @@ impl Input {
                 {
                     return false;
                 }
-                self.area.input(event)
+                feed(&mut self.area, &event)
             }
-            _ => self.area.input(event),
+            _ => feed(&mut self.area, &event),
         }
     }
 
@@ -228,11 +224,16 @@ pub(crate) fn collapse_newlines_to_space(s: &str) -> String {
     out
 }
 
-/// True for Shift+Tab, which crossterm reports as `BackTab`.
-/// ratatui-textarea 0.9 reads it as Shift+Tab and inserts a tab (tui-textarea
-/// 0.7 ignored it), so editor sites drop it before `TextArea::input`.
-pub fn is_back_tab(event: &Event) -> bool {
-    matches!(event, Event::Key(key) if key.code == KeyCode::BackTab)
+/// The one key mapping every maestro editor uses to feed a `TextArea`:
+/// `TextArea::input`, except Shift+Tab. crossterm reports Shift+Tab as
+/// `BackTab`; ratatui-textarea 0.9 reads that as Shift+Tab and inserts a tab,
+/// while tui-textarea 0.7 ignored it. It stays ignored here, so it never types
+/// and screens keep it for moving focus back. Returns `true` on a change.
+pub fn feed(area: &mut TextArea<'_>, event: &Event) -> bool {
+    if matches!(event, Event::Key(key) if key.code == KeyCode::BackTab) {
+        return false;
+    }
+    area.input(event.clone())
 }
 
 #[cfg(test)]

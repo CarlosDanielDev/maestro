@@ -211,7 +211,7 @@ use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
-use crate::tui::widgets::input::is_back_tab;
+use crate::tui::widgets::input::feed;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
@@ -820,10 +820,8 @@ impl Screen for MilestoneWizardScreen {
                 // Delegate Char, Backspace, Arrows, Home/End, word-wise
                 // jumps, Ctrl+W / Ctrl+Z / Ctrl+Y, selection (Shift+arrows),
                 // etc. to the active TextArea.
-                if let Some(field) = self.active_field_mut()
-                    && !is_back_tab(event)
-                {
-                    field.area_mut().input(event.clone());
+                if let Some(field) = self.active_field_mut() {
+                    feed(field.area_mut(), event);
                 }
             }
             _ => {}

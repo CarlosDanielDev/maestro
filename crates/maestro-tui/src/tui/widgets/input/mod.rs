@@ -16,6 +16,6 @@ mod render;
 // as unused imports until the #968–#972 migrations land. `-A dead_code` in CI
 // covers the types themselves but not the `pub use`, so allow it here.
 #[allow(unused_imports)]
-pub use core::{Input, InputConfig, is_back_tab};
+pub use core::{Input, InputConfig, feed};
 #[allow(unused_imports)]
 pub use render::render;

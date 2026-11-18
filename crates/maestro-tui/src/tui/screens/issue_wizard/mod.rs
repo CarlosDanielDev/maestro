@@ -963,7 +963,7 @@ impl Screen for IssueWizardScreen {
                     // Ctrl+W (delete word back), Ctrl+Z/Y (undo/redo),
                     // Shift+arrow selection — delegates to TextArea.
                     if let Some(field) = self.fields.focused_mut() {
-                        field.area_mut().input(event.clone());
+                        crate::tui::widgets::input::feed(field.area_mut(), event);
                     }
                 }
             },
