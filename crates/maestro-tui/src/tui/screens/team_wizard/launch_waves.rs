@@ -2,7 +2,8 @@
 //! only when the previous one has finished, so later waves read
 //! `waiting on wave n` until `run_team` reaches them.
 
-use super::TeamWizardScreen;
+use super::{ScreenAction, TeamWizardScreen};
+use crate::session::team_runner::CancellationToken;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -16,6 +17,23 @@ impl TeamWizardScreen {
     /// `run_team` started wave `wave` (0-based); earlier waves finished.
     pub fn apply_wave_started(&mut self, wave: usize) {
         self.launch.running_wave = Some(wave);
+    }
+
+    /// The event loop hands over the running launch's cancel token.
+    pub fn set_run_cancel(&mut self, cancel: CancellationToken) {
+        self.launch.run_cancel = Some(cancel);
+    }
+
+    /// Esc on Executing (#1246): stop the run so no later wave starts.
+    /// The runner answers with `cancelled by user while waiting on wave n`,
+    /// which moves the wizard to LaunchFailed. Running sessions stay; the
+    /// Dashboard can kill them. Without a token Esc is still swallowed, so
+    /// the background task is never orphaned (#877).
+    pub(super) fn cancel_team_run(&mut self) -> ScreenAction {
+        if let Some(cancel) = self.launch.run_cancel.take() {
+            cancel.cancel();
+        }
+        ScreenAction::None
     }
 
     /// `false` when there is no plan to draw; the caller falls back to the

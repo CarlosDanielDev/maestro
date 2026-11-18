@@ -820,11 +820,17 @@ async fn event_loop(
                             prior: Default::default(),
                         });
                     let scheduler = *scheduler;
+                    // #1246: Esc on the wizard's Executing step cancels the run.
+                    let cancel = crate::session::team_runner::CancellationToken::new();
+                    if let Some(screen) = app.screen_state.team_wizard_screen.as_mut() {
+                        screen.set_run_cancel(cancel.clone());
+                    }
                     tokio::spawn(async move {
-                        let outcome = crate::session::team_runner::run_team(
+                        let outcome = crate::session::team_runner::run_team_until(
                             launcher,
                             scheduler,
                             app_default_agent,
+                            cancel,
                         )
                         .await;
                         let summary = outcome.into_apply_result();

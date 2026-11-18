@@ -566,3 +566,7 @@ impl TeamWizardScreen {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cancel_tests.rs"]
+mod cancel_tests;

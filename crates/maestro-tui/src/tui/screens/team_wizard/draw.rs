@@ -15,7 +15,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 impl TeamWizardScreen {
@@ -274,6 +274,7 @@ impl TeamWizardScreen {
         f.render_widget(
             Paragraph::new(lines)
                 .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true })
                 .block(theme.styled_block(title, false)),
             area,
         );
@@ -718,7 +719,7 @@ fn launch_footer_hint(step: LaunchStep) -> &'static str {
         }
         LaunchStep::PlanPreview => "[Enter] confirm   [Esc] back",
         LaunchStep::Confirm => "[Enter] launch   [Esc] back",
-        LaunchStep::Executing => "Launch in progress — Esc disabled until result",
+        LaunchStep::Executing => "Waves run in order   [Esc] cancel run",
         LaunchStep::LaunchSuccess => "[Enter] return",
         LaunchStep::LaunchFailed => "[r] retry   [Esc] back",
     }

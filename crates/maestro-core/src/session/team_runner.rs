@@ -22,6 +22,7 @@ use crate::state::types::IssueNumber;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{Semaphore, watch};
+pub use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 #[async_trait]
@@ -105,13 +106,22 @@ impl TeamOutcome {
     /// wizard's `apply_launch_result` consumes. Ok iff no failures and
     /// no upstream-skipped issues; Err names the first failing issue.
     pub fn into_apply_result(self) -> Result<(), String> {
+        let skipped = self.skipped_due_to_upstream.len();
+        // #1246: a failed or cancelled wave names itself in the banner.
+        if let Some(reason) = self.skip_reason
+            && (skipped > 0 || self.failed.is_empty())
+        {
+            return Err(match skipped {
+                0 => reason,
+                n => format!("{reason}; {n} downstream issue(s) skipped"),
+            });
+        }
         if let Some(first) = self.failed.first() {
             return Err(format!("Issue #{} failed: {}", first.issue, first.reason));
         }
-        if !self.skipped_due_to_upstream.is_empty() {
+        if skipped > 0 {
             return Err(format!(
-                "{} downstream issue(s) skipped after upstream failure",
-                self.skipped_due_to_upstream.len()
+                "{skipped} downstream issue(s) skipped after upstream failure"
             ));
         }
         Ok(())
@@ -129,6 +139,25 @@ pub async fn run_team(
     scheduler: Scheduler,
     app_default_agent: String,
 ) -> TeamOutcome {
+    run_team_until(
+        launcher,
+        scheduler,
+        app_default_agent,
+        CancellationToken::new(),
+    )
+    .await
+}
+
+/// `run_team` that stops when `cancel` fires: no later wave starts, the
+/// tasks still spawning or waiting are aborted (their sessions keep
+/// running), and `skip_reason` reads `cancelled by user while waiting on
+/// wave n`.
+pub async fn run_team_until(
+    launcher: Arc<dyn TeamLauncher>,
+    scheduler: Scheduler,
+    app_default_agent: String,
+    cancel: CancellationToken,
+) -> TeamOutcome {
     let agent_id = scheduler.agent_for_issue(&app_default_agent);
     let max_parallel = scheduler.max_parallel.max(1);
     let team_name = scheduler.team.name.clone();
@@ -141,8 +170,16 @@ pub async fn run_team(
         launcher.wave_started(idx);
         let mut handles: Vec<(IssueNumber, tokio::task::JoinHandle<Result<Uuid, String>>)> =
             Vec::with_capacity(level.len());
+        let mut cancelled = false;
         for &issue in level {
-            let permit = match sem.clone().acquire_owned().await {
+            let permit = match tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    cancelled = true;
+                    break;
+                }
+                acquired = sem.clone().acquire_owned() => acquired,
+            } {
                 Ok(p) => p,
                 // The semaphore Arc lives until run_team returns and is
                 // never explicitly closed, so this branch is unreachable
@@ -171,9 +208,23 @@ pub async fn run_team(
                 }),
             ));
         }
+        let spawned = handles.len();
         let mut level_had_failure = false;
-        for (issue, handle) in handles {
-            match handle.await {
+        for (issue, mut handle) in handles {
+            if cancelled {
+                handle.abort();
+                continue;
+            }
+            let joined = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    handle.abort();
+                    cancelled = true;
+                    continue;
+                }
+                joined = &mut handle => joined,
+            };
+            match joined {
                 Ok(Ok(_session_id)) => outcome.succeeded.push(issue),
                 Ok(Err(reason)) => {
                     outcome.failed.push(IssueFailure { issue, reason });
@@ -190,6 +241,22 @@ pub async fn run_team(
                     level_had_failure = true;
                 }
             }
+        }
+        if cancelled {
+            outcome.skip_reason = Some(format!(
+                "cancelled by user while waiting on wave {}",
+                idx + 1
+            ));
+            // Issues of this wave that never got a slot are skipped too.
+            outcome
+                .skipped_due_to_upstream
+                .extend(level.iter().skip(spawned).copied());
+            for downstream in &levels[idx + 1..] {
+                outcome
+                    .skipped_due_to_upstream
+                    .extend(downstream.iter().copied());
+            }
+            break;
         }
         if level_had_failure {
             if let Some(first) = outcome.failed.first() {

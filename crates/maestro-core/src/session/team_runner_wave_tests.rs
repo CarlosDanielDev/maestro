@@ -110,6 +110,9 @@ async fn run_team_failed_level_skips_downstream() {
             reason.starts_with("wave 1 failed: #10"),
             "skip reason {reason:?}"
         );
+        // The banner carries the wave reason, not only the issue (#1246).
+        let banner = outcome.into_apply_result().expect_err("failed wave");
+        assert_eq!(banner, format!("{reason}; 2 downstream issue(s) skipped"));
     }
 }
 
@@ -141,4 +144,72 @@ fn team_verdict_waits_on_live_states_and_fails_hollow() {
             "{failed:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn run_team_cancel_starts_no_later_wave() {
+    let (_tx, rx) = watch::channel(StatusFeed::new());
+    let launcher = Arc::new(FakeLauncher::new().with_statuses(rx));
+    let cancel = CancellationToken::new();
+    let run = tokio::spawn(run_team_until(
+        Arc::clone(&launcher) as Arc<dyn TeamLauncher>,
+        two_level_scheduler(3),
+        "app-default".to_string(),
+        cancel.clone(),
+    ));
+    settle().await;
+    assert_eq!(launcher.spawned(), vec![10]);
+
+    // #10 never finishes (a Paused or stuck NeedsPr session); the user
+    // cancels instead.
+    cancel.cancel();
+    let outcome = finish(run).await;
+
+    assert_eq!(launcher.spawned(), vec![10], "wave 2 spawned after cancel");
+    assert_eq!(*launcher.waves.lock().unwrap(), vec![0]);
+    assert!(outcome.succeeded.is_empty());
+    assert!(
+        outcome.failed.is_empty(),
+        "a cancel is not a session failure"
+    );
+    assert_eq!(outcome.skipped_due_to_upstream, vec![11, 12]);
+    assert_eq!(
+        outcome.into_apply_result(),
+        Err("cancelled by user while waiting on wave 1; 2 downstream issue(s) skipped".into())
+    );
+}
+
+#[tokio::test]
+async fn run_team_level_larger_than_max_parallel_runs_in_batches() {
+    let (tx, rx) = watch::channel(StatusFeed::new());
+    let launcher = Arc::new(FakeLauncher::new().with_statuses(rx));
+    let run = tokio::spawn(run_team(
+        Arc::clone(&launcher) as Arc<dyn TeamLauncher>,
+        two_level_scheduler(1),
+        "app-default".to_string(),
+    ));
+    settle().await;
+    tx.send_modify(|feed| {
+        feed.insert(10, (SessionStatus::Completed, false));
+    });
+    settle().await;
+    let spawned = launcher.spawned();
+    assert_eq!(
+        spawned.len(),
+        2,
+        "max_parallel 1: one wave-2 session at a time"
+    );
+
+    let first = spawned[1];
+    tx.send_modify(|feed| {
+        feed.insert(first, (SessionStatus::Completed, false));
+    });
+    settle().await;
+    assert_eq!(launcher.spawned().len(), 3);
+    let second = launcher.spawned()[2];
+    tx.send_modify(|feed| {
+        feed.insert(second, (SessionStatus::Completed, false));
+    });
+    let outcome = finish(run).await;
+    assert_eq!(outcome.succeeded.len(), 3);
 }
