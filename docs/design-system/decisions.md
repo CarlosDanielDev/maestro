@@ -354,3 +354,10 @@ first. One entry per decision.
 - **Rejected:** true hold via key-release events (needs `KeyboardEnhancementFlags::REPORT_EVENT_TYPES`, which many terminals ignore); letting ⌃C twice quit (people mash ⌃C); persisting the notice flag (needs a state-file write outside this issue); a first ⌃Q that only shows the hint (it swallowed the quit; owner rejected it).
 - **Source:** #1260.
 
+## 2026-11-18 — Dashboard Quick Actions scroll to the selection
+
+- **What:** the Dashboard Quick Actions panel (`screens/home/draw.rs`) draws only the rows that fit and scrolls so the selected row is always drawn: `offset = screens::wrap::scroll_offset_for_cursor(selected_action, inner height)`, the existing helper the prompt and issue-browser inputs use. Hidden rows show on the bottom border: `↑ N more` on the left, `↓ N more` on the right, in `text_muted`. At 80x24 the panel shows 6 of 13 rows; after `j`×12 it shows `c t Q S u q` with `q Quit` highlighted and `↑ 7 more`. Enter still runs `selected_action`, which is now always the drawn, highlighted row.
+- **Why:** #1396 (smoke test B3/R5 at `de407c5e`): `j` moved the selection onto rows below the panel, nothing looked selected, and Enter ran a hidden row (Confirm Exit, Update, Settings). `S`, `Q`, `t`, `u` were never visible at 80 columns.
+- **Section:** `§02.1 Dashboard` ("The Quick Actions list is deleted, not moved"). The target removes this list (#1280); until then it must not run hidden rows. The marker follows the target's overflow rule (`↓ n more` on the border, §02.1 Work list and the Issues list). `↑` goes on the bottom border too, because the top border holds the title and has no room at 80 columns.
+- **Rejected:** `List` + `ListState` (the ADR stub's pick): the markers change the block before render, but `ListState` only knows its offset after render, and the panel already ellipsizes labels by hand. Marker rows inside the panel (they cost one or two of the 6 rows at 80x24). A stored, sticky offset on `HomeScreen` (the stateless pin-to-bottom offset is enough for 13 rows and needs no new state).
+- **Source:** #1396.

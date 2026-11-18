@@ -1,0 +1,12 @@
+---
+source: crates/maestro-tui/src/tui/screens/home/quick_actions_tests.rs
+assertion_line: 222
+expression: text
+---
+  [c]  Cost Report    
+  [t]  Token Report   
+  [Q]  TurboQuant Sav…
+  [S]  Settings       
+  [u]  Update Maestro 
+  [q]  Quit           
+┗ ↑ 7 more ━━━━━━━━━━━━┛
