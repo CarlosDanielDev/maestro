@@ -408,7 +408,16 @@ impl App {
     /// recorded session yet (the issue is still being fetched) is not an
     /// outcome, so the item keeps running.
     pub(crate) fn settle_queue_item(&mut self) {
-        if !self.all_done() {
+        use crate::work::executor::ExecutorPhase;
+        if !(self.queue_executor.is_some() && self.all_done()) {
+            return;
+        }
+        let should_advance = self
+            .queue_executor
+            .as_ref()
+            .map(|e| matches!(e.phase(), ExecutorPhase::Running { .. }))
+            .unwrap_or(false);
+        if !should_advance {
             return;
         }
         let Some(session_id) = self
@@ -418,22 +427,25 @@ impl App {
         else {
             return;
         };
-        let succeeded = self.pool.get_session(session_id).is_some_and(|s| {
-            s.status == SessionStatus::Completed
-                && (!s.is_hollow_completion || RetryPolicy::is_consultation_satisfied(s))
-        });
-        let Some(exec) = self.queue_executor.as_mut() else {
-            return;
-        };
-        if !succeeded {
-            exec.mark_failure();
-        } else {
-            exec.mark_success();
-            if exec.is_finished() {
-                self.open_completion_summary();
-            } else {
-                self.advance_queue_and_launch();
+        let last_session_succeeded = self
+            .pool
+            .get_session(session_id)
+            .map(|s| {
+                matches!(s.status, SessionStatus::Completed)
+                    && (!s.is_hollow_completion || RetryPolicy::is_consultation_satisfied(s))
+            })
+            .unwrap_or(false);
+        if last_session_succeeded {
+            if let Some(ref mut exec) = self.queue_executor {
+                exec.mark_success();
+                if exec.is_finished() {
+                    self.open_completion_summary();
+                } else {
+                    self.advance_queue_and_launch();
+                }
             }
+        } else if let Some(ref mut exec) = self.queue_executor {
+            exec.mark_failure();
         }
     }
 
