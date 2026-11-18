@@ -122,6 +122,7 @@ impl App {
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
             TuiDataEvent::Issues(Ok(issues)) => {
+                self.note_gh_auth_ok();
                 // Mirror the fetched list into the Team Wizard's
                 // issue_metas cache so the IssuePicker autocomplete
                 // (#876) has data. Mirror on every Issues fetch (cheap
@@ -176,6 +177,7 @@ impl App {
                 }
             }
             TuiDataEvent::Milestones(Ok(entries)) => {
+                self.note_gh_auth_ok();
                 if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
                     && let Some(ref mut screen) = self.screen_state.milestone_health_screen
                 {
@@ -403,6 +405,7 @@ impl App {
                 }
             }
             TuiDataEvent::PullRequests(Ok(prs)) => {
+                self.note_gh_auth_ok();
                 if let Some(ref mut screen) = self.screen_state.pr_review_screen {
                     screen.set_prs(prs);
                 }

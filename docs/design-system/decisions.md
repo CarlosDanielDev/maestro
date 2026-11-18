@@ -344,3 +344,12 @@ first. One entry per decision.
 - **Rejected:** opening the hollow modal on top of the queue (its `[r]` spawns a retry the executor never sees, so the item stays stuck or runs twice); ordering dependent picks topologically (that is the run-plan rewrite, out of scope here); keeping the parallel fallback (it ignores `Blocked-by`).
 - **Known gap:** the queue still waits for every pool session (`all_done`) and runs one item at a time; the slot-based loop is the run-plan issue. A session for the running item's issue started outside the queue (by hand) is also recorded on the item; telling them apart needs the launch to carry a queue tag.
 - **Source:** #1244.
+
+## 2026-11-18 — gh auth comes back without a restart
+
+- **What:** `App::gh_auth_ok` turns true again. Any gh call that succeeds (issue, milestone and PR fetches, a Shift+P retry that opens its PR) flips it back and logs `GitHub authentication restored.` once. A PR action that would be refused for lost auth first runs one `gh auth status` (`app/gh_auth.rs`, on the blocking pool, inside the completion job) and goes ahead when gh is signed in again. While false, the log row draws `⊘ gh auth expired · PR create/retry locked · fix: gh auth login, then Shift+P` (`tui/gh_auth_warning.rs`) instead of the old "GitHub CLI not authenticated" banner.
+- **Why:** #1241, §09 Dashboard row 10: one auth error locked PR work for the life of the process.
+- **Section:** `§05` "PR action while gh is signed out", `§09` Dashboard row 10, flow-map node "gh auth expired · PR rows ⊘".
+- **Differs from the target:** there are no PR rows on the Dashboard yet (#1277), so only the header line shows the state. The target's `⏎` recheck key is not wired; the fix names `Shift+P`, the existing retry key. The line still sits on the activity-log row (moving it is the status bar issue).
+- **Rejected:** a recheck on every gh call (a subprocess per call; the ADR stub's latency concern); a recheck on draw (blocks the render loop); a new `RepoProvider::auth_status` trait method (every fake provider would need it; a closure probe is enough).
+- **Source:** #1241.

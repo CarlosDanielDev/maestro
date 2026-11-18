@@ -45,6 +45,8 @@ pub(super) struct CompletionJobOutcome {
     pub labels: Option<LabelsOutcome>,
     /// `None` for CI-fix completions (no PR flow).
     pub pr: Option<PrPhaseOutcome>,
+    /// The pre-PR recheck found gh signed in again (#1241).
+    pub gh_auth_recovered: bool,
 }
 
 /// Snapshot of one pending completion plus the Arc clones it needs.
@@ -206,10 +208,12 @@ impl CompletionJob {
         };
 
         // Auto-PR phase — CI-fix completions skip the PR flow entirely.
+        let mut gh_auth_recovered = false;
         let pr = if completion.is_ci_fix {
             None
         } else {
             pr_input.success = completion.success;
+            gh_auth_recovered = super::gh_auth::recheck_before_pr(&mut pr_input).await;
             Some(
                 pr_phase(
                     pr_input,
@@ -229,6 +233,7 @@ impl CompletionJob {
             push_outcome,
             labels,
             pr,
+            gh_auth_recovered,
         }
     }
 }
