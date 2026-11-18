@@ -25,4 +25,4 @@ expression: t.backend()
 "└──────────────────────────────────────────────────────────────────────────────┘"
 "                    [Enter] start issue contract   [Esc] back                   "
 "                                                                                "
-"                                                                         q quit "
+"                                                                        ⌃Q quit "

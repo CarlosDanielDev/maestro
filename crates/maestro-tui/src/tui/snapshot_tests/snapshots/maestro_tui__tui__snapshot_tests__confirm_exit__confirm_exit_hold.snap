@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/confirm_exit.rs
+expression: terminal.backend()
+---
+" MAESTRO  0.33.1 │ ● 2 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Dashboard › Confirm Exit                                      Esc back  ? help "
+"────────────────────────────────────────────────────────────────────────────────"
+"  owner/repo   main   @carlos  │  Loading...                                 "
+"────────────────────────────────────────────────────────────────────────────────"
+"┏━━[ Quick Actions ]━━━┓┌─────[ Suggestions ]──────┐┌───[ Recent Activity ]────┐"
+"┃  [i]  Browse Issues  ┃│  No suggestions — everyth││                          │"
+"┃  [m]  Browse Milesto…┃│                          ││                          │"
+"┃  [M]  Review Mi╔══════════════[ Confirm Exit ]══════════════╗                │"
+"┃  [r]  Run Promp║ 2 session(s) still running. Exit anyway?   ║                │"
+"┃  [a]  Adapt Pro║                                            ║                │"
+"┃  [p]  Review PR║  ⌃Q    hold to quit  ████████░░░░░░░░ 0.5s ║                │"
+"┃  [s]  Status   ║        press ⌃Q again to quit              ║                │"
+"┃  [c]  Cost Repo║                                            ║ent sessions.   │"
+"┃  [t]  Token Rep║  Esc   stay (default, ⏎ does nothing)      ║ to launch one. │"
+"┃  [Q]  TurboQuan╚════════════════════════════════════════════╝                │"
+"┃  [S]  Settings       ┃│                          ││                          │"
+"┃  [u]  Update Maestro ┃│                          ││                          │"
+"┃  [q]  Quit           ┃│                          ││                          │"
+"┃                      ┃│                          ││                          │"
+"┃                      ┃│                          ││                          │"
+"┃                      ┃│                          ││                          │"
+"┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
+" ⌃Q hold to quit   Esc stay                                                     "

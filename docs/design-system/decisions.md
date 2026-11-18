@@ -344,3 +344,13 @@ first. One entry per decision.
 - **Rejected:** opening the hollow modal on top of the queue (its `[r]` spawns a retry the executor never sees, so the item stays stuck or runs twice); ordering dependent picks topologically (that is the run-plan rewrite, out of scope here); keeping the parallel fallback (it ignores `Blocked-by`).
 - **Known gap:** the queue still waits for every pool session (`all_done`) and runs one item at a time; the slot-based loop is the run-plan issue. A session for the running item's issue started outside the queue (by hand) is also recorded on the item; telling them apart needs the launch to carry a queue tag.
 - **Source:** #1244.
+
+## 2026-11-18 — ⌃Q quits; every exit chord goes through Confirm Exit with a hold
+
+- **What:** `ds::confirm::HoldToConfirm` (repeat-or-double-tap, `HOLD` 0.5 s, `WINDOW` 2 s; release events, `⏎` and other keys are inert). ⌃Q and `q` quit an idle fleet at once; with live agents (active + queued) they open Confirm Exit, and only holding ⌃Q (or pressing it again inside 2 s) quits — `y` and `⏎` do nothing, `Esc` and `n` stay. ⌃C and ⌃X always open Confirm Exit, also under the SizeGuard (⌃C used to quit there). The ⌃Q TurboQuant toggle is gone: the first ⌃Q of a run shows a toast pointing to Settings › TurboQuant and does not quit; the first ⌃X shows `⌃Q quits from anywhere`. The footer pin is `⌃Q quit`. The popup is sized from its lines and drawn last over the whole frame, so the question and the key row show at 80x24 on Home and Dashboard (B1/B2 of #1394).
+- **Why:** design §05 "Quitting through an alias" / "Quitting while agents run", §06 `⌃Q`, §09 "⌃X/⌃C quit with no confirm".
+- **Section:** `§04` `confirm` (`ds::confirm::{HoldToConfirm, TypedConfirm}`), `§05` poka-yoke rows, `§06` Global keymap.
+- **Differs from the target:** the hold key is ⌃Q, not `Q` (`Q` is the global TurboQuant dashboard key; reusing it inside the dialog would shadow it in the registry). The title stays `Confirm Exit` (the crumb names it) and the dialog says `N session(s) still running. Exit anyway?` instead of "Quitting pauses them": the pause-and-resume exit is #1266. The one-time hints are kept per run, not persisted, so the first ⌃Q of every run shows the hint. The idle dialog keeps the old `[y]es [n]o` row.
+- **Rejected:** true hold via key-release events (needs `KeyboardEnhancementFlags::REPORT_EVENT_TYPES`, which many terminals ignore); letting ⌃C twice quit (people mash ⌃C); persisting the hint flag (needs a state-file write outside this issue).
+- **Source:** #1260.
+

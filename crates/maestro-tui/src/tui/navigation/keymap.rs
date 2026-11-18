@@ -130,8 +130,8 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Session summary",
                     },
                     KeyBinding {
-                        key: "q / Ctrl+c / ^X",
-                        description: "Quit maestro",
+                        key: "^Q / q / Ctrl+c / ^X",
+                        description: "Quit maestro (asks while agents run)",
                     },
                     KeyBinding {
                         key: "Ctrl+L",

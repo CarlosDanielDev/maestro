@@ -202,6 +202,27 @@ bypass warning (`BypassWarningState::confirm`; `new()` is the `⌃B` session-onl
 draws both last, over the whole frame. Both modes are text-input modes
 (`is_text_input_mode`), so typed `q`, `M`, digits never reach a global key.
 
+### Hold to confirm — `crates/maestro-tui/src/tui/ds/confirm.rs` (#1260)
+
+Implements §04 `confirm` and §05 "Quitting while agents run". No keyboard
+enhancement flags are on, so terminals send no key release: a hold is a run
+of key repeats, and a second press inside the window is the fallback.
+
+| Item | For |
+|---|---|
+| `HoldToConfirm::new(code, mods)` | The hold key (`⌃Q` = `Char('q')` + `CONTROL`). `HOLD` = 0.5 s, `WINDOW` = 2 s |
+| `handle_key(&key, now) -> ConfirmOutcome` | First press arms. A second press inside `WINDOW`, or repeats held for `HOLD`, confirm. `Esc` cancels; release events, `⏎` and every other key do nothing |
+| `is_armed(now)`, `progress(now)`, `reset()` | Progress is `0` idle, `0.5` armed, up to `1` while held |
+| `lines(key, action, now, theme)` | Two rows: the key chip, `hold to <action>`, a 16-cell bar, then `press <key> again` (armed) or `or press <key> twice within 2s` |
+
+User today: Confirm Exit (`input_handler::QUIT_HOLD`, state in
+`ScreenState::exit_hold`, drawn last by `ui::draw_typed_confirm`, sized from
+its lines). Exit chords: ⌃Q and `q` quit an idle fleet at once; with live
+agents (`input_handler::live_agents` = active + queued) ⌃Q opens the dialog
+armed, `q` / ⌃C / ⌃X open it unarmed, and only the hold quits (`y` and `⏎`
+do nothing). The first ⌃Q of a run and the first ⌃X show a one-time toast
+(`ScreenState::quit_hints`).
+
 ### Other shared helpers (`crates/maestro-tui/src/tui/`)
 
 | Module | Item | For |
@@ -231,7 +252,7 @@ these rows.
 | `ds::tab_bar::tab_for_digit(c)` / `tab_index(mode)` / `tab_label(mode)` | Digit → mode, and "is this mode a tab?" |
 | `ds::crumb_bar::draw(f, area, &crumbs, state, theme)` | The shell row inside a flow (any mode that is not a tab): `Home › New issue`, elided with `elide_breadcrumbs`. `state` is the right-aligned slot (draft saved, fetch age, write state); `None` shows `Esc back  ? help` |
 | `ds::crumb_bar::crumbs(stack, current)` / `crumb_label(mode)` | Crumb labels from the nav stack: tab name for a tab, else `breadcrumb_label` |
-| `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, the quit hint `ds::key_hints::QUIT` pinned right (`pin_quit = false` only in the quit dialog). `QUIT` is `q quit` until #1260 makes ⌃Q quit |
+| `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, the quit hint `ds::key_hints::QUIT` pinned right (`pin_quit = false` only in the quit dialog). `QUIT` is `⌃Q quit` (#1260) |
 | `ds::key_hints::from_pairs(&[(key, label)])` | A screen's `(key, label)` list as `InlineHint`s, in order |
 | `ds::bar_row::draw_left_right(f, area, left, right)` | One row with a flush-right part that drops when it does not fit |
 | `Screen::footer_hints(&self)` | A screen's footer hints for its current state, most important first. Empty (the default) means the footer shows the mode's `mode_keymap` hints |

@@ -25,4 +25,4 @@ expression: terminal.backend()
 "                                                                                "
 "                                                                                "
 "                                                                                "
-"                                                                         q quit "
+"                                                                        ⌃Q quit "

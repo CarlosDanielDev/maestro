@@ -25,4 +25,4 @@ expression: t.backend()
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" Tab Switch pane   Enter Run   Space Select   / Filter   Esc Back        q quit "
+" Tab Switch pane   Enter Run   Space Select   / Filter   Esc Back       ⌃Q quit "

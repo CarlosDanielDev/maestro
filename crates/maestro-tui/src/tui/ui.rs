@@ -663,7 +663,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     );
                 }
             }
-            draw_confirm_exit_overlay(f, app, chunks[1], &theme);
+            // #1260: the dialog itself is drawn last, by `draw_typed_confirm`.
         }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
@@ -1236,6 +1236,10 @@ fn draw_footer(
     } else {
         key_hints::from_pairs(&pairs)
     };
+    // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
+    if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::live_agents(app) > 0 {
+        hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
+    }
     // #1263: the shown log drawer is modal; the footer shows only its keys.
     if log_drawer_shown(app) {
         hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
@@ -1316,7 +1320,7 @@ fn draw_size_guard(f: &mut Frame, app: &App) {
     size_guard::draw(f, area, theme);
     let popup = crate::tui::budget_prespawn::modal_rect(area);
     match app.tui_mode {
-        TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, popup, theme),
+        TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, area, theme),
         TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, area, theme),
         TuiMode::BudgetPreSpawn { session_id } => {
             let (projected_total, limit) = budget_prespawn_values(app, session_id);
@@ -1337,6 +1341,7 @@ fn draw_size_guard(f: &mut Frame, app: &App) {
 fn draw_typed_confirm(f: &mut Frame, app: &App, theme: &crate::tui::theme::Theme) {
     let area = f.area();
     match app.tui_mode {
+        TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, area, theme),
         TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, area, theme),
         // No state: `bypass_dispatch` pops on the next key, so draw nothing.
         TuiMode::BypassWarning => {
@@ -1362,69 +1367,71 @@ fn draw_confirm_kill_popup(
     }
 }
 
-fn draw_confirm_exit_overlay(
-    f: &mut Frame,
-    app: &App,
-    area: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    let popup = help::centered_rect(50, 25, area);
-    draw_confirm_exit_popup(f, app, popup, theme);
-}
-
-fn draw_confirm_exit_popup(
-    f: &mut Frame,
-    app: &App,
-    popup: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
+/// Confirm Exit, centred in `area` and sized from its lines (#1260; a
+/// percentage box cut the question and the key row at 80 columns). While
+/// agents run it is a danger dialog: hold ⌃Q to quit, `Esc` stays.
+fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::tui::theme::Theme) {
+    use crate::tui::ds::panel::{Focus, panel};
     use ratatui::widgets::Clear;
-    f.render_widget(Clear, popup);
 
-    let active = app.pool.active_count();
-    let has_active = active > 0;
-
-    let message = if has_active {
-        format!("  {} session(s) still running. Exit anyway?", active)
+    let live = crate::tui::input_handler::live_agents(app);
+    let bold = |fg| Style::default().fg(fg).add_modifier(Modifier::BOLD);
+    let mut lines = Vec::new();
+    let focus = if live > 0 {
+        let now = std::time::Instant::now();
+        lines.push(Line::from(Span::styled(
+            format!("{live} session(s) still running. Exit anyway?"),
+            bold(theme.accent_warning),
+        )));
+        lines.push(Line::from(""));
+        let hold = app
+            .screen_state
+            .exit_hold
+            .unwrap_or(crate::tui::input_handler::QUIT_HOLD);
+        lines.extend(hold.lines("⌃Q", "quit", now, theme));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                " Esc ",
+                bold(theme.accent_info).add_modifier(Modifier::REVERSED),
+            ),
+            Span::styled(
+                "  stay (default, ⏎ does nothing)",
+                Style::default().fg(theme.text_primary),
+            ),
+        ]));
+        Focus::Danger
     } else {
-        "  Are you sure you want to exit?".to_string()
-    };
-
-    let message_style = if has_active {
-        Style::default()
-            .fg(theme.accent_warning)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(theme.text_primary)
-            .add_modifier(Modifier::BOLD)
-    };
-
-    let lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(message, message_style)),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  [y]", Style::default().fg(theme.accent_success)),
+        lines.push(Line::from(Span::styled(
+            "Are you sure you want to exit?",
+            bold(theme.text_primary),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("[y]", Style::default().fg(theme.accent_success)),
             Span::raw("es  "),
             Span::styled("[n]", Style::default().fg(theme.accent_error)),
             Span::raw("o / "),
             Span::styled("[Esc]", Style::default().fg(theme.accent_error)),
             Span::raw(" / "),
             Span::styled("[Enter]", Style::default().fg(theme.accent_error)),
-        ]),
-    ];
-
-    let border_color = if has_active {
-        theme.accent_warning
-    } else {
-        theme.border_active
+        ]));
+        Focus::Overlay
     };
 
-    let block = theme
-        .styled_block("Confirm Exit", false)
-        .border_style(Style::default().fg(border_color));
-
+    // Border + one column of padding on each side.
+    let content_w = lines.iter().map(Line::width).max().unwrap_or(0) as u16;
+    let w = content_w.saturating_add(4).min(area.width);
+    let h = (lines.len() as u16).saturating_add(2).min(area.height);
+    let popup = Rect::new(
+        area.x + area.width.saturating_sub(w) / 2,
+        area.y + area.height.saturating_sub(h) / 2,
+        w,
+        h,
+    );
+    f.render_widget(Clear, popup);
+    let block =
+        panel("Confirm Exit", focus, theme).padding(ratatui::widgets::Padding::horizontal(1));
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }
 

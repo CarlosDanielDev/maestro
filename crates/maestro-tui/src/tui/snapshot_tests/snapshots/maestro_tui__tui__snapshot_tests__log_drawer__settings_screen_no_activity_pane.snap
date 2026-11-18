@@ -25,4 +25,4 @@ expression: t.backend()
 "│                  │                                                           │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" Tab Tab   ↑/↓ Field   ←/→ Adjust   Ctrl+s Save   Esc Back               q quit "
+" Tab Tab   ↑/↓ Field   ←/→ Adjust   Ctrl+s Save   Esc Back              ⌃Q quit "

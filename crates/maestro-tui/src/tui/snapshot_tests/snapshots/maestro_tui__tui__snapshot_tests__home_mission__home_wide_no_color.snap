@@ -1,6 +1,5 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/home_mission.rs
-assertion_line: 209
 expression: out
 ---
 Buffer {
@@ -53,7 +52,7 @@ Buffer {
         "│                                                                                                                                                              │",
         "│                                                                                                                                                              │",
         "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
-        " Enter Open   j/k Move   Tab Next panel                                                                                                                  q quit ",
+        " Enter Open   j/k Move   Tab Next panel                                                                                                                 ⌃Q quit ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
@@ -160,7 +159,7 @@ Buffer {
         x: 17, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 25, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
         x: 28, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 153, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 152, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
         x: 154, y: 47, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }
