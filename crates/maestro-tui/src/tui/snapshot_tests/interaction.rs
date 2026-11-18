@@ -238,6 +238,31 @@ fn interaction_quit_modal() {
 }
 
 #[test]
+fn interaction_quit_modal_80x24_long_path() {
+    // #1242: the floor viewport with a real-length worktree path.
+    let mut screen = InteractionScreen::test_fixture(
+        1242,
+        true,
+        TurnState::Idle,
+        vec![],
+        "/Users/x/projects/maestro/.maestro/worktrees/issue-1242",
+    );
+    screen.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
+        InputMode::Insert,
+    );
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let theme = Theme::dark();
+    terminal.draw(|f| screen.draw(f, f.area(), &theme)).unwrap();
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("N to keep working"),
+        "the way out must not be cut:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
 fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
     let mut screen = screen(42, false, TurnState::Idle, vec![]);
     let terminal = render(&mut screen);

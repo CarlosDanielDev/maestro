@@ -13,6 +13,8 @@ mod keymap;
 mod keymap_tests;
 mod layout;
 pub(crate) mod lifecycle;
+#[cfg(test)]
+mod quit_modal_tests;
 mod render;
 mod scroll;
 #[cfg(test)]

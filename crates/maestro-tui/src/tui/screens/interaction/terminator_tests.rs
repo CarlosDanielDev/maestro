@@ -188,57 +188,6 @@ fn quit_with_linked_pr_confirms_immediately() {
     );
 }
 
-/// Draw `screen` with the quit modal open on a 120x40 terminal and return
-/// the rendered buffer as one string.
-fn draw_quit_modal_text(screen: &mut InteractionScreen) -> String {
-    use ratatui::{Terminal, backend::TestBackend};
-    screen.quit_modal_open = true;
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let theme = crate::tui::theme::Theme::dark();
-    terminal
-        .draw(|f| screen.draw_impl(f, f.area(), &theme))
-        .unwrap();
-    format!("{:?}", terminal.backend())
-}
-
-// #1242: the modal must say what `y` does. It used to promise the worktree
-// was "kept for manual inspection" while `begin_quit_teardown` wiped it.
-#[test]
-fn quit_modal_text_matches_teardown() {
-    let trusted = wired_screen(Rc::new(MockTeardown::ok()), FakeClock::new());
-    let untrusted = InteractionScreen::with_ports(
-        42,
-        PathBuf::from("."),
-        "maestro/issue-42".to_string(),
-        PathBuf::new(), // empty root → teardown is skipped
-        Box::new(FakeClock::new()),
-    );
-
-    for mut screen in [trusted, untrusted] {
-        let drawn = draw_quit_modal_text(&mut screen);
-        screen.begin_quit_teardown();
-        let wipes = screen.take_pending_teardown_dispatch().is_some();
-
-        assert!(
-            !drawn.contains("kept for manual inspection"),
-            "the modal must not promise the worktree is kept:\n{drawn}"
-        );
-        assert_eq!(
-            drawn.contains("Removes worktree"),
-            wipes,
-            "modal names the removal iff teardown will run (wipes={wipes}):\n{drawn}"
-        );
-        if wipes {
-            assert!(drawn.contains("/tmp/maestro/issue-42"), "{drawn}");
-            assert!(drawn.contains("local branch feat/issue-42"), "{drawn}");
-            assert!(drawn.contains("any remote branch or PR stays"), "{drawn}");
-            assert!(drawn.contains("Unpushed commits are lost"), "{drawn}");
-        } else {
-            assert!(drawn.contains("nothing is removed"), "{drawn}");
-        }
-    }
-}
-
 #[test]
 fn quit_teardown_receives_issue_path_branch() {
     let teardown = Rc::new(MockTeardown::ok());

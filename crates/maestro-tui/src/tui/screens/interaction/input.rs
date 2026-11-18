@@ -12,9 +12,10 @@ use ratatui::{
     layout::{Alignment, Position, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
 use tui_textarea::TextArea;
+use unicode_width::UnicodeWidthStr;
 
 /// Render the header naming the agent/CLI, model, and issue the chat is bound
 /// to, so the user always knows who they are talking to (#738 QA). The text
@@ -184,31 +185,50 @@ impl super::InteractionScreen {
                 "Press y to quit, N to keep working.".to_string(),
             ];
         }
-        let branch = if self.branch.is_empty() {
-            String::new()
-        } else {
-            format!(" and local branch {}", self.branch)
-        };
-        vec![
-            format!(
-                "Quit interaction? Removes worktree {}{branch}.",
-                self.worktree_path.display()
-            ),
-            "Unpushed commits are lost; any remote branch or PR stays. Press y to quit, N to keep working."
-                .to_string(),
-        ]
+        // The path gets its own line so it wraps alone at narrow widths
+        // instead of pushing the branch and the way out off the modal.
+        let mut lines = vec![
+            "Quit interaction? Removes worktree".to_string(),
+            self.worktree_path.display().to_string(),
+        ];
+        if !self.branch.is_empty() {
+            lines.push(format!("and local branch {}.", self.branch));
+        }
+        lines.push("Unpushed commits are lost; any remote branch or PR stays.".to_string());
+        lines.push("Press y to quit, N to keep working.".to_string());
+        lines
     }
 }
 
-/// Render the `Ctrl+W` quit-confirm modal centered over `area`, one row per
-/// line of `lines`.
+/// Rows `text` takes when greedily word-wrapped to `width` columns. Errs on
+/// the tall side for words wider than `width`, so the modal never clips.
+fn wrapped_rows(text: &str, width: usize) -> usize {
+    let width = width.max(1);
+    let (mut rows, mut col) = (1, 0);
+    for word in text.split(' ') {
+        let w = word.width();
+        if col > 0 && col + 1 + w <= width {
+            col += 1 + w;
+            continue;
+        }
+        if col > 0 {
+            rows += 1;
+        }
+        rows += w.div_ceil(width).max(1) - 1;
+        col = w - (w.div_ceil(width).max(1) - 1) * width;
+    }
+    rows
+}
+
+/// Render the `Ctrl+W` quit-confirm modal centered over `area`. Lines wrap
+/// to the modal width, and the height follows the wrapped row count, so
+/// every line stays readable down to the 80x24 floor (#1242).
 pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, lines: &[String]) {
-    let widest = lines.iter().map(String::len).max().unwrap_or(0) as u16;
-    let modal = centered_rect(
-        area,
-        widest.saturating_add(6).min(area.width),
-        lines.len() as u16 + 2,
-    );
+    let widest = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    let width = widest.saturating_add(6).min(area.width);
+    let wrap_width = usize::from(width.saturating_sub(2));
+    let rows: usize = lines.iter().map(|l| wrapped_rows(l, wrap_width)).sum();
+    let modal = centered_rect(area, width, (rows as u16).saturating_add(2));
     f.render_widget(Clear, modal);
     let block = theme.styled_block("Confirm", true);
     let inner = block.inner(modal);
@@ -221,7 +241,8 @@ pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, lines: &
                 .map(|l| Line::from(Span::styled(l.clone(), style)))
                 .collect::<Vec<_>>(),
         )
-        .alignment(Alignment::Center),
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true }),
         inner,
     );
 }
