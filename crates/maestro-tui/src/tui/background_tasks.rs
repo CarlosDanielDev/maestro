@@ -3,6 +3,31 @@ use super::screens;
 use crate::config::ProviderConfig;
 use crate::provider::{create_provider, github::client::RepoProvider};
 
+/// A failed launch fetch that remembers its issue number (#1244), so the
+/// queue can fail the item it was fetching. Displays as the inner error.
+#[derive(Debug)]
+pub(crate) struct IssueFetchError {
+    pub(crate) issue_number: u64,
+    message: String,
+}
+
+impl IssueFetchError {
+    pub(crate) fn wrap(issue_number: u64, source: anyhow::Error) -> anyhow::Error {
+        anyhow::Error::new(Self {
+            issue_number,
+            message: format!("{source:#}"),
+        })
+    }
+}
+
+impl std::fmt::Display for IssueFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for IssueFetchError {}
+
 pub(super) fn spawn_issue_fetch(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
     config: screens::SessionConfig,
@@ -16,7 +41,8 @@ pub(super) fn spawn_issue_fetch(
                 let result = match create_provider(&provider_config) {
                     Ok(client) => client.get_issue(issue_number).await,
                     Err(e) => Err(e),
-                };
+                }
+                .map_err(|e| IssueFetchError::wrap(issue_number, e));
                 let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt, agent_id));
             });
         }

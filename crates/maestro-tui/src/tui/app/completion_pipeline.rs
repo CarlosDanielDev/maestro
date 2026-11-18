@@ -222,6 +222,8 @@ impl App {
                     && !s.hollow_dismissed
                     && !retryable_ids.contains(&s.id)
                     && !RetryPolicy::is_consultation_satisfied(s)
+                    // #1244: the queue screen owns a queue item's decision.
+                    && !self.is_queue_item(s)
             })
         {
             // This session wasn't retried (exceeded limits) — prompt user
@@ -398,6 +400,96 @@ impl App {
         }
         .dispatch();
     }
+
+    /// Settle the running queue item once the pool is idle (#1244). The
+    /// outcome comes from the session recorded on the item, never from
+    /// another pool session. A hollow completion is a failure: it waits
+    /// for the user's retry / skip / abort on the queue screen. No
+    /// recorded session yet (the issue is still being fetched) is not an
+    /// outcome, so the item keeps running.
+    pub(crate) fn settle_queue_item(&mut self) {
+        use crate::work::executor::ExecutorPhase;
+        if !(self.queue_executor.is_some() && self.all_done()) {
+            return;
+        }
+        let should_advance = self
+            .queue_executor
+            .as_ref()
+            .map(|e| matches!(e.phase(), ExecutorPhase::Running { .. }))
+            .unwrap_or(false);
+        if !should_advance {
+            return;
+        }
+        let Some(session_id) = self
+            .queue_executor
+            .as_ref()
+            .and_then(|e| e.running_session_id())
+        else {
+            return;
+        };
+        let last_session_succeeded = self
+            .pool
+            .get_session(session_id)
+            .map(|s| {
+                matches!(s.status, SessionStatus::Completed)
+                    && (!s.is_hollow_completion || RetryPolicy::is_consultation_satisfied(s))
+            })
+            .unwrap_or(false);
+        if last_session_succeeded {
+            if let Some(ref mut exec) = self.queue_executor {
+                exec.mark_success();
+                if exec.is_finished() {
+                    self.open_completion_summary();
+                } else {
+                    self.advance_queue_and_launch();
+                }
+            }
+        } else if let Some(ref mut exec) = self.queue_executor {
+            exec.mark_failure();
+            // The queue screen owns this decision; the hollow modal must
+            // not reopen for the session once a retry clears the record.
+            if let Some(session) = self.pool.get_session_mut(session_id) {
+                session.hollow_dismissed = true;
+            }
+        }
+    }
+
+    /// #1244: record `session` on the running queue item when it runs that
+    /// item's issue. Called for every session entering the pool, so an
+    /// auto-retry moves the record to the new attempt.
+    pub(crate) fn record_queue_session(&mut self, session: &crate::session::types::Session) {
+        if let Some(exec) = self.queue_executor.as_mut()
+            && exec.running_issue() == session.issue_number
+        {
+            exec.set_session_id(session.id);
+        }
+    }
+
+    /// #1244: a failed launch fetch for the running queue item fails the
+    /// item, so the queue screen offers retry / skip / abort instead of
+    /// waiting forever for a session that will never start.
+    pub(crate) fn fail_queue_fetch(&mut self, error: &anyhow::Error) {
+        let Some(failed) = error.downcast_ref::<crate::tui::background_tasks::IssueFetchError>()
+        else {
+            return;
+        };
+        if let Some(exec) = self.queue_executor.as_mut()
+            && exec.running_issue() == Some(failed.issue_number)
+            && exec.running_session_id().is_none()
+        {
+            exec.mark_failure();
+        }
+    }
+
+    /// Whether the queue executor is still deciding on `session` (#1244):
+    /// it is the running item's session, or the failed item's awaiting
+    /// retry / skip / abort. Any other session, even on a queue issue,
+    /// keeps the hollow modal.
+    fn is_queue_item(&self, session: &crate::session::types::Session) -> bool {
+        self.queue_executor
+            .as_ref()
+            .is_some_and(|e| e.deciding_session_id() == Some(session.id))
+    }
 }
 
 /// #1144: run a pipeline transition through the state machine and
@@ -436,6 +528,10 @@ mod completion_off_loop_tests;
 #[cfg(test)]
 #[path = "completion_job_race_tests.rs"]
 mod completion_job_race_tests;
+
+#[cfg(test)]
+#[path = "queue_executor_tests.rs"]
+mod queue_executor_tests;
 
 #[cfg(test)]
 mod tests {

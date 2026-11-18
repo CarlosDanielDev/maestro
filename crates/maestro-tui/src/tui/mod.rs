@@ -2,7 +2,7 @@ pub mod activity_log;
 pub(crate) mod agent_badge;
 pub(crate) mod agent_graph;
 pub mod app;
-mod background_tasks;
+pub(crate) mod background_tasks;
 pub mod breadcrumb;
 pub mod budget_banner;
 pub mod budget_prespawn;
@@ -896,36 +896,7 @@ async fn event_loop(
             }
         }
 
-        if app.queue_executor.is_some() && app.all_done() {
-            use crate::work::executor::ExecutorPhase;
-            let should_advance = app
-                .queue_executor
-                .as_ref()
-                .map(|e| matches!(e.phase(), ExecutorPhase::Running { .. }))
-                .unwrap_or(false);
-
-            if should_advance {
-                let last_session_succeeded = app
-                    .pool
-                    .all_sessions()
-                    .last()
-                    .map(|s| matches!(s.status, crate::session::types::SessionStatus::Completed))
-                    .unwrap_or(false);
-
-                if last_session_succeeded {
-                    if let Some(ref mut exec) = app.queue_executor {
-                        exec.mark_success();
-                        if exec.is_finished() {
-                            app.open_completion_summary();
-                        } else {
-                            app.advance_queue_and_launch();
-                        }
-                    }
-                } else if let Some(ref mut exec) = app.queue_executor {
-                    exec.mark_failure();
-                }
-            }
-        }
+        app.settle_queue_item();
 
         // #865: clear the dismissed flag automatically once a new session
         // has entered the pool since the last dismiss. Without this, the
