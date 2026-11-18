@@ -345,6 +345,14 @@ first. One entry per decision.
 - **Known gap:** the queue still waits for every pool session (`all_done`) and runs one item at a time; the slot-based loop is the run-plan issue. A session for the running item's issue started outside the queue (by hand) is also recorded on the item; telling them apart needs the launch to carry a queue tag.
 - **Source:** #1244.
 
+## 2026-11-18 — Dashboard Quick Actions scroll to the selection
+
+- **What:** the Dashboard Quick Actions panel (`screens/home/draw.rs`) draws only the rows that fit and scrolls so the selected row is always drawn: `offset = screens::wrap::scroll_offset_for_cursor(selected_action, inner height)`, the existing helper the prompt and issue-browser inputs use. Hidden rows show on the bottom border: `↑ N more` on the left, `↓ N more` on the right, in `text_muted`. At 80x24 the panel shows 6 of 13 rows; after `j`×12 it shows `c t Q S u q` with `q Quit` highlighted and `↑ 7 more`. Enter still runs `selected_action`, which is now always the drawn, highlighted row.
+- **Why:** #1396 (smoke test B3/R5 at `de407c5e`): `j` moved the selection onto rows below the panel, nothing looked selected, and Enter ran a hidden row (Confirm Exit, Update, Settings). `S`, `Q`, `t`, `u` were never visible at 80 columns.
+- **Section:** `§02.1 Dashboard` ("The Quick Actions list is deleted, not moved"). The target removes this list (#1280); until then it must not run hidden rows. The marker follows the target's overflow rule (`↓ n more` on the border, §02.1 Work list and the Issues list). `↑` goes on the bottom border too, because the top border holds the title and has no room at 80 columns.
+- **Rejected:** `List` + `ListState` (the ADR stub's pick): the markers change the block before render, but `ListState` only knows its offset after render, and the panel already ellipsizes labels by hand. Marker rows inside the panel (they cost one or two of the 6 rows at 80x24). A stored, sticky offset on `HomeScreen` (the stateless pin-to-bottom offset is enough for 13 rows and needs no new state).
+- **Source:** #1396.
+
 ## 2026-11-18 — gh auth comes back without a restart
 
 - **What:** `App::gh_auth_ok` turns true again. Any gh call that succeeds (issue, milestone and PR fetches, a submitted PR review, a Shift+P retry that opens its PR) flips it back and logs `GitHub authentication restored.` once. A PR action that would be refused for lost auth first runs one `gh auth status` (`app/gh_auth.rs`, on the blocking pool, inside the completion job, at most 5 s; a slower answer counts as signed out and the `gh` child is killed) and goes ahead when gh is signed in again. While false, the log row draws `⊘ gh auth expired · PR create paused · fix: gh auth login, then Shift+P` (`tui/gh_auth_warning.rs`) instead of the old "GitHub CLI not authenticated" banner.
