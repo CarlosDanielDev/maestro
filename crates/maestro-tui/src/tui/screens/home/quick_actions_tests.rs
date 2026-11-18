@@ -345,3 +345,30 @@ async fn quick_actions_letters_work_at_any_scroll() {
         "`S` opens Settings after j×12"
     );
 }
+
+/// After scrolling to the end, `k` back up keeps the selected row drawn and
+/// highlighted at every step, and the markers keep counting right.
+#[tokio::test]
+async fn quick_actions_k_back_up_keeps_selection_drawn() {
+    let total = QUICK_ACTIONS.len();
+    for h in [24u16, 27] {
+        let mut app = dashboard_after(total - 1, 80, h).await;
+        for sel in (0..total).rev() {
+            let buf = draw(&mut app, 80, h);
+            let text = panel_with_border(&buf).join("\n");
+            let hl = reversed_rows(&buf);
+            let want = format!("[{}]", QUICK_ACTIONS[sel].1);
+            assert_eq!(hl.len(), 1, "80x{h} sel={sel}: one highlight:\n{text}");
+            assert!(hl[0].contains(&want), "80x{h} sel={sel}: {want}:\n{text}");
+            let rows = panel_with_border(&buf);
+            let up = marker_count(&rows, '↑').unwrap_or(0);
+            let down = marker_count(&rows, '↓').unwrap_or(0);
+            assert_eq!(
+                up + drawn_actions(&rows) + down,
+                total,
+                "80x{h} sel={sel}:\n{text}"
+            );
+            press(&mut app, KeyCode::Char('k'), 80, h).await;
+        }
+    }
+}
