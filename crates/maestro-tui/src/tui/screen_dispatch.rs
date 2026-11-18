@@ -1535,7 +1535,6 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             use crate::work::dependencies::DependencyGraph;
             use crate::work::executor::QueueExecutor;
             use crate::work::queue::WorkQueue;
-            use crate::work::types::WorkItem;
 
             let agent_id = app.selected_agent_id();
             let configs: Vec<_> = configs
@@ -1546,41 +1545,67 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // Build a WorkQueue from the session configs for the executor
             let issue_numbers: Vec<u64> = configs.iter().filter_map(|c| c.issue_number).collect();
 
-            // Build a minimal dependency graph (items are already validated by QueueConfirmation)
-            let items: Vec<WorkItem> = configs
-                .iter()
-                .filter_map(|c| {
-                    c.issue_number.map(|n| {
-                        WorkItem::from_issue(crate::provider::types::Issue {
-                            number: n,
-                            title: c.title.clone(),
-                            body: String::new(),
-                            labels: vec![],
-                            state: "open".to_string(),
-                            html_url: String::new(),
-                            milestone: None,
-                            assignees: vec![],
-                        })
-                    })
-                })
-                .collect();
+            let items = queue_work_items(&configs, &app.state.issue_cache);
             let graph = DependencyGraph::build(&items);
 
-            if let Ok(queue) = WorkQueue::validate_selection(&issue_numbers, &graph) {
-                let executor = QueueExecutor::new(&queue);
-                app.queue_launch_configs = Some(configs);
-                app.queue_executor = Some(executor);
-                app.advance_queue_and_launch();
-                app.completion_summary_dismissed = false;
-                app.tui_mode = app::TuiMode::QueueExecution;
-            } else {
-                // Fallback: launch all at once if queue validation fails
-                app.pending_commands
-                    .push(app::TuiCommand::LaunchSessions(configs));
-                app.tui_mode = app::TuiMode::Overview;
+            match WorkQueue::validate_selection(&issue_numbers, &graph) {
+                Ok(queue) => {
+                    let executor = QueueExecutor::new(&queue);
+                    app.queue_launch_configs = Some(configs);
+                    app.queue_executor = Some(executor);
+                    app.advance_queue_and_launch();
+                    app.completion_summary_dismissed = false;
+                    app.tui_mode = app::TuiMode::QueueExecution;
+                }
+                // #1244: selected issues depend on each other. Launching
+                // them all at once would run a dependent before its
+                // blocker is done, so nothing starts; the user stays on
+                // the review screen and removes one.
+                Err(e) => {
+                    let message = format!("Queue not started: {e}");
+                    app.activity_log.push_simple(
+                        "Queue".into(),
+                        message.clone(),
+                        crate::tui::activity_log::LogLevel::Error,
+                    );
+                    app.push_toast(
+                        crate::tui::ds::toast::Toast::new(
+                            crate::tui::ds::toast::Severity::Error,
+                            message,
+                        ),
+                        std::time::Instant::now(),
+                    );
+                }
             }
         }
     }
+}
+
+/// Work items for a LaunchQueue (#1244). Each item keeps its cached issue
+/// (body, labels) so its `Blocked-by` reaches the dependency graph; an
+/// issue missing from the cache falls back to its number and title.
+pub(crate) fn queue_work_items(
+    configs: &[screens::SessionConfig],
+    issue_cache: &std::collections::HashMap<u64, Issue>,
+) -> Vec<crate::work::types::WorkItem> {
+    configs
+        .iter()
+        .filter_map(|c| {
+            c.issue_number.map(|n| {
+                let issue = issue_cache.get(&n).cloned().unwrap_or_else(|| Issue {
+                    number: n,
+                    title: c.title.clone(),
+                    body: String::new(),
+                    labels: vec![],
+                    state: "open".to_string(),
+                    html_url: String::new(),
+                    milestone: None,
+                    assignees: vec![],
+                });
+                crate::work::types::WorkItem::from_issue(issue)
+            })
+        })
+        .collect()
 }
 
 /// Build the known-agent list visible in the Team Wizard's Compose picker.

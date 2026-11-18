@@ -125,6 +125,31 @@ impl QueueExecutor {
         }
     }
 
+    /// Issue number of the running item, if an item is running.
+    pub fn running_issue(&self) -> Option<u64> {
+        match self.phase {
+            ExecutorPhase::Running { current_index } => {
+                Some(self.items[current_index].queued.issue_number)
+            }
+            _ => None,
+        }
+    }
+
+    /// Session id recorded for the running item, if any.
+    pub fn running_session_id(&self) -> Option<uuid::Uuid> {
+        match self.phase {
+            ExecutorPhase::Running { current_index } => self.items[current_index].session_id,
+            _ => None,
+        }
+    }
+
+    /// Whether `issue_number` is one of this queue's items.
+    pub fn contains_issue(&self, issue_number: u64) -> bool {
+        self.items
+            .iter()
+            .any(|i| i.queued.issue_number == issue_number)
+    }
+
     /// Notify the executor that the current session completed successfully.
     pub fn mark_success(&mut self) {
         if let ExecutorPhase::Running { current_index } = self.phase {

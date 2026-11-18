@@ -17,6 +17,7 @@ impl App {
         // Reset dismissed flag so completion summary can trigger for new sessions
         self.completion_summary_dismissed = false;
 
+        self.record_queue_session(&session);
         self.pool.enqueue(session);
 
         // Try to promote and spawn
