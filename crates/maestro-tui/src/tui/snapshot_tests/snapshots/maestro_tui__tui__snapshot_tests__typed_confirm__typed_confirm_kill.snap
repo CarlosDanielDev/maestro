@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/typed_confirm.rs
+expression: terminal.backend()
+---
+" MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Overview › Confirm Kill                                       Esc back  ? help "
+"╔══════════════════════════[ #407 — Add login flow ]═══════════════════════════╗"
+"║ RUNNING 2m30s  agent:claude  $0.12                                          ║"
+"║ctx: [▓▓▓▓░░░░░░] 35%                                                         ║"
+"║tok: ---                                                                      ║"
+"║0 files╔════════════════════[ Kill session #407? ]════════════════════╗       ║"
+"║> - Wri║ Stops the agent now.                                         ║       ║"
+"║Analyzi║                                                              ║       ║"
+"║       ║ kept   the worktree, its branch and the transcript           ║       ║"
+"║       ║ lost   the turn in progress                                  ║       ║"
+"║       ║ other  no other session is running                           ║       ║"
+"║       ║                                                              ║       ║"
+"║       ║ Type 407 to confirm:                                         ║       ║"
+"║       ║ › 40                                                  2 of 3 ║       ║"
+"║       ║                                                              ║       ║"
+"║       ║  Esc  cancel (default)    ⏎  kill (locked)                   ║       ║"
+"║       ╚══════════════════════════════════════════════════════════════╝       ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+" Enter kill                                                              q quit "

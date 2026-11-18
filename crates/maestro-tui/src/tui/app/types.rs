@@ -256,6 +256,8 @@ pub struct ScreenState {
     pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
     pub prd_screen: Option<crate::tui::screens::prd::PrdScreen>,
     pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
+    /// The open kill dialog and the session it kills (#1261).
+    pub kill_confirm: Option<(uuid::Uuid, crate::tui::ds::confirm::TypedConfirm)>,
     pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
     pub milestone_health_screen:
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,

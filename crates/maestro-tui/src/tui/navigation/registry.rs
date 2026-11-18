@@ -141,6 +141,7 @@ pub enum Action {
     Top,
     Bottom,
     Expand,
+    Kill,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +277,16 @@ pub fn registry() -> &'static [Binding] {
             s(summary, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
             s(summary, Chord::key(KeyCode::Enter), A::Expand, "Expand"),
         ]);
+        // #1261: the typed kill confirm. Typed text is content, not a
+        // binding; Enter kills only once it matches. Esc is the Global back.
+        let kill = Scope::Screen(TuiMode::ConfirmKill(uuid::Uuid::nil()));
+        v.push(Binding::new(
+            Chord::key(KeyCode::Enter),
+            kill,
+            A::Kill,
+            Destructive,
+            "kill",
+        ));
         v
     });
     &REGISTRY

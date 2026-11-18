@@ -593,9 +593,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
                 spinner_tick,
             );
-            if let TuiMode::ConfirmKill(id) = app.tui_mode {
-                draw_confirm_kill_overlay(f, id, app, chunks[1], &theme);
-            }
+            // The dialog itself is drawn last, by `draw_typed_confirm`.
         }
         TuiMode::ConfirmExit => {
             match app.nav_stack.peek() {
@@ -759,17 +757,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme, spinner_tick);
             }
         }
-        TuiMode::BypassWarning => {
-            // Center the warning text in the main content area.
-            let para =
-                ratatui::widgets::Paragraph::new(crate::tui::screens::bypass_warning::WARNING_TEXT)
-                    .style(
-                        ratatui::style::Style::default()
-                            .fg(ratatui::style::Color::Red)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    );
-            f.render_widget(para, chunks[1]);
-        }
+        // #1261: drawn last, by `draw_typed_confirm`.
+        TuiMode::BypassWarning => {}
         TuiMode::MilestoneHealth => {
             if let Some(ref screen) = app.screen_state.milestone_health_screen {
                 crate::tui::screens::milestone_health::draw::draw(
@@ -905,6 +894,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     draw_shell_row(f, app, shell_row, &theme);
     draw_footer(f, app, &mode_km, chunks[3], &theme);
+    draw_typed_confirm(f, app, &theme);
 
     // #1263: the Ctrl+L drawer covers the bottom of the main area.
     if log_drawer_shown(app) {
@@ -1327,7 +1317,7 @@ fn draw_size_guard(f: &mut Frame, app: &App) {
     let popup = crate::tui::budget_prespawn::modal_rect(area);
     match app.tui_mode {
         TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, popup, theme),
-        TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, popup, theme),
+        TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, area, theme),
         TuiMode::BudgetPreSpawn { session_id } => {
             let (projected_total, limit) = budget_prespawn_values(app, session_id);
             crate::tui::budget_prespawn::draw_budget_prespawn(
@@ -1342,55 +1332,34 @@ fn draw_size_guard(f: &mut Frame, app: &App) {
     }
 }
 
-fn draw_confirm_kill_overlay(
+/// #1261: the typed confirms (`ds::confirm`) float over the whole frame, so
+/// the activity log drawn after the screen does not cut them.
+fn draw_typed_confirm(f: &mut Frame, app: &App, theme: &crate::tui::theme::Theme) {
+    let area = f.area();
+    match app.tui_mode {
+        TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, area, theme),
+        // No state: `bypass_dispatch` pops on the next key, so draw nothing.
+        TuiMode::BypassWarning => {
+            if let Some(state) = app.screen_state.bypass_warning_screen.as_ref() {
+                state.confirm.render(f, area, theme);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// #1261: the typed kill confirm (`ds::confirm`), centred in `area`.
+fn draw_confirm_kill_popup(
     f: &mut Frame,
     session_id: uuid::Uuid,
     app: &App,
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
-    let popup = help::centered_rect(40, 20, area);
-    draw_confirm_kill_popup(f, session_id, app, popup, theme);
-}
-
-fn draw_confirm_kill_popup(
-    f: &mut Frame,
-    session_id: uuid::Uuid,
-    app: &App,
-    popup: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    use ratatui::widgets::Clear;
-    f.render_widget(Clear, popup);
-
-    let label = app
-        .pool
-        .get_session(session_id)
-        .map(crate::tui::app::helpers::session_label)
-        .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
-
-    let lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("  Kill session {}?", label),
-            Style::default()
-                .fg(theme.accent_warning)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  [y]", Style::default().fg(theme.accent_success)),
-            Span::raw("es  "),
-            Span::styled("[n]", Style::default().fg(theme.accent_error)),
-            Span::raw("o"),
-        ]),
-    ];
-
-    let block = theme
-        .styled_block("Confirm Kill", false)
-        .border_style(Style::default().fg(theme.accent_warning));
-
-    f.render_widget(Paragraph::new(lines).block(block), popup);
+    match &app.screen_state.kill_confirm {
+        Some((id, confirm)) if *id == session_id => confirm.render(f, area, theme),
+        _ => app.kill_confirm(session_id).render(f, area, theme),
+    }
 }
 
 fn draw_confirm_exit_overlay(

@@ -316,3 +316,12 @@ first. One entry per decision.
 - **Rejected (layout):** one long line per sentence (cut at 80 columns, and a real `<repo>/.maestro/worktrees/issue-N` path pushed the branch off the modal even at 120).
 - **Known gap:** the modal is still `Ctrl+W` + `y` and does not read git for the real unpushed-commit count; the §02.21 dialog replaces it. With no trusted root, a `produce_pr` session with no PR still gets the RC4 "Unpushed work will be LOST" line on the first `y`, although nothing is wiped; that line is out of scope here.
 - **Source:** #1242.
+
+## 2026-11-18 — TypedConfirm for kill and the bypass warning
+
+- **What:** `ds::confirm::TypedConfirm` (Double border, `Input::single_line`, `Esc` default, `⏎` inert until the typed text equals the token). Kill from the Dashboard asks for the session's issue number (a session with no issue: the first 8 characters of its id); `y`/`n` are now plain text. The bypass warning (`⌃B`) asks for `CONFIRM` then `⏎`, replacing the hand-rolled field that cancelled on the first wrong letter and confirmed on the last right one. The `ConfirmKill` footer comes from the registry (`Enter kill`); `Esc` is the Global back. Both dialogs are drawn last, over the whole frame (`ui::draw_typed_confirm`): inside the content row the activity log cut them at 80x24.
+- **Why:** design §05 "Killing the wrong agent" / "Confirming by reflex". The number proves you kill the session you mean; a word only proves intent, so it is kept for global actions (the #1261 ADR stub). Making both modes text-input modes also fixed a live bug: the global `Shift+M` ate the `M` of `CONFIRM`, so the bypass warning could not be confirmed.
+- **Section:** `§02.13 Status: session views` (Dashboard "Kill confirm `ds::confirm::TypedConfirm`", spec `dashboard.killConfirm`), `§02.15 Settings` ("Danger confirm"), `§04` `confirm`.
+- **Rejected:** typing the word `KILL` for kill (proves intent only); a `y` that still kills (a reflex key); keeping the prefix-check field in `bypass_warning.rs` (hand-rolled input, no backspace).
+- **Known gap:** the key is still `k`, not the target `X` (not in #1261). The kill dialog does not show status, elapsed time, cost, the worktree path or the edited-file count from the spec; it says what `pool.kill_session` keeps and loses in plain words. The mode chip does not switch to `INSERT` while typing. The bypass text keeps the run-only wording of `⌃B`; the §02.15 Settings variant (file write, `⌃B` safer) belongs to #1239.
+- **Source:** #1261.
