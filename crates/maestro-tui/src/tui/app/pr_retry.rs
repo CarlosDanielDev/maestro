@@ -57,6 +57,7 @@ impl App {
                     .await
                 {
                     Ok(pr_num) => {
+                        self.note_gh_auth_ok();
                         completed_indices.push(idx);
                         if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
                             let _ = managed.session.transition_to(

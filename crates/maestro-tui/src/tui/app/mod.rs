@@ -18,6 +18,7 @@ mod context_overflow;
 pub(crate) mod data_handler;
 mod event_handler;
 mod gate_retry;
+mod gh_auth;
 pub(crate) mod helpers;
 mod interaction_pipeline;
 #[cfg(test)]
@@ -174,6 +175,8 @@ pub struct App {
     /// (modal silenced after first dismiss for subsequent sessions).
     pub completion_summary_baseline_total: usize,
     pub gh_auth_ok: bool,
+    /// One `gh auth status` check, run before a PR action is refused (#1241).
+    pub(crate) gh_auth_probe: gh_auth::GhAuthProbe,
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
@@ -406,6 +409,7 @@ impl App {
             completion_summary_dismissed: false,
             completion_summary_baseline_total: 0,
             gh_auth_ok: true,
+            gh_auth_probe: gh_auth::default_gh_auth_probe(),
             pending_prs: recovered_prs,
             flags: crate::flags::store::FeatureFlags::default(),
             queue_executor: None,

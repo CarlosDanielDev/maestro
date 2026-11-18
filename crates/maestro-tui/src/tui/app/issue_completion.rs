@@ -212,7 +212,7 @@ impl App {
         // Auto PR pipeline. `pr_phase` holds every `gh` call and git
         // subprocess (including the auth-deferred diff lookup, #521);
         // `apply_pr_outcome` mutates App state inline (#1153).
-        let input = self.build_pr_phase_input(
+        let mut input = self.build_pr_phase_input(
             issue_number,
             issue_numbers.clone(),
             is_unified,
@@ -221,6 +221,9 @@ impl App {
             worktree_branch.clone(),
             worktree_path,
         );
+        if super::gh_auth::recheck_before_pr(&mut input).await {
+            self.note_gh_auth_ok();
+        }
         let outcome = pr_phase(
             input,
             self.github_client.clone(),

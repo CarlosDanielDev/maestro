@@ -26,6 +26,8 @@ pub(super) struct PrPhaseInput {
     pub branch: Option<String>,
     pub worktree_path: Option<PathBuf>,
     pub gh_auth_ok: bool,
+    /// Rechecks auth once before an auth-lost refusal (#1241).
+    pub gh_auth_probe: super::gh_auth::GhAuthProbe,
     pub auto_pr: bool,
     pub base_branch: String,
     pub repo_slug: String,

@@ -177,7 +177,10 @@ impl App {
             return;
         }
 
-        // 7. Auto-PR outcome.
+        // 7. Auto-PR outcome, after the pre-PR auth recheck (#1241).
+        if out.gh_auth_recovered {
+            self.note_gh_auth_ok();
+        }
         if let Some(pr_outcome) = out.pr {
             let ctx = PrApplyCtx {
                 issue_number,

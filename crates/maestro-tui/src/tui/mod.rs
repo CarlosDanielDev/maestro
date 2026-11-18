@@ -14,6 +14,7 @@ pub mod dep_graph;
 pub mod detail;
 pub mod ds;
 pub mod fullscreen;
+pub(crate) mod gh_auth_warning;
 pub mod help;
 pub mod icons;
 mod input_handler;

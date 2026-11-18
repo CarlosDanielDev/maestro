@@ -352,3 +352,12 @@ first. One entry per decision.
 - **Section:** `§02.1 Dashboard` ("The Quick Actions list is deleted, not moved"). The target removes this list (#1280); until then it must not run hidden rows. The marker follows the target's overflow rule (`↓ n more` on the border, §02.1 Work list and the Issues list). `↑` goes on the bottom border too, because the top border holds the title and has no room at 80 columns.
 - **Rejected:** `List` + `ListState` (the ADR stub's pick): the markers change the block before render, but `ListState` only knows its offset after render, and the panel already ellipsizes labels by hand. Marker rows inside the panel (they cost one or two of the 6 rows at 80x24). A stored, sticky offset on `HomeScreen` (the stateless pin-to-bottom offset is enough for 13 rows and needs no new state).
 - **Source:** #1396.
+
+## 2026-11-18 — gh auth comes back without a restart
+
+- **What:** `App::gh_auth_ok` turns true again. Any gh call that succeeds (issue, milestone and PR fetches, a submitted PR review, a Shift+P retry that opens its PR) flips it back and logs `GitHub authentication restored.` once. A PR action that would be refused for lost auth first runs one `gh auth status` (`app/gh_auth.rs`, on the blocking pool, inside the completion job, at most 5 s; a slower answer counts as signed out and the `gh` child is killed) and goes ahead when gh is signed in again. While false, the log row draws `⊘ gh auth expired · PR create paused · fix: gh auth login, then Shift+P` (`tui/gh_auth_warning.rs`) instead of the old "GitHub CLI not authenticated" banner.
+- **Why:** #1241, §09 Dashboard row 10: one auth error locked PR work for the life of the process.
+- **Section:** `§05` "PR action while gh is signed out", `§09` Dashboard row 10, flow-map node "gh auth expired · PR rows ⊘".
+- **Differs from the target:** there are no PR rows on the Dashboard yet (#1277), so only the header line shows the state. The target's `⏎` recheck key is not wired; the fix names `Shift+P`, the existing retry key. The line still sits on the activity-log row (moving it is the status bar issue).
+- **Rejected:** a recheck on every gh call (a subprocess per call; the ADR stub's latency concern); a recheck on draw (blocks the render loop); a new `RepoProvider::auth_status` trait method (every fake provider would need it; a closure probe is enough).
+- **Source:** #1241.

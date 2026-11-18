@@ -530,6 +530,10 @@ mod completion_off_loop_tests;
 mod completion_job_race_tests;
 
 #[cfg(test)]
+#[path = "gh_auth_tests.rs"]
+mod gh_auth_tests;
+
+#[cfg(test)]
 #[path = "queue_executor_tests.rs"]
 mod queue_executor_tests;
 
