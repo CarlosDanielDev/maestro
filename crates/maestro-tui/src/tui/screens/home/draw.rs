@@ -3,6 +3,7 @@ use super::{HomeScreen, QUICK_ACTIONS};
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::screens::landing::draw::ellipsize;
+use crate::tui::screens::wrap::scroll_offset_for_cursor;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 use crate::tui::widgets::{EmptyState, focused_selection_style};
@@ -134,16 +135,34 @@ impl HomeScreen {
 
     fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.is_quick_actions_focused();
-        let block = theme.styled_block("Quick Actions", is_focused);
+        let mut block = theme.styled_block("Quick Actions", is_focused);
 
         let selected_style = Style::default()
             .fg(theme.selection_fg)
             .bg(theme.selection_bg)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED);
 
-        let inner_width = block.inner(area).width as usize;
+        let inner = block.inner(area);
+        let inner_width = inner.width as usize;
+        // Scroll so the selected row is always drawn (#1396): Enter runs
+        // `selected_action`, so it must never sit below the panel.
+        let visible = inner.height as usize;
+        let offset = scroll_offset_for_cursor(self.selected_action, visible);
+        let above = offset;
+        let below = QUICK_ACTIONS.len().saturating_sub(offset + visible);
+        let muted = Style::default().fg(theme.text_muted);
+        if above > 0 {
+            block = block.title_bottom(
+                Line::from(Span::styled(format!(" ↑ {above} more "), muted)).left_aligned(),
+            );
+        }
+        if below > 0 {
+            block = block.title_bottom(
+                Line::from(Span::styled(format!(" ↓ {below} more "), muted)).right_aligned(),
+            );
+        }
         let mut lines = Vec::new();
-        for (idx, (label, key, _)) in QUICK_ACTIONS.iter().enumerate() {
+        for (idx, (label, key, _)) in QUICK_ACTIONS.iter().enumerate().skip(offset).take(visible) {
             let is_selected = is_focused && idx == self.selected_action;
             let style = if is_selected {
                 selected_style
