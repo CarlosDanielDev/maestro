@@ -5,7 +5,10 @@
 
 use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
-use crate::tui::app::App;
+use crate::tui::app::{App, TuiMode};
+
+/// Activity-log source for a bypass turned on from Settings (#1239).
+const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
 
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
@@ -51,12 +54,47 @@ impl App {
             return false;
         }
         if !self.bypass_warning_acknowledged {
-            self.screen_state.bypass_warning_screen =
-                Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
+            self.open_bypass_warning();
             return true;
         }
         self.confirm_bypass_activation("tui");
         false
+    }
+
+    fn open_bypass_warning(&mut self) {
+        self.screen_state.bypass_warning_screen =
+            Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
+    }
+
+    /// #1239: the Settings › Sessions bypass toggle was flipped on. It
+    /// writes the committed `maestro.toml`, so it always asks for the typed
+    /// CONFIRM, even when ⌃B was acknowledged earlier this session.
+    pub fn process_pending_settings_bypass(&mut self) {
+        let pending = (self.screen_state.settings_screen.as_ref())
+            .is_some_and(|s| s.bypass_request_pending());
+        if pending && self.screen_state.bypass_warning_screen.is_none() {
+            self.open_bypass_warning();
+            self.navigate_to(TuiMode::BypassWarning);
+        }
+    }
+
+    /// The bypass warning was answered. A pending Settings request is
+    /// staged (confirmed) or its toggle reverted (cancelled); otherwise
+    /// this is the ⌃B path.
+    pub fn finish_bypass_warning(&mut self, confirmed: bool) {
+        self.screen_state.bypass_warning_screen = None;
+        if let Some(screen) =
+            (self.screen_state.settings_screen.as_mut()).filter(|s| s.bypass_request_pending())
+        {
+            screen.resolve_bypass_request(confirmed);
+            if confirmed {
+                self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
+            }
+            return;
+        }
+        if confirmed {
+            self.confirm_bypass_activation("tui");
+        }
     }
 
     /// Final activation step after the warning has been confirmed.
@@ -73,6 +111,10 @@ impl App {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "bypass_settings_tests.rs"]
+mod settings_tests;
 
 #[cfg(test)]
 mod tests {

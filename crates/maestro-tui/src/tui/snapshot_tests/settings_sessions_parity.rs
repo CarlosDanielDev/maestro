@@ -202,8 +202,9 @@ fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
 fn sessions_bypass_toggle_only_drives_permission_mode() {
     // After removing the permission_mode dropdown from SESSIONS_FIELDS,
     // the bypass toggle is the sole UI surface that writes
-    // `sessions.permission_mode`. Toggle ON → bypassPermissions; OFF →
-    // default. Per-provider permission_mode lives on the Providers tab.
+    // `sessions.permission_mode`. Toggle ON stays pending until the bypass
+    // warning is confirmed (#1239), then bypassPermissions; OFF → default.
+    // Per-provider permission_mode lives on the Providers tab.
     let mut config = test_config();
     config.sessions.permission_mode = "default".into();
     let mut screen = SettingsScreen::new(config, FeatureFlags::default());
@@ -213,6 +214,9 @@ fn sessions_bypass_toggle_only_drives_permission_mode() {
         w.value = true;
     }
     screen.sync_widgets_to_config();
+    assert_eq!(screen.config.sessions.permission_mode, "default");
+    assert!(screen.bypass_request_pending());
+    screen.resolve_bypass_request(true);
     assert_eq!(screen.config.sessions.permission_mode, "bypassPermissions");
 
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];

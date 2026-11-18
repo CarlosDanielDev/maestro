@@ -124,21 +124,54 @@ fn sync_schema_tabs(screen: &mut SettingsScreen) {
 /// Sessions bypass toggle is the sole UI surface for
 /// `sessions.permission_mode` after the schema-driven dropdown was
 /// removed (per-provider permission_mode lives on the Providers tab).
-/// Toggle ON → "bypassPermissions"; toggle OFF → "default" (only when
-/// the current value is the bypass sentinel, so a non-default
-/// permission_mode set via TOML hand-edit is preserved on a toggle
-/// that's already off).
+/// Toggle ON is NOT staged here (#1239): it stays pending until the
+/// bypass warning is confirmed, see `resolve_bypass_request`. Toggle OFF
+/// → "default" (only when the current value is the bypass sentinel, so a
+/// non-default permission_mode set via TOML hand-edit is preserved on a
+/// toggle that's already off).
 fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(1) else {
-        return;
-    };
-    let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, BYPASS_LABEL) else {
-        return;
-    };
-    if w.value {
-        screen.config.sessions.permission_mode = "bypassPermissions".to_string();
-    } else if screen.config.sessions.permission_mode == "bypassPermissions" {
+    if bypass_toggle_on(screen) == Some(false)
+        && screen.config.sessions.permission_mode == "bypassPermissions"
+    {
         screen.config.sessions.permission_mode = "default".to_string();
+    }
+}
+
+fn bypass_toggle_on(screen: &SettingsScreen) -> Option<bool> {
+    let fields = screen.fields_per_tab.get(1)?;
+    match widget_by_label(fields, BYPASS_LABEL)? {
+        WidgetKind::Toggle(w) => Some(w.value),
+        _ => None,
+    }
+}
+
+impl SettingsScreen {
+    /// True when the bypass toggle is on but not yet staged: the user
+    /// flipped it and the typed-CONFIRM warning has not been answered
+    /// (#1239).
+    pub(crate) fn bypass_request_pending(&self) -> bool {
+        bypass_toggle_on(self) == Some(true)
+            && self.config.sessions.permission_mode != "bypassPermissions"
+    }
+
+    /// Answer a pending bypass request: confirmed stages
+    /// `permission_mode = "bypassPermissions"`; cancelled turns the toggle
+    /// back off so nothing is staged.
+    pub(crate) fn resolve_bypass_request(&mut self, confirmed: bool) {
+        if confirmed {
+            self.config.sessions.permission_mode = "bypassPermissions".to_string();
+            return;
+        }
+        let Some(fields) = self.fields_per_tab.get_mut(1) else {
+            return;
+        };
+        if let Some(WidgetKind::Toggle(w)) = fields
+            .iter_mut()
+            .map(|f| &mut f.widget)
+            .find(|w| w.label() == BYPASS_LABEL)
+        {
+            w.value = false;
+        }
     }
 }
 

@@ -18,12 +18,11 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     match outcome {
         BypassWarningOutcome::Pending => ScreenAction::None,
         BypassWarningOutcome::Confirmed => {
-            app.screen_state.bypass_warning_screen = None;
-            app.confirm_bypass_activation("tui");
+            app.finish_bypass_warning(true);
             ScreenAction::Pop
         }
         BypassWarningOutcome::Cancelled => {
-            app.screen_state.bypass_warning_screen = None;
+            app.finish_bypass_warning(false);
             ScreenAction::Pop
         }
     }
