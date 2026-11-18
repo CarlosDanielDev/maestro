@@ -217,7 +217,7 @@ fn interaction_screen_settled_failed_gates_banner() {
 }
 
 #[test]
-fn interaction_screen_quit_modal_open() {
+fn interaction_quit_modal() {
     let mut screen = screen(42, true, TurnState::Idle, vec![]);
     screen.handle_input(
         &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
@@ -228,6 +228,36 @@ fn interaction_screen_quit_modal_open() {
     assert!(
         rendered.contains("Quit interaction?"),
         "quit modal must show the confirm prompt:\n{rendered}"
+    );
+    // #1242: `y` wipes the worktree, so the copy must say so.
+    assert!(
+        rendered.contains("Removes worktree"),
+        "quit modal must name the worktree removal:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
+fn interaction_quit_modal_80x24_long_path() {
+    // #1242: the floor viewport with a real-length worktree path.
+    let mut screen = InteractionScreen::test_fixture(
+        1242,
+        true,
+        TurnState::Idle,
+        vec![],
+        "/Users/x/projects/maestro/.maestro/worktrees/issue-1242",
+    );
+    screen.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
+        InputMode::Insert,
+    );
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let theme = Theme::dark();
+    terminal.draw(|f| screen.draw(f, f.area(), &theme)).unwrap();
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("N to keep working"),
+        "the way out must not be cut:\n{rendered}"
     );
     with_time_mask(|| assert_snapshot!(terminal.backend()));
 }

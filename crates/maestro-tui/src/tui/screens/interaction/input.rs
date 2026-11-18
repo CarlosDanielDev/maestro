@@ -12,10 +12,10 @@ use ratatui::{
     layout::{Alignment, Position, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
-use std::path::Path;
 use tui_textarea::TextArea;
+use unicode_width::UnicodeWidthStr;
 
 /// Render the header naming the agent/CLI, model, and issue the chat is bound
 /// to, so the user always knows who they are talking to (#738 QA). The text
@@ -165,37 +165,84 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Render the `Ctrl+W` quit-confirm modal centered over `area`.
-pub(super) fn draw_quit_modal(
-    f: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    worktree: &Path,
-    warn_unsaved: bool,
-) {
-    let text = if warn_unsaved {
-        // RC4: this session has unpushed work and no linked PR. Quitting
-        // deletes the worktree branch — say so plainly and require a
-        // deliberate second confirm.
-        "Unpushed work will be LOST — no PR was created. Press y again to discard, N to keep working."
-            .to_string()
-    } else {
-        format!(
-            "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",
-            worktree.display()
-        )
-    };
-    let modal = centered_rect(area, (text.len() as u16 + 6).min(area.width), 3);
+impl super::InteractionScreen {
+    /// Lines of the `Ctrl+W` quit-confirm modal (#1242). The copy keys off
+    /// the same predicate `begin_quit_teardown` uses (a non-empty trusted
+    /// `worktree_root`), so it names the wipe exactly when `y` runs it.
+    pub(super) fn quit_modal_lines(&self) -> Vec<String> {
+        if self.quit_loss_acknowledged {
+            // RC4: this session has unpushed work and no linked PR. Quitting
+            // deletes the worktree branch — say so plainly and require a
+            // deliberate second confirm.
+            return vec![
+                "Unpushed work will be LOST — no PR was created. Press y again to discard, N to keep working."
+                    .to_string(),
+            ];
+        }
+        if self.worktree_root.as_os_str().is_empty() {
+            return vec![
+                "Quit interaction? No isolated worktree, so nothing is removed.".to_string(),
+                "Press y to quit, N to keep working.".to_string(),
+            ];
+        }
+        // The path gets its own line so it wraps alone at narrow widths
+        // instead of pushing the branch and the way out off the modal.
+        let mut lines = vec![
+            "Quit interaction? Removes worktree".to_string(),
+            self.worktree_path.display().to_string(),
+        ];
+        if !self.branch.is_empty() {
+            lines.push(format!("and local branch {}.", self.branch));
+        }
+        lines.push("Unpushed commits are lost; any remote branch or PR stays.".to_string());
+        lines.push("Press y to quit, N to keep working.".to_string());
+        lines
+    }
+}
+
+/// Rows `text` takes when greedily word-wrapped to `width` columns. Errs on
+/// the tall side for words wider than `width`, so the modal never clips.
+fn wrapped_rows(text: &str, width: usize) -> usize {
+    let width = width.max(1);
+    let (mut rows, mut col) = (1, 0);
+    for word in text.split(' ') {
+        let w = word.width();
+        if col > 0 && col + 1 + w <= width {
+            col += 1 + w;
+            continue;
+        }
+        if col > 0 {
+            rows += 1;
+        }
+        rows += w.div_ceil(width).max(1) - 1;
+        col = w - (w.div_ceil(width).max(1) - 1) * width;
+    }
+    rows
+}
+
+/// Render the `Ctrl+W` quit-confirm modal centered over `area`. Lines wrap
+/// to the modal width, and the height follows the wrapped row count, so
+/// every line stays readable down to the 80x24 floor (#1242).
+pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, lines: &[String]) {
+    let widest = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    let width = widest.saturating_add(6).min(area.width);
+    let wrap_width = usize::from(width.saturating_sub(2));
+    let rows: usize = lines.iter().map(|l| wrapped_rows(l, wrap_width)).sum();
+    let modal = centered_rect(area, width, (rows as u16).saturating_add(2));
     f.render_widget(Clear, modal);
     let block = theme.styled_block("Confirm", true);
     let inner = block.inner(modal);
     f.render_widget(block, modal);
+    let style = Style::default().fg(theme.text_primary);
     f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            text,
-            Style::default().fg(theme.text_primary),
-        )))
-        .alignment(Alignment::Center),
+        Paragraph::new(
+            lines
+                .iter()
+                .map(|l| Line::from(Span::styled(l.clone(), style)))
+                .collect::<Vec<_>>(),
+        )
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true }),
         inner,
     );
 }
