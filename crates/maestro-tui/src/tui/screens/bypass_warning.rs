@@ -25,21 +25,26 @@ pub struct BypassWarningState {
 }
 
 impl BypassWarningState {
+    /// The `⌃B` warning: bypass for THIS session only.
     pub fn new() -> Self {
         let row = |label: &str, text: &str| (label.to_string(), text.to_string());
+        Self::with_text(
+            "DANGER: enable bypass mode?",
+            vec![
+                row("", "Bypass auto-accepts EVERY review concern."),
+                row("", ""),
+                row("does", "edits files, commits and pushes, no asking"),
+                row("scope", "THIS session only"),
+                row("trust", "use only when you trust the reviewer fully"),
+            ],
+        )
+    }
+
+    /// The same `CONFIRM` dialog with another title and consequences, for a
+    /// caller whose scope differs from `⌃B` (e.g. a write to `maestro.toml`).
+    pub fn with_text(title: impl Into<String>, consequences: Vec<(String, String)>) -> Self {
         Self {
-            confirm: TypedConfirm::new(
-                "DANGER: enable bypass mode?",
-                CONFIRM_PHRASE,
-                "enable",
-                vec![
-                    row("", "Bypass auto-accepts EVERY review concern."),
-                    row("", ""),
-                    row("does", "edits files, commits and pushes, no asking"),
-                    row("scope", "THIS session only"),
-                    row("trust", "use only when you trust the reviewer fully"),
-                ],
-            ),
+            confirm: TypedConfirm::new(title, CONFIRM_PHRASE, "enable", consequences),
         }
     }
 }
@@ -110,6 +115,20 @@ mod tests {
         assert_eq!(
             handle_key(&mut state, key(KeyCode::Esc)),
             BypassWarningOutcome::Cancelled
+        );
+    }
+
+    #[test]
+    fn with_text_keeps_the_confirm_phrase() {
+        let mut state = BypassWarningState::with_text(
+            "Turn on bypass for new sessions?",
+            vec![("scope".into(), "maestro.toml is committed".into())],
+        );
+        assert_eq!(state.confirm.expected(), "CONFIRM");
+        type_str(&mut state, "CONFIRM");
+        assert_eq!(
+            handle_key(&mut state, key(KeyCode::Enter)),
+            BypassWarningOutcome::Confirmed
         );
     }
 

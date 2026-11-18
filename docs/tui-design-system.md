@@ -198,7 +198,7 @@ token; `Esc` cancels and is the default.
 Token rule (the #1261 ADR): the issue number for a per-session action
 (kill), a word for a global one (bypass: `CONFIRM`). Users today: kill
 (`App::open_kill_confirm`, state in `ScreenState::kill_confirm`) and the
-bypass warning (`BypassWarningState::confirm`). `ui::draw_typed_confirm`
+bypass warning (`BypassWarningState::confirm`; `new()` is the `⌃B` session-only text, `with_text(title, consequences)` keeps `CONFIRM` with another text). `ui::draw_typed_confirm`
 draws both last, over the whole frame. Both modes are text-input modes
 (`is_text_input_mode`), so typed `q`, `M`, digits never reach a global key.
 
