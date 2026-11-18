@@ -221,3 +221,127 @@ async fn quick_actions_scrolled_to_end_80x24() {
     }
     insta::assert_snapshot!(text);
 }
+
+fn home_screen() -> HomeScreen {
+    HomeScreen::new(
+        ProjectInfo {
+            repo: "owner/repo".to_string(),
+            branch: "main".to_string(),
+            username: None,
+        },
+        vec![],
+        vec![],
+    )
+}
+
+/// The screen alone, so the panel can be shorter than the app's 80x24
+/// size guard allows.
+fn draw_screen(screen: &mut HomeScreen, w: u16, h: u16) -> Buffer {
+    let theme = crate::tui::theme::Theme::default();
+    let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+    t.draw(|f| screen.draw(f, f.area(), &theme)).unwrap();
+    t.backend().buffer().clone()
+}
+
+/// Only the Quick Actions panel, filling a `w`x`h` terminal.
+fn draw_panel(screen: &HomeScreen, w: u16, h: u16) -> Buffer {
+    let theme = crate::tui::theme::Theme::default();
+    let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+    t.draw(|f| screen.draw_quick_actions(f, f.area(), &theme))
+        .unwrap();
+    t.backend().buffer().clone()
+}
+
+/// Markers sit on the border, so every inner row is an action row and the
+/// highlighted one is the selection: at the top, the bottom, and when only
+/// one or two rows fit.
+#[test]
+fn quick_actions_selection_never_lands_on_a_marker_row() {
+    let total = QUICK_ACTIONS.len();
+    // Panel heights 3..=16: 1 to 14 inner rows (14 fits all 13).
+    for h in 3u16..=16 {
+        for (sel, (_, key, _)) in QUICK_ACTIONS.iter().enumerate() {
+            let mut screen = home_screen();
+            screen.selected_action = sel;
+            let buf = draw_panel(&screen, 24, h);
+            assert_eq!(panel_inner(&buf).height, h - 2, "h={h}: inner rows");
+            let rows = panel_rows(&buf);
+            let text = panel_with_border(&buf).join("\n");
+            assert!(
+                rows.iter()
+                    .filter(|r| !r.trim().is_empty())
+                    .all(|r| r.trim_start().starts_with('[')),
+                "h={h} sel={sel}: a marker took a list row:\n{text}"
+            );
+            let hl = reversed_rows(&buf);
+            assert_eq!(hl.len(), 1, "h={h} sel={sel}: one highlight:\n{text}");
+            let want = format!("[{key}]");
+            assert!(
+                hl[0].contains(&want),
+                "h={h} sel={sel}: {want} is highlighted:\n{text}"
+            );
+            let up = marker_count(&panel_with_border(&buf), '↑').unwrap_or(0);
+            let down = marker_count(&panel_with_border(&buf), '↓').unwrap_or(0);
+            assert_eq!(
+                up + drawn_actions(&rows) + down,
+                total,
+                "h={h} sel={sel}: counts:\n{text}"
+            );
+        }
+    }
+}
+
+/// A panel or screen with no room for any row draws without panicking,
+/// and the hidden rows are still counted.
+#[test]
+fn quick_actions_tiny_panel_does_not_panic() {
+    for h in 0u16..=6 {
+        for w in [0u16, 1, 2, 10, 24, 80] {
+            for sel in [0, 6, QUICK_ACTIONS.len() - 1] {
+                let mut screen = home_screen();
+                screen.selected_action = sel;
+                draw_screen(&mut screen, w, h);
+                draw_panel(&screen, w, h);
+            }
+        }
+    }
+    // Border only (no inner row): every row is hidden and counted.
+    for sel in [0, 6, QUICK_ACTIONS.len() - 1] {
+        let mut screen = home_screen();
+        screen.selected_action = sel;
+        let buf = draw_panel(&screen, 24, 2);
+        let rows = panel_with_border(&buf);
+        let up = marker_count(&rows, '↑').unwrap_or(0);
+        let down = marker_count(&rows, '↓').unwrap_or(0);
+        assert_eq!(up + down, QUICK_ACTIONS.len(), "sel={sel}: {rows:?}");
+    }
+}
+
+/// Letter shortcuts run their own action wherever the window is scrolled.
+#[tokio::test]
+async fn quick_actions_letters_work_at_any_scroll() {
+    for downs in 0..QUICK_ACTIONS.len() {
+        let mut app = dashboard_after(downs, 80, 24).await;
+        draw(&mut app, 80, 24);
+        let home = app.screen_state.home_screen.as_mut().unwrap();
+        for (label, key, dispatch) in QUICK_ACTIONS {
+            let got = home.handle_input(
+                &Event::Key(KeyEvent::new(KeyCode::Char(*key), KeyModifiers::NONE)),
+                InputMode::Normal,
+            );
+            let want: crate::tui::screens::ScreenAction = (*dispatch).into();
+            assert_eq!(got, want, "j×{downs}: [{key}] {label}");
+        }
+        assert_eq!(
+            home.selected_action, downs,
+            "letters do not move the selection"
+        );
+    }
+    let mut app = dashboard_after(QUICK_ACTIONS.len() - 1, 80, 24).await;
+    press(&mut app, KeyCode::Char('S'), 80, 24).await;
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Settings,
+        "`S` opens Settings after j×12"
+    );
+}

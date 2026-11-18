@@ -133,7 +133,7 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    pub(super) fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.is_quick_actions_focused();
         let mut block = theme.styled_block("Quick Actions", is_focused);
 
