@@ -148,3 +148,89 @@ async fn settings_bypass_logs_source() {
         last_bypass.message
     );
 }
+
+/// A global chord can leave the warning without answering it. The chord is
+/// simulated with `navigate_to`, so the test does not depend on which
+/// letters the warning takes as text (#1261).
+fn leave_warning_unanswered(app: &mut App) {
+    app.navigate_to(TuiMode::Landing);
+}
+
+#[tokio::test]
+async fn settings_bypass_stale_request_not_inherited_by_ctrl_b() {
+    let mut app = settings_app();
+    let before = staged_mode(&app);
+    toggle_bypass_row(&mut app).await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    leave_warning_unanswered(&mut app);
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    assert!(drawn(&mut app).contains(WARNING_MARK));
+    type_confirm(&mut app);
+
+    let last_bypass = (app.activity_log.entries().iter().rev())
+        .find(|e| e.message.starts_with("Bypass mode enabled"))
+        .expect("a bypass log entry");
+    assert!(
+        last_bypass.message.contains("(tui)"),
+        "got: {}",
+        last_bypass.message
+    );
+    let screen = app.screen_state.settings_screen.as_ref().expect("settings");
+    assert!(
+        !screen.bypass_request_pending(),
+        "Settings toggle is back off"
+    );
+    assert_eq!(staged_mode(&app), before, "⌃B stages nothing in Settings");
+}
+
+#[tokio::test]
+async fn settings_bypass_stale_request_reverts_on_return() {
+    let mut app = settings_app();
+    let before = staged_mode(&app);
+    toggle_bypass_row(&mut app).await;
+    leave_warning_unanswered(&mut app);
+
+    app.tui_mode = TuiMode::Settings;
+    press(&mut app, KeyCode::Down).await;
+
+    assert_eq!(app.tui_mode, TuiMode::Settings);
+    assert!(app.screen_state.bypass_warning_screen.is_none());
+    let screen = app.screen_state.settings_screen.as_ref().expect("settings");
+    assert!(
+        !screen.bypass_request_pending(),
+        "Settings toggle is back off"
+    );
+    assert_eq!(staged_mode(&app), before);
+    assert!(!drawn(&mut app).contains(WARNING_MARK));
+}
+
+#[tokio::test]
+async fn ctrl_b_keeps_a_saved_settings_bypass_row_on() {
+    let mut app = settings_app();
+    let screen = app.screen_state.settings_screen.as_mut().expect("settings");
+    screen.config.sessions.permission_mode = "bypassPermissions".into();
+    toggle_bypass_row(&mut app).await;
+    app.tui_mode = TuiMode::Landing;
+    assert_eq!(staged_mode(&app), "bypassPermissions", "setup: staged on");
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    press(&mut app, KeyCode::Esc).await;
+
+    let screen = app.screen_state.settings_screen.as_mut().expect("settings");
+    screen.sync_widgets_to_config();
+    assert_eq!(
+        staged_mode(&app),
+        "bypassPermissions",
+        "⌃B must not touch it"
+    );
+}

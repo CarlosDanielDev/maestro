@@ -50,6 +50,7 @@ impl App {
     /// this session, push the BypassWarning screen; otherwise toggle
     /// directly. Returns true when the caller should push the warning.
     pub fn request_bypass_toggle(&mut self) -> bool {
+        self.drop_settings_bypass_request();
         if self.bypass_active {
             self.deactivate_bypass("tui");
             return false;
@@ -73,9 +74,27 @@ impl App {
     pub fn process_pending_settings_bypass(&mut self) {
         let pending = (self.screen_state.settings_screen.as_ref())
             .is_some_and(|s| s.bypass_request_pending());
-        if pending && self.screen_state.bypass_warning_screen.is_none() {
-            self.open_bypass_warning();
-            self.navigate_to(TuiMode::BypassWarning);
+        if !pending {
+            return;
+        }
+        if self.screen_state.bypass_warning_screen.is_some() {
+            // Back in Settings with the warning still open: it was left
+            // through a global chord, unanswered. Treat that as a cancel.
+            self.screen_state.bypass_warning_screen = None;
+            self.drop_settings_bypass_request();
+            return;
+        }
+        self.open_bypass_warning();
+        self.navigate_to(TuiMode::BypassWarning);
+    }
+
+    /// Turn a pending Settings bypass toggle back off, so no later answer
+    /// to the warning (for example a ⌃B one) is taken as a Settings confirm.
+    fn drop_settings_bypass_request(&mut self) {
+        if let Some(screen) =
+            (self.screen_state.settings_screen.as_mut()).filter(|s| s.bypass_request_pending())
+        {
+            screen.resolve_bypass_request(false);
         }
     }
 
