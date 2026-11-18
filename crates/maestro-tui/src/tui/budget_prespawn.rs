@@ -6,7 +6,8 @@
 //!
 //! Hard rules (per architect blueprint §6):
 //! - MUST use `theme.styled_block` for the border, NOT `theme.branding_bg`.
-//! - Footer chord hints are exactly `[y]es [n]o [s]kip` — verbatim.
+//! - Footer chord hints are exactly `[y]es [n]o [s]kip` — verbatim — on Warn;
+//!   on Block only `[n]o` (#1243: `y`/`s` cannot spawn past the cap).
 //! - Single-letter chords only; `Tab`/`BackTab`/`Up`/`Down`/`Enter`/`Esc`/`Ctrl+s`
 //!   are reserved for outer Dashboard chord set and MUST NOT dismiss the modal.
 
@@ -88,26 +89,44 @@ pub fn draw_budget_prespawn(
             Style::default().fg(theme.text_primary),
         ),
     ]);
-    let footer = Line::from(vec![
-        Span::styled(
-            "  [y]es ",
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            "[n]o ",
-            Style::default()
-                .fg(theme.accent_error)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            "[s]kip",
-            Style::default()
-                .fg(theme.accent_info)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
+    // On Block `y`/`s` do nothing (#1243), so the footer offers only `n`.
+    // `limit > 0` mirrors `check_pre_spawn`: no cap never blocks.
+    let blocked = limit > 0.0 && exceeds;
+    let footer = if blocked {
+        Line::from(vec![
+            Span::styled(
+                "  [n]o ",
+                Style::default()
+                    .fg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "over the cap, cannot spawn",
+                Style::default().fg(theme.text_secondary),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(
+                "  [y]es ",
+                Style::default()
+                    .fg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "[n]o ",
+                Style::default()
+                    .fg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "[s]kip",
+                Style::default()
+                    .fg(theme.accent_info)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
 
     let intro_p = Paragraph::new(intro).alignment(Alignment::Left);
     let projected_p = Paragraph::new(projected_line).alignment(Alignment::Left);

@@ -1,0 +1,6 @@
+---
+source: crates/maestro-tui/src/tui/navigation/registry_tests.rs
+expression: "format!(\"{}\\n{}\", log.trim_end(), summary.trim_end())"
+---
+ j Down   k Up   g Top   G Bottom                                        q quit
+ j Down   k Up   Enter Expand                                            q quit

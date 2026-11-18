@@ -111,6 +111,7 @@ pub(crate) fn build_submit_pr_review_argv(
     pr_number: u64,
     event: ReviewEvent,
     body: &str,
+    repo: Option<&str>,
 ) -> Vec<String> {
     let mut argv = vec![
         "pr".into(),
@@ -122,6 +123,7 @@ pub(crate) fn build_submit_pr_review_argv(
         argv.push("--body".into());
         argv.push(body.into());
     }
+    append_repo(&mut argv, repo);
     argv
 }
 
@@ -136,8 +138,8 @@ pub(crate) fn build_list_labels_argv() -> Vec<String> {
     ]
 }
 
-pub(crate) fn build_create_label_argv(name: &str, color: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_create_label_argv(name: &str, color: &str, repo: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
         "label".into(),
         "create".into(),
         name.into(),
@@ -146,7 +148,9 @@ pub(crate) fn build_create_label_argv(name: &str, color: &str) -> Vec<String> {
         "--description".into(),
         "Managed by Maestro".into(),
         "--force".into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
 pub(crate) fn build_create_milestone_argv(title: &str, description: &str) -> Vec<String> {
@@ -375,21 +379,22 @@ mod tests {
     #[test]
     fn submit_pr_review_argv_with_body() {
         assert_eq!(
-            build_submit_pr_review_argv(99, ReviewEvent::Approve, "LGTM"),
+            build_submit_pr_review_argv(99, ReviewEvent::Approve, "LGTM", None),
             s(&["pr", "review", "99", "--approve", "--body", "LGTM",])
         );
     }
 
     #[test]
     fn submit_pr_review_argv_omits_body_when_empty() {
-        let argv = build_submit_pr_review_argv(99, ReviewEvent::Comment, "");
+        let argv = build_submit_pr_review_argv(99, ReviewEvent::Comment, "", None);
         assert_eq!(argv, s(&["pr", "review", "99", "--comment"]));
         assert!(!argv.contains(&"--body".to_string()));
     }
 
     #[test]
     fn submit_pr_review_argv_request_changes() {
-        let argv = build_submit_pr_review_argv(99, ReviewEvent::RequestChanges, "see comments");
+        let argv =
+            build_submit_pr_review_argv(99, ReviewEvent::RequestChanges, "see comments", None);
         assert_eq!(
             argv,
             s(&[
@@ -414,7 +419,7 @@ mod tests {
     #[test]
     fn create_label_argv() {
         assert_eq!(
-            build_create_label_argv("maestro:ready", "0E8A16"),
+            build_create_label_argv("maestro:ready", "0E8A16", None),
             s(&[
                 "label",
                 "create",
@@ -696,6 +701,101 @@ mod tests {
         );
         assert_no_repo_flag(&build_remove_label_argv(7, "maestro:in-progress", None));
     }
+
+    #[test]
+    fn submit_pr_review_argv_carries_repo() {
+        assert_has_repo_flag(
+            &build_submit_pr_review_argv(1, ReviewEvent::Approve, "LGTM", Some("owner/a")),
+            "owner/a",
+        );
+        assert_no_repo_flag(&build_submit_pr_review_argv(
+            1,
+            ReviewEvent::Approve,
+            "LGTM",
+            None,
+        ));
+    }
+
+    // ── Ratchet: every builder is classified, every write carries --repo ──
+
+    /// Read-only builders. Their `--repo` coverage lives in the tests above.
+    const READ_BUILDERS: &[&str] = &[
+        "build_list_prs_for_branch_argv",
+        "build_get_issue_argv",
+        "build_list_labels_argv",
+        "build_list_issues_argv",
+        "build_list_issues_with_state_argv",
+        "build_list_issues_by_milestone_argv",
+        "build_list_milestones_argv",
+        "build_list_open_prs_argv",
+        "build_get_pr_argv",
+        "build_create_issue_dupe_check_argv",
+    ];
+
+    /// Write builders that cannot take `--repo`, each with the reason.
+    const WRITE_EXEMPT: &[(&str, &str)] = &[
+        (
+            "build_create_pr_argv",
+            "gh pr create infers the repo from the pushed branch",
+        ),
+        ("build_create_milestone_argv", "gh api has no --repo flag"),
+        ("build_create_issue_argv", "gh api has no --repo flag"),
+        (
+            "build_patch_milestone_description_argv",
+            "gh api has no --repo flag",
+        ),
+    ];
+
+    /// Every other write builder, called with `repo`.
+    fn write_argvs(repo: Option<&str>) -> Vec<(&'static str, Vec<String>)> {
+        vec![
+            ("build_add_label_argv", build_add_label_argv(1, "x", repo)),
+            (
+                "build_remove_label_argv",
+                build_remove_label_argv(1, "x", repo),
+            ),
+            (
+                "build_submit_pr_review_argv",
+                build_submit_pr_review_argv(1, ReviewEvent::Approve, "", repo),
+            ),
+            (
+                "build_create_label_argv",
+                build_create_label_argv("x", "ffffff", repo),
+            ),
+        ]
+    }
+
+    #[test]
+    fn every_write_argv_appends_repo() {
+        // A new `build_*_argv` must be listed above, so a new write cannot
+        // skip `append_repo` without someone writing down why.
+        let mut declared: Vec<&str> = include_str!("gh_argv.rs")
+            .lines()
+            .filter_map(|l| l.strip_prefix("pub(crate) fn "))
+            .filter_map(|l| l.split('(').next())
+            .filter(|name| name.starts_with("build_") && name.ends_with("_argv"))
+            .collect();
+        declared.sort_unstable();
+        let mut classified: Vec<&str> = READ_BUILDERS
+            .iter()
+            .copied()
+            .chain(WRITE_EXEMPT.iter().map(|(name, _)| *name))
+            .chain(write_argvs(None).into_iter().map(|(name, _)| name))
+            .collect();
+        classified.sort_unstable();
+        assert_eq!(declared, classified, "classify every gh argv builder");
+
+        for (name, argv) in write_argvs(Some("owner/a")) {
+            assert!(
+                argv.windows(2)
+                    .any(|w| w[0] == "--repo" && w[1] == "owner/a"),
+                "{name} must append --repo owner/a, got: {argv:?}"
+            );
+        }
+        for (_, argv) in write_argvs(None) {
+            assert_no_repo_flag(&argv);
+        }
+    }
 }
 
 /// Wire-format integration tests.
@@ -832,7 +932,7 @@ mod wire_tests {
             return;
         }
         use crate::provider::types::ReviewEvent;
-        let argv = build_submit_pr_review_argv(1, ReviewEvent::Approve, "LGTM");
+        let argv = build_submit_pr_review_argv(1, ReviewEvent::Approve, "LGTM", None);
         let flags = gh_help_flags(&["pr", "review"]);
         assert_all_recognized(&argv, &flags, "build_submit_pr_review_argv");
     }
