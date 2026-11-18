@@ -14,21 +14,21 @@ use super::make_session;
 use crate::session::types::SessionStatus;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::key_hints::QUIT;
-use crate::tui::input_handler::{KeyAction, handle_key};
+use crate::tui::input_handler::{KeyAction, announce_quit_key, handle_key};
 
 const RUNNING: &str = "session(s) still running. Exit anyway?";
 const IDLE: &str = "Are you sure you want to exit?";
 
-fn ctrl(c: char) -> KeyEvent {
+pub(super) fn ctrl(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
 }
 
-fn key(c: char) -> KeyEvent {
+pub(super) fn key(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
 }
 
 /// `mode` with `live` running sessions; the one-time ⌃Q hint is already seen.
-fn app(mode: TuiMode, live: usize) -> App {
+pub(super) fn app(mode: TuiMode, live: usize) -> App {
     let mut app = log_app(mode);
     for i in 0..live {
         app.pool
@@ -40,7 +40,7 @@ fn app(mode: TuiMode, live: usize) -> App {
 }
 
 /// No wall clock in these tests: every key and draw reads one instant.
-fn fixed_clock() -> Instant {
+pub(super) fn fixed_clock() -> Instant {
     static T0: OnceLock<Instant> = OnceLock::new();
     *T0.get_or_init(Instant::now)
 }
@@ -63,7 +63,7 @@ async fn opened(mode: TuiMode, live: usize, open: KeyEvent) -> App {
     app
 }
 
-fn text(app: &mut App, w: u16, h: u16) -> String {
+pub(super) fn text(app: &mut App, w: u16, h: u16) -> String {
     format!("{}", draw(app, w, h).backend())
 }
 
@@ -145,29 +145,34 @@ async fn idle_fleet_quits_directly() {
     }
 }
 
+/// The TurboQuant notice shows once per launch (the run loop calls
+/// `announce_quit_key` before the first frame) and never blocks a quit:
+/// the first ⌃Q of an idle fleet quits.
 #[tokio::test]
 async fn ctrl_q_one_time_hint() {
     let mut app = app(TuiMode::Landing, 0);
     app.screen_state.quit_hints.ctrl_q_shown = false;
     let tq_before = format!("{:?}", app.flags);
 
-    let action = handle_key(&mut app, ctrl('q')).await;
+    announce_quit_key(&mut app, fixed_clock());
+    let out = text(&mut app, 80, 24);
     assert!(
-        matches!(action, KeyAction::Consumed),
-        "first ⌃Q must not quit"
+        out.contains("Settings › TurboQuant"),
+        "notice drawn:\n{out}"
     );
-    assert!(app.running);
-    assert_eq!(app.tui_mode, TuiMode::Landing);
+    assert!(app.screen_state.quit_hints.ctrl_q_shown);
+    let toasts = app.activity_log.entries().len();
+    announce_quit_key(&mut app, fixed_clock());
+    assert_eq!(app.activity_log.entries().len(), toasts, "once per launch");
+
+    let action = handle_key(&mut app, ctrl('q')).await;
+    assert!(matches!(action, KeyAction::Quit), "the first ⌃Q quits");
+    assert!(!app.running);
     assert_eq!(
         format!("{:?}", app.flags),
         tq_before,
         "⌃Q no longer toggles TQ"
     );
-    let out = text(&mut app, 80, 24);
-    assert!(out.contains("Settings › TurboQuant"), "hint drawn:\n{out}");
-
-    let action = handle_key(&mut app, ctrl('q')).await;
-    assert!(matches!(action, KeyAction::Quit), "the hint shows once");
 }
 
 #[tokio::test]

@@ -273,8 +273,9 @@ pub struct ScreenState {
     pub fleet_board_screen: Option<crate::tui::screens::FleetBoardScreen>,
 }
 
-/// One-time hints about the quit keys (#1260). Kept per run: the first ⌃Q
-/// of a run explains that it quits now, and the first ⌃X points to ⌃Q.
+/// One-time hints about the quit keys (#1260), kept per launch:
+/// `ctrl_q_shown` = the launch notice (⌃Q quits, TurboQuant is in
+/// Settings) was shown; `ctrl_x_shown` = the first ⌃X pointed to ⌃Q.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct QuitHints {
     pub ctrl_q_shown: bool,

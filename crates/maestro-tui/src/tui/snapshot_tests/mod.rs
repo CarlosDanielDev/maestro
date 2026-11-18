@@ -9,6 +9,7 @@ mod call_log;
 mod caveman_row;
 mod completion_overlay;
 mod confirm_exit;
+mod confirm_exit_live_work;
 mod copy_keybinding_hint;
 mod cost_dashboard;
 mod dashboard;

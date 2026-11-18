@@ -217,10 +217,15 @@ of key repeats, and a second press inside the window is the fallback.
 
 User today: Confirm Exit (`input_handler::QUIT_HOLD`, state in
 `ScreenState::exit_hold`, drawn last by `ui::draw_typed_confirm`, sized from
-its lines). Exit chords: ⌃Q and `q` quit an idle fleet at once; with live
-agents (`input_handler::live_agents` = active + queued) ⌃Q opens the dialog
-armed, `q` / ⌃C / ⌃X open it unarmed, and only the hold quits (`y` and `⏎`
-do nothing). The first ⌃Q of a run and the first ⌃X show a one-time toast
+its lines). Exit chords: ⌃Q and `q` quit at once when there is no live work.
+Live work (`input_handler::has_live_work`) = pool active + queued sessions, a
+queue executor that has not finished (also between items), or a completion /
+auto-PR job in flight. With live work, ⌃Q opens the dialog armed, `q` / ⌃C /
+⌃X open it unarmed, and only the hold quits (`y` and `⏎` do nothing). In the
+idle dialog `y` and ⌃Q quit. Exit chords ignore key release events. Once per
+launch the run loop calls `announce_quit_key` (toast + activity log: ⌃Q quits,
+TurboQuant is in Settings); it never blocks a quit. The first ⌃X shows
+`⌃Q quits from anywhere`
 (`ScreenState::quit_hints`). The hold reads `input_handler::quit_now`:
 `ScreenState::quit_clock` when a test injects one, else `Instant::now`. The
 TurboQuant on/off toggle is the Settings › TurboQuant › Enabled field

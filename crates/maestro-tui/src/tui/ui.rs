@@ -1237,7 +1237,7 @@ fn draw_footer(
         key_hints::from_pairs(&pairs)
     };
     // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
-    if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::live_agents(app) > 0 {
+    if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
         hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
     }
     // #1263: the shown log drawer is modal; the footer shows only its keys.
@@ -1377,10 +1377,15 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
     let live = crate::tui::input_handler::live_agents(app);
     let bold = |fg| Style::default().fg(fg).add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
-    let focus = if live > 0 {
+    let focus = if crate::tui::input_handler::has_live_work(app) {
         let now = crate::tui::input_handler::quit_now(app);
+        let question = if live > 0 {
+            format!("{live} session(s) still running. Exit anyway?")
+        } else {
+            "A queue or PR job is still running. Exit anyway?".to_string()
+        };
         lines.push(Line::from(Span::styled(
-            format!("{live} session(s) still running. Exit anyway?"),
+            question,
             bold(theme.accent_warning),
         )));
         lines.push(Line::from(""));

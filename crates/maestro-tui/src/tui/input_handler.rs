@@ -4,7 +4,7 @@ use crate::tui::screen_dispatch::{
     dispatch_to_active_screen_then_hook as dispatch_to_active_screen, handle_screen_action,
 };
 use crate::tui::screens;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// Result of handling a key event in the TUI loop.
 pub(super) enum KeyAction {
@@ -104,7 +104,7 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
 
     // 'q' quits an idle fleet, else opens Confirm Exit (not in text input).
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
-        if live_agents(app) == 0 {
+        if !has_live_work(app) {
             app.running = false;
             return KeyAction::Quit;
         }
@@ -1116,34 +1116,43 @@ fn tab_key_target(app: &App, key: &KeyEvent) -> Option<app::TuiMode> {
     crate::tui::ds::tab_bar::tab_for_digit(c)
 }
 
-/// Agents that may still be running: quitting with any of them asks for a
-/// hold (#1260).
+/// Agent sessions that may still be running (pool active + queued).
 pub(crate) fn live_agents(app: &App) -> usize {
     app.pool.active_count() + app.pool.queued_count()
 }
 
+/// Work a quit would cut off (#1260): live sessions, a queue that has not
+/// finished (also between items), or a completion / auto-PR job still in
+/// flight. With any of it, quitting asks for the ⌃Q hold.
+pub(crate) fn has_live_work(app: &App) -> bool {
+    live_agents(app) > 0
+        || !app.completions_in_flight.is_empty()
+        || app
+            .queue_executor
+            .as_ref()
+            .is_some_and(|q| !q.is_finished())
+}
+
 /// #1260: ⌃C, ⌃X and ⌃Q, outside Confirm Exit. ⌃C and ⌃X always open it;
-/// ⌃Q quits an idle fleet and opens it armed (the press counts) while
-/// agents run. The first ⌃Q of a run only says that ⌃Q quits now (it used
-/// to toggle TurboQuant); the first ⌃X also points to ⌃Q.
+/// ⌃Q quits when there is no live work ([`has_live_work`]) and otherwise
+/// opens it armed (the press counts). The first ⌃X points to ⌃Q.
 fn handle_exit_chord(app: &mut App, key: &KeyEvent) -> Option<KeyAction> {
     let ctrl = |c| key.code == KeyCode::Char(c) && key.modifiers.contains(KeyModifiers::CONTROL);
+    if !(ctrl('q') || ctrl('c') || ctrl('x')) {
+        return None;
+    }
+    // Terminals that report releases send one after every press.
+    if key.kind == KeyEventKind::Release {
+        return Some(KeyAction::Consumed);
+    }
     let now = quit_now(app);
     if ctrl('q') {
-        if !app.screen_state.quit_hints.ctrl_q_shown {
-            app.screen_state.quit_hints.ctrl_q_shown = true;
-            quit_hint(app, QUIT_HINT_CTRL_Q, now);
-            return Some(KeyAction::Consumed);
-        }
-        if live_agents(app) == 0 {
+        if !has_live_work(app) {
             app.running = false;
             return Some(KeyAction::Quit);
         }
         open_confirm_exit(app, Some((key, now)));
         return Some(KeyAction::Consumed);
-    }
-    if !(ctrl('c') || ctrl('x')) {
-        return None;
     }
     if ctrl('x') && !app.screen_state.quit_hints.ctrl_x_shown {
         app.screen_state.quit_hints.ctrl_x_shown = true;
@@ -1151,6 +1160,19 @@ fn handle_exit_chord(app: &mut App, key: &KeyEvent) -> Option<KeyAction> {
     }
     open_confirm_exit(app, None);
     Some(KeyAction::Consumed)
+}
+
+/// Once per launch (the run loop calls it before the first frame): say
+/// that ⌃Q quits now and where the TurboQuant toggle went. It never
+/// blocks a quit.
+pub(crate) fn announce_quit_key(app: &mut App, now: std::time::Instant) {
+    if app.screen_state.quit_hints.ctrl_q_shown {
+        return;
+    }
+    app.screen_state.quit_hints.ctrl_q_shown = true;
+    app.activity_log
+        .push_simple("KEY".into(), QUIT_HINT_CTRL_Q.into(), LogLevel::Info);
+    quit_hint(app, QUIT_HINT_CTRL_Q, now);
 }
 
 const QUIT_HINT_CTRL_Q: &str = "⌃Q quits now. TurboQuant: Settings › TurboQuant";
@@ -1200,7 +1222,7 @@ fn close_confirm_exit(app: &mut App) -> KeyAction {
 fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     // #1260: while agents run only the ⌃Q hold quits; Esc (default) and
     // `n` stay. `y` and Enter do nothing.
-    if live_agents(app) > 0 {
+    if has_live_work(app) {
         use crate::tui::ds::confirm::ConfirmOutcome;
         let now = quit_now(app);
         let hold = app.screen_state.exit_hold.get_or_insert(QUIT_HOLD);
@@ -1226,6 +1248,14 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Enter => {
             close_confirm_exit(app)
+        }
+        // Nothing to lose: ⌃Q, the quit key, quits here too.
+        KeyCode::Char('q')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && key.kind != KeyEventKind::Release =>
+        {
+            app.running = false;
+            KeyAction::Quit
         }
         _ => KeyAction::Consumed, // unrelated keys: stay in the dialog
     }
