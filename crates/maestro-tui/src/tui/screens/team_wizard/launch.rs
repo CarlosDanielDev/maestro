@@ -35,13 +35,13 @@ impl TeamWizardScreen {
         }
 
         if matches!(code, KeyCode::Esc) {
-            // #877 — terminal states either swallow Esc (Executing — orphans
-            // the background task otherwise) or treat it as "close wizard"
-            // (LaunchSuccess / LaunchFailed). Retreating from a terminal
-            // step would walk the user backward into Executing, leaving the
-            // wizard stuck with no path forward.
+            // #877 — terminal states either cancel the run (Executing, #1246;
+            // leaving would orphan the background task) or treat it as "close
+            // wizard" (LaunchSuccess / LaunchFailed). Retreating from a
+            // terminal step would walk the user backward into Executing,
+            // leaving the wizard stuck with no path forward.
             match self.launch_step() {
-                LaunchStep::Executing => return ScreenAction::None,
+                LaunchStep::Executing => return self.cancel_team_run(),
                 LaunchStep::LaunchSuccess | LaunchStep::LaunchFailed => {
                     return ScreenAction::Pop;
                 }
@@ -276,6 +276,7 @@ impl TeamWizardScreen {
             LaunchInputKind::IdeaInbox => TeamInput::IdeaInbox,
         };
         self.launch_step = LaunchStep::Executing;
+        self.launch.running_wave = None;
         ScreenAction::LaunchTeam {
             team_name,
             input: team_input,

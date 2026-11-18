@@ -15,7 +15,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 impl TeamWizardScreen {
@@ -274,6 +274,7 @@ impl TeamWizardScreen {
         f.render_widget(
             Paragraph::new(lines)
                 .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true })
                 .block(theme.styled_block(title, false)),
             area,
         );
@@ -302,14 +303,18 @@ impl TeamWizardScreen {
                 LaunchStep::IssuePicker => self.draw_launch_issue_picker(f, body_area, theme),
                 LaunchStep::PlanPreview => self.draw_launch_plan_preview(f, body_area, theme),
                 LaunchStep::Confirm => self.draw_launch_confirm(f, body_area, theme),
-                LaunchStep::Executing => self.draw_terminal_state(
-                    f,
-                    body_area,
-                    theme,
-                    "Executing",
-                    "Dispatching team run…",
-                    theme.accent_info,
-                ),
+                LaunchStep::Executing => {
+                    if !self.draw_launch_waves(f, body_area, theme) {
+                        self.draw_terminal_state(
+                            f,
+                            body_area,
+                            theme,
+                            "Executing",
+                            "Dispatching team run…",
+                            theme.accent_info,
+                        );
+                    }
+                }
                 LaunchStep::LaunchSuccess => self.draw_terminal_state(
                     f,
                     body_area,
@@ -714,7 +719,7 @@ fn launch_footer_hint(step: LaunchStep) -> &'static str {
         }
         LaunchStep::PlanPreview => "[Enter] confirm   [Esc] back",
         LaunchStep::Confirm => "[Enter] launch   [Esc] back",
-        LaunchStep::Executing => "Launch in progress — Esc disabled until result",
+        LaunchStep::Executing => "Waves run in order   [Esc] cancel run",
         LaunchStep::LaunchSuccess => "[Enter] return",
         LaunchStep::LaunchFailed => "[r] retry   [Esc] back",
     }

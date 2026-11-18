@@ -15,6 +15,7 @@ mod draw;
 mod issue_paste;
 mod launch;
 mod launch_plan;
+mod launch_waves;
 mod manage;
 pub mod types;
 
@@ -565,3 +566,7 @@ impl TeamWizardScreen {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cancel_tests.rs"]
+mod cancel_tests;

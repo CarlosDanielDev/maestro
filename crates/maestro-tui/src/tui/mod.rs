@@ -226,6 +226,8 @@ async fn event_loop(
 ) -> anyhow::Result<()> {
     spawn_version_check(app.data_tx.clone());
     app.start_quota_refresh();
+    // Session feed for team runs (#1246); only published while one listens.
+    let (team_sessions, _) = tokio::sync::watch::channel(Vec::new());
 
     loop {
         // Apply session stream updates before drawing. In particular, a
@@ -254,6 +256,8 @@ async fn event_loop(
         }
 
         app.check_completions().await?;
+        // After completions, so a retry already shows as Retrying.
+        team_runner_glue::publish_sessions(&team_sessions, &app.pool.all_sessions());
 
         // #741: once the Interaction terminator banner has shown for its delay,
         // auto-navigate back to the Issues list (same Pop the keymap fires).
@@ -812,13 +816,21 @@ async fn event_loop(
                         std::sync::Arc::new(team_runner_glue::RealTeamLauncher {
                             tx: tx.clone(),
                             provider_config,
+                            sessions: team_sessions.subscribe(),
+                            prior: Default::default(),
                         });
                     let scheduler = *scheduler;
+                    // #1246: Esc on the wizard's Executing step cancels the run.
+                    let cancel = crate::session::team_runner::CancellationToken::new();
+                    if let Some(screen) = app.screen_state.team_wizard_screen.as_mut() {
+                        screen.set_run_cancel(cancel.clone());
+                    }
                     tokio::spawn(async move {
-                        let outcome = crate::session::team_runner::run_team(
+                        let outcome = crate::session::team_runner::run_team_until(
                             launcher,
                             scheduler,
                             app_default_agent,
+                            cancel,
                         )
                         .await;
                         let summary = outcome.into_apply_result();

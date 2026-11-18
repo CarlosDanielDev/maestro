@@ -307,6 +307,38 @@ fn launch_executing_80x24() {
     assert_snapshot!(t.backend());
 }
 
+/// #1246: wave 1 finished, wave 2 running, wave 3 waits on wave 2.
+#[test]
+fn team_result_waiting_wave() {
+    let mut s = populated_launch_screen();
+    s.set_launch_team_for_test("default-coder");
+    s.set_launch_input_for_test(LaunchInputKind::IssueSet, None);
+    s.set_launch_manual_issues_for_test(vec![10, 11, 12, 13]);
+    let mut metas = HashMap::new();
+    metas.insert(10, make_meta(10, IssueState::Open, Some(1), &[]));
+    metas.insert(11, make_meta(11, IssueState::Open, Some(1), &[10]));
+    metas.insert(12, make_meta(12, IssueState::Open, Some(1), &[10]));
+    metas.insert(13, make_meta(13, IssueState::Open, Some(1), &[11]));
+    s.apply_issue_metas(metas);
+    s.build_plan_preview_for_test();
+    s.set_launch_step_for_test(LaunchStep::Executing);
+    s.apply_wave_started(1);
+    let t = draw_team_wizard(&mut s, 80, 24);
+    let drawn: String = t
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|c| c.symbol())
+        .collect();
+    assert!(
+        drawn.contains("waiting on wave 2"),
+        "wave 3 must wait on wave 2"
+    );
+    assert!(drawn.contains("running"), "wave 2 must read running");
+    assert_snapshot!(t.backend());
+}
+
 #[test]
 fn launch_success_80x24() {
     let mut s = populated_launch_screen();

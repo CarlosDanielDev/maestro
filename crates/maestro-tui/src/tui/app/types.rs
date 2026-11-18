@@ -478,6 +478,9 @@ pub enum TuiDataEvent {
     /// with the reason rendered in the failure banner. The Err string
     /// names the first failing issue when a per-level spawn fails.
     TeamLaunchResult(Result<(), String>),
+    /// `run_team` started wave `n` (0-based) (#1246). The Team Wizard's
+    /// Executing step marks later waves as `waiting on wave n`.
+    TeamWaveStarted(usize),
     /// One streaming event from an in-flight interaction turn (#738).
     /// Applied to the live Interaction screen.
     InteractionTurnEvent {

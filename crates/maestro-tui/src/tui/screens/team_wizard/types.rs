@@ -9,6 +9,7 @@
 
 use crate::orchestration::team::{ResolvedTeam, SourceTier};
 use crate::orchestration::types::{Primitive, TeamRole};
+use crate::session::team_runner::CancellationToken;
 use crate::state::types::IssueNumber;
 use std::collections::HashMap;
 
@@ -295,6 +296,10 @@ pub struct LaunchPayload {
     /// Reset to `None` on every buffer mutation; advanced by `Up`/`Down`;
     /// consumed by `Tab` (#876).
     pub autocomplete_focus: Option<usize>,
+    /// Wave (0-based) the running team launch is on (#1246).
+    pub running_wave: Option<usize>,
+    /// Cancels the running team launch; Esc on Executing fires it (#1246).
+    pub run_cancel: Option<CancellationToken>,
 }
 
 impl LaunchPayload {

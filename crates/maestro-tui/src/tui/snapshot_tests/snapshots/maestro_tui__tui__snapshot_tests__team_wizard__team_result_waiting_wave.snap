@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"┌───────────────────────────[ Step 6/8: Executing ]────────────────────────────┐"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌────────────────────────────────[ Executing ]─────────────────────────────────┐"
+"│Each wave starts when the one before it has finished.                         │"
+"│                                                                              │"
+"│Wave 1  #10                     finished                                      │"
+"│Wave 2  #11 #12                 running                                       │"
+"│Wave 3  #13                     waiting on wave 2                             │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                      Waves run in order   [Esc] cancel run                     "
+"                                                                                "
