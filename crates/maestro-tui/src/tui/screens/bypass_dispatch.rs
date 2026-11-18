@@ -15,6 +15,9 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
         return ScreenAction::Pop;
     };
     let outcome = warning_handle_key(state, *key);
+    if app.answer_settings_bypass(outcome) {
+        return ScreenAction::Pop;
+    }
     match outcome {
         BypassWarningOutcome::Pending => ScreenAction::None,
         BypassWarningOutcome::Confirmed => {
