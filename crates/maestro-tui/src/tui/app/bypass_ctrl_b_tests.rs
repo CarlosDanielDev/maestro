@@ -7,13 +7,30 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
+use crate::config::LoadedConfig;
 use crate::review::bypass::BypassSource;
+use crate::session::worktree::MockWorktreeManager;
+use crate::state::store::StateStore;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
 use crate::tui::{make_test_app, ui};
 
 /// The ⌃B warning title.
 const WARNING_MARK: &str = "enable bypass";
+
+/// The header chip.
+const CHIP_MARK: &str = "▲ BYPASS";
+
+/// Only the default agent is in bypass; `[sessions]` is not.
+const AGENT_ONLY_BYPASS_TOML: &str = concat!(
+    "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n",
+    "[sessions]\npermission_mode = \"default\"\n",
+    "[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n",
+    "[notifications]\n",
+    "[agents]\ndefault = \"claude\"\n",
+    "[agents.claude]\nkind = \"claude\"\ncommand = \"claude\"\n",
+    "permission_mode = \"bypassPermissions\"\n",
+);
 
 /// What `setup.rs` does when `maestro.toml` sets bypass.
 fn config_bypass_app() -> App {
@@ -91,4 +108,36 @@ async fn ctrl_b_after_typed_confirm_toggles_without_warning() {
     assert!(app.bypass_active, "acknowledged this session: no warning");
     assert_ne!(app.tui_mode, TuiMode::BypassWarning);
     assert!(!drawn_at(&mut app, 80, 24).contains(WARNING_MARK));
+}
+
+/// #1395: the chip must match the mode sessions really get, which is
+/// `agents.<default>.permission_mode` first. A bypass from there still
+/// does not count as accepting the warning.
+#[tokio::test]
+async fn agent_default_bypass_shows_chip_and_later_ctrl_b_requires_confirm() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = toml::from_str(AGENT_ONLY_BYPASS_TOML).expect("config parses");
+    let mut app = crate::setup::setup_app_from_config_with_trust(
+        LoadedConfig {
+            config,
+            path: dir.path().join("maestro.toml"),
+        },
+        StateStore::new(dir.path().join("state-agent-bypass.json")),
+        Box::new(MockWorktreeManager::new()),
+        None,
+        false,
+        true,
+    );
+    assert!(app.bypass_active, "agent bypass turns bypass on at start");
+    assert!(!app.bypass_warning_acknowledged);
+    assert!(drawn_at(&mut app, 80, 24).contains(CHIP_MARK));
+
+    ctrl_b(&mut app).await;
+    assert!(!app.bypass_active);
+    assert!(!drawn_at(&mut app, 80, 24).contains(CHIP_MARK));
+
+    ctrl_b(&mut app).await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    assert!(drawn_at(&mut app, 80, 24).contains(WARNING_MARK));
+    assert!(!app.bypass_active, "bypass stays off before CONFIRM");
 }

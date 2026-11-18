@@ -233,6 +233,13 @@ mod tests {
             .and_then(|v| v.as_str());
         assert_eq!(sessions, Some("default"));
 
+        let config: crate::config::Config = toml::from_str(&text).expect("repo config parses");
+        assert_ne!(
+            config.effective_default_permission_mode(),
+            "bypassPermissions",
+            "the default agent's mode is what sessions get"
+        );
+
         let mut modes = Vec::new();
         permission_modes(&doc, "", &mut modes);
         let bypass: Vec<_> = modes

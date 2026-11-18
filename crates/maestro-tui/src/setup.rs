@@ -62,10 +62,13 @@ pub fn setup_app_from_config_with_trust(
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     // Bypass overrides the configured permission mode for this session only.
+    // Otherwise use the mode sessions really get (`agents.<default>` first,
+    // then `[sessions]`), the same one a Settings save applies, so the
+    // ▲ BYPASS chip always matches it (#1395).
     let permission_mode = if bypass_review {
         "bypassPermissions".to_string()
     } else {
-        config.sessions.permission_mode.clone()
+        config.effective_default_permission_mode()
     };
 
     let permission_mode_for_app = permission_mode.clone();
@@ -80,7 +83,7 @@ pub fn setup_app_from_config_with_trust(
 
     // Bypass mode is activatable via three paths (#328 AC):
     //   - CLI flag (`--bypass-review`)
-    //   - Config (`[sessions].permission_mode = "bypassPermissions"`)
+    //   - Config (`agents.<default>.permission_mode`, else `[sessions]`)
     //   - TUI toggle (Ctrl+B at runtime)
     if bypass_review || permission_mode == "bypassPermissions" {
         let source = if bypass_review {
