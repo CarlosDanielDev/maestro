@@ -765,20 +765,25 @@ async fn handle_log_viewer(app: &mut App, key: &KeyEvent, _id: uuid::Uuid) -> Ke
     KeyAction::Consumed
 }
 
+/// #1261: kill asks for the session's issue number (`ds::confirm`). `⏎` is
+/// inert until the typed text matches; `Esc` cancels.
 async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> KeyAction {
-    match key.code {
-        // Poka-yoke (#8): only `y` kills. Enter is the confirm/default key
-        // everywhere else, so it must NOT destroy a session on reflex — it
-        // falls through and leaves the modal open.
-        KeyCode::Char('y') => {
-            app.kill_selected_session(session_id).await;
-            app.navigate_back_or_dashboard();
-        }
-        KeyCode::Char('n') | KeyCode::Esc => {
-            app.navigate_back_or_dashboard();
-        }
-        _ => {}
+    use crate::tui::ds::confirm::ConfirmOutcome;
+    if !matches!(&app.screen_state.kill_confirm, Some((id, _)) if *id == session_id) {
+        app.screen_state.kill_confirm = Some((session_id, app.kill_confirm(session_id)));
     }
+    let Some((_, confirm)) = app.screen_state.kill_confirm.as_mut() else {
+        return KeyAction::Consumed;
+    };
+    let outcome = confirm.handle_key(*key);
+    if outcome == ConfirmOutcome::Pending {
+        return KeyAction::Consumed;
+    }
+    app.screen_state.kill_confirm = None;
+    if outcome == ConfirmOutcome::Confirmed {
+        app.kill_selected_session(session_id).await;
+    }
+    app.navigate_back_or_dashboard();
     KeyAction::Consumed
 }
 
@@ -1064,7 +1069,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
-                app.navigate_to(app::TuiMode::ConfirmKill(id));
+                app.open_kill_confirm(id);
             }
         }
         FKeyAction::Exit => app.running = false,
@@ -1094,6 +1099,8 @@ fn is_text_input_mode(app: &App) -> bool {
     let state = &app.screen_state;
     match app.tui_mode {
         app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings => true,
+        // #1261: typed confirms (issue number, `CONFIRM`).
+        app::TuiMode::ConfirmKill(_) | app::TuiMode::BypassWarning => true,
         app::TuiMode::Prd => state.prd_screen.as_ref().is_some_and(|s| s.edit.is_some()),
         app::TuiMode::Roadmap => {
             (state.roadmap_screen.as_ref()).is_some_and(|s| s.editing_filter.is_some())
@@ -1168,7 +1175,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
-                app.navigate_to(app::TuiMode::ConfirmKill(id));
+                app.open_kill_confirm(id);
             }
         }
         (KeyCode::Char('K'), _) => {
@@ -1317,6 +1324,10 @@ fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
         app.panel_view.scroll_offset = 0;
     }
 }
+
+#[cfg(test)]
+#[path = "input_handler_kill_tests.rs"]
+mod kill_tests;
 
 #[cfg(test)]
 #[path = "input_handler_size_guard_tests.rs"]
@@ -1647,7 +1658,8 @@ mod tests {
     #[tokio::test]
     async fn confirm_kill_enter_does_not_kill() {
         // Enter is the safe/confirm key everywhere else, so a reflexive Enter
-        // must NOT destroy a session. The modal stays open; only `y` kills.
+        // must NOT destroy a session. The modal stays open until the issue
+        // number is typed (#1261).
         let mut app = make_app();
         let id = uuid::Uuid::new_v4();
         app.tui_mode = TuiMode::ConfirmKill(id);
@@ -1657,12 +1669,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn confirm_kill_n_still_cancels() {
+    async fn confirm_kill_esc_cancels() {
+        // #1261: `n` is now typed text; Esc is the cancel (and the default).
         let mut app = make_app();
         let id = uuid::Uuid::new_v4();
         app.tui_mode = TuiMode::ConfirmKill(id);
         app.nav_stack.push(TuiMode::Overview);
         handle_key(&mut app, key('n')).await;
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+        handle_key(&mut app, key_code(KeyCode::Esc)).await;
         assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     }
 

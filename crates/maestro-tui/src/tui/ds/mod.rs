@@ -3,6 +3,7 @@ pub mod attention;
 pub mod bar_row;
 pub mod breakpoint;
 pub mod checklist;
+pub mod confirm;
 pub mod crumb_bar;
 pub mod filter_chips;
 pub mod fleet_table;
