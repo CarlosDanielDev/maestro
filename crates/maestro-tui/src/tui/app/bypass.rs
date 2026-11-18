@@ -205,17 +205,41 @@ mod tests {
         }
     }
 
-    /// #1395: this repo is public; a fresh clone must not start in bypass.
+    /// Every `permission_mode` in a TOML tree, with its dotted path.
+    fn permission_modes(value: &toml::Value, path: &str, out: &mut Vec<(String, String)>) {
+        let Some(table) = value.as_table() else {
+            return;
+        };
+        for (key, child) in table {
+            let child_path = format!("{path}{key}");
+            match (key.as_str(), child.as_str()) {
+                ("permission_mode", Some(mode)) => out.push((child_path, mode.to_string())),
+                _ => permission_modes(child, &format!("{child_path}."), out),
+            }
+        }
+    }
+
+    /// #1395: this repo is public; a fresh clone must not start in bypass
+    /// (`[sessions]`) and must not turn it on when Settings is saved, which
+    /// reads `agents.<default>.permission_mode` (screen_dispatch.rs).
     #[test]
     fn committed_maestro_toml_does_not_ship_bypass() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../maestro.toml");
         let text = std::fs::read_to_string(&path).expect("repo maestro.toml is readable");
         let doc: toml::Value = toml::from_str(&text).expect("repo maestro.toml parses");
-        let mode = doc
+        let sessions = doc
             .get("sessions")
             .and_then(|s| s.get("permission_mode"))
             .and_then(|v| v.as_str());
-        assert_eq!(mode, Some("default"));
+        assert_eq!(sessions, Some("default"));
+
+        let mut modes = Vec::new();
+        permission_modes(&doc, "", &mut modes);
+        let bypass: Vec<_> = modes
+            .iter()
+            .filter(|(_, mode)| mode == "bypassPermissions")
+            .collect();
+        assert!(bypass.is_empty(), "maestro.toml ships bypass at {bypass:?}");
     }
 
     #[test]

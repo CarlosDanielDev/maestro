@@ -134,7 +134,7 @@ kind = "claude"
 enabled = true
 command = "claude"
 model = "opus"
-permission_mode = "bypassPermissions"
+permission_mode = "default"
 allowed_tools = []
 sandbox = ""
 
@@ -159,5 +159,5 @@ kind = "opencode"
 enabled = true
 command = "opencode"
 model = "opencode-go/deepseek-v4-pro"
-permission_mode = "bypassPermissions"
+permission_mode = "default"
 sandbox = ""
