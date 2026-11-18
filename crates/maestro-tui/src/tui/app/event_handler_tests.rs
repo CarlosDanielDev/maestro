@@ -191,3 +191,66 @@ fn unpriced_model_warning_is_logged_once_per_session() {
         .count();
     assert_eq!(session_lines, 1, "session activity log must warn once");
 }
+
+/// #1395: a headless Claude run with no permission mode and no allowed
+/// tools is refused by the provider. The real refusal, forwarded as the
+/// session manager does (`StreamEvent::Error { err.to_string() }`), is
+/// logged and raised as an error toast. The binary never exists, so no
+/// real session starts.
+#[tokio::test]
+async fn headless_permission_refusal_is_logged_and_toasted() {
+    use crate::agent_provider::claude::HEADLESS_NO_PERMISSION;
+    use crate::agent_provider::types::AgentRequest;
+    use crate::agent_provider::{AgentProvider, ClaudeProvider, ClaudeTransport};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let provider = ClaudeProvider::with_transport(
+        "/nonexistent-sentinel-binary-maestro-1395",
+        ClaudeTransport::Headless,
+    );
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let request = AgentRequest::stream_json("fix bug".into(), "claude-sonnet".into());
+    let err = provider
+        .run(
+            request,
+            tx,
+            crate::session::team_runner::CancellationToken::new(),
+        )
+        .await
+        .expect_err("the run must not start");
+
+    for (w, h) in [(80, 24), (80, 27)] {
+        let mut app = make_test_app("headless-refusal");
+        let session_id = promote_session(&mut app, session_with_issue(7));
+        app.handle_session_event(SessionEvent {
+            session_id,
+            event: StreamEvent::Error {
+                message: err.to_string(),
+            },
+        });
+
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains(HEADLESS_NO_PERMISSION)),
+            "the refusal is in the activity log"
+        );
+
+        let mut t = Terminal::new(TestBackend::new(w, h)).expect("terminal");
+        t.draw(|f| crate::tui::ui::draw(f, &mut app)).expect("draw");
+        t.draw(|f| crate::tui::ui::draw(f, &mut app)).expect("draw");
+        let buf = t.backend().buffer();
+        let mut screen = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                screen.push_str(buf[(x, y)].symbol());
+            }
+            screen.push('\n');
+        }
+        assert!(
+            screen.contains("Headless Claude cannot ask"),
+            "the refusal toast is drawn at {w}x{h}:\n{screen}"
+        );
+    }
+}
