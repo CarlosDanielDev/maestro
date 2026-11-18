@@ -56,7 +56,7 @@ sha2 = "0.11"
 strip-ansi-escapes = "0.2"
 image = { version = "0.25.10", features = ["png"], default-features = false }
 rand = { version = "0.8", features = ["small_rng"] }
-sysinfo = "0.33"
+sysinfo = "0.38"
 syn = { version = "3", features = ["full", "visit"] }
 walkdir = "2"
 flate2 = "1"
