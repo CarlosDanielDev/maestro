@@ -211,6 +211,7 @@ use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::input::is_back_tab;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
@@ -659,7 +660,7 @@ impl MilestoneWizardScreen {
 
     /// Mutable reference to the textarea active on the current step,
     /// if any. Used to delegate raw key events (char insertion,
-    /// backspace, arrows, selection, undo/redo) to tui-textarea.
+    /// backspace, arrows, selection, undo/redo) to ratatui-textarea.
     fn active_field_mut(&mut self) -> Option<&mut TextAreaField> {
         match self.step {
             MilestoneWizardStep::GoalDefinition => Some(&mut self.goal_field),
@@ -819,7 +820,9 @@ impl Screen for MilestoneWizardScreen {
                 // Delegate Char, Backspace, Arrows, Home/End, word-wise
                 // jumps, Ctrl+W / Ctrl+Z / Ctrl+Y, selection (Shift+arrows),
                 // etc. to the active TextArea.
-                if let Some(field) = self.active_field_mut() {
+                if let Some(field) = self.active_field_mut()
+                    && !is_back_tab(event)
+                {
                     field.area_mut().input(event.clone());
                 }
             }
@@ -891,6 +894,17 @@ mod tests {
         // Payload is only updated at step-transition / paste boundaries;
         // typing alone does not flush.
         assert!(s.payload().goals.is_empty());
+    }
+
+    #[test]
+    fn shift_tab_never_types_into_the_goal_field() {
+        let mut s = MilestoneWizardScreen::new();
+        type_chars(&mut s, "ship");
+        s.handle_input(
+            &key_event_with_modifiers(KeyCode::BackTab, KeyModifiers::SHIFT),
+            InputMode::Insert,
+        );
+        assert_eq!(s.goal_field.text(), "ship");
     }
 
     #[test]

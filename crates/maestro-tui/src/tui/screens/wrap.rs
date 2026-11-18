@@ -23,7 +23,7 @@ pub struct WrapResult {
 /// - Each logical line is wrapped independently at character boundaries.
 /// - Empty logical lines produce exactly one visual row (preserving manual newlines).
 /// - `viewport_width` of 0 is clamped to 1 to prevent infinite loops.
-/// - Cursor column is a **character index** (matching `tui-textarea::TextArea::cursor()`).
+/// - Cursor column is a **character index** (matching `ratatui_textarea::TextArea::cursor()`).
 pub fn wrap_lines(
     logical_lines: &[impl AsRef<str>],
     cursor: (usize, usize),

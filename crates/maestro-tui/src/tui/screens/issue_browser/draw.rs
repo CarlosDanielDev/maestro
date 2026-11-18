@@ -636,7 +636,7 @@ impl IssueBrowserScreen {
         // the visual cursor agree (same backend the prompt screen uses), and
         // the box scrolls to keep the caret visible.
         let logical_lines: Vec<String> = overlay.editor.lines().to_vec();
-        let (cursor_row, cursor_col) = overlay.editor.cursor();
+        let ratatui_textarea::DataCursor(cursor_row, cursor_col) = overlay.editor.cursor();
         let wrapped =
             super::super::wrap::wrap_lines(&logical_lines, (cursor_row, cursor_col), inner_w);
         let scroll = super::super::wrap::scroll_offset_for_cursor(

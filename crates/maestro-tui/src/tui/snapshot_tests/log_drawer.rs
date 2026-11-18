@@ -277,7 +277,7 @@ async fn ctrl_l_opens_drawer_from_interaction_composer() {
 
     let _ = handle_key(&mut app, esc()).await;
     assert!(!app.activity_log.drawer_open);
-    // Ctrl+U stays tui-textarea's undo in the composer.
+    // Ctrl+U stays ratatui-textarea's undo in the composer.
     let ctrl_u = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
     let _ = handle_key(&mut app, ctrl_u).await;
     assert_eq!(text(&app), "draf", "Ctrl+U undoes the last edit");

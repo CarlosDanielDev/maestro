@@ -135,7 +135,7 @@ get enum dispatch, `edit_hint()` for the keybind bar, and
 |---|---|---|
 | **`Input`** (canonical) | `widgets/input/` — `Input::single_line(cfg)`, `Input::multi_line(cfg)`, `InputConfig::new().placeholder(..).max_len(n).initial(..)`; render with `widgets::input::render` | Foundation landed (#963). Not yet adopted by any screen; migrations #964–#974 pending. **Use this for new fields.** |
 | `wizard_fields::TextAreaField` + `WizardFields` | `crates/maestro-tui/src/tui/screens/wizard_fields.rs` | Used by wizards (focus cycle, `insert_sanitized`) |
-| Raw `tui_textarea::TextArea` + `screens::wrap` | pattern in `crates/maestro-tui/src/tui/screens/prompt_input/draw.rs` | Rich prompt / interaction input |
+| Raw `ratatui_textarea::TextArea` + `screens::wrap` | pattern in `crates/maestro-tui/src/tui/screens/prompt_input/draw.rs` | Rich prompt / interaction input |
 
 **Never** hand-roll a `String` + cursor. It caused three bugs in a row in #733
 (cursor drift on wrap, no scroll, no arrow keys). For wrapping and scroll use
@@ -363,7 +363,7 @@ Implements the Activity log row of "Shell rules" in `docs/design-system/index.ht
 | `ds::log_drawer::draw(f, area, rows, &log, theme, nerd_font)` | Rounded `Focus::Overlay` box on `surface_overlay`, the last `rows` rows of `area` (clamped), local time. `ui::draw` passes the main area and `tui.layout.activity_log_height` (same rows as the pane) |
 | `ActivityLog::draw_block_in_zone(.., block, ..)` | The log lines inside a caller's block (the drawer's overlay panel) |
 
-The Interaction composer clears its input with `Ctrl+G` (`Ctrl+U` stays tui-textarea's undo). Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
+The Interaction composer clears its input with `Ctrl+G` (`Ctrl+U` stays ratatui-textarea's undo). Rules: log a WARN/ERR to tell the user something went wrong off the log screens; do not also push a toast for the same event. Interaction and session views keep their own transcript; they are not the Activity pane.
 
 ### Needs-you queue and terminal title (`crates/maestro-tui/src/tui/ds/attention.rs`, #1259)
 

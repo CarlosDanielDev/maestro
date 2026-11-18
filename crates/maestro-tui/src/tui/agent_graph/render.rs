@@ -90,6 +90,7 @@ pub(crate) fn draw_agent_graph(
     let positions_for_paint = positions;
     let inner_cols = area.width.saturating_sub(2);
     let inner_rows = area.height.saturating_sub(2);
+    let (dx, dy) = floor_shift(marker, inner_cols, inner_rows);
     let session_infos: Vec<SessionRenderInfo> = options
         .sessions
         .iter()
@@ -118,10 +119,10 @@ pub(crate) fn draw_agent_graph(
                 let p1 = positions_for_paint[from_idx];
                 let p2 = positions_for_paint[to_idx];
                 ctx.draw(&CanvasLine {
-                    x1: p1.x,
-                    y1: p1.y,
-                    x2: p2.x,
-                    y2: p2.y,
+                    x1: p1.x + dx,
+                    y1: p1.y + dy,
+                    x2: p2.x + dx,
+                    y2: p2.y + dy,
                     color: edge_color(e, &session_infos, tick),
                 });
             }
@@ -171,8 +172,8 @@ pub(crate) fn draw_agent_graph(
                             ctx.print(lx, ly, Line::styled(label, style));
                         } else {
                             ctx.draw(&Rectangle {
-                                x: p.x - 0.02,
-                                y: p.y - 0.02,
+                                x: p.x + dx - 0.02,
+                                y: p.y + dy - 0.02,
                                 width: 0.04,
                                 height: 0.04,
                                 color,
@@ -204,8 +205,8 @@ pub(crate) fn draw_agent_graph(
                         // arm only paints the container outline + label.
                         let team_color = options.theme.accent_warning;
                         ctx.draw(&Rectangle {
-                            x: p.x - 0.15,
-                            y: p.y - 0.10,
+                            x: p.x + dx - 0.15,
+                            y: p.y + dy - 0.10,
                             width: 0.30,
                             height: 0.20,
                             color: team_color,
@@ -320,6 +321,24 @@ pub(super) fn status_modifier(status: SessionStatus) -> Modifier {
         Stalled => Modifier::DIM | Modifier::REVERSED,
         Spawning | Queued | Retrying => Modifier::empty(),
     }
+}
+
+/// Canvas-unit shift that makes ratatui 0.30 shapes land on the same pixel
+/// as in 0.29.
+///
+/// 0.29 floored shape points to a grid pixel; 0.30 rounds them, while
+/// `ctx.print` labels still floor. Unshifted, edge tips move half a pixel away
+/// from their labels (the #569 gap) and flat edges can step a row. Moving
+/// shapes by half a pixel (left, and up because canvas y grows upward) turns
+/// `round` back into `floor`. Labels and sprites are not shifted.
+fn floor_shift(marker: Marker, inner_cols: u16, inner_rows: u16) -> (f64, f64) {
+    let (px_w, px_h) = match marker {
+        Marker::Braille => (2, 4),
+        _ => (1, 1),
+    };
+    // Half a pixel on a 2.0-wide axis of `n` pixels is `1.0 / (n - 1)`.
+    let half = |cells: u16, px: u16| 1.0 / f64::from((cells * px).max(2) - 1);
+    (-half(inner_cols, px_w), half(inner_rows, px_h))
 }
 
 /// Paint a 6×6 sprite onto the canvas at `(cx, cy)` (canvas units).

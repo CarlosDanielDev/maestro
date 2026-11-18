@@ -26,10 +26,6 @@ ignore = [
     # hasn't moved to bincode 2.x / alternatives yet.
     # RUSTSEC-2025-0141: https://rustsec.org/advisories/RUSTSEC-2025-0141
     "RUSTSEC-2025-0141",
-    # Transitive via `ratatui` and `tui-textarea` — paste is archived but has
-    # no known vulnerability. ratatui tracking replacement (pastey) upstream.
-    # RUSTSEC-2024-0436: https://rustsec.org/advisories/RUSTSEC-2024-0436
-    "RUSTSEC-2024-0436",
     # Transitive via `syntect` — yaml-rust maintainer unreachable but no
     # known vulnerability. syntect hasn't migrated to yaml-rust2 yet.
     # RUSTSEC-2024-0320: https://rustsec.org/advisories/RUSTSEC-2024-0320
@@ -71,20 +67,9 @@ external-default-features = "allow"
 allow = []
 deny = []
 skip = [
-    # ratatui pins lru 0.12 which uses hashbrown 0.15; syntect/toml use 0.16.
-    # Upstream ratatui tracking: https://github.com/ratatui-org/ratatui/issues
-    { name = "hashbrown", version = "0.15", reason = "ratatui/lru pin v0.15; syntect/toml use v0.16 — upstream tracking: ratatui" },
     # portable-pty (interactive claude transport, #749) pins bitflags 1.x;
     # the rest of the workspace ecosystem is on 2.x.
     { name = "bitflags", version = "1", reason = "portable-pty pins v1; workspace uses v2 — upstream tracking: portable-pty/wezterm" },
-    # crossterm (via ratatui/tui-textarea) pins rustix 0.38; newer deps use 1.x.
-    # Upstream crossterm tracking: https://github.com/crossterm-rs/crossterm/issues
-    { name = "rustix", version = "0.38", reason = "crossterm pins v0.38; newer deps (tempfile/x11rb) use v1.x — upstream tracking: crossterm" },
-    # ratatui/unicode-truncate pin v0.1; maestro/ratatui/tui-textarea use v0.2.
-    # Upstream ratatui tracking: https://github.com/ratatui-org/ratatui/issues
-    { name = "unicode-width", version = "0.1", reason = "ratatui/unicode-truncate pin v0.1; newer uses v0.2 — upstream tracking: ratatui" },
-    # linux-raw-sys: crossterm (0.38 rustix) uses 0.4.15; newer rustix 1.x uses 0.12.1.
-    { name = "linux-raw-sys", version = "0.4", reason = "crossterm (0.38 rustix) uses v0.4; newer rustix uses v0.12 — no upgrade path" },
     # redox_syscall: parking_lot 0.12 uses 0.5; filetime/libredox use 0.7.4.
     { name = "redox_syscall", version = "0.5", reason = "parking_lot 0.12 pins v0.5; newer libredox uses v0.7 — no upgrade path" },
     # getrandom: rand (0.8) uses 0.2.17; uuid uses 0.4.2.

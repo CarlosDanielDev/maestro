@@ -59,7 +59,7 @@ impl PromptInputScreen {
 
         // Read logical lines and cursor from the editing backend
         let logical_lines: Vec<String> = self.editor.lines().to_vec();
-        let (cursor_row, cursor_col) = self.editor.cursor();
+        let ratatui_textarea::DataCursor(cursor_row, cursor_col) = self.editor.cursor();
 
         // Compute wrapped lines and visual cursor position
         let wrap_result = wrap_lines(&logical_lines, (cursor_row, cursor_col), inner.width);

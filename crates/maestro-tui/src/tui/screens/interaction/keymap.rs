@@ -44,7 +44,7 @@ pub(crate) enum InteractionIntent {
     JumpToLatest,
     /// Any other key in `Idle` — feed it to the text editor.
     FeedEditor,
-    /// A send/edit key while `Streaming` — input locked, ignore.
+    /// A send/edit key while `Streaming`, or Shift+Tab — ignore.
     Locked,
 }
 
@@ -110,6 +110,10 @@ pub(crate) fn classify(
     }
     if ctrl && code == KeyCode::Char('g') {
         return ClearInput;
+    }
+    // Shift+Tab is never text (ratatui-textarea would insert a tab).
+    if code == KeyCode::BackTab {
+        return Locked;
     }
     FeedEditor
 }
@@ -326,6 +330,15 @@ mod tests {
         assert_eq!(
             classify(Idle, false, true, KeyCode::Char('h'), KeyModifiers::NONE),
             FeedEditor
+        );
+    }
+
+    #[test]
+    fn shift_tab_idle_is_not_fed_to_the_editor() {
+        // ratatui-textarea reads BackTab as Shift+Tab and inserts a tab.
+        assert_eq!(
+            classify(Idle, false, true, KeyCode::BackTab, KeyModifiers::SHIFT),
+            Locked
         );
     }
 

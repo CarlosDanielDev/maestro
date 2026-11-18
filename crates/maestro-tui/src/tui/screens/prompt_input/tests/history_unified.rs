@@ -98,7 +98,7 @@ fn down_on_multiline_prompt_moves_cursor_not_history() {
     screen.set_editor_text("line one\nline two");
     screen
         .editor
-        .move_cursor(tui_textarea::CursorMove::Jump(0, 0));
+        .move_cursor(ratatui_textarea::CursorMove::Jump(0, 0));
     assert_eq!(screen.editor.cursor().0, 0, "precondition: cursor on row 0");
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     assert!(screen.history_cursor.is_none(), "no history navigation");

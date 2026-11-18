@@ -35,9 +35,9 @@ use keymap::{InteractionIntent, classify, pushup_prompt};
 use layout::{HEADER_HEIGHT, INPUT_HEIGHT, effective_offset, inset_x};
 use lifecycle::{Clock, RealClock};
 use ratatui::{Frame, layout::Rect, style::Style};
+use ratatui_textarea::TextArea;
 use std::path::PathBuf;
 use std::time::Instant;
-use tui_textarea::TextArea;
 use view_state::{CloseReason, InteractionView};
 
 /// Tag used for every Interaction activity-log line.

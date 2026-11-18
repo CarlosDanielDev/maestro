@@ -1,7 +1,7 @@
 use crate::tui::navigation::focus::{FocusId, FocusRing};
 use ratatui::style::Style;
+use ratatui_textarea::TextArea;
 use std::path::PathBuf;
-use tui_textarea::TextArea;
 
 /// Result of reading the system clipboard.
 pub enum ClipboardContent {
@@ -130,7 +130,7 @@ impl PromptInputScreen {
         // Move cursor to end of text
         let last_row = self.editor.lines().len().saturating_sub(1);
         let last_col = self.editor.lines().last().map(|l| l.len()).unwrap_or(0);
-        self.editor.move_cursor(tui_textarea::CursorMove::Jump(
+        self.editor.move_cursor(ratatui_textarea::CursorMove::Jump(
             last_row as u16,
             last_col as u16,
         ));
