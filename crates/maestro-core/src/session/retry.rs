@@ -56,6 +56,14 @@ impl RetryPolicy {
             && !session.last_message.trim().is_empty()
     }
 
+    /// #1395: headless Claude refused to start for want of a permission
+    /// mode. That is a config problem, so a retry is refused the same way.
+    fn is_permission_refusal(session: &Session) -> bool {
+        use crate::agent_provider::claude::HEADLESS_NO_PERMISSION;
+        session.status == SessionStatus::Errored
+            && (session.activity_log.iter()).any(|e| e.message.contains(HEADLESS_NO_PERMISSION))
+    }
+
     /// Check if a session is eligible for retry based on its status and retry count.
     pub fn should_retry(&self, session: &Session) -> bool {
         if Self::is_consultation_satisfied(session) {
@@ -74,7 +82,7 @@ impl RetryPolicy {
         ) || (session.status == SessionStatus::Completed
             && session.is_hollow_completion);
 
-        if !eligible {
+        if !eligible || Self::is_permission_refusal(session) {
             return false;
         }
 
@@ -220,6 +228,19 @@ mod tests {
         s.status = status;
         s.retry_count = retry_count;
         s
+    }
+
+    /// #1395: a refused headless run can never pass on retry.
+    #[test]
+    fn headless_permission_refusal_is_not_retried() {
+        use crate::agent_provider::claude::HEADLESS_NO_PERMISSION;
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut session = make_session(SessionStatus::Errored, 0);
+        assert!(policy.should_retry(&session), "setup: errored retries");
+        session.log_activity(format!(
+            "Error: invalid agent provider config: {HEADLESS_NO_PERMISSION}"
+        ));
+        assert!(!policy.should_retry(&session));
     }
 
     #[test]

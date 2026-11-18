@@ -7,9 +7,12 @@
 use crate::agent_provider::types::{AgentError, AgentOutputFormat, AgentRequest};
 
 /// Why a headless run was refused. The TUI shows it in the activity log,
-/// which raises an error toast.
+/// which raises an error toast. It names the agent's keys: they win over
+/// `[sessions]`. The guard only sees the request, so the agent id is
+/// written as `<id>`.
 pub const HEADLESS_NO_PERMISSION: &str = "Headless Claude cannot ask for permissions: \
-     set sessions.permission_mode (acceptEdits/bypassPermissions) or allowed_tools in maestro.toml";
+     set agents.<id>.permission_mode = \"acceptEdits\" or agents.<id>.allowed_tools in maestro.toml \
+     (<id> is this session's agent, or agents.default)";
 
 /// Refuse a headless stream-json run that has no permission mode flag
 /// and no allowed tools. One-shot text turns are not affected.
@@ -53,6 +56,19 @@ mod tests {
             .run(request, tx, CancellationToken::new())
             .await
             .map(|_| ())
+    }
+
+    /// The agent's own keys win over `[sessions]` (setup.rs and
+    /// `maestro run` both read `agents.<id>` first), and the fix must not
+    /// point at bypass.
+    #[test]
+    fn refusal_names_the_agent_keys_and_not_bypass() {
+        let msg = HEADLESS_NO_PERMISSION;
+        assert!(msg.contains("agents.<id>.permission_mode"), "{msg}");
+        assert!(msg.contains("agents.<id>.allowed_tools"), "{msg}");
+        assert!(msg.contains("acceptEdits"), "{msg}");
+        assert!(!msg.contains("bypassPermissions"), "{msg}");
+        assert!(!msg.contains("sessions.permission_mode"), "{msg}");
     }
 
     fn is_refusal(result: &Result<(), AgentError>) -> bool {

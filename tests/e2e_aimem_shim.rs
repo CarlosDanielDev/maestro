@@ -287,9 +287,11 @@ fn trust_workspace(sbx: &Sandbox) {
 fn write_config(sbx: &Sandbox, transport: Option<&str>) {
     // Escape the path as a TOML string; a bare `format!` breaks on quotes or backslashes.
     let command = toml::Value::String(sbx.shim.display().to_string()).to_string();
+    // Headless Claude refuses to start with no permission mode and no
+    // allowed tools (#1395); the PTY transport can prompt, so it keeps none.
     let transport_line = transport
         .map(|t| format!("transport = \"{t}\"\n"))
-        .unwrap_or_default();
+        .unwrap_or_else(|| "permission_mode = \"acceptEdits\"\n".to_string());
     let toml = format!(
         r#"[project]
 repo = "owner/repo"
