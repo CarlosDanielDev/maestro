@@ -24,7 +24,7 @@ pub(crate) fn line(theme: &Theme) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            " PR create/retry locked · fix: ",
+            " PR create paused · fix: ",
             Style::default().fg(theme.text_muted),
         ),
         Span::styled("gh auth login", Style::default().fg(theme.accent_info)),

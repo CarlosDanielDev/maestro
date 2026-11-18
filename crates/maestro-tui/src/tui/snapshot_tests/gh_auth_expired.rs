@@ -43,6 +43,7 @@ fn text(t: &Terminal<TestBackend>) -> String {
 fn assert_expired_line(t: &Terminal<TestBackend>) {
     let text = text(t);
     assert!(text.contains("⊘ gh auth expired"), "header word:\n{text}");
+    assert!(text.contains("PR create paused"), "what is locked:\n{text}");
     assert!(
         text.contains("gh auth login, then Shift+P"),
         "the fix:\n{text}"

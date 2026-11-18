@@ -18,7 +18,7 @@ expression: t.backend()
 "┃  [c]  Cost Report    ┃│                          ││                          │"
 "┃  [t]  Token Report   ┃│                          ││                          │"
 "┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
-" ⊘ gh auth expired  PR create/retry locked · fix: gh auth login, then Shift+P──┐"
+" ⊘ gh auth expired  PR create paused · fix: gh auth login, then Shift+P────────┐"
 "│No activity yet                                                               │"
 "│                                                                              │"
 "│                                                                              │"

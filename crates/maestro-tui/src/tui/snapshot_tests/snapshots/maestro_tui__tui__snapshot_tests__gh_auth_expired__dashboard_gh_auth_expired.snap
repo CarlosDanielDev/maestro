@@ -15,7 +15,7 @@ expression: t.backend()
 "┃  [a]  Adapt Project  ┃│                          ││                          │"
 "┃  [p]  Review PRs     ┃│                          ││                          │"
 "┗━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────┘└──────────────────────────┘"
-" ⊘ gh auth expired  PR create/retry locked · fix: gh auth login, then Shift+P──┐"
+" ⊘ gh auth expired  PR create paused · fix: gh auth login, then Shift+P────────┐"
 "│No activity yet                                                               │"
 "│                                                                              │"
 "│                                                                              │"

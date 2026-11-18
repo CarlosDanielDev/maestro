@@ -11,7 +11,7 @@ use crate::provider::github::client::mock::MockGitHubClient;
 use crate::provider::types::Issue;
 use crate::tui::app::App;
 use crate::tui::app::TuiDataEvent;
-use crate::tui::app::gh_auth::GhAuthProbe;
+use crate::tui::app::gh_auth::{GhAuthProbe, recheck_gh_auth};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -109,6 +109,11 @@ fn gh_auth_recovers_after_success() {
     assert!(!app.gh_auth_ok);
     app.handle_data_event(TuiDataEvent::Milestones(Ok(vec![])));
     assert!(app.gh_auth_ok, "milestone fetches count as gh calls too");
+
+    app.handle_data_event(TuiDataEvent::PrReviewSubmitted(Err(auth_error())));
+    assert!(!app.gh_auth_ok);
+    app.handle_data_event(TuiDataEvent::PrReviewSubmitted(Ok(())));
+    assert!(app.gh_auth_ok, "a submitted review is a gh call too");
 }
 
 #[test]
@@ -191,4 +196,25 @@ async fn pr_action_skips_recheck_while_signed_in() {
         "no subprocess while signed in"
     );
     assert_eq!(mock.create_pr_calls().len(), 1);
+}
+
+/// A probe stuck on the network must not hold the completion job: past
+/// the timeout the recheck answers "signed out" and the PR is refused.
+#[tokio::test]
+async fn gh_auth_recheck_times_out_as_signed_out() {
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let wait = std::sync::Mutex::new(wait);
+    let probe: GhAuthProbe = Arc::new(move || {
+        let _ = wait.lock().unwrap().recv();
+        true
+    });
+
+    let answer = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        recheck_gh_auth(&probe, std::time::Duration::from_millis(50)),
+    )
+    .await;
+    drop(release); // let the parked probe thread finish
+
+    assert_eq!(answer, Ok(false), "a stuck probe counts as signed out");
 }

@@ -422,6 +422,7 @@ impl App {
                 }
             }
             TuiDataEvent::PrReviewSubmitted(Ok(())) => {
+                self.note_gh_auth_ok();
                 self.activity_log.push_simple(
                     "PR Review".into(),
                     "Review submitted successfully".into(),
