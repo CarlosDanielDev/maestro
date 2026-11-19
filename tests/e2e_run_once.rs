@@ -25,7 +25,7 @@ fn install_stub(dir: &Path) -> PathBuf {
     dst
 }
 
-fn write_config(dir: &Path, stub: &Path) {
+fn write_config(dir: &Path, stub: &Path, permission_mode: &str) {
     // Escape the path as a TOML string; a bare `format!` breaks on quotes or backslashes.
     let command = toml::Value::String(stub.display().to_string()).to_string();
     let toml = format!(
@@ -35,7 +35,7 @@ repo = "owner/repo"
 # Headless Claude refuses to start with no permission mode and no allowed
 # tools (#1395).
 [sessions]
-permission_mode = "acceptEdits"
+permission_mode = "{permission_mode}"
 
 [budget]
 per_session_usd = 5.0
@@ -157,7 +157,7 @@ fn run_once_completes_offline_against_stub_agent() {
     let work = TempDir::new().expect("temp work dir");
     let home = TempDir::new().expect("temp home dir");
     let stub = install_stub(work.path());
-    write_config(work.path(), &stub);
+    write_config(work.path(), &stub, "acceptEdits");
     trust_workspace(work.path(), home.path());
 
     let status = run_maestro_once(work.path(), home.path());
@@ -180,5 +180,27 @@ fn run_once_completes_offline_against_stub_agent() {
         log.contains("ASSISTANT: stub reply"),
         "{} has no `ASSISTANT: stub reply` line:\n{log}",
         log_path.display()
+    );
+}
+
+/// #1412: the headless guard refuses `permission_mode = "default"` with no
+/// allowed tools, and that error is never retried. `--once` used to hang
+/// here; it must exit non-zero and show the error. `RUN_TIMEOUT` guards it.
+#[test]
+fn run_once_exits_nonzero_with_error_when_last_attempt_errors() {
+    let work = TempDir::new().expect("temp work dir");
+    let home = TempDir::new().expect("temp home dir");
+    let stub = install_stub(work.path());
+    write_config(work.path(), &stub, "default");
+    trust_workspace(work.path(), home.path());
+
+    let status = run_maestro_once(work.path(), home.path());
+    let stdout = read_or_empty(&work.path().join("stdout.txt"));
+    let stderr = read_or_empty(&work.path().join("stderr.txt"));
+    let report = format!("exit {status}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
+    assert!(!status.success(), "an errored run must fail: {report}");
+    assert!(
+        stderr.contains("Headless Claude cannot ask for permissions"),
+        "stderr must name the session's error: {report}"
     );
 }
