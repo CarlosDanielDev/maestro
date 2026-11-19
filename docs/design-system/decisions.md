@@ -407,6 +407,15 @@ first. One entry per decision.
 - **Rejected:** a sync check after each path (ADR option b: three paths had already drifted); turning the pool to bypass for a mode (widens bypass to every session); clamping a mode's bypass to the pool mode (drops a documented config feature without an owner decision).
 - **Source:** #1411.
 
+## 2026-11-19 — `u` queues the upgrade while agents run; the chip shows it
+
+- **What:** `u` on the update chip downloads at once only when there is no live work. With live work (`input_handler::has_live_work`, the #1260 quit check: pool sessions, an unfinished queue, a completion or PR job, a team run between waves) it sets `UpgradeState::Queued` and the chip reads `↑ queued · after N agents` (`after 1 agent`; `until idle` when the work left is not an agent). Only `u` unqueues (with a log line); `Esc` hides an available chip but leaves a queued upgrade queued. A version check that lands while queued keeps it queued. Each `check_completions` tick, after promotion, starts a queued upgrade once there is no live work, with an info toast `Fleet idle: upgrading to <version>`.
+- **Why:** #1267; design §05 "Upgrading mid-run" (Control, motion-step) and §06 `u` "Upgrade (queued while agents run)". A restart under running agents cuts their work off.
+- **Section:** `§05` Poka-yoke catalog, `§06` keymap `u`, flow map `start.update → start.upgrade` ("upgrade (queued until idle)").
+- **Differs from the target:** the queued chip keeps the update chip's drop rule (#1257: it drops first), so at 80 columns with the fleet and budget shown it is not drawn; the activity log line says the upgrade is queued.
+- **Rejected:** blocking `u` while busy (loses the intent, as the ADR stub says); a second idle check for the upgrade (would drift from the quit path's).
+- **Source:** #1267.
+
 ## 2026-11-19 — v0.34.0 judge follow-ups: one status colour, Critical resource chips, Block footer, title restore
 
 - **What:** (1) `ds::toast` keeps at most 5 error toasts waiting; a newer error drops the oldest. (2) `Theme::status_color` maps `NeedsPr` / `ConflictFix` to the v1 tokens `status_needs_pr` / `status_conflict`, so the chip (`ds::status_chip`, which now just calls `status_color`) and the older rows draw one colour per state. (3) The Needs-you budget / quota chips use `GaugeLevel::Critical` (high + bold) once spent / at 100% of a window, High below. (4) On a budget **Block** the footer shows only `n Cancel` (plus the `⌃Q quit` pin): `y` / `s` do nothing there since #1243. Warn keeps `y Proceed  n Cancel  s Skip-once`. (5) The first terminal-title write pushes the shell's title (XTWINOPS `CSI 22;0 t`); quit writes `maestro`, then pops it (`CSI 23;0 t`), so a terminal with a title stack gets the shell's title back and one without keeps `maestro`.

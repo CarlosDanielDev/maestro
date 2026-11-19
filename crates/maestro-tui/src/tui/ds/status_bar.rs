@@ -68,10 +68,19 @@ pub struct StatusModel {
     pub turboquant: bool,
     pub untrusted: bool,
     pub bypass: bool,
-    /// Version of an available update (already sanitized).
-    pub update: Option<String>,
+    /// The update chip, when a newer version exists.
+    pub update: Option<UpdateChip>,
     /// `(done, attempted)` while a continuous run is active.
     pub continuous: Option<(usize, usize)>,
+}
+
+/// What the update chip says (#1267).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateChip {
+    /// `↑ <version> u`; the version is already sanitized.
+    Available(String),
+    /// `↑ queued · after <n> agents`: `u` was pressed while agents ran.
+    Queued { after: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,9 +131,23 @@ fn pinned(model: &StatusModel, theme: &Theme, nerd_font: bool) -> Spans {
     spans
 }
 
-fn update_chip(version: &str, theme: &Theme, nerd_font: bool) -> Spans {
+fn update_chip(chip: &UpdateChip, theme: &Theme, nerd_font: bool) -> Spans {
     let warn = Style::default().fg(theme.accent_warning);
     let arrow = icons::get_for_mode(IconId::ArrowUp, nerd_font);
+    let version = match chip {
+        UpdateChip::Available(version) => version,
+        UpdateChip::Queued { after } => {
+            let wait = match after {
+                0 => "until idle".to_string(),
+                1 => "after 1 agent".to_string(),
+                n => format!("after {n} agents"),
+            };
+            return vec![
+                Span::raw(" "),
+                Span::styled(format!("{arrow} queued · {wait}"), warn),
+            ];
+        }
+    };
     vec![
         Span::raw(" "),
         Span::styled(format!("{arrow} {version} "), warn),
@@ -275,8 +298,8 @@ pub fn segments(
     let mut left = left_segments(model, theme, nerd_font);
     let mut update = model
         .update
-        .as_deref()
-        .map(|v| update_chip(v, theme, nerd_font));
+        .as_ref()
+        .map(|chip| update_chip(chip, theme, nerd_font));
     let pinned = pinned(model, theme, nerd_font);
     let brand = brand(model, theme);
 

@@ -337,6 +337,12 @@ Rules: `UNTRUSTED` shows exactly when `App.workspace_trusted` is false. The
 update notice has one place: the `↑ <version> u` chip (the activity log line
 carries no version). Breadcrumbs and key hints are not part of this row.
 
+`StatusModel.update` is a `status_bar::UpdateChip` (#1267): `Available(version)`
+draws `↑ <version> u`; `Queued { after }` draws `↑ queued · after N agents`
+(`after 1 agent`, `until idle` at 0) and has no `u` hint. Same drop rule as
+before. The queued state is `UpgradeState::Queued`; "busy" is
+`input_handler::has_live_work`, never a copy.
+
 ### Sub-tabs, filter chips, KPI tile, tree prefix (`crates/maestro-tui/src/tui/ds/`, #1256)
 
 Implements `subTabs`, `filterChips`, `kpiTile` and `treePrefix` from

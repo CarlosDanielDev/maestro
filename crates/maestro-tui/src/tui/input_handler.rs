@@ -149,17 +149,19 @@ fn handle_upgrade_keys(app: &mut App, key: &KeyEvent) -> bool {
         return false;
     }
     match &app.upgrade_state {
-        crate::updater::UpgradeState::Available(info) => {
+        // #1267: `u` downloads when idle, else queues; `u` again unqueues.
+        // Only `u` cancels a queued upgrade; `Esc` hides an available one.
+        crate::updater::UpgradeState::Available(_) | crate::updater::UpgradeState::Queued(_) => {
             if key.code == KeyCode::Char('u') {
-                let info_clone = info.clone();
-                let tx = app.data_tx.clone();
-                app.upgrade_state = crate::updater::UpgradeState::Downloading {
-                    version: info_clone.version.clone(),
-                };
-                super::background_tasks::spawn_upgrade_download(tx, info_clone);
+                app.press_upgrade();
                 return true;
             }
-            if key.code == KeyCode::Esc {
+            if key.code == KeyCode::Esc
+                && matches!(
+                    app.upgrade_state,
+                    crate::updater::UpgradeState::Available(_)
+                )
+            {
                 app.upgrade_state = crate::updater::UpgradeState::Hidden;
                 return true;
             }

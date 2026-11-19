@@ -272,6 +272,17 @@ impl App {
                     LogLevel::Error,
                 );
             }
+            // #1267: a check that lands while queued keeps the upgrade queued.
+            TuiDataEvent::VersionCheckResult(Some(info))
+                if matches!(self.upgrade_state, crate::updater::UpgradeState::Queued(_)) =>
+            {
+                self.activity_log.push_simple(
+                    "UPDATE".into(),
+                    "Update check: the upgrade stays queued until the fleet is idle.".into(),
+                    LogLevel::Info,
+                );
+                self.upgrade_state = crate::updater::UpgradeState::Queued(info);
+            }
             TuiDataEvent::VersionCheckResult(Some(info)) => {
                 self.activity_log.push_simple(
                     "UPDATE".into(),

@@ -54,6 +54,9 @@ pub enum UpgradeState {
     Hidden,
     /// Banner shown with available release info.
     Available(ReleaseInfo),
+    /// `u` was pressed while agents ran (#1267): the download starts once
+    /// the fleet is idle; `u` again goes back to `Available`.
+    Queued(ReleaseInfo),
     /// Download in progress.
     Downloading { version: String },
     /// Binary replaced successfully, asking for restart confirmation.

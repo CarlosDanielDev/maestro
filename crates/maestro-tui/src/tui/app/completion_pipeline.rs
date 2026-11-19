@@ -347,6 +347,9 @@ impl App {
             }
         }
 
+        // #1267: after promotion, so a session that just started counts.
+        self.start_queued_upgrade_if_idle();
+
         self.sync_state();
         Ok(())
     }
