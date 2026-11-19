@@ -63,6 +63,7 @@ impl SettingsScreen {
             sidebar_search: String::new(),
             sidebar_search_active: false,
             role_override_warnings: Vec::new(),
+            confirmed_bypass: Default::default(),
         };
         screen.run_all_validations();
         screen

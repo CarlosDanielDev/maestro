@@ -135,6 +135,10 @@ impl DynamicMapWidget {
         &self.entries
     }
 
+    pub fn entries_mut(&mut self) -> &mut [EntryState] {
+        &mut self.entries
+    }
+
     pub fn active_entry(&self) -> Option<&EntryState> {
         self.active_idx.and_then(|i| self.entries.get(i))
     }

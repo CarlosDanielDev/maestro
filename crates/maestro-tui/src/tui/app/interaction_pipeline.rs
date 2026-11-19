@@ -103,6 +103,9 @@ impl App {
             );
             return;
         }
+        if first_turn {
+            self.note_spawn_bypass(id);
+        }
         let result = match self.pool.get_active_mut(id) {
             Some(managed) if first_turn => managed.spawn(tx).await,
             Some(managed) => managed.send_followup_turn(prompt, tx),

@@ -104,6 +104,11 @@ impl SessionPool {
         self.permission_mode = mode;
     }
 
+    /// The permission mode new sessions get, unless their mode sets one.
+    pub fn permission_mode(&self) -> &str {
+        &self.permission_mode
+    }
+
     /// Set the guardrail prompt appended to every session's system prompt.
     pub fn set_guardrail_prompt(&mut self, prompt: String) {
         self.guardrail_prompt = Some(prompt);

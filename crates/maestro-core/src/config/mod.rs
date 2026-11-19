@@ -295,13 +295,25 @@ impl Config {
     /// Same precedence as [`Self::effective_default_model`] but for
     /// the `permission_mode` field.
     pub fn effective_default_permission_mode(&self) -> String {
+        self.effective_permission_mode_for(&self.agents.default)
+    }
+
+    /// Permission mode sessions of agent `agent_id` get (#1411): the
+    /// agent's own `permission_mode`, else `[sessions]`.
+    pub fn effective_permission_mode_for(&self, agent_id: &str) -> String {
+        self.agent_permission_mode(agent_id)
+            .unwrap_or_else(|| self.sessions.permission_mode.clone())
+    }
+
+    /// The agent's own non-empty `permission_mode`, if it sets one.
+    pub fn agent_permission_mode(&self, agent_id: &str) -> Option<String> {
         self.agents
             .entries
-            .get(&self.agents.default)
-            .and_then(|a| a.permission_mode.clone())
-            .map(|s| s.trim().to_string())
+            .get(agent_id)
+            .and_then(|a| a.permission_mode.as_deref())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| self.sessions.permission_mode.clone())
+            .map(str::to_string)
     }
 
     pub fn resolve_agent(&self, agent_id: Option<&str>) -> Result<ResolvedAgentConfig> {

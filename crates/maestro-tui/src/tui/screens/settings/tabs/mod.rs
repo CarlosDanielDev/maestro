@@ -1,6 +1,7 @@
 pub mod advanced;
 pub mod agents;
 pub mod budget;
+mod bypass_request;
 pub mod flags;
 pub mod gates;
 pub mod github;
@@ -142,36 +143,6 @@ fn bypass_toggle_on(screen: &SettingsScreen) -> Option<bool> {
     match widget_by_label(fields, BYPASS_LABEL)? {
         WidgetKind::Toggle(w) => Some(w.value),
         _ => None,
-    }
-}
-
-impl SettingsScreen {
-    /// True when the bypass toggle is on but not yet staged: the user
-    /// flipped it and the typed-CONFIRM warning has not been answered
-    /// (#1239).
-    pub(crate) fn bypass_request_pending(&self) -> bool {
-        bypass_toggle_on(self) == Some(true)
-            && self.config.sessions.permission_mode != "bypassPermissions"
-    }
-
-    /// Answer a pending bypass request: confirmed stages
-    /// `permission_mode = "bypassPermissions"`; cancelled turns the toggle
-    /// back off so nothing is staged.
-    pub(crate) fn resolve_bypass_request(&mut self, confirmed: bool) {
-        if confirmed {
-            self.config.sessions.permission_mode = "bypassPermissions".to_string();
-            return;
-        }
-        let Some(fields) = self.fields_per_tab.get_mut(1) else {
-            return;
-        };
-        if let Some(WidgetKind::Toggle(w)) = fields
-            .iter_mut()
-            .map(|f| &mut f.widget)
-            .find(|w| w.label() == BYPASS_LABEL)
-        {
-            w.value = false;
-        }
     }
 }
 

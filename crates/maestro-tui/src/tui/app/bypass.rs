@@ -7,29 +7,10 @@ use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningState};
+use crate::tui::screens::settings::SettingsScreen;
 
 /// Activity-log source for a bypass turned on from Settings (#1239).
 const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
-
-/// The bypass warning opened from Settings. Unlike ⌃B it says the real
-/// scope: Ctrl+S writes the value to the committed `maestro.toml`.
-fn settings_bypass_warning() -> BypassWarningState {
-    let row = |label: &str, text: &str| (label.to_string(), text.to_string());
-    BypassWarningState::with_text(
-        "DANGER: enable bypass for every future session?",
-        vec![
-            row("", "Bypass auto-accepts EVERY review concern."),
-            row("", ""),
-            row("does", "edits files, commits and pushes, no asking"),
-            row(
-                "writes",
-                "sessions.permission_mode to maestro.toml (committed)",
-            ),
-            row("scope", "every future session after Ctrl+S; this run now"),
-            row("or", "Ctrl+B turns it on for this run only"),
-        ],
-    )
-}
 
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
@@ -39,13 +20,65 @@ impl App {
     /// repo the user did not write. Only a typed CONFIRM does, so after this
     /// bypass is turned off, the next ⌃B opens the warning.
     pub fn activate_bypass(&mut self, source: BypassSource) {
+        self.activate_bypass_from(source.label());
+    }
+
+    /// [`Self::activate_bypass`] with a free-form source, such as
+    /// `agent <id>` (#1411). Sets the chip and the pool mode together.
+    pub fn activate_bypass_from(&mut self, source: &str) {
         self.bypass_active = true;
+        self.pool
+            .set_permission_mode("bypassPermissions".to_string());
         self.session_config.permission_mode = "bypassPermissions".to_string();
+        self.log_bypass_enabled(source);
+    }
+
+    fn log_bypass_enabled(&mut self, source: &str) {
+        self.activity_log.push_simple(
+            "BYPASS".into(),
+            format!("Bypass mode enabled ({source}) — auto-accepting review corrections"),
+            LogLevel::Warn,
+        );
+    }
+
+    /// #1411: a session is about to spawn. A mode's own `permission_mode`
+    /// wins for that session (`SessionPool::try_promote`), so when the
+    /// session runs in bypass the chip must be on and the log must name the
+    /// mode, also when ⌃B turned the chip off while it was queued. Only
+    /// that mode's sessions run in bypass: the pool default is left alone.
+    pub(crate) fn note_spawn_bypass(&mut self, id: uuid::Uuid) {
+        if self.bypass_active {
+            return;
+        }
+        let Some(managed) = self.pool.get_active_mut(id) else {
+            return;
+        };
+        if managed.permission_mode.as_deref() != Some("bypassPermissions") {
+            return;
+        }
+        let source = format!("mode {}", managed.session.mode);
+        self.bypass_active = true;
+        self.log_bypass_enabled(&source);
+    }
+
+    /// #1411: a Settings save asked for bypass, but no typed CONFIRM was
+    /// answered in its flow. Keep the pool out of bypass, so it agrees
+    /// with the chip, and say why.
+    pub(crate) fn refuse_unconfirmed_bypass(&mut self) {
+        self.pool.set_permission_mode("default".to_string());
+        self.session_config.permission_mode = "default".to_string();
+        // Say what ⌃B really does now: with the chip lit by a mode's
+        // session it turns bypass off, not on.
+        let ctrl_b = if self.bypass_active {
+            "The chip is on for a mode's sessions; Ctrl+B turns bypass off."
+        } else {
+            "Ctrl+B turns it on for this run."
+        };
         self.activity_log.push_simple(
             "BYPASS".into(),
             format!(
-                "Bypass mode enabled ({}) — auto-accepting review corrections",
-                source.label()
+                "Bypass not turned on: the saved permission_mode is bypassPermissions, \
+                 but no typed CONFIRM was given. {ctrl_b}"
             ),
             LogLevel::Warn,
         );
@@ -103,7 +136,8 @@ impl App {
             self.drop_settings_bypass_request();
             return;
         }
-        self.screen_state.bypass_warning_screen = Some(settings_bypass_warning());
+        self.screen_state.bypass_warning_screen =
+            (self.screen_state.settings_screen.as_ref()).map(|s| s.bypass_warning());
         self.navigate_to(TuiMode::BypassWarning);
     }
 
@@ -132,10 +166,25 @@ impl App {
         else {
             return false;
         };
+        let targets = screen.pending_bypass_targets();
+        let pool = targets.iter().any(|t| screen.bypass_target_is_pool(t));
         screen.resolve_bypass_request(confirmed);
         self.screen_state.bypass_warning_screen = None;
-        if confirmed {
+        if confirmed && pool {
             self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
+        } else if confirmed {
+            // #1411: a mode or a non-default agent reaches only its own
+            // sessions; the chip lights when such a session spawns.
+            let effects: Vec<String> = (targets.iter())
+                .map(|t| SettingsScreen::bypass_target_effect(t))
+                .collect();
+            let msg = format!(
+                "Bypass staged for {} ({SETTINGS_CONFIRM_SOURCE}); applies to {}",
+                targets.join(", "),
+                effects.join("; ")
+            );
+            self.activity_log
+                .push_simple("BYPASS".into(), msg, LogLevel::Warn);
         }
         true
     }
@@ -147,11 +196,7 @@ impl App {
         self.pool
             .set_permission_mode("bypassPermissions".to_string());
         self.session_config.permission_mode = "bypassPermissions".to_string();
-        self.activity_log.push_simple(
-            "BYPASS".into(),
-            format!("Bypass mode enabled ({source}) — auto-accepting review corrections"),
-            LogLevel::Warn,
-        );
+        self.log_bypass_enabled(source);
     }
 }
 
@@ -162,6 +207,18 @@ mod settings_tests;
 #[cfg(test)]
 #[path = "bypass_ctrl_b_tests.rs"]
 mod ctrl_b_tests;
+
+#[cfg(test)]
+#[path = "bypass_paths_tests.rs"]
+mod paths_tests;
+
+#[cfg(test)]
+#[path = "bypass_agents_tests.rs"]
+mod agents_tests;
+
+#[cfg(test)]
+#[path = "bypass_staged_tests.rs"]
+mod staged_tests;
 
 #[cfg(test)]
 mod tests {
@@ -298,8 +355,7 @@ mod tests {
         let mut app = make_app();
         app.confirm_bypass_activation("tui");
         assert!(app.bypass_active);
-        // We can't easily inspect the pool's permission_mode, but the call
-        // not panicking and bypass_active flipping is the contract test.
+        assert_eq!(app.pool.permission_mode(), "bypassPermissions");
     }
 
     #[test]
