@@ -5,13 +5,13 @@ use ratatui::text::Span;
 use unicode_width::UnicodeWidthStr;
 
 /// Pad a span to `width` columns (one space at least).
-pub(super) fn pad(span: Span<'static>, width: usize) -> Span<'static> {
+pub fn pad(span: Span<'static>, width: usize) -> Span<'static> {
     let gap = width.saturating_sub(span.content.width()).max(1);
     Span::styled(format!("{}{}", span.content, " ".repeat(gap)), span.style)
 }
 
 /// `45s`, `12m`, `3h`, `2d`.
-pub(super) fn age(d: chrono::Duration) -> String {
+pub fn age(d: chrono::Duration) -> String {
     let s = d.num_seconds().max(0);
     match s {
         0..60 => format!("{s}s"),

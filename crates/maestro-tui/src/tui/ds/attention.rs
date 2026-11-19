@@ -16,6 +16,7 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use crate::session::types::SessionStatus;
+use crate::tui::ds::attention_fmt::{age, pad};
 use crate::tui::ds::bar_row::key_style;
 use crate::tui::ds::gauge::gauge_level;
 use crate::tui::ds::money::money;
@@ -382,10 +383,6 @@ fn error_style(theme: &Theme) -> Style {
         .fg(theme.accent_error)
         .add_modifier(Modifier::BOLD)
 }
-
-#[path = "attention_fmt.rs"]
-mod fmt;
-use fmt::{age, pad};
 
 #[cfg(test)]
 #[path = "attention_tests.rs"]
