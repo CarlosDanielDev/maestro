@@ -235,3 +235,27 @@ async fn palette_tab_entry_opens_the_tab() {
     assert!(app.palette.is_none());
     assert_eq!(app.tui_mode, TuiMode::IssueBrowser);
 }
+
+/// A destructive entry picked from the palette goes through the same guard
+/// as its key: ⌃B ("bypass") opens the typed CONFIRM, it never turns
+/// bypass on by itself.
+#[tokio::test]
+async fn palette_danger_entry_still_asks() {
+    let mut app = log_app(TuiMode::Dashboard);
+    handle_key(&mut app, ctrl_k()).await;
+    type_text(&mut app, "bypass").await;
+    let out = screen(&draw(&mut app, 80, 24));
+    assert!(
+        out.contains("asks to confirm"),
+        "marked destructive:\n{out}"
+    );
+    handle_key(&mut app, key(KeyCode::Enter)).await;
+    assert!(app.palette.is_none());
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning, "the confirm opens");
+    assert!(!app.bypass_active, "bypass is not on before CONFIRM");
+    let out = screen(&draw(&mut app, 80, 24));
+    assert!(
+        out.contains("CONFIRM"),
+        "the typed confirm is drawn:\n{out}"
+    );
+}

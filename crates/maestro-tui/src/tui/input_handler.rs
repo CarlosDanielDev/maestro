@@ -921,7 +921,7 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
 }
 
 /// What `network` shows until a diagnostics view exists (#1255).
-const NETWORK_PENDING: &str = "Network diagnostics: no view yet";
+const NETWORK_PENDING: &str = "Network diagnostics: not built yet";
 
 /// Handle global shortcuts that apply before screen dispatch (help, F-keys, Ctrl-X).
 fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
