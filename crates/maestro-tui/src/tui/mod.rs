@@ -235,6 +235,26 @@ pub fn save_on_exit(app: &mut App) {
     app.pool.stop_all_turns();
 }
 
+/// Upgrade restart (#1266): save and stop the agents like a quit, then run
+/// `restart` (terminal teardown + exec). When the exec fails, maestro keeps
+/// running with those agents stopped, so the log says how to get them back.
+fn save_and_restart(
+    app: &mut App,
+    restart: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    save_on_exit(app);
+    let result = restart();
+    if result.is_err() {
+        app.activity_log.push_simple(
+            "MAESTRO".into(),
+            "Restart failed after the agents were stopped and saved · quit, then run maestro resume"
+                .into(),
+            LogLevel::Warn,
+        );
+    }
+    result
+}
+
 /// #1412: `--once` is for scripts and CI, so a run whose last attempt
 /// errored must exit non-zero and name the error.
 fn once_exit_status(app: &App) -> anyhow::Result<()> {
@@ -348,23 +368,19 @@ async fn event_loop(
                         continue;
                     }
                     if input_handler::is_restart_key(app, &key) {
-                        save_on_exit(app);
-                        disable_raw_mode().ok();
-                        leave_tui_mode(terminal.backend_mut()).ok();
-                        terminal.show_cursor().ok();
-                        if let Err(e) = crate::updater::installer::restart_with_same_args() {
+                        let restarted = save_and_restart(app, || {
+                            disable_raw_mode().ok();
+                            leave_tui_mode(terminal.backend_mut()).ok();
+                            terminal.show_cursor().ok();
+                            crate::updater::installer::restart_with_same_args()
+                        });
+                        if let Err(e) = restarted {
                             enable_raw_mode().ok();
                             enter_tui_mode(&mut io::stdout()).ok();
                             app.upgrade_state = crate::updater::UpgradeState::Failed(format!(
                                 "Restart failed: {}",
                                 e
                             ));
-                            app.activity_log.push_simple(
-                                "MAESTRO".into(),
-                                "Agents were paused for the restart · resume with maestro resume"
-                                    .into(),
-                                LogLevel::Warn,
-                            );
                         }
                         continue;
                     }

@@ -127,3 +127,71 @@ fn plain_launch_keeps_saved_paused() {
     assert_eq!(kept.len(), 1, "kept once, not dropped and not doubled");
     assert_eq!(kept[0].status, SessionStatus::Paused);
 }
+
+/// #1266: the upgrade restart saves like a quit. When the exec fails the
+/// stopped agents stay Paused (`r` cannot bring back a cancelled turn) and
+/// the log says to quit and use `maestro resume`.
+#[cfg(unix)]
+#[tokio::test]
+async fn restart_failure_saves_and_keeps_agents_stopped() {
+    let mut app = make_test_app("restart-save-1266");
+    let running = session("running");
+    let id = running.id;
+    app.pool.enqueue(running);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(id).expect("promoted");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    let turn = managed.arm_turn_for_test();
+
+    let result = save_and_restart(&mut app, || anyhow::bail!("exec failed"));
+
+    assert!(result.is_err());
+    assert!(turn.is_cancelled(), "the restart stops the agents");
+    let saved = app.store.load().expect("state saved");
+    let status = saved.sessions.iter().find(|s| s.id == id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Paused), "saved before the exec");
+    assert!(
+        (app.activity_log.entries().iter())
+            .any(|e| e.message.contains("quit, then run maestro resume")),
+        "the log must say how to get the agents back"
+    );
+    app.resume_all();
+    assert_eq!(
+        app.pool.get_session(id).map(|s| s.status),
+        Some(SessionStatus::Paused),
+        "r must not mark a cancelled turn Running"
+    );
+}
+
+/// #1266: statuses that cannot move to Killed (no agent process) are left
+/// alone at quit, with no "Killed at quit" line.
+#[tokio::test]
+async fn quit_leaves_gates_running_alone() {
+    let mut app = make_test_app("quit-gates-1266");
+    let gates = session("gates");
+    let id = gates.id;
+    app.pool.enqueue(gates);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(id).expect("promoted");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+        (SessionStatus::GatesRunning, TransitionReason::GatesStarted),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+
+    save_on_exit(&mut app);
+
+    let s = app.pool.get_session(id).unwrap();
+    assert_eq!(s.status, SessionStatus::GatesRunning);
+    assert!(
+        !(s.activity_log.iter()).any(|e| e.message.contains("Killed at quit")),
+        "no kill line for a session that was not killed"
+    );
+}

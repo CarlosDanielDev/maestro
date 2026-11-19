@@ -41,6 +41,9 @@ impl SessionPool {
             } else if reason == TransitionReason::BudgetCap {
                 managed.cancel_inflight_turn();
                 let _ = (managed.session).transition_to(SessionStatus::Errored, reason);
+                if managed.session.worktree_path.is_none() {
+                    managed.session.worktree_path = managed.worktree_path.clone();
+                }
                 managed.session.log_activity(
                     "Error: stopped at the budget cap (this agent has no process to pause)".into(),
                 );
@@ -53,7 +56,11 @@ impl SessionPool {
     #[cfg(unix)]
     pub fn resume_all(&mut self) {
         for managed in &mut self.active {
-            if managed.session.status == SessionStatus::Paused {
+            // A quit or restart cancelled that turn: only `maestro resume`
+            // can bring it back.
+            let quit = (managed.session.transition_history.last())
+                .is_some_and(|t| t.reason == TransitionReason::UserQuit);
+            if managed.session.status == SessionStatus::Paused && !quit {
                 let _ = managed.resume();
                 let _ = (managed.session)
                     .transition_to(SessionStatus::Running, TransitionReason::UserResume);
@@ -88,6 +95,9 @@ impl SessionPool {
                 | SessionStatus::Stalled
                 | SessionStatus::Retrying
                 | SessionStatus::Errored => {}
+                // GatesRunning, NeedsPr, NeedsReview: no agent process, and
+                // they cannot move to Killed; leave them as they are.
+                _ if !status.can_transition_to(SessionStatus::Killed) => continue,
                 _ => {
                     let _ = (managed.session)
                         .transition_to(SessionStatus::Killed, TransitionReason::UserQuit);
@@ -119,5 +129,13 @@ impl SessionPool {
                 self.finished.push(ManagedSession::new(s.clone()));
             }
         }
+    }
+
+    /// Paused sessions `r` can resume: this run's, not an earlier run's
+    /// kept in `finished`.
+    pub fn active_paused_count(&self) -> usize {
+        (self.active.iter())
+            .filter(|m| m.session.status == SessionStatus::Paused)
+            .count()
     }
 }

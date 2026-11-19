@@ -18,6 +18,14 @@ use tempfile::TempDir;
 /// `[budget]` with a $1 cap. The agent command does not exist, so a spawn
 /// that slips through fails instead of starting a real process.
 fn production_app(total_usd: f64) -> (App, TempDir) {
+    production_app_in(total_usd, Box::new(MockWorktreeManager::new()))
+}
+
+/// [`production_app`] with the given worktree manager.
+fn production_app_in(
+    total_usd: f64,
+    worktrees: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+) -> (App, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let toml_body = format!(
         r#"[project]
@@ -43,7 +51,7 @@ command = "maestro-missing-agent-1243"
             path: dir.path().join("maestro.toml"),
         },
         StateStore::new(dir.path().join("state-1243.json")),
-        Box::new(MockWorktreeManager::new()),
+        worktrees,
         None,
         false,
         true,
@@ -231,6 +239,17 @@ fn cap_attention_row_names_paused() {
     let mut agent = sleeper();
     managed.session.pid = Some(agent.id());
     managed.session.cost_usd = 1.2;
+    // Paused by an earlier run's quit: `r` cannot resume it, so the cap
+    // row must not count it.
+    let mut earlier = fresh_session();
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+        (SessionStatus::Paused, TransitionReason::UserQuit),
+    ] {
+        earlier.transition_to(to, why).unwrap();
+    }
+    app.pool.keep_saved_paused(&[earlier]);
     app.sync_state();
     app.check_budget(spender_id);
     let _ = agent.kill();
@@ -303,5 +322,67 @@ fn cap_stops_a_session_it_cannot_pause() {
     assert_eq!(
         spender.transition_history.last().map(|t| t.reason),
         Some(TransitionReason::BudgetCap)
+    );
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("git must be on PATH")
+        .status
+        .success()
+}
+
+/// #1266 judge round 2: a session the cap stopped (no pid) must not be
+/// auto-retried on the next tick: a retry ran in the main checkout and the
+/// original's teardown deleted its worktree and branch. It must keep both,
+/// with the worktree recorded for `maestro resume`.
+#[tokio::test]
+async fn cap_stop_is_not_retried_and_keeps_worktree() {
+    use crate::session::transition::TransitionReason;
+    let repo = tempfile::tempdir().unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["config", "user.email", "ci@example.com"],
+        &["config", "user.name", "CI"],
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+    ] {
+        assert!(git(repo.path(), args), "git {args:?}");
+    }
+    let worktrees = crate::session::worktree::GitWorktreeManager::new(repo.path().to_path_buf());
+    let (mut app, _dir) = production_app_in(1.0, Box::new(worktrees));
+    let spender = fresh_session();
+    let spender_id = spender.id;
+    app.pool.enqueue(spender);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(spender_id).unwrap();
+    let kept = managed.worktree_path.clone().expect("a real worktree");
+    std::fs::write(kept.join("work.txt"), "uncommitted").unwrap();
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    managed.session.pid = None; // an HTTP provider: nothing to SIGSTOP
+    managed.session.cost_usd = 1.2;
+    app.sync_state();
+
+    app.check_budget(spender_id);
+    app.check_completions().await.unwrap();
+
+    assert_eq!(app.pool.total_count(), 1, "no retry may be spawned");
+    let s = app.pool.get_session(spender_id).unwrap();
+    assert_eq!(s.status, SessionStatus::Errored);
+    assert_eq!(s.worktree_path.as_ref(), Some(&kept), "recorded for resume");
+    assert!(kept.join("work.txt").exists(), "the work must survive");
+    assert!(
+        git(
+            repo.path(),
+            &["rev-parse", "--verify", "-q", "maestro/issue-1243"]
+        ),
+        "the branch must survive"
     );
 }
