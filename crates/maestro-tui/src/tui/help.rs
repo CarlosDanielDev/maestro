@@ -171,7 +171,9 @@ pub fn draw_help_overlay_with_search(
     ]));
 
     let paragraph = Paragraph::new(help_text).wrap(Wrap { trim: false });
-    // Measured with the same width and wrap the draw uses.
+    // ponytail: `line_count` (ratatui feature `unstable-rendered-line-info`)
+    // counts rows with the same word wrap the draw uses; Help rows do wrap
+    // at 80 columns. See docs/design-system/decisions.md (#1397).
     let rows = paragraph.line_count(inner.width);
     let max_scroll = rows.saturating_sub(usize::from(inner.height));
     state.scroll = state
