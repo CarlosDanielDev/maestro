@@ -125,7 +125,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         no_config_app(store, worktree_mgr)
     };
     // #1266: this run's state saves must not drop sessions a quit paused.
-    app.pool.keep_saved_paused(&state.sessions);
+    app.pool.keep_saved_resumable(&state.sessions);
 
     // Wire MiniMax quota for the token dashboard's Quota column (#769).
     // Best-effort — if the file is missing or malformed the dashboard

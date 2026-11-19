@@ -89,7 +89,7 @@ impl RetryPolicy {
     /// The budget cap stopped this session (#1266). Retrying it would spend
     /// past the cap and run without its kept worktree; `maestro resume`
     /// restarts it instead, once the cap is raised.
-    fn is_budget_cap_stop(session: &Session) -> bool {
+    pub(crate) fn is_budget_cap_stop(session: &Session) -> bool {
         (session.transition_history.last()).is_some_and(|t| {
             t.to == SessionStatus::Errored
                 && t.reason == crate::session::transition::TransitionReason::BudgetCap

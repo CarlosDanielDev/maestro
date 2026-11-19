@@ -146,3 +146,73 @@ fn resume_refuses_an_unrecorded_kept_worktree() {
     let refused = restore_session(&saved, &probe).expect_err("must not fall back to cwd");
     assert!(refused.contains("issue-1269"), "{refused}");
 }
+
+/// #1266 judge round 3: a session the cap stopped (Errored, BudgetCap)
+/// survives a plain launch in between, and `maestro resume` still restores
+/// it into its own kept worktree.
+#[tokio::test]
+async fn cap_stop_survives_a_plain_launch_and_resumes() {
+    use SessionStatus::{Running, Spawning};
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let state_dir = tempfile::tempdir().unwrap();
+    let store_path = state_dir.path().join("state-1266.json");
+    let worktrees = || Box::new(GitWorktreeManager::new(repo.path().to_path_buf()));
+    let app_for = |path: &Path| {
+        let config: Config = toml::from_str(
+            "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n[notifications]\n\
+             [agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
+             command = \"maestro-missing-agent-1266\"\n",
+        )
+        .unwrap();
+        let loaded = LoadedConfig {
+            config,
+            path: path.join("maestro.toml"),
+        };
+        setup_app_from_config(
+            loaded,
+            StateStore::new(store_path.clone()),
+            worktrees(),
+            None,
+        )
+    };
+
+    // Run 1: the cap stops a pid-less agent, then the operator quits.
+    let mut app = app_for(state_dir.path());
+    let stopped = issue_session(1270);
+    let id = stopped.id;
+    app.pool.enqueue(stopped);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(id).unwrap();
+    let kept = managed.worktree_path.clone().unwrap();
+    std::fs::write(kept.join("work.txt"), "uncommitted").unwrap();
+    walk(&mut managed.session, &[Spawning, Running]);
+    let out = app.pool.pause_all(TransitionReason::BudgetCap);
+    assert_eq!(out.stopped, 1, "setup: no pid, so the cap stops it");
+    crate::tui::save_on_exit(&mut app).expect("saved");
+    drop(app);
+
+    // Run 2: a plain launch, as `maestro` / `maestro run` set it up.
+    let mut app = app_for(state_dir.path());
+    let saved = app.state.sessions.clone();
+    app.pool.keep_saved_resumable(&saved);
+    crate::tui::save_on_exit(&mut app).expect("saved");
+    drop(app);
+
+    // `maestro resume`.
+    let state = StateStore::new(store_path).load().unwrap();
+    let picked = resumable_sessions(&state, None);
+    let probe = GitWorktreeManager::new(repo.path().to_path_buf());
+    let s = picked
+        .iter()
+        .find(|s| s.id == id)
+        .expect("the cap-stopped session is still saved");
+    let restored = restore_session(s, &probe).expect("restorable");
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut pool = SessionPool::new(1, worktrees(), tx);
+    pool.enqueue(restored);
+    let _ = pool.try_promote();
+    let managed = pool.get_active_mut(id).expect("restored with its id");
+    assert_eq!(managed.worktree_path.as_ref(), Some(&kept));
+    assert!(kept.join("work.txt").exists(), "the kept work survives");
+}

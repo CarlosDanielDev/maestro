@@ -249,7 +249,7 @@ fn cap_attention_row_names_paused() {
     ] {
         earlier.transition_to(to, why).unwrap();
     }
-    app.pool.keep_saved_paused(&[earlier]);
+    app.pool.keep_saved_resumable(&[earlier]);
     app.sync_state();
     app.check_budget(spender_id);
     let _ = agent.kill();

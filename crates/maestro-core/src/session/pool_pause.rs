@@ -3,6 +3,7 @@
 
 use super::manager::ManagedSession;
 use super::pool::SessionPool;
+use super::retry::RetryPolicy;
 use super::transition::TransitionReason;
 use super::types::{Session, SessionStatus};
 
@@ -56,11 +57,9 @@ impl SessionPool {
     #[cfg(unix)]
     pub fn resume_all(&mut self) {
         for managed in &mut self.active {
-            // A quit or restart cancelled that turn: only `maestro resume`
-            // can bring it back.
-            let quit = (managed.session.transition_history.last())
-                .is_some_and(|t| t.reason == TransitionReason::UserQuit);
-            if managed.session.status == SessionStatus::Paused && !quit {
+            // No live turn (a quit, restart or cap stop cancelled it): a
+            // SIGCONT would wake nothing; only `maestro resume` brings it back.
+            if managed.session.status == SessionStatus::Paused && managed.has_live_turn() {
                 let _ = managed.resume();
                 let _ = (managed.session)
                     .transition_to(SessionStatus::Running, TransitionReason::UserResume);
@@ -120,11 +119,15 @@ impl SessionPool {
         }
     }
 
-    /// Keep Paused sessions saved by an earlier run in the pool's finished
-    /// list, so this run's state saves do not drop them before
-    /// `maestro resume` gets to them.
-    pub fn keep_saved_paused(&mut self, saved: &[Session]) {
-        for s in saved.iter().filter(|s| s.status == SessionStatus::Paused) {
+    /// Keep sessions an earlier run saved for `maestro resume` — Paused, and
+    /// stopped by the cap with a recorded worktree — in the pool's finished
+    /// list, so this run's state saves do not drop them.
+    pub fn keep_saved_resumable(&mut self, saved: &[Session]) {
+        let resumable = |s: &&Session| {
+            s.status == SessionStatus::Paused
+                || (RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some())
+        };
+        for s in saved.iter().filter(resumable) {
             if self.get_session(s.id).is_none() {
                 self.finished.push(ManagedSession::new(s.clone()));
             }

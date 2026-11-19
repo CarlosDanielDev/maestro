@@ -219,6 +219,12 @@ impl ManagedSession {
         }
     }
 
+    /// Whether a provider turn is in flight (its cancel token is armed and
+    /// not yet taken by a cancel).
+    pub fn has_live_turn(&self) -> bool {
+        self.cancel_token.is_some()
+    }
+
     /// Test hook: arm the cancel token a spawn would set, so a test can
     /// see whether a path cancels the in-flight turn (#1266).
     #[cfg(any(test, feature = "test-util"))]

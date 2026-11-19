@@ -107,8 +107,8 @@ fn plain_launch_keeps_saved_paused() {
         paused.transition_to(to, why).unwrap();
     }
     let mut app = make_test_app("plain-launch-1266");
-    app.pool.keep_saved_paused(std::slice::from_ref(&paused));
-    app.pool.keep_saved_paused(std::slice::from_ref(&paused));
+    app.pool.keep_saved_resumable(std::slice::from_ref(&paused));
+    app.pool.keep_saved_resumable(std::slice::from_ref(&paused));
 
     save_on_exit(&mut app).expect("saved");
 
@@ -269,4 +269,34 @@ fn failed_exit_save_is_an_error() {
     let msg = err.to_string();
     assert!(msg.contains("could not save maestro state"), "{msg}");
     assert!(msg.contains("1 paused agent(s) are not recorded"), "{msg}");
+}
+
+/// #1266 judge round 3: `r` never marks Running a Paused session whose turn
+/// was cancelled — here paused by the cap, then stopped by a failed restart
+/// (the quit cannot re-record an already Paused session as UserQuit).
+#[cfg(unix)]
+#[test]
+fn resume_all_skips_a_cancelled_turn() {
+    let mut app = make_test_app("cap-then-restart-1266");
+    let id = running_session(&mut app);
+    let managed = app.pool.get_active_mut(id).unwrap();
+    let mut agent = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep");
+    managed.session.pid = Some(agent.id());
+    let turn = managed.arm_turn_for_test();
+    let _ = app.pool.pause_all(TransitionReason::BudgetCap);
+
+    let _ = save_and_restart(&mut app, || anyhow::bail!("exec failed"));
+    app.resume_all();
+    let _ = agent.kill();
+    let _ = agent.wait();
+
+    assert!(turn.is_cancelled(), "setup: the restart stopped the turn");
+    assert_eq!(
+        app.pool.get_session(id).map(|s| s.status),
+        Some(SessionStatus::Paused),
+        "r must not mark a cancelled turn Running"
+    );
 }
