@@ -731,8 +731,8 @@ impl Theme {
             SessionStatus::GatesRunning => self.status_gates_running,
             SessionStatus::NeedsReview => self.status_needs_review,
             SessionStatus::CiFix => self.status_ci_fix,
-            SessionStatus::NeedsPr => self.status_stalled, // Reuse stalled color (amber warning)
-            SessionStatus::ConflictFix => self.status_ci_fix, // Reuse CI fix color (repair yellow)
+            SessionStatus::NeedsPr => self.status_needs_pr, // v1 token, same as the chip (#1382)
+            SessionStatus::ConflictFix => self.status_conflict, // v1 token, same as the chip (#1382)
             SessionStatus::FailedGates => self.status_errored, // Same red as Errored — gate failure is an error class
             SessionStatus::Interactive => self.status_running, // Kept-alive chat is live work (#948)
         }

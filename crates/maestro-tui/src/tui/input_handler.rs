@@ -249,8 +249,37 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             handle_session_switcher(app, key);
             Some(KeyAction::Consumed)
         }
+        app::TuiMode::Fullscreen(_) => Some(handle_fullscreen(app, key)),
+        app::TuiMode::AgentGraph => Some(handle_agent_graph(app, key)),
         _ => None,
     }
+}
+
+/// #1240: Fullscreen takes every key that reaches it. Falling through to
+/// `handle_overview_keys` made `k` (advertised as scroll) open the kill
+/// dialog for the hidden grid selection, and `p` / `r` / `D` act on the
+/// whole fleet. Keys must match the Fullscreen block in the registry.
+fn handle_fullscreen(app: &mut App, key: &KeyEvent) -> KeyAction {
+    let scroll = &mut app.screen_state.fullscreen_scroll;
+    match key.code {
+        KeyCode::Char('k') | KeyCode::Up => *scroll = scroll.saturating_add(1),
+        KeyCode::Char('j') | KeyCode::Down => *scroll = scroll.saturating_sub(1),
+        KeyCode::Esc => app.navigate_back_or_dashboard(),
+        _ => {}
+    }
+    KeyAction::Consumed
+}
+
+/// #1240: the Agent graph shows no selection, so it takes every key and
+/// acts only on `g` (back to the panels) and `Esc`, as its registry block
+/// declares.
+fn handle_agent_graph(app: &mut App, key: &KeyEvent) -> KeyAction {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('g'), KeyModifiers::NONE) => app.toggle_agent_graph(),
+        (KeyCode::Esc, _) => app.navigate_back_or_dashboard(),
+        _ => {}
+    }
+    KeyAction::Consumed
 }
 
 async fn handle_budget_prespawn(
@@ -1106,6 +1135,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
         FKeyAction::OpenFullscreenSelected => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
+                app.screen_state.fullscreen_scroll = 0;
                 app.navigate_to(app::TuiMode::Fullscreen(id));
             }
         }
@@ -1396,6 +1426,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('f'), _) => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
+                app.screen_state.fullscreen_scroll = 0;
                 app.navigate_to(app::TuiMode::Fullscreen(id));
             }
         }
@@ -1555,6 +1586,10 @@ mod upgrade_tests;
 #[cfg(test)]
 #[path = "input_handler_text_input_tests.rs"]
 mod text_input_tests;
+
+#[cfg(test)]
+#[path = "input_handler_fullscreen_tests.rs"]
+mod fullscreen_tests;
 
 #[cfg(test)]
 mod tests {

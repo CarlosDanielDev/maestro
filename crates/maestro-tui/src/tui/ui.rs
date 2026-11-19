@@ -322,6 +322,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     chunks[1],
                     &theme,
                     spinner_tick,
+                    &mut app.screen_state.fullscreen_scroll,
                 );
             } else {
                 let sessions = app.pool.all_sessions();
@@ -1239,6 +1240,17 @@ fn draw_footer(
     // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
     if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
         hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
+    }
+    // #1382: on a budget Block `y` / `s` do nothing (#1243); only `n` acts.
+    if let TuiMode::BudgetPreSpawn { session_id } = app.tui_mode
+        && app.pool.get_session(session_id).is_some_and(|s| {
+            matches!(
+                app.pre_spawn_decision(s),
+                crate::budget::PreSpawnDecision::Block { .. }
+            )
+        })
+    {
+        hints = key_hints::from_pairs(&[("n", "Cancel")]);
     }
     // #1263: the shown log drawer is modal; the footer shows only its keys.
     if log_drawer_shown(app) {

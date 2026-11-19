@@ -17,7 +17,7 @@ fn fullscreen_view_markdown_last_message() {
 
     terminal
         .draw(|f| {
-            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0);
+            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0, &mut 0);
         })
         .unwrap();
 
@@ -34,7 +34,7 @@ fn fullscreen_view_empty_last_message_shows_placeholder() {
 
     terminal
         .draw(|f| {
-            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0);
+            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0, &mut 0);
         })
         .unwrap();
 
@@ -58,7 +58,7 @@ fn fullscreen_view_auto_scroll_to_bottom() {
 
     terminal
         .draw(|f| {
-            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0);
+            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0, &mut 0);
         })
         .unwrap();
 
@@ -75,7 +75,7 @@ fn fullscreen_view_plain_text_last_message() {
 
     terminal
         .draw(|f| {
-            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0);
+            draw_fullscreen(f, &session, &tracker, f.area(), &theme, 0, &mut 0);
         })
         .unwrap();
 

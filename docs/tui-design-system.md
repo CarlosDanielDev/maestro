@@ -366,7 +366,7 @@ Implements `toast` from `docs/design-system/index.html` §04 (Components, Kit v2
 | Item | For |
 |---|---|
 | `Toast::new(Severity, message)` / `Toast::undoable(message, undo)` | Build a toast. `Severity::{Success, Info, Warn, Error}`. An undoable toast is a success toast with a `^Z undo` countdown for `UNDO_WINDOW` (5 s) |
-| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue |
+| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue (at most 5; a sixth drops the oldest, #1382) |
 | `ToastUndo` | `Box<dyn FnOnce(&mut App)>`: what `Ctrl+Z` runs. Which actions get one is each screen's call |
 | `ds::toast::draw(f, area, &ToastView, theme)` / `draw_for_mode(.., nerd_font)` | Rounded `surface_overlay` box at the bottom right of `area`, above its last row; glyph + severity word (`ok`, `info`, `warn`, `error`) in the severity colour, bold. `ui::draw` draws `app.toasts` after every screen, so screens never call it |
 
@@ -539,6 +539,18 @@ To register a screen: add its block to `registry()`, give its `mode_keymap`
 arm an empty hint list, and keep the test green. Do not redeclare a Global
 key (`Esc` back, `/` filter) in a screen: that is a `Shadow`. The §06 rows
 `⌃K` opens the command palette (#1255, below) and `⌃Q` quits (#1260).
+
+The per-screen blocks live in `navigation/registry_screens.rs` (#1240;
+`registry.rs` hit the 400-line cap). A screen with no `Screen` impl and no
+keys of its own must still take every key in `handle_secondary_mode_keys`,
+or the key falls through to `handle_overview_keys`, whose `k` / `p` / `r` /
+`D` act on the hidden Overview selection. Fullscreen (`handle_fullscreen`:
+`j k ↑ ↓` scroll, `Esc` back) and the Agent graph (`handle_agent_graph`:
+`g` panels, `Esc` back) do so. Their blocks are `.hidden()`, so the footer
+stays the `mode_keymap` list with the Global `Esc Back` in it, and the ⌃K
+palette lists only Global entries there. Fullscreen scroll is
+`ScreenState::fullscreen_scroll`: rows above the tail, 0 follows the tail,
+clamped at draw time, reset when Fullscreen opens.
 
 ---
 

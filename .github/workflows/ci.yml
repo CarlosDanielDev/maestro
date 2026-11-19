@@ -222,6 +222,19 @@ jobs:
         # this glob is the only place CI picks them up (#1355, #1378).
         run: bats scripts/tests/*.bats
 
+  # Python hook tests (tests/hooks/*_test.py, stdlib unittest only). Not
+  # gated on `changes`, like bats: cheap, and a hook edit may look
+  # docs-only. No untrusted input (#1382).
+  python-hooks:
+    name: Python Hook Tests
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests/hooks -p '*_test.py' -t .
+
   deny:
     # Supply-chain gate: advisories, wildcards, licenses, registries.
     # Ignore list for transitive-only unmaintained advisories is documented

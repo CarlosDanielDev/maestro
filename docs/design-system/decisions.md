@@ -415,3 +415,21 @@ first. One entry per decision.
 - **Differs from the target:** the queued chip keeps the update chip's drop rule (#1257: it drops first), so at 80 columns with the fleet and budget shown it is not drawn; the activity log line says the upgrade is queued.
 - **Rejected:** blocking `u` while busy (loses the intent, as the ADR stub says); a second idle check for the upgrade (would drift from the quit path's).
 - **Source:** #1267.
+
+## 2026-11-19 — v0.34.0 judge follow-ups: one status colour, Critical resource chips, Block footer, title restore
+
+- **What:** (1) `ds::toast` keeps at most 5 error toasts waiting; a newer error drops the oldest. (2) `Theme::status_color` maps `NeedsPr` / `ConflictFix` to the v1 tokens `status_needs_pr` / `status_conflict`, so the chip (`ds::status_chip`, which now just calls `status_color`) and the older rows draw one colour per state. (3) The Needs-you budget / quota chips use `GaugeLevel::Critical` (high + bold) once spent / at 100% of a window, High below. (4) On a budget **Block** the footer shows only `n Cancel` (plus the `⌃Q quit` pin): `y` / `s` do nothing there since #1243. Warn keeps `y Proceed  n Cancel  s Skip-once`. (5) The first terminal-title write pushes the shell's title (XTWINOPS `CSI 22;0 t`); quit writes `maestro`, then pops it (`CSI 23;0 t`), so a terminal with a title stack gets the shell's title back and one without keeps `maestro`.
+- **Why:** #1382 (judge notes on #1359, #1363, #1381, #1385).
+- **Section:** `§04` `#c-toast`, `#c-chip`, `#c-attention`; `§04 ds::key_hints` footer.
+- **Differs from the issue:** the landing "compact console" item is already true on main: #1383 made Home Mission Control (no Release Console), and it fits at 80x27; the test now checks 80x27 and 80x28. The "`q quit` under the log drawer" item is already true: since #1260 the pin is `⌃Q quit`, and ⌃Q quits with the drawer open (`log_drawer_open` snapshot shows `Esc Close log   ⌃L close … ⌃Q quit`).
+- **Rejected:** a per-mode Block entry in `navigation/mode_hints.rs` (its keymap is per `TuiMode`, it cannot see Warn vs Block; the footer already overrides hints per state for Confirm Exit); a budget Block that fails the first interaction turn in the chat instead of opening the gate modal (two gate UIs for one rule).
+- **Source:** #1382.
+
+## 2026-11-19 — Fullscreen and Agent graph take their own keys
+
+- **What:** `handle_secondary_mode_keys` gets a `Fullscreen` arm (`j` / `k` / `↓` / `↑` scroll the output, `Esc` back) and an `AgentGraph` arm (`g` back to the panels, `Esc` back). Both consume every other key, so none reaches `handle_overview_keys`: `k` no longer opens Confirm Kill for the hidden grid selection, and `p` / `r` / `D` / `Enter` / `d` / arrows do nothing there. Fullscreen scroll is rows above the tail (`ScreenState::fullscreen_scroll`, 0 = follow the tail), clamped at draw time and reset when Fullscreen opens. Both keysets are declared in the registry (`navigation/registry_screens.rs`, new `Action::TogglePanels`).
+- **Why:** #1240; design §09 smoke finding 1 ("Fullscreen has no key handler … `k` opens `ConfirmKill`") and the §09 UX row "Pressing `k` to scroll and opening a kill dialog".
+- **Section:** `§09` Status / session views (Fullscreen row), `§06` keymap.
+- **Differs from the target:** the target Output sub-view (`OutputViewState { offset, follow, open }`, `PgUp PgDn Home End`, the whole transcript) is the operate epic (#1288) and out of scope; this keeps `last_message` and adds only `j k ↑ ↓`. The registry blocks are `.hidden()`: a visible block would make `footer_hints` replace the footer and drop the Global `Esc Back` (Global keys are not redeclared in a screen), which `agent_graph_mode_hints_include_esc_back_and_g_panels` guards. `Tab` on these screens no longer jumps to Overview (it came from the Overview fall-through); `Esc` still goes back.
+- **Rejected:** `handle_overview_keys` checking the mode (the defect is the dispatch, and every new mode would need another check); arms in `handle_mode_keys` as the issue hints (they run before `handle_global_shortcuts`, so `?`, F-keys, `Q`, `⌃L` would stop working on these screens).
+- **Source:** #1240.

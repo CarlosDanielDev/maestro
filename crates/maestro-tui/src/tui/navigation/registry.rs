@@ -143,6 +143,8 @@ pub enum Action {
     Expand,
     Kill,
     CycleAgent,
+    /// Agent graph ↔ session panels (#1240).
+    TogglePanels,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,35 +273,7 @@ pub fn registry() -> &'static [Binding] {
             g(ch('P'), A::RetryPr, Destructive, "retry PR"),
         ]);
 
-        // Esc is the Global "back" on both screens, so it is not redeclared.
-        let log = Scope::Screen(TuiMode::LogViewer(uuid::Uuid::nil()));
-        let s = |scope, chord, action, label| Binding::new(chord, scope, action, Safe, label);
-        v.extend([
-            s(log, ch('j'), A::ScrollDown, "Down"),
-            s(log, ch('k'), A::ScrollUp, "Up"),
-            s(log, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
-            s(log, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
-            s(log, ch('g'), A::Top, "Top"),
-            s(log, ch('G'), A::Bottom, "Bottom").exception("vim pair: g top, G bottom"),
-        ]);
-        let summary = Scope::Screen(TuiMode::SessionSummary);
-        v.extend([
-            s(summary, ch('j'), A::ScrollDown, "Down"),
-            s(summary, ch('k'), A::ScrollUp, "Up"),
-            s(summary, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
-            s(summary, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
-            s(summary, Chord::key(KeyCode::Enter), A::Expand, "Expand"),
-        ]);
-        // #1261: the typed kill confirm. Typed text is content, not a
-        // binding; Enter kills only once it matches. Esc is the Global back.
-        let kill = Scope::Screen(TuiMode::ConfirmKill(uuid::Uuid::nil()));
-        v.push(Binding::new(
-            Chord::key(KeyCode::Enter),
-            kill,
-            A::Kill,
-            Destructive,
-            "kill",
-        ));
+        v.extend(screens::blocks());
         v
     });
     &REGISTRY
@@ -394,6 +368,9 @@ pub fn footer_hints(mode: TuiMode) -> Option<&'static [InlineHint]> {
         .find(|(s, _)| s.is_screen_of(mode))
         .map(|(_, hints)| hints.as_slice())
 }
+
+#[path = "registry_screens.rs"]
+mod screens;
 
 #[cfg(test)]
 #[path = "registry_tests.rs"]
