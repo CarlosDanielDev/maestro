@@ -108,3 +108,59 @@ fn budget_prespawn_modal_chord_hints_exact_text() {
         output
     );
 }
+
+/// A full app parked in the gate for one queued session, `total_cost`
+/// already spent against a $1 cap.
+fn gated_app(total_cost: f64) -> crate::tui::app::App {
+    use crate::session::types::Session;
+    use crate::tui::app::TuiMode;
+    let session = Session::new(
+        "probe".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(1382),
+        None,
+    );
+    let id = session.id;
+    let mut app = super::log_drawer::log_app(TuiMode::BudgetPreSpawn { session_id: id });
+    app.pool.enqueue(session);
+    app.install_budget(&crate::config::BudgetConfig {
+        per_session_usd: 0.5,
+        total_usd: 1.0,
+        alert_threshold_pct: 80,
+    });
+    app.total_cost = total_cost;
+    app
+}
+
+fn footer(t: &Terminal<TestBackend>) -> String {
+    let buf = t.backend().buffer();
+    let y = buf.area.height - 1;
+    (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
+}
+
+/// #1382: on Block `y` / `s` do nothing (#1243), so the footer offers only
+/// the keys that act.
+#[test]
+fn budget_prespawn_block_footer_hints() {
+    let mut app = gated_app(1.2);
+    let t = super::log_drawer::draw(&mut app, 80, 24);
+    let row = footer(&t);
+    assert!(row.contains("Cancel"), "n Cancel is offered: {row}");
+    assert!(
+        !row.contains("Proceed") && !row.contains("Skip-once"),
+        "Block must not offer y / s: {row}"
+    );
+    assert_snapshot!(t.backend());
+}
+
+/// Under the cap (Warn) `y` and `s` still act, so they stay.
+#[test]
+fn budget_prespawn_warn_footer_keeps_proceed() {
+    let mut app = gated_app(0.2);
+    let row = footer(&super::log_drawer::draw(&mut app, 80, 24));
+    assert!(
+        row.contains("Proceed") && row.contains("Skip-once"),
+        "{row}"
+    );
+}
