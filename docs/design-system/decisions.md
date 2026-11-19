@@ -378,3 +378,11 @@ first. One entry per decision.
 - **Section:** `§02.20 Agent graph` (edges touch their file labels), `§02.21 Interaction` and `§02.3 Create milestone` (composer and wizard key handling). No visual target changes.
 - **Rejected:** accepting the 24 agent-graph snapshot changes (brings back the #569 gap); snapping node positions to cell centres (tried: labels placed by `place_label` then drift, more snapshots changed); staying on ratatui 0.29 until tui-textarea ships a 0.30 build (blocks Dependabot, and tui-textarea moved to ratatui-textarea); keeping two ratatui copies with `deny.toml` skips (types do not match, it does not build).
 - **Source:** #1413.
+
+## 2026-11-18 — Help overlay scroll stops at the end; key column fits the longest key
+
+- **What:** the Help overlay (`tui/help.rs`) measures its wrapped content with `Paragraph::line_count` at the inner width it draws with, clamps the scroll to `rows - inner height`, and writes the clamped value back into `HelpOverlayState`, so `j` / `PgDn` stop with the footer `[j/k] Scroll  [/] Search  [?/F1/Esc] Close` on the last row and one `k` moves up at once. The key column is per mode: the longest key + 2, capped at a third of the inner width; a key longer than the cap gets one space. On Landing the longest key is `^Q / q / Ctrl+c / ^X` (20), so the column is 22 (was a fixed 16) and `d/f/a/i/m/r/p/h/s/t` no longer runs into `Run an action`.
+- **Why:** #1397 (smoke test B4/B5 at `de407c5e`): `j` scrolled the box to blank, and a 19-character key touched its description.
+- **Section:** `§06 keymap` (flow-map node `start.help`, "Help (? / F1)"). No visual target changes; the Help content itself is #1398.
+- **Rejected:** a fixed 16 column with a forced separator (the column stays ragged for long keys); counting rows by `width / inner width` by hand (word wrap breaks earlier, so the clamp would drift from what is drawn). `line_count` needs the ratatui feature `unstable-rendered-line-info` (no new crate); a ratatui upgrade that changes it shows up in `help_scroll_clamps_to_content_end`.
+- **Source:** #1397.

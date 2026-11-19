@@ -923,17 +923,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         crate::tui::ds::toast::draw(f, f.area(), &view, &theme);
     }
 
-    if let Some(ref help) = app.help_state {
-        let input_mode = active_screen_input_mode(app);
-        help::draw_help_overlay_with_search(
-            f,
-            f.area(),
-            &mode_km,
-            input_mode,
-            help.scroll,
-            &help.search_query,
-            &theme,
-        );
+    let input_mode = active_screen_input_mode(app);
+    if let Some(help) = app.help_state.as_mut() {
+        help::draw_help_overlay_with_search(f, f.area(), &mode_km, input_mode, help, &theme);
     }
 }
 

@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Clear, Paragraph, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 /// State for the full-screen help overlay.
 pub struct HelpOverlayState {
@@ -96,20 +97,27 @@ pub fn filter_bindings(groups: &[KeyBindingGroup], query: &str) -> Vec<KeyBindin
         .collect()
 }
 
+/// Draws the Help overlay. The scroll is clamped to the content end and
+/// written back into `state`, so `k` moves up at once after an overscroll.
 pub fn draw_help_overlay_with_search(
     f: &mut Frame,
     area: Rect,
     mode_km: &crate::tui::navigation::keymap::ModeKeyMap,
     input_mode: InputMode,
-    scroll: u16,
-    search_query: &str,
+    state: &mut HelpOverlayState,
     theme: &Theme,
 ) {
     let popup = centered_rect(90, 90, area);
 
     f.render_widget(Clear, popup);
 
+    let block = theme
+        .styled_block("Help", false)
+        .border_style(Style::default().fg(theme.accent_info));
+    let inner = block.inner(popup);
+    let search_query = state.search_query.as_str();
     let groups = filter_bindings(&mode_km.help_groups, search_query);
+    let key_col = key_column_width(&mode_km.help_groups, inner.width);
 
     let title = format!("Help — {} Mode", mode_km.mode_label);
     let mut help_text = vec![
@@ -150,7 +158,7 @@ pub fn draw_help_overlay_with_search(
         help_text.push(Line::from(""));
     }
 
-    render_binding_groups(&mut help_text, &groups, theme);
+    render_binding_groups(&mut help_text, &groups, key_col, theme);
 
     // Footer with controls
     help_text.push(Line::from(vec![
@@ -162,16 +170,27 @@ pub fn draw_help_overlay_with_search(
         Span::raw(" Close"),
     ]));
 
-    let paragraph = Paragraph::new(help_text)
-        .block(
-            theme
-                .styled_block("Help", false)
-                .border_style(Style::default().fg(theme.accent_info)),
-        )
-        .wrap(Wrap { trim: false })
-        .scroll((scroll, 0));
+    let paragraph = Paragraph::new(help_text).wrap(Wrap { trim: false });
+    // Measured with the same width and wrap the draw uses.
+    let rows = paragraph.line_count(inner.width);
+    let max_scroll = rows.saturating_sub(usize::from(inner.height));
+    state.scroll = state
+        .scroll
+        .min(u16::try_from(max_scroll).unwrap_or(u16::MAX));
 
-    f.render_widget(paragraph, popup);
+    f.render_widget(paragraph.block(block).scroll((state.scroll, 0)), popup);
+}
+
+/// Key column width for one mode: the longest key + 2, capped at a third
+/// of the inner width. Keys longer than the cap get a single space.
+fn key_column_width(groups: &[KeyBindingGroup], inner_width: u16) -> usize {
+    let longest = groups
+        .iter()
+        .flat_map(|g| &g.bindings)
+        .map(|b| b.key.width())
+        .max()
+        .unwrap_or(0);
+    (longest + 2).min(usize::from(inner_width / 3))
 }
 
 fn section_header<'a>(title: &'a str, theme: &Theme) -> Line<'a> {
@@ -183,11 +202,12 @@ fn section_header<'a>(title: &'a str, theme: &Theme) -> Line<'a> {
     )])
 }
 
-fn key_line<'a>(key: &'a str, desc: &'a str, theme: &Theme) -> Line<'a> {
+fn key_line<'a>(key: &'a str, desc: &'a str, key_col: usize, theme: &Theme) -> Line<'a> {
+    let gap = key_col.saturating_sub(key.width()).max(1);
     Line::from(vec![
         Span::raw("    "),
         Span::styled(
-            format!("{:<16}", key),
+            format!("{key}{}", " ".repeat(gap)),
             Style::default()
                 .fg(theme.accent_success)
                 .add_modifier(Modifier::BOLD),
@@ -199,12 +219,13 @@ fn key_line<'a>(key: &'a str, desc: &'a str, theme: &Theme) -> Line<'a> {
 fn render_binding_groups<'a>(
     lines: &mut Vec<Line<'a>>,
     groups: &'a [KeyBindingGroup],
+    key_col: usize,
     theme: &Theme,
 ) {
     for group in groups {
         lines.push(section_header(group.title, theme));
         for binding in &group.bindings {
-            lines.push(key_line(binding.key, binding.description, theme));
+            lines.push(key_line(binding.key, binding.description, key_col, theme));
         }
         lines.push(Line::from(""));
     }
