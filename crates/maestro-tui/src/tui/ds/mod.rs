@@ -13,6 +13,7 @@ pub mod kpi_tile;
 pub mod log_drawer;
 pub mod md_block;
 pub mod money;
+pub mod palette;
 pub mod panel;
 pub mod size_guard;
 pub mod status_bar;

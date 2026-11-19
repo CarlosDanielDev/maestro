@@ -34,6 +34,7 @@ mod milestone;
 mod milestone_wizard;
 mod no_color;
 mod overview;
+mod palette;
 mod prompt_input;
 mod quota_badges;
 mod roadmap;

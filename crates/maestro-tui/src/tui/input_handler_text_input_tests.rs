@@ -140,6 +140,13 @@ fn on_bypass_warning() -> App {
     app
 }
 
+/// #1255: the ⌃K palette's query field, opened over Overview.
+fn on_palette() -> App {
+    let mut app = base_app(TuiMode::Overview);
+    super::open_palette(&mut app);
+    app
+}
+
 #[test]
 fn text_input_mode_true_for_prd_edit_field() {
     assert!(is_text_input_mode(&on_prd_edit()));
@@ -242,7 +249,7 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 12] {
+fn text_surfaces() -> [Surface; 13] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
@@ -260,6 +267,7 @@ fn text_surfaces() -> [Surface; 12] {
         ("help overlay search", on_help_search),
         ("kill confirm", on_kill_confirm),
         ("bypass warning", on_bypass_warning),
+        ("command palette", on_palette),
     ]
 }
 
@@ -328,5 +336,20 @@ async fn shift_tab_never_types_on_any_text_input_surface() {
             ),
         }
         assert!(is_text_input_mode(&app), "{name}: still a text field");
+    }
+}
+
+/// #1255: inside a text field ⌃K stays the field's; the palette opens only
+/// outside one.
+#[tokio::test]
+async fn ctrl_k_never_opens_palette_on_any_text_input_surface() {
+    let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    for (name, make) in text_surfaces() {
+        if name == "command palette" {
+            continue;
+        }
+        let mut app = make();
+        handle_key(&mut app, ctrl_k).await;
+        assert!(app.palette.is_none(), "{name}: ⌃K opened the palette");
     }
 }

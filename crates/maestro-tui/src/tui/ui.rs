@@ -68,6 +68,7 @@ fn shows_log_pane(app: &App) -> bool {
 pub(crate) fn log_drawer_blocked(app: &App) -> bool {
     let state = &app.screen_state;
     app.help_state.is_some()
+        || app.palette.is_some()
         || match app.tui_mode {
             TuiMode::ConfirmExit
             | TuiMode::ConfirmKill(_)
@@ -895,6 +896,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_shell_row(f, app, shell_row, &theme);
     draw_footer(f, app, &mode_km, chunks[3], &theme);
     draw_typed_confirm(f, app, &theme);
+    // #1255: the ⌃K palette dims everything under it (it blocks the drawer).
+    if let Some(palette) = app.palette.as_ref() {
+        palette.draw(f, &theme);
+    }
 
     // #1263: the Ctrl+L drawer covers the bottom of the main area.
     if log_drawer_shown(app) {

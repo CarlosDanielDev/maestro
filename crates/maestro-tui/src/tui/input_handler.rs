@@ -69,6 +69,11 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
+    // #1255: the open palette takes every key; the quit chords above win.
+    if app.palette.is_some() {
+        return handle_palette(app, &key).await;
+    }
+
     if handle_upgrade_keys(app, &key) {
         return KeyAction::Consumed;
     }
@@ -863,8 +868,74 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
     }
 }
 
+/// #1255: ⌃K opens the palette over the current screen. Its entries are
+/// read from the registry now, so a disabled action shows why.
+fn open_palette(app: &mut App) {
+    use crate::tui::ds::palette::{PaletteState, entries};
+    use crate::tui::navigation::registry::{Action, registry};
+    let review = app.pending_review_report.is_some();
+    let list = entries(registry(), app.tui_mode, |action| match action {
+        Action::ReviewConcerns if !review => Some("no review pending"),
+        _ => None,
+    });
+    app.palette = Some(PaletteState::new(list));
+}
+
+/// #1255: a key while the palette is open. ⏎ closes it, then runs the
+/// entry: a tab opens its screen, any other binding goes through
+/// `handle_key` as its own key, so the palette never has its own handler
+/// for a bound action (destructive ones keep their confirm).
+async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
+    use crate::tui::ds::palette::{Outcome, Run};
+    use crate::tui::navigation::registry::{Action, PaletteCommand};
+    let Some(palette) = app.palette.as_mut() else {
+        return KeyAction::Consumed;
+    };
+    let run = match palette.handle_key(key) {
+        Outcome::Open => return KeyAction::Consumed,
+        Outcome::Close => None,
+        Outcome::Run(run) => Some(run),
+    };
+    app.palette = None;
+    match run {
+        None => KeyAction::Consumed,
+        Some(Run::Binding(Action::SwitchTab(_), chord)) => {
+            if let KeyCode::Char(c) = chord.code
+                && let Some(mode) = crate::tui::ds::tab_bar::tab_for_digit(c)
+                && mode != app.tui_mode
+            {
+                handle_screen_action(app, screens::ScreenAction::Push(mode));
+            }
+            KeyAction::Consumed
+        }
+        Some(Run::Binding(_, chord)) => {
+            Box::pin(handle_key(app, KeyEvent::new(chord.code, chord.mods))).await
+        }
+        Some(Run::Command(PaletteCommand::Network)) => {
+            use crate::tui::ds::toast::{Severity, Toast};
+            let toast = Toast::new(Severity::Info, NETWORK_PENDING);
+            app.push_toast(toast, std::time::Instant::now());
+            KeyAction::Consumed
+        }
+    }
+}
+
+/// What `network` shows until a diagnostics view exists (#1255).
+const NETWORK_PENDING: &str = "Network diagnostics: not built yet";
+
 /// Handle global shortcuts that apply before screen dispatch (help, F-keys, Ctrl-X).
 fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
+    // #1255: ⌃K opens the command palette on any screen, except while a
+    // text field has focus (the field keeps ⌃K) or a modal is up.
+    if key.code == KeyCode::Char('k')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && !is_text_input_mode(app)
+        && !crate::tui::ui::log_drawer_blocked(app)
+    {
+        open_palette(app);
+        return true;
+    }
+
     // #1254: Ctrl+Z undoes and Esc dismisses only while a matching toast
     // is visible; otherwise the key falls through to the screen.
     if key.code == KeyCode::Char('z')
@@ -1070,6 +1141,9 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
 /// label/assignee filters (their screens never report `Insert`).
 fn is_text_input_mode(app: &App) -> bool {
     use crate::tui::navigation::InputMode;
+    if app.palette.is_some() {
+        return true;
+    }
     if crate::tui::ui::active_screen_input_mode(app) == InputMode::Insert {
         return true;
     }
@@ -1233,6 +1307,8 @@ fn open_confirm_exit(app: &mut App, press: Option<(&KeyEvent, std::time::Instant
         hold.handle_key(key, now);
     }
     app.screen_state.exit_hold = Some(hold);
+    // #1255: a quit chord closes the palette; Confirm Exit is drawn alone.
+    app.palette = None;
     if app.tui_mode != app::TuiMode::ConfirmExit {
         app.navigate_to(app::TuiMode::ConfirmExit);
     }
