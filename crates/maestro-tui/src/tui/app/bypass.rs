@@ -7,6 +7,7 @@ use crate::review::bypass::BypassSource;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningState};
+use crate::tui::screens::settings::SettingsScreen;
 
 /// Activity-log source for a bypass turned on from Settings (#1239).
 const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
@@ -173,10 +174,14 @@ impl App {
             self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
         } else if confirmed {
             // #1411: a mode or a non-default agent reaches only its own
-            // sessions; the chip lights when such a session is added.
+            // sessions; the chip lights when such a session spawns.
+            let effects: Vec<String> = (targets.iter())
+                .map(|t| SettingsScreen::bypass_target_effect(t))
+                .collect();
             let msg = format!(
-                "Bypass staged for {} ({SETTINGS_CONFIRM_SOURCE}); its sessions run in bypass after Ctrl+S",
-                targets.join(", ")
+                "Bypass staged for {} ({SETTINGS_CONFIRM_SOURCE}); applies to {}",
+                targets.join(", "),
+                effects.join("; ")
             );
             self.activity_log
                 .push_simple("BYPASS".into(), msg, LogLevel::Warn);
@@ -210,6 +215,10 @@ mod paths_tests;
 #[cfg(test)]
 #[path = "bypass_agents_tests.rs"]
 mod agents_tests;
+
+#[cfg(test)]
+#[path = "bypass_staged_tests.rs"]
+mod staged_tests;
 
 #[cfg(test)]
 mod tests {

@@ -128,7 +128,7 @@ pub fn setup_app_for_agent(
     // Bypass mode is activatable via these paths (#328 AC, #1411):
     //   - CLI flag (`--bypass-review`)
     //   - Config (`agents.<id>.permission_mode`, else `[sessions]`)
-    //   - a mode's own `permission_mode` (see `App::add_session`)
+    //   - a mode's own `permission_mode` (see `App::note_spawn_bypass`, run before every spawn)
     //   - TUI toggle (Ctrl+B at runtime)
     if permission_mode == "bypassPermissions" {
         app.activate_bypass_from(&bypass_source);

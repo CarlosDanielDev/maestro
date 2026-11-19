@@ -260,64 +260,94 @@ async fn mode_bypass_never_reaches_the_pool_through_a_save() {
     }
 }
 
-/// #1411 (judge round 2): a mode-bypass session that was still queued
-/// when ⌃B turned bypass off must light the chip again when it spawns.
+/// How the queued session gets promoted once a slot frees.
+#[derive(Clone, Copy, Debug)]
+enum Promote {
+    AddSession,
+    Tick,
+}
+
+async fn press_ctrl_b(app: &mut App) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    app.tui_mode = crate::tui::app::TuiMode::Landing;
+    let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
+    crate::tui::input_handler::handle_key(app, ctrl_b).await;
+}
+
+/// #1411 (judge round 2): pool bypass is on (⌃B + CONFIRM), a mode-bypass
+/// session is queued, ⌃B turns bypass off while it waits, then a slot
+/// frees. The session spawns in bypass, so the chip must come back on and
+/// the log must name its mode, for both promotion paths.
 #[tokio::test]
 async fn queued_mode_bypass_lights_the_chip_when_it_spawns() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let mut cfg = config("default", "default", true);
-    cfg.sessions.max_concurrent = 1;
-    let (mut app, _dir) = run_app(cfg.clone(), false, None);
-    let first = Session::new(
-        "a".into(),
-        "opus".into(),
-        "orchestrator".into(),
-        Some(1),
-        None,
-    );
-    let first_id = first.id;
-    app.add_session(first).await.expect("enqueue");
-    let queued = yolo_session(&cfg);
-    let queued_id = queued.id;
-    app.add_session(queued).await.expect("enqueue");
-    assert!(
-        app.pool.get_active_mut(queued_id).is_none(),
-        "setup: yolo is queued"
-    );
+    use super::agents_tests::type_confirm;
+    for promote in [Promote::AddSession, Promote::Tick] {
+        let mut cfg = config("default", "default", true);
+        cfg.sessions.max_concurrent = 1;
+        let (mut app, _dir) = run_app(cfg.clone(), false, None);
 
-    // ⌃B turns the chip off while the yolo session still waits.
-    if app.bypass_active {
-        app.tui_mode = crate::tui::app::TuiMode::Landing;
-        let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
-        crate::tui::input_handler::handle_key(&mut app, ctrl_b).await;
-    }
-    assert!(!app.bypass_active, "setup: chip off");
-    let before = app.activity_log.entries().len();
+        press_ctrl_b(&mut app).await;
+        type_confirm(&mut app).await;
+        assert!(app.bypass_active, "{promote:?}: setup: ⌃B + CONFIRM on");
+        assert_eq!(app.pool.permission_mode(), BYPASS);
 
-    // A slot frees; the next promotion spawns the yolo session.
-    app.pool.finalize_retain_worktree(first_id);
-    let third = Session::new(
-        "c".into(),
-        "opus".into(),
-        "orchestrator".into(),
-        Some(3),
-        None,
-    );
-    app.add_session(third).await.expect("enqueue");
+        let first = Session::new(
+            "a".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+            None,
+        );
+        let first_id = first.id;
+        app.add_session(first).await.expect("enqueue");
+        let queued = yolo_session(&cfg);
+        let queued_id = queued.id;
+        app.add_session(queued).await.expect("enqueue");
+        assert!(
+            app.pool.get_active_mut(queued_id).is_none(),
+            "{promote:?}: yolo is queued"
+        );
 
-    let managed = app.pool.get_active_mut(queued_id).expect("yolo promoted");
-    assert_eq!(managed.permission_mode.as_deref(), Some(BYPASS));
-    assert!(
-        app.bypass_active,
-        "a bypass session spawning lights the chip"
-    );
-    assert!(chip_drawn(&mut app));
-    let fresh = &app.activity_log.entries()[before..];
-    assert!(
-        (fresh.iter())
-            .any(|e| e.message.starts_with("Bypass mode enabled")
+        press_ctrl_b(&mut app).await;
+        assert!(
+            !app.bypass_active,
+            "{promote:?}: ⌃B turned bypass off while queued"
+        );
+        assert!(!chip_drawn(&mut app));
+        let before = app.activity_log.entries().len();
+
+        app.pool.finalize_retain_worktree(first_id);
+        match promote {
+            Promote::AddSession => {
+                let third = Session::new(
+                    "c".into(),
+                    "opus".into(),
+                    "orchestrator".into(),
+                    Some(3),
+                    None,
+                );
+                app.add_session(third).await.expect("enqueue");
+            }
+            Promote::Tick => app.check_completions().await.expect("tick"),
+        }
+
+        let managed = app.pool.get_active_mut(queued_id).expect("yolo promoted");
+        assert_eq!(managed.permission_mode.as_deref(), Some(BYPASS));
+        assert!(
+            app.bypass_active,
+            "{promote:?}: a bypass session spawning lights the chip"
+        );
+        assert!(chip_drawn(&mut app), "{promote:?}");
+        let fresh = &app.activity_log.entries()[before..];
+        assert!(
+            (fresh.iter()).any(|e| e.message.starts_with("Bypass mode enabled")
                 && e.message.contains("(mode yolo)")),
-        "a fresh [BYPASS] line names the mode"
-    );
-    assert_eq!(app.pool.permission_mode(), "default", "the pool stays out");
+            "{promote:?}: a fresh [BYPASS] line names the mode"
+        );
+        assert_eq!(
+            app.pool.permission_mode(),
+            "default",
+            "{promote:?}: the pool stays out"
+        );
+    }
 }

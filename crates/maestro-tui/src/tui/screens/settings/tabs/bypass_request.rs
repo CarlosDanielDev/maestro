@@ -130,6 +130,17 @@ impl SettingsScreen {
         target == SESSIONS || target == format!("agents.{}", self.config.agents.default)
     }
 
+    /// Where a staged, non-pool target really applies (#1411). A mode's
+    /// `permission_mode` is read when its sessions spawn; another agent's
+    /// only when `maestro run --agent <id>` starts.
+    pub(crate) fn bypass_target_effect(target: &str) -> String {
+        match target.split_once('.') {
+            Some(("modes", id)) => format!("sessions in mode {id} after Ctrl+S"),
+            Some(("agents", id)) => format!("`maestro run --agent {id}` started after Ctrl+S"),
+            _ => "every future session after Ctrl+S".to_string(),
+        }
+    }
+
     /// The Settings warning for the pending request. Unlike ⌃B it names
     /// the key Ctrl+S writes to the committed `maestro.toml`.
     pub(crate) fn bypass_warning(&self) -> BypassWarningState {
@@ -141,12 +152,15 @@ impl SettingsScreen {
         let (title, scope) = if pool {
             (
                 "DANGER: enable bypass for every future session?".to_string(),
-                "every future session after Ctrl+S; this run now",
+                "every future session after Ctrl+S; this run now".to_string(),
             )
         } else {
+            let effects: Vec<String> = (targets.iter())
+                .map(|t| Self::bypass_target_effect(t))
+                .collect();
             (
                 format!("DANGER: enable bypass for {}?", targets.join(", ")),
-                "its sessions after Ctrl+S",
+                effects.join("; "),
             )
         };
         let row = |label: &str, text: &str| (label.to_string(), text.to_string());
@@ -158,7 +172,7 @@ impl SettingsScreen {
                 row("does", "edits files, commits and pushes, no asking"),
                 row("writes", &keys.join(", ")),
                 row("to", "maestro.toml (committed)"),
-                row("scope", scope),
+                row("scope", &scope),
                 row("or", "Ctrl+B turns it on for this run only"),
             ],
         )

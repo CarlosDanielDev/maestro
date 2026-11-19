@@ -213,7 +213,8 @@ bypass request like the Sessions row (`settings/tabs/bypass_request.rs`):
 `SettingsScreen::bypass_warning()` opens the Settings warning naming the key
 it writes, `Esc` puts the last saved value back. Only the Sessions row and
 the default agent put the pool in bypass on CONFIRM; a mode or another agent
-is staged for its own sessions. A Ctrl+S save never turns
+is staged only (`SettingsScreen::bypass_target_effect` says where it applies:
+sessions in that mode, or `maestro run --agent <id>`). A Ctrl+S save never turns
 bypass on: `App::refuse_unconfirmed_bypass` keeps the pool out of bypass and
 logs why; only a typed CONFIRM turns it on. A save turns bypass off only when
 it moved the saved mode off bypass itself (a ⌃B or CLI bypass stays on).

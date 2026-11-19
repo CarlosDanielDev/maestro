@@ -41,6 +41,10 @@ default = "claude"
 kind = "claude"
 command = "claude"
 permission_mode = "{claude_mode}"
+[agents.worker]
+kind = "claude"
+command = "claude"
+permission_mode = "default"
 [modes.yolo]
 permission_mode = "default"
 "#
@@ -83,7 +87,7 @@ fn settings_app_from(start_mode: &str, screen_mode: &str) -> (App, tempfile::Tem
     (app, dir)
 }
 
-async fn press(app: &mut App, code: KeyCode) {
+pub(super) async fn press(app: &mut App, code: KeyCode) {
     handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
 }
 
@@ -102,7 +106,7 @@ pub(super) async fn type_confirm(app: &mut App) {
     press(app, KeyCode::Enter).await;
 }
 
-fn drawn(app: &mut App) -> String {
+pub(super) fn drawn(app: &mut App) -> String {
     let mut t = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
     t.draw(|f| ui::draw(f, app)).expect("draw");
     let buf = t.backend().buffer();
@@ -122,11 +126,11 @@ fn agent_dropdown(app: &App) -> (String, bool) {
     mode_dropdown(app, AGENTS_TAB)
 }
 
-const AGENTS_TAB: usize = 7;
-const MODES_TAB: usize = 8;
+pub(super) const AGENTS_TAB: usize = 7;
+pub(super) const MODES_TAB: usize = 8;
 
 /// The first entry's Permission Mode dropdown on `tab` (Providers or Modes).
-fn mode_dropdown(app: &App, tab: usize) -> (String, bool) {
+pub(super) fn mode_dropdown(app: &App, tab: usize) -> (String, bool) {
     let screen = app.screen_state.settings_screen.as_ref().expect("settings");
     let map = (screen.fields_per_tab[tab].iter())
         .find_map(|f| match &f.widget {
@@ -158,7 +162,7 @@ async fn focus_agent_mode(app: &mut App) {
     focus_mode_row(app, AGENTS_TAB).await;
 }
 
-async fn focus_mode_row(app: &mut App, tab: usize) {
+pub(super) async fn focus_mode_row(app: &mut App, tab: usize) {
     for _ in 0..40 {
         if mode_dropdown(app, tab).1 {
             break;
