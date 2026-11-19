@@ -10,7 +10,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
 use crate::session::types::SessionStatus;
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, TuiDataEvent, TuiMode};
 use crate::tui::input_handler::{handle_key, handle_key_under_size_guard};
 use crate::tui::snapshot_tests::make_session;
 use crate::tui::ui;
@@ -40,11 +40,22 @@ fn app_with_live(live: usize) -> App {
     app
 }
 
-async fn press_u(app: &mut App) {
-    let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE);
+async fn press(app: &mut App, code: KeyCode) {
+    let key = KeyEvent::new(code, KeyModifiers::NONE);
     if handle_key_under_size_guard(app, key, AREA).await.is_none() {
         handle_key(app, key).await;
     }
+}
+
+async fn press_u(app: &mut App) {
+    press(app, KeyCode::Char('u')).await;
+}
+
+fn logged(app: &App, text: &str) -> bool {
+    app.activity_log
+        .entries()
+        .iter()
+        .any(|e| e.message.contains(text))
 }
 
 /// The top row at 120x40: at 80 columns the update chip is the first
@@ -116,4 +127,49 @@ async fn queued_upgrade_runs_when_idle() {
         .visible(Instant::now())
         .expect("a toast announces it");
     assert!(toast.message.contains("99.0.0"), "{}", toast.message);
+}
+
+/// Owner round on #1419: only `u` cancels a queued upgrade, with a log
+/// line; `Esc` leaves it queued.
+#[tokio::test]
+async fn esc_keeps_queued_upgrade() {
+    let mut app = app_with_live(1);
+    press_u(&mut app).await;
+    assert!(is_queued(&app.upgrade_state), "{:?}", app.upgrade_state);
+
+    press(&mut app, KeyCode::Esc).await;
+    assert!(
+        is_queued(&app.upgrade_state),
+        "Esc must not cancel a queued upgrade: {:?}",
+        app.upgrade_state
+    );
+    assert!(!logged(&app, "cancelled"));
+
+    press_u(&mut app).await;
+    assert!(
+        matches!(app.upgrade_state, UpgradeState::Available(_)),
+        "{:?}",
+        app.upgrade_state
+    );
+    assert!(logged(&app, "Queued upgrade cancelled."));
+}
+
+/// Owner round on #1419: a version check that lands while queued keeps
+/// the upgrade queued.
+#[tokio::test]
+async fn version_check_keeps_queued_upgrade() {
+    let mut app = app_with_live(1);
+    press_u(&mut app).await;
+    assert!(is_queued(&app.upgrade_state), "{:?}", app.upgrade_state);
+
+    app.handle_data_event(TuiDataEvent::VersionCheckResult(Some(ReleaseInfo {
+        tag: "v99.0.0".into(),
+        version: "99.0.0".into(),
+        download_url: "http://127.0.0.1/untrusted-1267".into(),
+    })));
+    assert!(
+        is_queued(&app.upgrade_state),
+        "a check result must not unqueue: {:?}",
+        app.upgrade_state
+    );
 }
