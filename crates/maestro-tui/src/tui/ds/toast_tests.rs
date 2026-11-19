@@ -94,3 +94,22 @@ fn undo_is_none_without_undo_toast() {
     assert_eq!(q.take_undo(now), None);
     assert!(q.visible(now).is_some(), "plain toast stays");
 }
+
+#[test]
+fn error_queue_is_capped_and_drops_the_oldest() {
+    let now = t0();
+    let mut q: ToastQueue<()> = ToastQueue::default();
+    let burst = MAX_QUEUED_ERRORS + 3;
+    for i in 0..burst {
+        q.push(Toast::new(Severity::Error, format!("e{i}")), now);
+    }
+    let mut seen = Vec::new();
+    while let Some(view) = q.visible(now) {
+        seen.push(view.message.to_string());
+        assert!(q.dismiss_error(now));
+    }
+    let kept: Vec<String> = (burst - MAX_QUEUED_ERRORS..burst)
+        .map(|i| format!("e{i}"))
+        .collect();
+    assert_eq!(seen, kept, "only the newest errors stay, oldest first");
+}
