@@ -322,6 +322,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     chunks[1],
                     &theme,
                     spinner_tick,
+                    &mut app.screen_state.fullscreen_scroll,
                 );
             } else {
                 let sessions = app.pool.all_sessions();

@@ -406,3 +406,12 @@ first. One entry per decision.
 - **Spawn time:** the chip check runs right before every spawn (`App::note_spawn_bypass`, called from `try_enter_prespawn_gate`, the budget proceed path and the first interaction turn), so a mode-bypass session that was queued when ⌃B turned bypass off lights the chip again when it starts.
 - **Rejected:** a sync check after each path (ADR option b: three paths had already drifted); turning the pool to bypass for a mode (widens bypass to every session); clamping a mode's bypass to the pool mode (drops a documented config feature without an owner decision).
 - **Source:** #1411.
+
+## 2026-11-19 — Fullscreen and Agent graph take their own keys
+
+- **What:** `handle_secondary_mode_keys` gets a `Fullscreen` arm (`j` / `k` / `↓` / `↑` scroll the output, `Esc` back) and an `AgentGraph` arm (`g` back to the panels, `Esc` back). Both consume every other key, so none reaches `handle_overview_keys`: `k` no longer opens Confirm Kill for the hidden grid selection, and `p` / `r` / `D` / `Enter` / `d` / arrows do nothing there. Fullscreen scroll is rows above the tail (`ScreenState::fullscreen_scroll`, 0 = follow the tail), clamped at draw time and reset when Fullscreen opens. Both keysets are declared in the registry (`navigation/registry_screens.rs`, new `Action::TogglePanels`).
+- **Why:** #1240; design §09 smoke finding 1 ("Fullscreen has no key handler … `k` opens `ConfirmKill`") and the §09 UX row "Pressing `k` to scroll and opening a kill dialog".
+- **Section:** `§09` Status / session views (Fullscreen row), `§06` keymap.
+- **Differs from the target:** the target Output sub-view (`OutputViewState { offset, follow, open }`, `PgUp PgDn Home End`, the whole transcript) is the operate epic (#1288) and out of scope; this keeps `last_message` and adds only `j k ↑ ↓`. The registry blocks are `.hidden()`: a visible block would make `footer_hints` replace the footer and drop the Global `Esc Back` (Global keys are not redeclared in a screen), which `agent_graph_mode_hints_include_esc_back_and_g_panels` guards. `Tab` on these screens no longer jumps to Overview (it came from the Overview fall-through); `Esc` still goes back.
+- **Rejected:** `handle_overview_keys` checking the mode (the defect is the dispatch, and every new mode would need another check); arms in `handle_mode_keys` as the issue hints (they run before `handle_global_shortcuts`, so `?`, F-keys, `Q`, `⌃L` would stop working on these screens).
+- **Source:** #1240.
