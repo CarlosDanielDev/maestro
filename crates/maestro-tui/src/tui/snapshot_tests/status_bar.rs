@@ -82,3 +82,41 @@ fn status_bar_shows_continuous_progress_from_app() {
     let row = top_row(&mut app);
     assert!(row.contains("CONTINUOUS: 2/2 done"), "{row}");
 }
+
+/// #1267: an update the user can start now: `↑ <version> u`.
+#[test]
+fn update_chip_available() {
+    let mut app = app("update-chip-available");
+    app.upgrade_state = crate::updater::UpgradeState::Available(release("9.8.7"));
+    let out = screen(&mut app);
+    let row = out.lines().next().unwrap_or_default();
+    assert!(row.contains("↑ 9.8.7 u"), "{row}");
+    insta::assert_snapshot!(out);
+}
+
+/// #1267: `u` pressed while agents run: the chip says it waits for them.
+#[test]
+fn update_chip_queued() {
+    use crate::session::types::SessionStatus;
+    use crate::tui::snapshot_tests::make_session;
+    let mut app = app("update-chip-queued");
+    for issue in [11, 12, 13] {
+        app.pool
+            .enqueue(make_session(SessionStatus::Running, Some(issue)));
+    }
+    app.upgrade_state = crate::updater::UpgradeState::Queued(release("9.8.7"));
+    let out = screen(&mut app);
+    let row = out.lines().next().unwrap_or_default();
+    assert!(row.contains("↑ queued · after 3 agents"), "{row}");
+    insta::assert_snapshot!(out);
+}
+
+fn release(version: &str) -> ReleaseInfo {
+    ReleaseInfo {
+        tag: format!("v{version}"),
+        version: version.to_string(),
+        download_url: format!(
+            "https://github.com/CarlosDanielDev/maestro/releases/download/v{version}/x"
+        ),
+    }
+}

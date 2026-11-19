@@ -20,7 +20,7 @@ fn full_model() -> StatusModel {
         turboquant: true,
         untrusted: true,
         bypass: true,
-        update: Some("0.34.0".to_string()),
+        update: Some(UpdateChip::Available("0.34.0".to_string())),
         continuous: None,
     }
 }
@@ -215,4 +215,20 @@ fn continuous_chip_reads_without_colour() {
             .contains(ratatui::style::Modifier::REVERSED | ratatui::style::Modifier::BOLD),
         "{chip:?}"
     );
+}
+
+/// #1267: the queued chip counts the agents it waits for, and has no `u`.
+#[test]
+fn update_chip_queued_counts_agents() {
+    let mut model = full_model();
+    for (after, text) in [
+        (3, "↑ queued · after 3 agents"),
+        (1, "↑ queued · after 1 agent"),
+        (0, "↑ queued · until idle"),
+    ] {
+        model.update = Some(UpdateChip::Queued { after });
+        let row = render(&model, 150);
+        assert!(row.contains(text), "{row:?}");
+        assert!(!row.contains("0.34.0"), "{row:?}");
+    }
 }

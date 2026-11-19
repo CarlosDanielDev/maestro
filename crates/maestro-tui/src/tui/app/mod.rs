@@ -43,6 +43,7 @@ mod session_spawners;
 mod settings_actions;
 pub(crate) mod toasts;
 pub mod types;
+mod upgrade_queue;
 pub mod work_assigner;
 
 pub use types::*;
