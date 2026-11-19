@@ -3,12 +3,13 @@
 //! never in the main checkout.
 
 use super::{restore_session, resumable_sessions};
+use crate::commands::setup::setup_app_from_config;
+use crate::config::{Config, LoadedConfig};
 use crate::session::pool::SessionPool;
 use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus};
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
-use crate::tui::app::App;
 use std::path::Path;
 
 const AGENT_SESSION_ID: &str = "11111111-2222-3333-4444-555555555555";
@@ -60,13 +61,19 @@ async fn resume_restores_quit_paused_session() {
     let worktrees = || Box::new(GitWorktreeManager::new(repo.path().to_path_buf()));
 
     // A run with a running agent, a stalled one and one parked at the gate.
-    let mut app = App::new(
-        StateStore::new(store_path.clone()),
-        3,
-        worktrees(),
-        "default".into(),
-        vec![],
-    );
+    // The agent command does not exist: nothing here may spawn an agent.
+    let config: Config = toml::from_str(
+        "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n[notifications]\n\
+         [agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
+         command = \"maestro-missing-agent-1266\"\n",
+    )
+    .unwrap();
+    let loaded = LoadedConfig {
+        config,
+        path: state_dir.path().join("maestro.toml"),
+    };
+    let store = StateStore::new(store_path.clone());
+    let mut app = setup_app_from_config(loaded, store, worktrees(), None);
     let (running, stalled, parked) = (
         issue_session(1266),
         issue_session(1267),
