@@ -148,6 +148,8 @@ pub struct App {
     /// skipped while false; built-in defaults keep working.
     pub workspace_trusted: bool,
     pub help_state: Option<crate::tui::help::HelpOverlayState>,
+    /// The open ⌃K command palette (#1255).
+    pub palette: Option<crate::tui::ds::palette::PaletteState>,
     pub cached_mode_km: Option<crate::tui::navigation::keymap::ModeKeyMap>,
     pub cached_mode_km_key: (TuiMode, Option<crate::session::types::SessionStatus>, bool),
     pub context_monitor: Box<dyn ContextMonitor>,
@@ -388,6 +390,7 @@ impl App {
             plugin_runner: None,
             workspace_trusted: true,
             help_state: None,
+            palette: None,
             cached_mode_km: None,
             cached_mode_km_key: (TuiMode::Overview, None, false),
             context_monitor: Box::new(ProductionContextMonitor::new()),

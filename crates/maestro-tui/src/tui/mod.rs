@@ -42,6 +42,8 @@ pub mod widgets;
 #[cfg(test)]
 mod confirm_exit_race_tests;
 #[cfg(test)]
+mod once_exit_tests;
+#[cfg(test)]
 mod snapshot_tests;
 
 use crate::config::ProviderConfig;
@@ -218,14 +220,49 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     print_summary(&app);
 
-    result
+    result.and_then(|()| once_exit_status(&app))
+}
+
+/// #1412: `--once` is for scripts and CI, so a run whose last attempt
+/// errored must exit non-zero and name the error.
+fn once_exit_status(app: &App) -> anyhow::Result<()> {
+    if !app.once_mode {
+        return Ok(());
+    }
+    let errored = app
+        .pool
+        .all_sessions()
+        .into_iter()
+        .find(|s| s.status == crate::session::types::SessionStatus::Errored);
+    match errored {
+        Some(s) => {
+            let log = &s.activity_log;
+            let error = (log.iter().rev())
+                .find(|e| e.message.to_lowercase().starts_with("error:"))
+                .or(log.last())
+                .map_or("", |e| e.message.as_str());
+            // main prints `Error: ` already; do not say it twice.
+            let error = match error.get(..6) {
+                Some(p) if p.eq_ignore_ascii_case("error:") => error[6..].trim_start(),
+                _ => error,
+            };
+            anyhow::bail!(
+                "session {} errored: {error}",
+                app::helpers::session_label(s)
+            )
+        }
+        None => Ok(()),
+    }
 }
 
 async fn event_loop(
     terminal: &mut Option<Terminal<CrosstermBackend<io::Stdout>>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
-    spawn_version_check(app.data_tx.clone());
+    // Unit tests drive this loop (#1412); they must not reach GitHub.
+    if !cfg!(test) {
+        spawn_version_check(app.data_tx.clone());
+    }
     app.start_quota_refresh();
     // #1260: once per launch, say that ⌃Q quits and where TurboQuant went.
     input_handler::announce_quit_key(app, std::time::Instant::now());

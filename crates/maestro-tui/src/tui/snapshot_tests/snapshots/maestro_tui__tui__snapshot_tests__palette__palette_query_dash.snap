@@ -1,0 +1,32 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/palette.rs
+assertion_line: 207
+expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"┌──────────────────────────────[ Budget & quota ]──────────────────────────────┐"
+"│ spend        $0.00                                                           │"
+"└───────╭ Command palette ───────────────────────────────────── INSERT ╮───────┘"
+"┏━━━━━━━│› dash                                                        │━━━━━━━┓"
+"┃ ✓ Noth│──────────────────────────────────────────────────────────────│       ┃"
+"┃   i ne│▌ Dashboard                                                 2 │       ┃"
+"┃       │                                                              │       ┃"
+"┗━━━━━━━│                                                              │━━━━━━━┛"
+"┌───────│                                                              │───────┐"
+"│ No age│                                                              │       │"
+"│       │                                                              │       │"
+"│       │                                                              │       │"
+"│       │⏎ run  ↑↓ pick  Esc close · 1 of 24 commands                  │       │"
+"│       ╰──────────────────────────────────────────────────────────────╯       │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
+"│HH:MM:SS [S-1] seeded log line                                                │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Enter Open   j/k Move   Tab Next panel                                 ⌃Q quit "
+
+--- underlined ---
+ 7|           Dash

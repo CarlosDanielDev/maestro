@@ -247,12 +247,22 @@ impl App {
             self.navigate_to(TuiMode::HollowRetry);
         }
 
-        // Find terminal sessions in the active list (including Retrying which is now done)
+        // Find terminal sessions in the active list (including Retrying which is now done).
+        // #1412: an Errored session the policy will never retry is done too;
+        // `Errored` only leads to `Retrying`, so `is_terminal` misses it.
+        let last_attempt_errored = |s: &crate::session::types::Session| {
+            s.status == SessionStatus::Errored
+                && !retry_policy.as_ref().is_some_and(|p| p.may_retry(s))
+        };
         let completed_ids: Vec<uuid::Uuid> = self
             .pool
             .all_sessions()
             .iter()
-            .filter(|s| s.status.is_terminal() || s.status == SessionStatus::Retrying)
+            .filter(|s| {
+                s.status.is_terminal()
+                    || s.status == SessionStatus::Retrying
+                    || last_attempt_errored(s)
+            })
             // #1153: finalize tears COMPLETED worktrees down. Wait until
             // the session's completion job (backup, push, PR) is applied;
             // this same sweep finalizes it on that tick.

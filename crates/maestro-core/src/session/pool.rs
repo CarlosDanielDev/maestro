@@ -317,9 +317,9 @@ impl SessionPool {
     }
 
     /// Move a terminal session from `active` to `finished`, deciding whether
-    /// to tear down the worktree based on status: `FailedGates` retains the
-    /// worktree (uncommitted model edits live there); every other terminal
-    /// status tears it down. Returns `true` when a session was finalized.
+    /// to tear down the worktree based on status: `FailedGates` and `Errored`
+    /// retain the worktree (uncommitted model edits live there); every other
+    /// terminal status tears it down. Returns `true` when a session was finalized.
     pub fn finalize(&mut self, session_id: Uuid) -> bool {
         let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) else {
             return false;
@@ -335,7 +335,11 @@ impl SessionPool {
                 crate::session::transition::TransitionReason::RetryTriggered,
             );
         }
-        let retain = self.active[idx].session.status == SessionStatus::FailedGates;
+        // #1412: an errored session keeps its worktree for inspection too.
+        let retain = matches!(
+            self.active[idx].session.status,
+            SessionStatus::FailedGates | SessionStatus::Errored
+        );
         self.finalize_at(idx, retain);
         true
     }
@@ -1781,6 +1785,27 @@ pub(in crate::session) mod tests {
             pool.total_count(),
             1,
             "second call must not duplicate or panic"
+        );
+    }
+
+    /// #1412: an Errored session the policy will not retry is finalized,
+    /// and keeps its worktree for inspection, like FailedGates.
+    #[test]
+    fn finalize_keeps_errored_session_worktree() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("errored", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        assert!(pool.worktree_exists("issue-558"), "setup: worktree exists");
+        pool.get_active_mut(id).unwrap().session.status = SessionStatus::Errored;
+
+        assert!(pool.finalize(id));
+
+        assert_eq!(pool.active_count(), 0, "errored session is finalized");
+        assert!(
+            pool.worktree_exists("issue-558"),
+            "an errored session's worktree must NOT be removed"
         );
     }
 
