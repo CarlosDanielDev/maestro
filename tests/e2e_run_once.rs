@@ -15,6 +15,8 @@ use tempfile::TempDir;
 
 const STUB_SESSION_ID: &str = "e2e00000-0000-0000-0000-000000000001";
 const RUN_TIMEOUT: Duration = Duration::from_secs(60);
+/// #1412: a refused run never reaches the agent, so it must end in seconds.
+const ERRORED_RUN_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 fn install_stub(dir: &Path) -> PathBuf {
@@ -81,7 +83,7 @@ fn trust_workspace(dir: &Path, home: &Path) {
     );
 }
 
-/// Runs `maestro run --prompt hello --once --skip-doctor` in `dir`, killing it after `RUN_TIMEOUT`.
+/// Runs `maestro run --prompt hello --once --skip-doctor` in `dir`, killing it after `timeout`.
 ///
 /// Hermetic: HOME and XDG dirs point under `home`, and inherited `MAESTRO_*` vars are removed,
 /// so the developer shell cannot leak in. PATH is inherited, but the stub is referenced by
@@ -89,7 +91,7 @@ fn trust_workspace(dir: &Path, home: &Path) {
 ///
 /// On timeout only maestro is killed, not an agent it spawned. stdout/stderr are files,
 /// not pipes, so `cargo test` cannot hang on a full pipe.
-fn run_maestro_once(dir: &Path, home: &Path) -> ExitStatus {
+fn run_maestro_once(dir: &Path, home: &Path, timeout: Duration) -> ExitStatus {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_maestro"));
     cmd.args(["run", "--prompt", "hello", "--once", "--skip-doctor"])
         .current_dir(dir)
@@ -105,7 +107,7 @@ fn run_maestro_once(dir: &Path, home: &Path) -> ExitStatus {
     }
     let mut child = cmd.spawn().expect("spawn maestro binary");
 
-    let deadline = Instant::now() + RUN_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child.try_wait().expect("poll maestro child") {
             return status;
@@ -114,7 +116,7 @@ fn run_maestro_once(dir: &Path, home: &Path) -> ExitStatus {
             let _ = child.kill();
             let _ = child.wait();
             panic!(
-                "maestro run --once exceeded {RUN_TIMEOUT:?}; see {}",
+                "maestro run --once exceeded {timeout:?}; see {}",
                 dir.display()
             );
         }
@@ -160,7 +162,7 @@ fn run_once_completes_offline_against_stub_agent() {
     write_config(work.path(), &stub, "acceptEdits");
     trust_workspace(work.path(), home.path());
 
-    let status = run_maestro_once(work.path(), home.path());
+    let status = run_maestro_once(work.path(), home.path(), RUN_TIMEOUT);
     let stdout = read_or_empty(&work.path().join("stdout.txt"));
     let stderr = read_or_empty(&work.path().join("stderr.txt"));
     assert!(
@@ -185,7 +187,7 @@ fn run_once_completes_offline_against_stub_agent() {
 
 /// #1412: the headless guard refuses `permission_mode = "default"` with no
 /// allowed tools, and that error is never retried. `--once` used to hang
-/// here; it must exit non-zero and show the error. `RUN_TIMEOUT` guards it.
+/// here; it must exit non-zero and show the error. `ERRORED_RUN_TIMEOUT` guards it.
 #[test]
 fn run_once_exits_nonzero_with_error_when_last_attempt_errors() {
     let work = TempDir::new().expect("temp work dir");
@@ -194,7 +196,7 @@ fn run_once_exits_nonzero_with_error_when_last_attempt_errors() {
     write_config(work.path(), &stub, "default");
     trust_workspace(work.path(), home.path());
 
-    let status = run_maestro_once(work.path(), home.path());
+    let status = run_maestro_once(work.path(), home.path(), ERRORED_RUN_TIMEOUT);
     let stdout = read_or_empty(&work.path().join("stdout.txt"));
     let stderr = read_or_empty(&work.path().join("stderr.txt"));
     let report = format!("exit {status}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
