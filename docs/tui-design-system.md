@@ -211,7 +211,8 @@ Settings, choosing `bypassPermissions` for an agent is a pending bypass
 request like the Sessions row: the same `settings_bypass_warning()` opens,
 `Esc` puts the agent's last saved value back. A Ctrl+S save never turns
 bypass on: `App::refuse_unconfirmed_bypass` keeps the pool out of bypass and
-logs why; only a typed CONFIRM turns it on.
+logs why; only a typed CONFIRM turns it on. A save turns bypass off only when
+it moved the saved mode off bypass itself (a ⌃B or CLI bypass stays on).
 
 ### Hold to confirm — `crates/maestro-tui/src/tui/ds/confirm.rs` (#1260)
 

@@ -49,10 +49,15 @@ permission_mode = "{claude_mode}"
 /// Settings screen holds `screen_mode` for the agent (as if read from a
 /// file the user did not write) and saves to a temp `maestro.toml`.
 pub(super) fn settings_app(screen_mode: &str) -> (App, tempfile::TempDir) {
+    settings_app_from("default", screen_mode)
+}
+
+/// [`settings_app`] with the agent mode the App started from.
+fn settings_app_from(start_mode: &str, screen_mode: &str) -> (App, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("maestro.toml");
     std::fs::write(&path, toml_body(screen_mode)).expect("write maestro.toml");
-    let start: Config = toml::from_str(&toml_body("default")).expect("config parses");
+    let start: Config = toml::from_str(&toml_body(start_mode)).expect("config parses");
     let mut app = setup_app_for_agent(
         LoadedConfig {
             config: start,
@@ -139,7 +144,7 @@ fn staged_agent_mode(app: &App) -> Option<String> {
 
 /// Walk focus down to the agent's Permission Mode row, then press → until
 /// it reads `bypassPermissions` or the warning opens.
-pub(super) async fn choose_agent_bypass(app: &mut App) {
+async fn focus_agent_mode(app: &mut App) {
     for _ in 0..40 {
         if agent_dropdown(app).1 {
             break;
@@ -147,6 +152,10 @@ pub(super) async fn choose_agent_bypass(app: &mut App) {
         press(app, KeyCode::Down).await;
     }
     assert!(agent_dropdown(app).1, "focus reached Permission Mode");
+}
+
+pub(super) async fn choose_agent_bypass(app: &mut App) {
+    focus_agent_mode(app).await;
     for _ in 0..6 {
         if app.tui_mode == TuiMode::BypassWarning || agent_dropdown(app).0 == BYPASS {
             break;
@@ -230,4 +239,41 @@ async fn settings_save_never_enables_bypass_without_confirm() {
     assert!(chip_drawn(&mut app));
     let log = last_bypass_log(&app).expect("enable line");
     assert!(log.contains("settings (typed CONFIRM)"), "got: {log}");
+}
+
+#[tokio::test]
+async fn settings_save_keeps_a_bypass_confirmed_this_session() {
+    // ⌃B + typed CONFIRM, then a save that does not touch bypass: the
+    // save must not turn it off behind the user's back.
+    let (mut app, _dir) = settings_app("default");
+    app.tui_mode = TuiMode::Landing;
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    type_confirm(&mut app).await;
+    assert!(app.bypass_active, "setup: ⌃B CONFIRM turned bypass on");
+    app.tui_mode = TuiMode::Settings;
+    ctrl_s(&mut app).await;
+
+    assert!(
+        app.bypass_active,
+        "a save must not turn off a confirmed bypass"
+    );
+    assert_eq!(app.pool.permission_mode(), BYPASS, "pool agrees with chip");
+    assert!(chip_drawn(&mut app));
+
+    // A save that itself moves the agent off bypass does turn it off.
+    let (mut app, _dir) = settings_app_from(BYPASS, BYPASS);
+    assert!(app.bypass_active, "setup: config bypass at start");
+    focus_agent_mode(&mut app).await;
+    press(&mut app, KeyCode::Left).await;
+    assert_ne!(agent_dropdown(&app).0, BYPASS);
+    ctrl_s(&mut app).await;
+
+    assert!(!app.bypass_active);
+    assert_ne!(app.pool.permission_mode(), BYPASS);
+    assert!(!chip_drawn(&mut app));
 }

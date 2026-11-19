@@ -1075,11 +1075,18 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // 5. Bypass flag follows permission_mode, but a save never
             // turns it on (#1411): only a typed CONFIRM answered in this
             // Settings flow does, and that already set `bypass_active`.
+            // It turns bypass off only when the save itself moved the
+            // mode off bypass; a ⌃B or CLI bypass stays on, pool included.
             let should_bypass = new_permission_mode == "bypassPermissions";
+            let saved_off = (app.config.as_ref())
+                .is_some_and(|c| c.effective_default_permission_mode() == "bypassPermissions");
             if should_bypass && !app.bypass_active {
                 app.refuse_unconfirmed_bypass();
-            } else if !should_bypass && app.bypass_active {
+            } else if !should_bypass && app.bypass_active && saved_off {
                 app.deactivate_bypass("settings");
+            } else if app.bypass_active {
+                app.pool
+                    .set_permission_mode("bypassPermissions".to_string());
             }
 
             // 6. Activity-log feedback. Tells the user what happened and
