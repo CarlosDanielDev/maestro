@@ -167,3 +167,174 @@ fn filter_bindings_matches_key() {
         .collect();
     assert!(matched.iter().any(|k| k.to_lowercase().contains("shift")));
 }
+
+#[test]
+fn key_column_is_capped_and_long_keys_keep_one_space() {
+    let groups = vec![KeyBindingGroup {
+        title: "Long",
+        bindings: vec![KeyBinding {
+            key: "a-key-much-longer-than-a-third-of-the-box",
+            description: "desc",
+        }],
+    }];
+    let key_col = key_column_width(&groups, 69);
+    assert_eq!(key_col, 23, "capped at a third of the inner width");
+    let line = key_line(
+        groups[0].bindings[0].key,
+        "desc",
+        key_col,
+        &Theme::default(),
+    );
+    assert_eq!(
+        line.spans[1].content,
+        "a-key-much-longer-than-a-third-of-the-box "
+    );
+    assert_eq!(
+        key_column_width(&make_groups(), 69),
+        "Shift+Up/Down".len() + 2
+    );
+}
+
+// #1397: the Help overlay drawn at 80 columns. The scroll stops at the
+// content end and every key keeps a gap before its description.
+
+mod drawn {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    use crate::tui::app::{App, TuiMode};
+    use crate::tui::input_handler::handle_key;
+    use crate::tui::screens::LandingScreen;
+
+    const FOOTER: &str = "[j/k] Scroll  [/] Search  [?/F1/Esc] Close";
+    const LONG_KEY: &str = "d/f/a/i/m/r/p/h/s/t";
+    const SIZES: [(u16, u16); 2] = [(80, 24), (80, 27)];
+
+    async fn press(app: &mut App, code: KeyCode) {
+        handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
+    }
+
+    fn draw(app: &mut App, terminal: &mut Terminal<TestBackend>) -> Vec<String> {
+        terminal.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    /// The text rows inside the Help box, without its borders.
+    fn inner_rows(rows: &[String], width: u16, height: u16) -> Vec<String> {
+        let popup = crate::tui::help::centered_rect(90, 90, Rect::new(0, 0, width, height));
+        assert!(
+            rows[popup.y as usize].contains("[ Help ]"),
+            "Help box is drawn"
+        );
+        let (x0, x1) = (popup.x as usize + 1, (popup.x + popup.width) as usize - 1);
+        rows[popup.y as usize + 1..(popup.y + popup.height) as usize - 1]
+            .iter()
+            .map(|r| r.chars().skip(x0).take(x1 - x0).collect())
+            .collect()
+    }
+
+    async fn help_open(width: u16, height: u16) -> (App, Terminal<TestBackend>) {
+        let mut app = crate::tui::make_test_app("help-1397");
+        app.screen_state.landing_screen = Some(LandingScreen::new());
+        app.tui_mode = TuiMode::Landing;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        draw(&mut app, &mut terminal);
+        press(&mut app, KeyCode::Char('?')).await;
+        assert!(app.help_state.is_some(), "? opens Help");
+        (app, terminal)
+    }
+
+    #[tokio::test]
+    async fn help_scroll_clamps_to_content_end() {
+        for (w, h) in SIZES {
+            let (mut app, mut terminal) = help_open(w, h).await;
+            for _ in 0..100 {
+                press(&mut app, KeyCode::Char('j')).await;
+                draw(&mut app, &mut terminal);
+            }
+            let inner = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            let last = inner.last().unwrap();
+            assert!(
+                last.contains(FOOTER),
+                "{w}x{h}: last inner row must be the footer, got {last:?}\n{}",
+                inner.join("\n")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn help_page_down_clamps_and_k_moves_up_at_once() {
+        for (w, h) in SIZES {
+            let (mut app, mut terminal) = help_open(w, h).await;
+            for _ in 0..100 {
+                press(&mut app, KeyCode::Char('j')).await;
+                draw(&mut app, &mut terminal);
+            }
+            let end_scroll = app.help_state.as_ref().unwrap().scroll;
+            let at_end = inner_rows(&draw(&mut app, &mut terminal), w, h);
+
+            for _ in 0..5 {
+                press(&mut app, KeyCode::PageDown).await;
+                draw(&mut app, &mut terminal);
+            }
+            let after_page = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            assert_eq!(after_page, at_end, "{w}x{h}: page_down past the end stays");
+            assert_eq!(app.help_state.as_ref().unwrap().scroll, end_scroll);
+
+            press(&mut app, KeyCode::Char('k')).await;
+            let after_k = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            assert_eq!(
+                app.help_state.as_ref().unwrap().scroll,
+                end_scroll - 1,
+                "{w}x{h}: one k moves up at once"
+            );
+            assert_eq!(after_k[1..], at_end[..at_end.len() - 1], "{w}x{h}");
+            assert!(!after_k.last().unwrap().contains(FOOTER), "{w}x{h}");
+        }
+    }
+
+    #[tokio::test]
+    async fn help_key_line_keeps_gap_for_long_keys() {
+        for (w, h) in SIZES {
+            let (mut app, mut terminal) = help_open(w, h).await;
+            let inner = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            let long = inner
+                .iter()
+                .find(|r| r.contains("Run an action"))
+                .unwrap_or_else(|| panic!("{w}x{h}: Run an action row\n{}", inner.join("\n")));
+            let at = long.find("Run an action").unwrap();
+            assert!(
+                long[..at].ends_with(' '),
+                "{w}x{h}: no gap before the description: {long:?}"
+            );
+            // Key column = longest key of this mode + 2.
+            let longest = app
+                .cached_mode_km
+                .as_ref()
+                .unwrap()
+                .help_groups
+                .iter()
+                .flat_map(|g| &g.bindings)
+                .map(|b| b.key.chars().count())
+                .max()
+                .unwrap();
+            assert!(longest >= LONG_KEY.len());
+            let key_at = long.find(LONG_KEY).unwrap();
+            assert_eq!(at, key_at + longest + 2, "{w}x{h}: {long:?}");
+            // Short keys line up in the same column.
+            let short = inner.iter().find(|r| r.contains("Release notes")).unwrap();
+            assert_eq!(
+                short.find("Release notes").unwrap(),
+                at,
+                "{w}x{h}: {short:?}"
+            );
+        }
+    }
+}

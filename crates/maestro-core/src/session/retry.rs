@@ -64,8 +64,9 @@ impl RetryPolicy {
             && (session.activity_log.iter()).any(|e| e.message.contains(HEADLESS_NO_PERMISSION))
     }
 
-    /// Check if a session is eligible for retry based on its status and retry count.
-    pub fn should_retry(&self, session: &Session) -> bool {
+    /// #1412: whether `session` gets a retry, now or once its cooldown
+    /// ends. False means this attempt was the last one.
+    pub fn may_retry(&self, session: &Session) -> bool {
         if Self::is_consultation_satisfied(session) {
             return false;
         }
@@ -82,7 +83,12 @@ impl RetryPolicy {
         ) || (session.status == SessionStatus::Completed
             && session.is_hollow_completion);
 
-        if !eligible || Self::is_permission_refusal(session) {
+        eligible && !Self::is_permission_refusal(session)
+    }
+
+    /// Check if a session is eligible for retry based on its status and retry count.
+    pub fn should_retry(&self, session: &Session) -> bool {
+        if !self.may_retry(session) {
             return false;
         }
 
@@ -241,6 +247,18 @@ mod tests {
             "Error: invalid agent provider config: {HEADLESS_NO_PERMISSION}"
         ));
         assert!(!policy.should_retry(&session));
+    }
+
+    /// #1412: the cooldown delays a retry; it does not cancel it.
+    #[test]
+    fn may_retry_ignores_cooldown() {
+        let policy = RetryPolicy::new(2, 3600, legacy_hollow(1));
+        let mut session = make_session(SessionStatus::Errored, 0);
+        session.last_retry_at = Some(Utc::now());
+        assert!(!policy.should_retry(&session), "setup: cooling down");
+        assert!(policy.may_retry(&session));
+        session.retry_count = 2;
+        assert!(!policy.may_retry(&session), "out of retries");
     }
 
     #[test]
