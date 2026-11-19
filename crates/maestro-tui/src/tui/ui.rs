@@ -322,6 +322,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     chunks[1],
                     &theme,
                     spinner_tick,
+                    &mut app.screen_state.fullscreen_scroll,
                 );
             } else {
                 let sessions = app.pool.all_sessions();
@@ -1180,9 +1181,12 @@ fn draw_status_bar_inner(f: &mut Frame, app: &App, theme: &crate::tui::theme::Th
 /// What the status bar shows, read from the App (fleet counts from the pool).
 fn status_model(app: &App) -> status_bar::StatusModel {
     let update = match &app.upgrade_state {
-        crate::updater::UpgradeState::Available(info) => {
-            Some(crate::tui::screens::sanitize_for_terminal(&info.version))
-        }
+        crate::updater::UpgradeState::Available(info) => Some(status_bar::UpdateChip::Available(
+            crate::tui::screens::sanitize_for_terminal(&info.version),
+        )),
+        crate::updater::UpgradeState::Queued(_) => Some(status_bar::UpdateChip::Queued {
+            after: crate::tui::input_handler::live_agents(app),
+        }),
         _ => None,
     };
     status_bar::StatusModel {
@@ -1821,7 +1825,7 @@ fn draw_upgrade_banner(
     let spans = match state {
         UpgradeState::Hidden => return,
         // #1257: an available update is the status bar chip, not a banner.
-        UpgradeState::Available(_) => return,
+        UpgradeState::Available(_) | UpgradeState::Queued(_) => return,
         UpgradeState::Downloading { version } => vec![
             Span::styled(
                 " DOWNLOADING ",

@@ -337,6 +337,12 @@ Rules: `UNTRUSTED` shows exactly when `App.workspace_trusted` is false. The
 update notice has one place: the `↑ <version> u` chip (the activity log line
 carries no version). Breadcrumbs and key hints are not part of this row.
 
+`StatusModel.update` is a `status_bar::UpdateChip` (#1267): `Available(version)`
+draws `↑ <version> u`; `Queued { after }` draws `↑ queued · after N agents`
+(`after 1 agent`, `until idle` at 0) and has no `u` hint. Same drop rule as
+before. The queued state is `UpgradeState::Queued`; "busy" is
+`input_handler::has_live_work`, never a copy.
+
 ### Sub-tabs, filter chips, KPI tile, tree prefix (`crates/maestro-tui/src/tui/ds/`, #1256)
 
 Implements `subTabs`, `filterChips`, `kpiTile` and `treePrefix` from
@@ -533,6 +539,18 @@ To register a screen: add its block to `registry()`, give its `mode_keymap`
 arm an empty hint list, and keep the test green. Do not redeclare a Global
 key (`Esc` back, `/` filter) in a screen: that is a `Shadow`. The §06 rows
 `⌃K` opens the command palette (#1255, below) and `⌃Q` quits (#1260).
+
+The per-screen blocks live in `navigation/registry_screens.rs` (#1240;
+`registry.rs` hit the 400-line cap). A screen with no `Screen` impl and no
+keys of its own must still take every key in `handle_secondary_mode_keys`,
+or the key falls through to `handle_overview_keys`, whose `k` / `p` / `r` /
+`D` act on the hidden Overview selection. Fullscreen (`handle_fullscreen`:
+`j k ↑ ↓` scroll, `Esc` back) and the Agent graph (`handle_agent_graph`:
+`g` panels, `Esc` back) do so. Their blocks are `.hidden()`, so the footer
+stays the `mode_keymap` list with the Global `Esc Back` in it, and the ⌃K
+palette lists only Global entries there. Fullscreen scroll is
+`ScreenState::fullscreen_scroll`: rows above the tail, 0 follows the tail,
+clamped at draw time, reset when Fullscreen opens.
 
 ---
 

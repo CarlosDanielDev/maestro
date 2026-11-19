@@ -12,7 +12,9 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-/// Draw a full-screen view for a single agent session.
+/// Draw a full-screen view for a single agent session. `scroll` is how
+/// many output rows the view sits above the tail (0 = follow the tail); it
+/// is clamped here to what the output holds (#1240).
 pub fn draw_fullscreen(
     f: &mut Frame,
     session: &Session,
@@ -20,6 +22,7 @@ pub fn draw_fullscreen(
     area: Rect,
     theme: &Theme,
     spinner_tick: usize,
+    scroll: &mut u16,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -31,7 +34,7 @@ pub fn draw_fullscreen(
         .split(area);
 
     draw_session_header(f, session, chunks[0], theme);
-    draw_session_output(f, session, chunks[1], theme);
+    draw_session_output(f, session, chunks[1], theme, scroll);
     draw_session_footer(f, session, progress_tracker, chunks[2], theme, spinner_tick);
 }
 
@@ -85,7 +88,13 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &The
     f.render_widget(Paragraph::new(header).block(block), area);
 }
 
-fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
+fn draw_session_output(
+    f: &mut Frame,
+    session: &Session,
+    area: Rect,
+    theme: &Theme,
+    scroll: &mut u16,
+) {
     let inner_width = area.width.saturating_sub(2);
     let md_text = if session.last_message.is_empty() {
         ratatui::text::Text::raw("Waiting for output...")
@@ -95,7 +104,9 @@ fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &The
 
     let line_count = md_text.lines.len() as u16;
     let inner_height = area.height.saturating_sub(2);
-    let scroll_offset = line_count.saturating_sub(inner_height);
+    let tail = line_count.saturating_sub(inner_height);
+    *scroll = (*scroll).min(tail);
+    let scroll_offset = tail - *scroll;
 
     let paragraph = Paragraph::new(md_text)
         .block(theme.styled_block("Agent Output", false))
