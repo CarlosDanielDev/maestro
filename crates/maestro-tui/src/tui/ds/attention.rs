@@ -85,6 +85,8 @@ pub struct SessionSignal {
 pub struct BudgetSignal {
     pub spent: f64,
     pub cap: f64,
+    /// Sessions the cap paused (#1266); they wait for a raised cap.
+    pub paused: usize,
 }
 
 /// A provider whose busiest usage window is high.
@@ -130,7 +132,10 @@ pub fn rank(input: &AttentionInput) -> Vec<AttentionItem> {
         ));
     }
     if let Some(b) = input.budget {
-        let reason = format!("{} of {} spent", money(Some(b.spent)), money(Some(b.cap)));
+        let reason = match b.paused {
+            0 => format!("{} of {} spent", money(Some(b.spent)), money(Some(b.cap))),
+            n => format!("{n} paused · raise cap, then r resumes"),
+        };
         items.push(AttentionItem {
             ratio: Some(b.spent / b.cap),
             ..item(AttentionKind::Resource, Subject::Budget, &reason, "budget")

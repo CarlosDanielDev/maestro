@@ -205,3 +205,53 @@ async fn cap_pauses_and_blocks_spawns() {
         "no spawn may start at the cap; status {status:?}"
     );
 }
+
+/// #1266: at the cap the Needs-you budget row says how many agents were
+/// paused and how to bring them back, and the hint fits an 80-column row.
+#[test]
+fn cap_attention_row_names_paused() {
+    use crate::session::transition::TransitionReason;
+    use crate::tui::ds::attention::{QueueView, Subject, draw};
+    let (mut app, _dir) = production_app(1.0);
+    let spender = fresh_session();
+    let spender_id = spender.id;
+    app.pool.enqueue(spender);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(spender_id).unwrap();
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    managed.session.cost_usd = 1.2;
+    app.sync_state();
+    app.check_budget(spender_id);
+
+    let items: Vec<_> = (app.attention().into_iter())
+        .filter(|i| matches!(i.subject, Subject::Budget))
+        .collect();
+    assert_eq!(items.len(), 1, "the cap must show one budget row");
+    let hint = "1 paused · raise cap, then r resumes";
+    assert!(items[0].reason.contains(hint), "{:?}", items[0].reason);
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let view = QueueView {
+        focused: false,
+        selected: 0,
+        fleet_busy: true,
+        now: chrono::Utc::now(),
+    };
+    terminal
+        .draw(|f| {
+            let area = ratatui::layout::Rect::new(0, 0, 80, 5);
+            let theme = crate::tui::theme::Theme::dark();
+            draw(f, area, &items, view, &theme, true);
+        })
+        .unwrap();
+    let out = format!("{}", terminal.backend());
+    assert!(
+        out.contains(hint),
+        "the hint must be drawn whole at 80:\n{out}"
+    );
+}

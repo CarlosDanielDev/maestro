@@ -44,6 +44,9 @@ impl App {
                     BudgetAction::Alert(_) | BudgetAction::Kill => Some(BudgetSignal {
                         spent: self.total_cost,
                         cap: e.total_limit(),
+                        paused: (self.pool.all_sessions().iter())
+                            .filter(|s| s.status == crate::session::types::SessionStatus::Paused)
+                            .count(),
                     }),
                 });
         AttentionInput {

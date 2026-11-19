@@ -48,6 +48,7 @@ fn mixed_input() -> AttentionInput {
         budget: Some(BudgetSignal {
             spent: 16.0,
             cap: 20.0,
+            paused: 0,
         }),
         quota: vec![QuotaSignal {
             provider: "claude".into(),
@@ -173,6 +174,7 @@ fn queue_fixture() -> Vec<AttentionItem> {
         budget: Some(BudgetSignal {
             spent: 16.0,
             cap: 20.0,
+            paused: 0,
         }),
         quota: vec![QuotaSignal {
             provider: "claude".into(),
@@ -224,7 +226,11 @@ fn resource_chips_are_critical_when_spent_or_full() {
     let critical = GaugeLevel::Critical.style(&theme);
     let high = GaugeLevel::High.style(&theme);
     let at = |spent: f64, used_pct: f64| AttentionInput {
-        budget: Some(BudgetSignal { spent, cap: 20.0 }),
+        budget: Some(BudgetSignal {
+            spent,
+            cap: 20.0,
+            paused: 0,
+        }),
         quota: vec![QuotaSignal {
             provider: "claude".into(),
             used_pct,
