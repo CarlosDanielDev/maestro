@@ -80,20 +80,25 @@ impl App {
         Ok(())
     }
 
-    pub fn pause_all(&self) {
-        self.pool.pause_all();
+    pub fn pause_all(&mut self) {
+        self.pool
+            .pause_all(crate::session::transition::TransitionReason::UserPause);
+        self.sync_state();
     }
 
     /// Resume all paused sessions.
     #[cfg(unix)]
-    pub fn resume_all(&self) {
+    pub fn resume_all(&mut self) {
         self.pool.resume_all();
+        self.sync_state();
     }
 
-    /// Kill all sessions.
-    pub async fn kill_all(&mut self) {
-        self.pool.kill_all().await;
-        self.sync_state();
+    /// Exit path (#1266): record every agent as paused (or kept) for
+    /// `maestro resume`. Nothing is saved or stopped here: `save_on_exit`
+    /// saves next and stops the agents only after that save. Returns how
+    /// many sessions are Paused.
+    pub fn pause_for_exit(&mut self) -> usize {
+        self.pool.pause_for_exit()
     }
 
     /// Check if all sessions are done.

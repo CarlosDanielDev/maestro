@@ -1,20 +1,31 @@
+use std::fmt::Write;
+
 use super::app::App;
+use crate::session::transition::TransitionReason::UserQuit;
 use crate::tui::icons::{self, IconId};
 
 pub(super) fn print_summary(app: &App) {
+    print!("{}", exit_summary_text(app));
+}
+
+/// The text `print_summary` writes after the TUI closes; empty when the
+/// run had no sessions.
+fn exit_summary_text(app: &App) -> String {
+    let mut out = String::new();
     let summary = app.build_completion_summary();
     if summary.sessions.is_empty() {
-        return;
+        return out;
     }
 
     let all_sessions = app.pool.all_sessions();
 
-    println!();
-    println!("=== Maestro Session Summary ===");
-    println!();
+    let _ = writeln!(out);
+    let _ = writeln!(out, "=== Maestro Session Summary ===");
+    let _ = writeln!(out);
 
     for (sl, session) in summary.sessions.iter().zip(all_sessions.iter()) {
-        println!(
+        let _ = writeln!(
+            out,
             "  {} {} {} ${:.2} {}",
             sl.status.symbol(),
             sl.label,
@@ -24,16 +35,17 @@ pub(super) fn print_summary(app: &App) {
         );
 
         if session.is_hollow_completion {
-            println!(
+            let _ = writeln!(
+                out,
                 "    {} Hollow completion: session completed without performing any work",
                 icons::get(IconId::Warning)
             );
         }
         if !session.last_message.is_empty() {
-            println!("    Last: {}", session.last_message);
+            let _ = writeln!(out, "    Last: {}", session.last_message);
         }
         if !session.files_touched.is_empty() {
-            println!("    Files: {}", session.files_touched.join(", "));
+            let _ = writeln!(out, "    Files: {}", session.files_touched.join(", "));
         }
         if sl.status == crate::session::types::SessionStatus::Errored {
             for entry in session
@@ -45,12 +57,33 @@ pub(super) fn print_summary(app: &App) {
                 .into_iter()
                 .rev()
             {
-                println!("    > {}", entry.message);
+                let _ = writeln!(out, "    > {}", entry.message);
             }
         }
     }
 
-    println!();
-    println!("Total cost: ${:.2}", summary.total_cost_usd);
-    println!();
+    let _ = writeln!(out);
+    let _ = writeln!(out, "Total cost: ${:.2}", summary.total_cost_usd);
+    let paused = all_sessions
+        .iter()
+        .filter(|s| s.status == crate::session::types::SessionStatus::Paused)
+        .count();
+    if paused > 0 {
+        let _ = writeln!(out, "{paused} paused · resume with maestro resume");
+    }
+    // Known gap (#1266): these statuses cannot pause, so quit killed them.
+    let killed: Vec<String> = (all_sessions.iter())
+        .filter(|s| s.status == crate::session::types::SessionStatus::Killed)
+        .filter(|s| (s.transition_history.last()).is_some_and(|t| t.reason == UserQuit))
+        .map(|s| super::app::helpers::session_label(s))
+        .collect();
+    if !killed.is_empty() {
+        let _ = writeln!(out, "killed at quit (cannot pause): {}", killed.join(", "));
+    }
+    let _ = writeln!(out);
+    out
 }
+
+#[cfg(test)]
+#[path = "summary_tests.rs"]
+mod tests;

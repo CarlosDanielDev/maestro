@@ -44,6 +44,8 @@ mod confirm_exit_race_tests;
 #[cfg(test)]
 mod once_exit_tests;
 #[cfg(test)]
+mod quit_pause_tests;
+#[cfg(test)]
 mod snapshot_tests;
 
 use crate::config::ProviderConfig;
@@ -200,6 +202,10 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     let result = event_loop(&mut terminal, &mut app).await;
 
+    // Save before the terminal teardown: a failed teardown (`?`) must not
+    // skip it.
+    let saved = save_on_exit(&mut app);
+
     if let Some(terminal) = terminal.as_mut() {
         disable_raw_mode()?;
         leave_tui_mode(terminal.backend_mut())?;
@@ -208,19 +214,66 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         let _ = app::write_exit_title(terminal.backend_mut());
     }
 
-    app.kill_all().await;
+    print_summary(&app);
 
+    // A failed exit save is loud: the run exits non-zero with it.
+    result.and(saved).and_then(|()| once_exit_status(&app))
+}
+
+/// Exit path for every way out of the loop (and the upgrade restart):
+/// record the agents as paused (never kill them, #1266), save state so
+/// `maestro resume` can bring them back, and only then stop the agents.
+/// Errs when the paused agents could not be written to disk.
+pub fn save_on_exit(app: &mut App) -> anyhow::Result<()> {
+    save_then(app, |app| app.pool.stop_all_turns())
+}
+
+/// [`save_on_exit`] with the stop step passed in, so a test can see the
+/// state on disk at the moment the agents stop. `stop` always runs (the
+/// agents cannot outlive maestro), but only after the save.
+fn save_then(app: &mut App, stop: impl FnOnce(&mut App)) -> anyhow::Result<()> {
+    let paused = app.pause_for_exit();
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
     app.state.update_total_cost();
     app.state.last_updated = Some(chrono::Utc::now());
     let _ = app.state.compact(app.turboquant_adapter.as_deref());
-    if let Err(e) = app.store.save(&app.state) {
-        eprintln!("Warning: failed to save state: {}", e);
+    let saved = app.store.save(&app.state);
+    stop(app);
+    saved.map_err(|e| {
+        anyhow::anyhow!(
+            "could not save maestro state at exit ({e:#}): {paused} paused agent(s) are \
+             not recorded for maestro resume; their worktrees are kept under .maestro/worktrees"
+        )
+    })
+}
+
+/// The upgrade restart key (`y` on ReadyToRestart): `None` for any other
+/// key; otherwise the result of [`save_and_restart`].
+fn on_restart_key(
+    app: &mut App,
+    key: &crossterm::event::KeyEvent,
+    restart: impl FnOnce() -> anyhow::Result<()>,
+) -> Option<anyhow::Result<()>> {
+    input_handler::is_restart_key(app, key).then(|| save_and_restart(app, restart))
+}
+
+/// Upgrade restart (#1266): save and stop the agents like a quit, then run
+/// `restart` (terminal teardown + exec). When the exec fails, maestro keeps
+/// running with those agents stopped, so the log says how to get them back.
+fn save_and_restart(
+    app: &mut App,
+    restart: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    // Never exec over state that did not reach the disk.
+    let result = save_on_exit(app).and_then(|()| restart());
+    if result.is_err() {
+        app.activity_log.push_simple(
+            "MAESTRO".into(),
+            "Restart failed and the agents were stopped · quit, then run maestro resume".into(),
+            LogLevel::Warn,
+        );
     }
-
-    print_summary(&app);
-
-    result.and_then(|()| once_exit_status(&app))
+    result
 }
 
 /// #1412: `--once` is for scripts and CI, so a run whose last attempt
@@ -251,7 +304,15 @@ fn once_exit_status(app: &App) -> anyhow::Result<()> {
                 app::helpers::session_label(s)
             )
         }
-        None => Ok(()),
+        None => {
+            let paused = (app.pool.all_sessions().iter())
+                .filter(|s| s.status == crate::session::types::SessionStatus::Paused)
+                .count();
+            if paused > 0 {
+                anyhow::bail!("{paused} session(s) paused · resume with maestro resume");
+            }
+            Ok(())
+        }
     }
 }
 
@@ -296,6 +357,10 @@ async fn event_loop(
         }
 
         app.check_completions().await?;
+        // #1266: a `--once` run stops at the budget cap (agents paused).
+        if app.once_mode && !app.running {
+            return Ok(());
+        }
         // After completions, so a retry already shows as Retrying.
         team_runner_glue::publish_sessions(&team_sessions, &app.pool.all_sessions());
 
@@ -323,11 +388,14 @@ async fn event_loop(
                         }
                         continue;
                     }
-                    if input_handler::is_restart_key(app, &key) {
+                    let restarted = on_restart_key(app, &key, || {
                         disable_raw_mode().ok();
                         leave_tui_mode(terminal.backend_mut()).ok();
                         terminal.show_cursor().ok();
-                        if let Err(e) = crate::updater::installer::restart_with_same_args() {
+                        crate::updater::installer::restart_with_same_args()
+                    });
+                    if let Some(restarted) = restarted {
+                        if let Err(e) = restarted {
                             enable_raw_mode().ok();
                             enter_tui_mode(&mut io::stdout()).ok();
                             app.upgrade_state = crate::updater::UpgradeState::Failed(format!(

@@ -173,12 +173,25 @@ impl App {
 
         match enforcer.check_global(self.total_cost) {
             BudgetAction::Kill => {
+                // #1266: the cap pauses running agents and new spawns wait
+                // at the pre-spawn gate; maestro keeps running. Later cost
+                // events find nothing Running and stay quiet.
+                let out = self.pool.pause_all(TransitionReason::BudgetCap);
+                // `--once` has no operator to raise the cap: end the run.
+                if self.once_mode {
+                    self.running = false;
+                }
+                if out.paused + out.stopped == 0 {
+                    return;
+                }
                 self.activity_log.push_simple(
                     "MAESTRO".into(),
                     format!(
-                        "GLOBAL BUDGET EXCEEDED: ${:.2}/${:.2} — stopping all sessions",
+                        "GLOBAL BUDGET REACHED: ${:.2}/${:.2} — {} paused, {} stopped, new spawns wait · raise the cap, then r resumes",
                         self.total_cost,
-                        enforcer.total_limit()
+                        enforcer.total_limit(),
+                        out.paused,
+                        out.stopped,
                     ),
                     LogLevel::Error,
                 );
@@ -188,7 +201,6 @@ impl App {
                         .with_cost(self.total_cost)
                         .with_var("MAESTRO_BUDGET_EXCEEDED", "true"),
                 });
-                self.running = false;
             }
             BudgetAction::Alert(pct) => {
                 if !enforcer.global_alert_sent() {

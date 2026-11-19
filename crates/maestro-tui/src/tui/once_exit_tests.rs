@@ -123,3 +123,46 @@ async fn once_loop_returns_after_spawning_to_errored() {
     let status = app.pool.all_sessions().first().map(|s| s.status);
     assert_eq!(status, Some(SessionStatus::Errored));
 }
+
+/// #1266: headless `--once` cannot raise the budget cap, so the cap pauses
+/// the agent, ends the loop, and exits non-zero naming the paused count.
+#[tokio::test]
+async fn once_loop_returns_at_the_budget_cap() {
+    let mut app = once_app("once-budget-cap", false);
+    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(100.0, 1.0, 80));
+    let id = spawn_one(&mut app);
+    let managed = app.pool.get_active_mut(id).expect("active");
+    assert!(
+        managed
+            .session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .is_ok()
+    );
+    // A real process for the cap to SIGSTOP; killed below.
+    let mut agent = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep");
+    managed.session.pid = Some(agent.id());
+    let tx = app.pool.event_tx();
+    for _ in 0..2 {
+        let event = StreamEvent::CostUpdate { cost_usd: 2.0 };
+        tx.send(SessionEvent {
+            session_id: id,
+            event,
+        })
+        .expect("send");
+    }
+
+    let mut terminal = None;
+    let result =
+        tokio::time::timeout(Duration::from_secs(10), event_loop(&mut terminal, &mut app)).await;
+
+    let _ = agent.kill();
+    let _ = agent.wait();
+    assert!(result.is_ok(), "--once loop hung at the budget cap");
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Paused));
+    let err = once_exit_status(&app).expect_err("a paused run is not a success");
+    assert!(err.to_string().contains("1 session(s) paused"), "{err}");
+}

@@ -16,6 +16,7 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use crate::session::types::SessionStatus;
+use crate::tui::ds::attention_fmt::{age, pad};
 use crate::tui::ds::bar_row::key_style;
 use crate::tui::ds::gauge::gauge_level;
 use crate::tui::ds::money::money;
@@ -85,6 +86,8 @@ pub struct SessionSignal {
 pub struct BudgetSignal {
     pub spent: f64,
     pub cap: f64,
+    /// Sessions the cap paused (#1266); they wait for a raised cap.
+    pub paused: usize,
 }
 
 /// A provider whose busiest usage window is high.
@@ -130,7 +133,10 @@ pub fn rank(input: &AttentionInput) -> Vec<AttentionItem> {
         ));
     }
     if let Some(b) = input.budget {
-        let reason = format!("{} of {} spent", money(Some(b.spent)), money(Some(b.cap)));
+        let reason = match b.paused {
+            0 => format!("{} of {} spent", money(Some(b.spent)), money(Some(b.cap))),
+            n => format!("{n} paused · raise cap, then r resumes"),
+        };
         items.push(AttentionItem {
             ratio: Some(b.spent / b.cap),
             ..item(AttentionKind::Resource, Subject::Budget, &reason, "budget")
@@ -376,23 +382,6 @@ fn error_style(theme: &Theme) -> Style {
     Style::new()
         .fg(theme.accent_error)
         .add_modifier(Modifier::BOLD)
-}
-
-/// Pad a span to `width` columns (one space at least).
-fn pad(span: Span<'static>, width: usize) -> Span<'static> {
-    let gap = width.saturating_sub(span.content.width()).max(1);
-    Span::styled(format!("{}{}", span.content, " ".repeat(gap)), span.style)
-}
-
-/// `45s`, `12m`, `3h`, `2d`.
-fn age(d: chrono::Duration) -> String {
-    let s = d.num_seconds().max(0);
-    match s {
-        0..60 => format!("{s}s"),
-        60..3_600 => format!("{}m", s / 60),
-        3_600..86_400 => format!("{}h", s / 3_600),
-        _ => format!("{}d", s / 86_400),
-    }
 }
 
 #[cfg(test)]

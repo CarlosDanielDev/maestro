@@ -219,6 +219,21 @@ impl ManagedSession {
         }
     }
 
+    /// Whether a provider turn is in flight (its cancel token is armed and
+    /// not yet taken by a cancel).
+    pub fn has_live_turn(&self) -> bool {
+        self.cancel_token.is_some()
+    }
+
+    /// Test hook: arm the cancel token a spawn would set, so a test can
+    /// see whether a path cancels the in-flight turn (#1266).
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn arm_turn_for_test(&mut self) -> CancellationToken {
+        let token = CancellationToken::new();
+        self.cancel_token = Some(token.clone());
+        token
+    }
+
     /// Record a `/pushup` PR linked to this session's issue (#739 → #949,
     /// spec §4.4): the session stays alive. `session.pr_linked` is set
     /// immediately; the System-turn announcement fires now (turn idle) or

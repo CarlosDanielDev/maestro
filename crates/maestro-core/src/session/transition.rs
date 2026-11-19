@@ -31,6 +31,10 @@ pub enum TransitionReason {
     /// anymore — the variant stays so state files written by #948 builds
     /// (transition_history entries) still deserialize.
     PrLinked,
+    /// The global `[budget].total_usd` cap was reached (#1266).
+    BudgetCap,
+    /// A confirmed quit stopped the session for `maestro resume` (#1266).
+    UserQuit,
 }
 
 /// Record of a single state transition.

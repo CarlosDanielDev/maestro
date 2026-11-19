@@ -17,8 +17,8 @@ use crate::turboquant::adapter::TurboQuantAdapter;
 pub struct SessionPool {
     max_concurrent: usize,
     queue: VecDeque<Session>,
-    active: Vec<ManagedSession>,
-    finished: Vec<ManagedSession>,
+    pub(super) active: Vec<ManagedSession>,
+    pub(super) finished: Vec<ManagedSession>,
     worktree_mgr: Box<dyn WorktreeManager + Send>,
     pub file_claims: FileClaimManager,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
@@ -178,9 +178,20 @@ impl SessionPool {
 
             // Try to create worktree (non-fatal — runs in cwd if it fails)
             let branch_name = format!("maestro/{}", slug);
-            let (worktree_path, branch) = match self.worktree_mgr.create(&slug) {
+            // A session paused by quit comes back to the worktree it left
+            // (#1266); the slug check keeps the branch name right.
+            let kept = session
+                .worktree_path
+                .clone()
+                .filter(|_| self.worktree_mgr.exists(&slug));
+            let verb = if kept.is_some() { "reused" } else { "created" };
+            let created = match kept {
+                Some(path) => Ok(path),
+                None => self.worktree_mgr.create(&slug),
+            };
+            let (worktree_path, branch) = match created {
                 Ok(path) => {
-                    session.log_activity(format!("Worktree created: {}", path.display()));
+                    session.log_activity(format!("Worktree {verb}: {}", path.display()));
                     (Some(path), Some(branch_name))
                 }
                 Err(e) => {
@@ -700,24 +711,6 @@ impl SessionPool {
         self.queue.clear();
     }
 
-    #[cfg(unix)]
-    pub fn pause_all(&self) {
-        for managed in &self.active {
-            if managed.session.status == SessionStatus::Running {
-                let _ = managed.pause();
-            }
-        }
-    }
-
-    #[cfg(unix)]
-    pub fn resume_all(&self) {
-        for managed in &self.active {
-            if managed.session.status == SessionStatus::Paused {
-                let _ = managed.resume();
-            }
-        }
-    }
-
     /// Remove a finished session from the pool entirely.
     /// Returns true if the session was found and removed.
     #[allow(dead_code)]
@@ -771,7 +764,7 @@ impl SessionPool {
 /// `maestro/<slug>`. `pub(crate)` so stale-session cleanup (#1149) derives
 /// the same path from the persisted `Session` record without a second
 /// naming convention drifting apart.
-pub(crate) fn session_slug(session: &Session) -> String {
+pub fn session_slug(session: &Session) -> String {
     if session.issue_numbers.len() >= 2 {
         // Reuse unified_branch_name which returns "maestro/unified-N-M";
         // strip the "maestro/" prefix since the caller adds it.
