@@ -161,3 +161,47 @@ async fn prespawn_block_ignores_spawn_keys() {
         "on Block the modal must offer only [n]o:\n{out}"
     );
 }
+
+/// #1266: at 100% of `total_usd` the app keeps running, the running agent
+/// is Paused (with a status change, not a bare SIGSTOP) and no new spawn
+/// starts.
+#[tokio::test]
+async fn cap_pauses_and_blocks_spawns() {
+    use crate::session::transition::TransitionReason;
+    let (mut app, _dir) = production_app(1.0);
+    let spender = fresh_session();
+    let spender_id = spender.id;
+    app.pool.enqueue(spender);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(spender_id).unwrap();
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    managed.session.cost_usd = 1.2;
+    app.sync_state();
+
+    app.check_budget(spender_id);
+
+    assert!(app.running, "the cap must not stop maestro");
+    let spender = app.pool.get_session(spender_id).unwrap();
+    assert_eq!(spender.status, SessionStatus::Paused);
+    assert_eq!(
+        spender.transition_history.last().map(|t| t.reason),
+        Some(TransitionReason::BudgetCap)
+    );
+
+    let waiting = fresh_session();
+    let waiting_id = waiting.id;
+    app.add_session(waiting).await.unwrap();
+    let status = app.pool.get_session(waiting_id).map(|s| s.status);
+    assert!(
+        !matches!(
+            status,
+            Some(SessionStatus::Spawning | SessionStatus::Running)
+        ),
+        "no spawn may start at the cap; status {status:?}"
+    );
+}

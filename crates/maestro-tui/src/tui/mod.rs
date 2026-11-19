@@ -44,6 +44,8 @@ mod confirm_exit_race_tests;
 #[cfg(test)]
 mod once_exit_tests;
 #[cfg(test)]
+mod quit_pause_tests;
+#[cfg(test)]
 mod snapshot_tests;
 
 use crate::config::ProviderConfig;
@@ -208,7 +210,17 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         let _ = app::write_exit_title(terminal.backend_mut());
     }
 
-    app.kill_all().await;
+    save_on_exit(&mut app).await;
+
+    print_summary(&app);
+
+    result.and_then(|()| once_exit_status(&app))
+}
+
+/// Exit path for every way out of the loop: pause the agents (never kill
+/// them, #1266) and save state so `maestro resume` can bring them back.
+async fn save_on_exit(app: &mut App) {
+    app.pause_for_exit().await;
 
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
     app.state.update_total_cost();
@@ -217,10 +229,6 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     if let Err(e) = app.store.save(&app.state) {
         eprintln!("Warning: failed to save state: {}", e);
     }
-
-    print_summary(&app);
-
-    result.and_then(|()| once_exit_status(&app))
 }
 
 /// #1412: `--once` is for scripts and CI, so a run whose last attempt
@@ -251,7 +259,15 @@ fn once_exit_status(app: &App) -> anyhow::Result<()> {
                 app::helpers::session_label(s)
             )
         }
-        None => Ok(()),
+        None => {
+            let paused = (app.pool.all_sessions().iter())
+                .filter(|s| s.status == crate::session::types::SessionStatus::Paused)
+                .count();
+            if paused > 0 {
+                anyhow::bail!("{paused} session(s) paused · resume with maestro resume");
+            }
+            Ok(())
+        }
     }
 }
 
@@ -296,6 +312,10 @@ async fn event_loop(
         }
 
         app.check_completions().await?;
+        // #1266: a `--once` run stops at the budget cap (agents paused).
+        if app.once_mode && !app.running {
+            return Ok(());
+        }
         // After completions, so a retry already shows as Retrying.
         team_runner_glue::publish_sessions(&team_sessions, &app.pool.all_sessions());
 

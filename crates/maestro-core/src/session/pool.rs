@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::pool_quota::QuotaRouting;
+use super::transition::TransitionReason;
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
@@ -178,9 +179,20 @@ impl SessionPool {
 
             // Try to create worktree (non-fatal — runs in cwd if it fails)
             let branch_name = format!("maestro/{}", slug);
-            let (worktree_path, branch) = match self.worktree_mgr.create(&slug) {
+            // A session paused by quit comes back to the worktree it left
+            // (#1266); the slug check keeps the branch name right.
+            let kept = session
+                .worktree_path
+                .clone()
+                .filter(|_| self.worktree_mgr.exists(&slug));
+            let verb = if kept.is_some() { "reused" } else { "created" };
+            let created = match kept {
+                Some(path) => Ok(path),
+                None => self.worktree_mgr.create(&slug),
+            };
+            let (worktree_path, branch) = match created {
                 Ok(path) => {
-                    session.log_activity(format!("Worktree created: {}", path.display()));
+                    session.log_activity(format!("Worktree {verb}: {}", path.display()));
                     (Some(path), Some(branch_name))
                 }
                 Err(e) => {
@@ -700,22 +712,78 @@ impl SessionPool {
         self.queue.clear();
     }
 
-    #[cfg(unix)]
-    pub fn pause_all(&self) {
-        for managed in &self.active {
+    /// SIGSTOP every Running session and record it as Paused (#1266: a
+    /// stop without the status change left the TUI showing Running).
+    /// Returns how many sessions were paused.
+    pub fn pause_all(&mut self, reason: TransitionReason) -> usize {
+        let mut paused = 0;
+        for managed in &mut self.active {
             if managed.session.status == SessionStatus::Running {
+                #[cfg(unix)]
                 let _ = managed.pause();
+                if managed
+                    .session
+                    .transition_to(SessionStatus::Paused, reason)
+                    .is_ok()
+                {
+                    paused += 1;
+                }
+            }
+        }
+        paused
+    }
+
+    #[cfg(unix)]
+    pub fn resume_all(&mut self) {
+        for managed in &mut self.active {
+            if managed.session.status == SessionStatus::Paused {
+                let _ = managed.resume();
+                let _ = managed
+                    .session
+                    .transition_to(SessionStatus::Running, TransitionReason::UserResume);
             }
         }
     }
 
-    #[cfg(unix)]
-    pub fn resume_all(&self) {
-        for managed in &self.active {
-            if managed.session.status == SessionStatus::Paused {
-                let _ = managed.resume();
+    /// Exit path (#1266): stop every agent process without throwing its
+    /// work away. Running and Paused sessions are saved as Paused, with
+    /// their worktree, for `maestro resume`; Spawning, Stalled and
+    /// Retrying keep their status (resume restarts those too); a status
+    /// resume cannot pick up is killed as before. The queue is kept.
+    /// Returns how many sessions are Paused.
+    pub async fn pause_for_exit(&mut self) -> usize {
+        let mut paused = 0;
+        for managed in &mut self.active {
+            let status = managed.session.status;
+            if status.is_terminal() {
+                managed.cancel_inflight_turn();
+                continue;
+            }
+            match status {
+                SessionStatus::Running | SessionStatus::Paused => {
+                    managed.cancel_inflight_turn();
+                    let _ = managed
+                        .session
+                        .transition_to(SessionStatus::Paused, TransitionReason::UserQuit);
+                    paused += 1;
+                }
+                // Queued here = parked at the pre-spawn budget gate.
+                SessionStatus::Queued
+                | SessionStatus::Spawning
+                | SessionStatus::Stalled
+                | SessionStatus::Retrying => {
+                    managed.cancel_inflight_turn();
+                }
+                _ => {
+                    let _ = managed.kill().await;
+                    continue;
+                }
+            }
+            if managed.session.worktree_path.is_none() {
+                managed.session.worktree_path = managed.worktree_path.clone();
             }
         }
+        paused
     }
 
     /// Remove a finished session from the pool entirely.
