@@ -1,12 +1,14 @@
 ---
 source: crates/maestro-tui/src/tui/summary_tests.rs
-assertion_line: 39
+assertion_line: 66
 expression: text
 ---
 
 === Maestro Session Summary ===
 
    #1266 PAUSED $0.42 —
+   #1267 KILLED $0.00 —
 
 Total cost: $0.42
 1 paused · resume with maestro resume
+killed at quit (cannot pause): #1267

@@ -93,10 +93,12 @@ impl App {
         self.sync_state();
     }
 
-    /// Exit path (#1266): pause and keep every agent for `maestro resume`
-    /// instead of killing it. Returns how many sessions are Paused.
-    pub async fn pause_for_exit(&mut self) -> usize {
-        let paused = self.pool.pause_for_exit().await;
+    /// Exit path (#1266): record every agent as paused (or kept) for
+    /// `maestro resume` and save that state. Agents are not stopped yet:
+    /// the caller stops them after the final save. Returns how many
+    /// sessions are Paused.
+    pub fn pause_for_exit(&mut self) -> usize {
+        let paused = self.pool.pause_for_exit();
         self.sync_state();
         paused
     }

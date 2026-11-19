@@ -176,20 +176,22 @@ impl App {
                 // #1266: the cap pauses running agents and new spawns wait
                 // at the pre-spawn gate; maestro keeps running. Later cost
                 // events find nothing Running and stay quiet.
-                let paused = self.pool.pause_all(TransitionReason::BudgetCap);
+                let out = self.pool.pause_all(TransitionReason::BudgetCap);
                 // `--once` has no operator to raise the cap: end the run.
                 if self.once_mode {
                     self.running = false;
                 }
-                if paused == 0 {
+                if out.paused + out.stopped == 0 {
                     return;
                 }
                 self.activity_log.push_simple(
                     "MAESTRO".into(),
                     format!(
-                        "GLOBAL BUDGET REACHED: ${:.2}/${:.2} — {paused} paused, new spawns wait · raise the cap, then r resumes",
+                        "GLOBAL BUDGET REACHED: ${:.2}/${:.2} — {} paused, {} stopped, new spawns wait · raise the cap, then r resumes",
                         self.total_cost,
-                        enforcer.total_limit()
+                        enforcer.total_limit(),
+                        out.paused,
+                        out.stopped,
                     ),
                     LogLevel::Error,
                 );

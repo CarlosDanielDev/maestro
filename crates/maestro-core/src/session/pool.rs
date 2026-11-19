@@ -7,7 +7,6 @@ use uuid::Uuid;
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::pool_quota::QuotaRouting;
-use super::transition::TransitionReason;
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
@@ -18,8 +17,8 @@ use crate::turboquant::adapter::TurboQuantAdapter;
 pub struct SessionPool {
     max_concurrent: usize,
     queue: VecDeque<Session>,
-    active: Vec<ManagedSession>,
-    finished: Vec<ManagedSession>,
+    pub(super) active: Vec<ManagedSession>,
+    pub(super) finished: Vec<ManagedSession>,
     worktree_mgr: Box<dyn WorktreeManager + Send>,
     pub file_claims: FileClaimManager,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
@@ -712,80 +711,6 @@ impl SessionPool {
         self.queue.clear();
     }
 
-    /// SIGSTOP every Running session and record it as Paused (#1266: a
-    /// stop without the status change left the TUI showing Running).
-    /// Returns how many sessions were paused.
-    pub fn pause_all(&mut self, reason: TransitionReason) -> usize {
-        let mut paused = 0;
-        for managed in &mut self.active {
-            if managed.session.status == SessionStatus::Running {
-                #[cfg(unix)]
-                let _ = managed.pause();
-                if managed
-                    .session
-                    .transition_to(SessionStatus::Paused, reason)
-                    .is_ok()
-                {
-                    paused += 1;
-                }
-            }
-        }
-        paused
-    }
-
-    #[cfg(unix)]
-    pub fn resume_all(&mut self) {
-        for managed in &mut self.active {
-            if managed.session.status == SessionStatus::Paused {
-                let _ = managed.resume();
-                let _ = managed
-                    .session
-                    .transition_to(SessionStatus::Running, TransitionReason::UserResume);
-            }
-        }
-    }
-
-    /// Exit path (#1266): stop every agent process without throwing its
-    /// work away. Running and Paused sessions are saved as Paused, with
-    /// their worktree, for `maestro resume`; Spawning, Stalled and
-    /// Retrying keep their status (resume restarts those too); a status
-    /// resume cannot pick up is killed as before. The queue is kept.
-    /// Returns how many sessions are Paused.
-    pub async fn pause_for_exit(&mut self) -> usize {
-        let mut paused = 0;
-        for managed in &mut self.active {
-            let status = managed.session.status;
-            if status.is_terminal() {
-                managed.cancel_inflight_turn();
-                continue;
-            }
-            match status {
-                SessionStatus::Running | SessionStatus::Paused => {
-                    managed.cancel_inflight_turn();
-                    let _ = managed
-                        .session
-                        .transition_to(SessionStatus::Paused, TransitionReason::UserQuit);
-                    paused += 1;
-                }
-                // Queued here = parked at the pre-spawn budget gate.
-                SessionStatus::Queued
-                | SessionStatus::Spawning
-                | SessionStatus::Stalled
-                | SessionStatus::Retrying => {
-                    managed.cancel_inflight_turn();
-                }
-                _ => {
-                    let _ = managed.kill().await;
-                    continue;
-                }
-            }
-            if managed.session.worktree_path.is_none() {
-                managed.session.worktree_path = managed.worktree_path.clone();
-            }
-        }
-        paused
-    }
-
     /// Remove a finished session from the pool entirely.
     /// Returns true if the session was found and removed.
     #[allow(dead_code)]
@@ -839,7 +764,7 @@ impl SessionPool {
 /// `maestro/<slug>`. `pub(crate)` so stale-session cleanup (#1149) derives
 /// the same path from the persisted `Session` record without a second
 /// naming convention drifting apart.
-pub(crate) fn session_slug(session: &Session) -> String {
+pub fn session_slug(session: &Session) -> String {
     if session.issue_numbers.len() >= 2 {
         // Reuse unified_branch_name which returns "maestro/unified-N-M";
         // strip the "maestro/" prefix since the caller adds it.

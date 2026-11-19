@@ -383,22 +383,9 @@ fn error_style(theme: &Theme) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// Pad a span to `width` columns (one space at least).
-fn pad(span: Span<'static>, width: usize) -> Span<'static> {
-    let gap = width.saturating_sub(span.content.width()).max(1);
-    Span::styled(format!("{}{}", span.content, " ".repeat(gap)), span.style)
-}
-
-/// `45s`, `12m`, `3h`, `2d`.
-fn age(d: chrono::Duration) -> String {
-    let s = d.num_seconds().max(0);
-    match s {
-        0..60 => format!("{s}s"),
-        60..3_600 => format!("{}m", s / 60),
-        3_600..86_400 => format!("{}h", s / 3_600),
-        _ => format!("{}d", s / 86_400),
-    }
-}
+#[path = "attention_fmt.rs"]
+mod fmt;
+use fmt::{age, pad};
 
 #[cfg(test)]
 #[path = "attention_tests.rs"]

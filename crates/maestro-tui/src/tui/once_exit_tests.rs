@@ -138,6 +138,12 @@ async fn once_loop_returns_at_the_budget_cap() {
             .transition_to(SessionStatus::Running, TransitionReason::Spawned)
             .is_ok()
     );
+    // A real process for the cap to SIGSTOP; killed below.
+    let mut agent = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep");
+    managed.session.pid = Some(agent.id());
     let tx = app.pool.event_tx();
     for _ in 0..2 {
         let event = StreamEvent::CostUpdate { cost_usd: 2.0 };
@@ -152,6 +158,8 @@ async fn once_loop_returns_at_the_budget_cap() {
     let result =
         tokio::time::timeout(Duration::from_secs(10), event_loop(&mut terminal, &mut app)).await;
 
+    let _ = agent.kill();
+    let _ = agent.wait();
     assert!(result.is_ok(), "--once loop hung at the budget cap");
     let status = app.pool.get_session(id).map(|s| s.status);
     assert_eq!(status, Some(SessionStatus::Paused));

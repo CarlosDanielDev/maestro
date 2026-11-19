@@ -12,16 +12,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let store = StateStore::new(StateStore::default_path());
     let state = store.load().unwrap_or_default();
 
-    let has_incomplete = state.sessions.iter().any(|s| {
-        matches!(
-            s.status,
-            crate::session::types::SessionStatus::Running
-                | crate::session::types::SessionStatus::Spawning
-                | crate::session::types::SessionStatus::Queued
-                | crate::session::types::SessionStatus::Stalled
-                | crate::session::types::SessionStatus::Retrying
-        )
-    });
+    let has_incomplete = has_incomplete(&state.sessions);
 
     if has_incomplete {
         eprintln!(
@@ -133,6 +124,8 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     } else {
         no_config_app(store, worktree_mgr)
     };
+    // #1266: this run's state saves must not drop sessions a quit paused.
+    app.pool.keep_saved_paused(&state.sessions);
 
     // Wire MiniMax quota for the token dashboard's Quota column (#769).
     // Best-effort — if the file is missing or malformed the dashboard
@@ -190,6 +183,40 @@ mod tests {
         assert_eq!(
             app.session_config.permission_mode, "default",
             "no-config fallback must not default to bypassPermissions"
+        );
+    }
+}
+
+/// Saved sessions `maestro resume` would pick up, Paused included (#1266).
+fn has_incomplete(sessions: &[crate::session::types::Session]) -> bool {
+    use crate::session::types::SessionStatus::*;
+    (sessions.iter()).any(|s| {
+        matches!(
+            s.status,
+            Running | Paused | Spawning | Queued | Stalled | Retrying
+        )
+    })
+}
+
+#[cfg(test)]
+mod has_incomplete_tests {
+    use super::has_incomplete;
+    use crate::session::transition::TransitionReason;
+    use crate::session::types::{Session, SessionStatus};
+
+    #[test]
+    fn dashboard_hints_resume_for_paused() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        for to in [
+            SessionStatus::Spawning,
+            SessionStatus::Running,
+            SessionStatus::Paused,
+        ] {
+            s.transition_to(to, TransitionReason::UserQuit).unwrap();
+        }
+        assert!(
+            has_incomplete(&[s]),
+            "a quit-paused session must get the resume hint"
         );
     }
 }

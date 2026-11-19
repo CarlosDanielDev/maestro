@@ -133,6 +133,9 @@ pub async fn cmd_run(
         &resolved_agent,
         workspace_trusted,
     );
+    // #1266: this run's state saves must not drop sessions a quit paused.
+    let saved = app.state.sessions.clone();
+    app.pool.keep_saved_paused(&saved);
     app.pool.set_provider(selected_provider);
     app.flags = feature_flags;
 

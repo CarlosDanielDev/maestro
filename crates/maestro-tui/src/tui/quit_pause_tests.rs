@@ -33,13 +33,40 @@ async fn quit_pauses_not_kills() {
     ] {
         managed.session.transition_to(to, why).unwrap();
     }
+    let turn = managed.arm_turn_for_test();
     let worktree = managed.worktree_path.clone();
     assert!(worktree.is_some(), "setup: the mock gives a worktree");
+    // A status that cannot pause: killed at quit, with the reason recorded.
+    let ci_fix = session("ci-fix");
+    let ci_id = ci_fix.id;
+    app.pool.enqueue(ci_fix);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(ci_id).expect("promoted");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+        (SessionStatus::CiFix, TransitionReason::CiFixStarted),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
     let queued = session("queued");
     let queued_id = queued.id;
     app.pool.enqueue(queued);
 
-    save_on_exit(&mut app).await;
+    // Step 1 records and saves before any agent is stopped.
+    app.pause_for_exit();
+    assert!(!turn.is_cancelled(), "nothing may stop before the save");
+    let early = app.store.load().expect("state saved before the stop");
+    assert!(
+        early
+            .sessions
+            .iter()
+            .any(|s| s.id == running_id && s.status == SessionStatus::Paused),
+        "the Paused record must be on disk before the agent stops"
+    );
+
+    save_on_exit(&mut app);
+    assert!(turn.is_cancelled(), "the agent is stopped after the save");
 
     let saved = app.store.load().expect("state saved");
     let find = |id| saved.sessions.iter().find(|s| s.id == id);
@@ -60,11 +87,43 @@ async fn quit_pauses_not_kills() {
         Some(SessionStatus::Queued),
         "a session parked at the budget gate stays queued"
     );
-    assert!(
-        !saved
-            .sessions
-            .iter()
-            .any(|s| s.status == SessionStatus::Killed),
-        "quit must not kill"
+    let ci = find(ci_id).expect("ci-fix saved");
+    assert_eq!(ci.status, SessionStatus::Killed);
+    assert_eq!(
+        ci.transition_history.last().map(|t| t.reason),
+        Some(TransitionReason::UserQuit)
     );
+    assert_eq!(
+        (saved.sessions.iter())
+            .filter(|s| s.status == SessionStatus::Killed)
+            .count(),
+        1,
+        "quit kills only what cannot pause"
+    );
+}
+
+/// #1266: a plain `maestro` launch after a quit must not drop the Paused
+/// sessions waiting for `maestro resume` when it saves state.
+#[test]
+fn plain_launch_keeps_saved_paused() {
+    let mut paused = session("paused-earlier");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+        (SessionStatus::Paused, TransitionReason::UserQuit),
+    ] {
+        paused.transition_to(to, why).unwrap();
+    }
+    let mut app = make_test_app("plain-launch-1266");
+    app.pool.keep_saved_paused(std::slice::from_ref(&paused));
+    app.pool.keep_saved_paused(std::slice::from_ref(&paused));
+
+    save_on_exit(&mut app);
+
+    let saved = app.store.load().expect("state saved");
+    let kept: Vec<_> = (saved.sessions.iter())
+        .filter(|s| s.id == paused.id)
+        .collect();
+    assert_eq!(kept.len(), 1, "kept once, not dropped and not doubled");
+    assert_eq!(kept[0].status, SessionStatus::Paused);
 }

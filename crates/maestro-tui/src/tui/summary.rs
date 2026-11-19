@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use super::app::App;
+use crate::session::transition::TransitionReason::UserQuit;
 use crate::tui::icons::{self, IconId};
 
 pub(super) fn print_summary(app: &App) {
@@ -69,6 +70,15 @@ fn exit_summary_text(app: &App) -> String {
         .count();
     if paused > 0 {
         let _ = writeln!(out, "{paused} paused · resume with maestro resume");
+    }
+    // Known gap (#1266): these statuses cannot pause, so quit killed them.
+    let killed: Vec<String> = (all_sessions.iter())
+        .filter(|s| s.status == crate::session::types::SessionStatus::Killed)
+        .filter(|s| (s.transition_history.last()).is_some_and(|t| t.reason == UserQuit))
+        .map(|s| super::app::helpers::session_label(s))
+        .collect();
+    if !killed.is_empty() {
+        let _ = writeln!(out, "killed at quit (cannot pause): {}", killed.join(", "));
     }
     let _ = writeln!(out);
     out

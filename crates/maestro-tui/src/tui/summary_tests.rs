@@ -31,12 +31,37 @@ fn exit_summary_paused() {
     }
     managed.session.started_at = None;
     managed.session.cost_usd = 0.42;
+    // A status that cannot pause is killed at quit and named.
+    let ci_fix = Session::new(
+        "ci".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(1267),
+        None,
+    );
+    let ci_id = ci_fix.id;
+    app.pool.enqueue(ci_fix);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(ci_id).expect("promoted");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+        (SessionStatus::CiFix, TransitionReason::CiFixStarted),
+        (SessionStatus::Killed, TransitionReason::UserQuit),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    managed.session.started_at = None;
 
     let text = exit_summary_text(&app);
 
     assert!(
         text.contains("1 paused · resume with maestro resume"),
         "the exit summary must name the paused count and the resume hint:\n{text}"
+    );
+    assert!(
+        text.contains("killed at quit (cannot pause): #1267"),
+        "the exit summary must name what quit killed:\n{text}"
     );
     insta::assert_snapshot!("exit_summary_paused", text);
 }

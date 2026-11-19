@@ -202,6 +202,10 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     let result = event_loop(&mut terminal, &mut app).await;
 
+    // Save before the terminal teardown: a failed teardown (`?`) must not
+    // skip it.
+    save_on_exit(&mut app);
+
     if let Some(terminal) = terminal.as_mut() {
         disable_raw_mode()?;
         leave_tui_mode(terminal.backend_mut())?;
@@ -210,17 +214,16 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         let _ = app::write_exit_title(terminal.backend_mut());
     }
 
-    save_on_exit(&mut app).await;
-
     print_summary(&app);
 
     result.and_then(|()| once_exit_status(&app))
 }
 
-/// Exit path for every way out of the loop: pause the agents (never kill
-/// them, #1266) and save state so `maestro resume` can bring them back.
-async fn save_on_exit(app: &mut App) {
-    app.pause_for_exit().await;
+/// Exit path for every way out of the loop (and the upgrade restart):
+/// record the agents as paused (never kill them, #1266), save state so
+/// `maestro resume` can bring them back, and only then stop the agents.
+pub fn save_on_exit(app: &mut App) {
+    app.pause_for_exit();
 
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
     app.state.update_total_cost();
@@ -229,6 +232,7 @@ async fn save_on_exit(app: &mut App) {
     if let Err(e) = app.store.save(&app.state) {
         eprintln!("Warning: failed to save state: {}", e);
     }
+    app.pool.stop_all_turns();
 }
 
 /// #1412: `--once` is for scripts and CI, so a run whose last attempt
@@ -344,6 +348,7 @@ async fn event_loop(
                         continue;
                     }
                     if input_handler::is_restart_key(app, &key) {
+                        save_on_exit(app);
                         disable_raw_mode().ok();
                         leave_tui_mode(terminal.backend_mut()).ok();
                         terminal.show_cursor().ok();
@@ -354,6 +359,12 @@ async fn event_loop(
                                 "Restart failed: {}",
                                 e
                             ));
+                            app.activity_log.push_simple(
+                                "MAESTRO".into(),
+                                "Agents were paused for the restart · resume with maestro resume"
+                                    .into(),
+                                LogLevel::Warn,
+                            );
                         }
                         continue;
                     }

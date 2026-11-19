@@ -180,10 +180,14 @@ async fn cap_pauses_and_blocks_spawns() {
     ] {
         managed.session.transition_to(to, why).unwrap();
     }
+    let mut agent = sleeper();
+    managed.session.pid = Some(agent.id());
     managed.session.cost_usd = 1.2;
     app.sync_state();
 
     app.check_budget(spender_id);
+    let _ = agent.kill();
+    let _ = agent.wait();
 
     assert!(app.running, "the cap must not stop maestro");
     let spender = app.pool.get_session(spender_id).unwrap();
@@ -224,9 +228,13 @@ fn cap_attention_row_names_paused() {
     ] {
         managed.session.transition_to(to, why).unwrap();
     }
+    let mut agent = sleeper();
+    managed.session.pid = Some(agent.id());
     managed.session.cost_usd = 1.2;
     app.sync_state();
     app.check_budget(spender_id);
+    let _ = agent.kill();
+    let _ = agent.wait();
 
     let items: Vec<_> = (app.attention().into_iter())
         .filter(|i| matches!(i.subject, Subject::Budget))
@@ -253,5 +261,47 @@ fn cap_attention_row_names_paused() {
     assert!(
         out.contains(hint),
         "the hint must be drawn whole at 80:\n{out}"
+    );
+}
+
+/// A stand-in agent process the cap can SIGSTOP (killed by the test).
+fn sleeper() -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep must be on PATH")
+}
+
+/// #1266: a session with no process to SIGSTOP (HTTP providers report no
+/// pid) must not show Paused while it keeps spending: the cap cancels its
+/// turn and records it Errored, which keeps its worktree for resume.
+#[test]
+fn cap_stops_a_session_it_cannot_pause() {
+    use crate::session::transition::TransitionReason;
+    let (mut app, _dir) = production_app(1.0);
+    let spender = fresh_session();
+    let spender_id = spender.id;
+    app.pool.enqueue(spender);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(spender_id).unwrap();
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    let turn = managed.arm_turn_for_test();
+    managed.session.pid = None;
+    managed.session.cost_usd = 1.2;
+    app.sync_state();
+
+    app.check_budget(spender_id);
+
+    assert!(turn.is_cancelled(), "the cap must stop the turn's spend");
+    let spender = app.pool.get_session(spender_id).unwrap();
+    assert_eq!(spender.status, SessionStatus::Errored, "never Paused");
+    assert_eq!(
+        spender.transition_history.last().map(|t| t.reason),
+        Some(TransitionReason::BudgetCap)
     );
 }
