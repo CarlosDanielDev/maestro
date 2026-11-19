@@ -203,3 +203,20 @@ fn no_color_env_selects_no_color_preset() {
         expected
     );
 }
+
+#[test]
+fn status_color_uses_v1_tokens_for_needs_pr_and_conflict_fix() {
+    for preset in ALL_PRESETS {
+        let t = preset_theme(preset);
+        assert_eq!(
+            t.status_color(SessionStatus::NeedsPr),
+            t.status_needs_pr,
+            "{preset:?}"
+        );
+        assert_eq!(
+            t.status_color(SessionStatus::ConflictFix),
+            t.status_conflict,
+            "{preset:?}"
+        );
+    }
+}

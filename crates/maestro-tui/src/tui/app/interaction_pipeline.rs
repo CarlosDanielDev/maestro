@@ -103,8 +103,11 @@ impl App {
             );
             return;
         }
-        if first_turn {
-            self.note_spawn_bypass(id);
+        // #1243 "every spawn": the first turn passes the pre-spawn budget
+        // gate like the queue paths (it also notes a bypass spawn, #1411).
+        // Parked: the gate modal resumes (`y`/`s`) or cancels (`n`) it.
+        if first_turn && self.try_enter_prespawn_gate(id) {
+            return;
         }
         let result = match self.pool.get_active_mut(id) {
             Some(managed) if first_turn => managed.spawn(tx).await,

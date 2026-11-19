@@ -6,7 +6,8 @@
 //! Lifetimes: success / info 3 s, warn 6 s, error sticky until `Esc`, an
 //! undo toast lives for its [`UNDO_WINDOW`]. One toast is visible at a
 //! time: a newer success / info / warn replaces the older one, errors
-//! queue and show one by one once no other toast is live.
+//! queue and show one by one once no other toast is live. At most
+//! `MAX_QUEUED_ERRORS` errors wait; a newer one drops the oldest.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -33,6 +34,9 @@ const MAX_WIDTH: u16 = 72;
 const HEIGHT: u16 = 3;
 /// Cells in the countdown bar: one per second of [`UNDO_WINDOW`].
 const BAR_CELLS: u64 = 5;
+/// Most error toasts kept waiting; past it the oldest is dropped, so a
+/// burst of errors cannot grow the queue without limit (#1382).
+const MAX_QUEUED_ERRORS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -167,6 +171,9 @@ impl<U> ToastQueue<U> {
     pub fn push(&mut self, toast: Toast<U>, now: Instant) {
         let shown = Shown { toast, at: now };
         if shown.toast.severity == Severity::Error {
+            if self.errors.len() >= MAX_QUEUED_ERRORS {
+                self.errors.pop_front();
+            }
             self.errors.push_back(shown);
         } else {
             self.transient = Some(shown);

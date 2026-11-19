@@ -61,11 +61,16 @@ impl App {
     }
 
     /// Write `(n) maestro` to the terminal title when it changed since the
-    /// last call. Errors from the writer are returned, not logged.
+    /// last call. The first write saves the shell's title on the terminal's
+    /// title stack first (XTWINOPS 22), so quit can restore it. Errors from
+    /// the writer are returned, not logged.
     pub fn sync_terminal_title<W: Write>(&mut self, out: &mut W) -> std::io::Result<()> {
         let title = terminal_title(self.attention().len());
         if self.last_terminal_title.as_deref() == Some(title.as_str()) {
             return Ok(());
+        }
+        if self.last_terminal_title.is_none() {
+            out.write_all(PUSH_TITLE)?;
         }
         crossterm::execute!(out, crossterm::terminal::SetTitle(&title))?;
         self.last_terminal_title = Some(title);
@@ -98,10 +103,22 @@ impl App {
     }
 }
 
-/// Quit restore: leave the plain `exit_title()` so the shell tab keeps no
-/// stale `(n)` count.
+/// XTWINOPS: push / pop the window title on the terminal's title stack.
+/// Terminals without the stack ignore them.
+const PUSH_TITLE: &[u8] = b"\x1b[22;0t";
+const POP_TITLE: &[u8] = b"\x1b[23;0t";
+
+/// Quit restore: write the plain `exit_title()`, then pop the title saved
+/// by the first [`App::sync_terminal_title`]. Where the terminal has a
+/// title stack the shell's own title comes back; elsewhere the pop is
+/// ignored and the tab keeps `maestro`, with no stale `(n)` count.
+///
+/// Best effort: the quit path ignores the result on purpose. The terminal
+/// is being torn down and a lost title must never block or fail quit.
 pub(crate) fn write_exit_title<W: Write>(out: &mut W) -> std::io::Result<()> {
-    crossterm::execute!(out, crossterm::terminal::SetTitle(exit_title()))
+    crossterm::execute!(out, crossterm::terminal::SetTitle(exit_title()))?;
+    out.write_all(POP_TITLE)?;
+    out.flush()
 }
 
 #[cfg(test)]
@@ -118,7 +135,11 @@ mod tests {
     #[test]
     fn terminal_title_counts_attention() {
         let mut app = crate::tui::make_test_app("maestro-1259-title");
-        assert_eq!(title_after_sync(&mut app), "\u{1b}]0;maestro\u{7}");
+        assert_eq!(
+            title_after_sync(&mut app),
+            "\u{1b}[22;0t\u{1b}]0;maestro\u{7}",
+            "the first write saves the shell's title first"
+        );
 
         app.pool
             .enqueue(make_session(SessionStatus::FailedGates, Some(412)));
@@ -131,10 +152,28 @@ mod tests {
     }
 
     #[test]
-    fn exit_restore_writes_the_plain_title() {
+    fn exit_restore_writes_the_plain_title_then_pops_the_saved_one() {
+        // `maestro` first: a terminal without the title stack ignores the
+        // pop and keeps it; one with the stack restores the shell's title.
         let mut out = Vec::new();
         super::write_exit_title(&mut out).unwrap();
-        assert_eq!(String::from_utf8(out).unwrap(), "\u{1b}]0;maestro\u{7}");
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "\u{1b}]0;maestro\u{7}\u{1b}[23;0t"
+        );
+    }
+
+    #[test]
+    fn title_is_saved_once_per_run() {
+        let mut app = crate::tui::make_test_app("maestro-1382-title-push");
+        assert!(title_after_sync(&mut app).starts_with("\u{1b}[22;0t"));
+        app.pool
+            .enqueue(make_session(SessionStatus::FailedGates, Some(412)));
+        assert_eq!(
+            title_after_sync(&mut app),
+            "\u{1b}]0;(1) maestro\u{7}",
+            "later writes do not push again"
+        );
     }
 
     #[test]

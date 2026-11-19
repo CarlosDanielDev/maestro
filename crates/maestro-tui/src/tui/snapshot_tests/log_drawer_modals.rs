@@ -28,9 +28,11 @@ fn log_drawer_hidden_under_modals() {
         TuiMode::BypassWarning,
         TuiMode::QueueConfirmation,
     ] {
-        let render = |open: bool| {
-            let mut app = log_app(mode);
-            app.nav_stack.push(TuiMode::IssueBrowser);
+        // One app, drawer toggled: two apps would seed log lines with two
+        // wall-clock stamps that can differ by a second.
+        let mut app = log_app(mode);
+        app.nav_stack.push(TuiMode::IssueBrowser);
+        let mut render = |open: bool| {
             app.activity_log.drawer_open = open;
             format!("{}", draw(&mut app, 80, 24).backend())
         };
