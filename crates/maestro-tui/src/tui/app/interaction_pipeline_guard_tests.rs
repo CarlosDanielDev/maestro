@@ -174,3 +174,42 @@ async fn dispatch_without_interaction_is_a_noop() {
 
     assert!(app.pool.interactive_pipeline_session_id(947).is_none());
 }
+
+/// #1243 "every spawn": the first interaction turn goes through the
+/// pre-spawn budget gate like the queue paths. Past the cap (Block) the
+/// turn parks in the gate modal and the agent never runs.
+#[tokio::test]
+async fn first_turn_past_budget_cap_parks_in_gate_and_does_not_spawn() {
+    use crate::session::types::SessionStatus;
+    use crate::tui::app::TuiMode;
+    let (mut app, provider) = app_with_interaction(
+        "ip-first-turn-budget-block",
+        1243,
+        vec![scripted_turn("must not run", "conv-1243")],
+    );
+    app.install_budget(&crate::config::BudgetConfig {
+        per_session_usd: 5.0,
+        total_usd: 1.0,
+        alert_threshold_pct: 80,
+    });
+    app.total_cost = 1.2;
+
+    app.dispatch_interaction_turn(1243, "go".to_string(), "opus".to_string())
+        .await;
+    pump_session_events(&mut app).await;
+
+    let id = app
+        .pool
+        .interactive_managed(1243)
+        .map(|m| m.session.id)
+        .expect("interaction session kept");
+    assert_eq!(app.tui_mode, TuiMode::BudgetPreSpawn { session_id: id });
+    assert!(
+        provider.requests.lock().unwrap().is_empty(),
+        "Block must stop the first turn before the agent runs"
+    );
+    assert_eq!(
+        app.pool.get_session(id).map(|s| s.status),
+        Some(SessionStatus::Queued)
+    );
+}

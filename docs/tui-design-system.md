@@ -360,7 +360,7 @@ Implements `toast` from `docs/design-system/index.html` §04 (Components, Kit v2
 | Item | For |
 |---|---|
 | `Toast::new(Severity, message)` / `Toast::undoable(message, undo)` | Build a toast. `Severity::{Success, Info, Warn, Error}`. An undoable toast is a success toast with a `^Z undo` countdown for `UNDO_WINDOW` (5 s) |
-| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue |
+| `App::push_toast(toast, now)` | Show it. Success / info live 3 s, warn 6 s, error stays until `Esc`. One toast is visible: a newer one replaces the older, errors queue (at most 5; a sixth drops the oldest, #1382) |
 | `ToastUndo` | `Box<dyn FnOnce(&mut App)>`: what `Ctrl+Z` runs. Which actions get one is each screen's call |
 | `ds::toast::draw(f, area, &ToastView, theme)` / `draw_for_mode(.., nerd_font)` | Rounded `surface_overlay` box at the bottom right of `area`, above its last row; glyph + severity word (`ok`, `info`, `warn`, `error`) in the severity colour, bold. `ui::draw` draws `app.toasts` after every screen, so screens never call it |
 

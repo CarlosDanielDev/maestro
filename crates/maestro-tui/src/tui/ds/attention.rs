@@ -66,6 +66,8 @@ pub struct AttentionItem {
     pub action: &'static str,
     /// When the item started to need you. `None` sorts after dated items.
     pub since: Option<DateTime<Utc>>,
+    /// Budget / quota used ÷ limit (1.0 = spent) for the chip level; else `None`.
+    pub ratio: Option<f64>,
 }
 
 /// One session as `rank` needs it.
@@ -129,19 +131,20 @@ pub fn rank(input: &AttentionInput) -> Vec<AttentionItem> {
     }
     if let Some(b) = input.budget {
         let reason = format!("{} of {} spent", money(Some(b.spent)), money(Some(b.cap)));
-        items.push(item(
-            AttentionKind::Resource,
-            Subject::Budget,
-            &reason,
-            "budget",
-        ));
+        items.push(AttentionItem {
+            ratio: Some(b.spent / b.cap),
+            ..item(AttentionKind::Resource, Subject::Budget, &reason, "budget")
+        });
     }
     for q in &input.quota {
         let reason = format!("{:.0}% of a usage window used", q.used_pct);
         let subject = Subject::Quota {
             provider: q.provider.clone(),
         };
-        items.push(item(AttentionKind::Resource, subject, &reason, "quota"));
+        items.push(AttentionItem {
+            ratio: Some(q.used_pct / 100.0),
+            ..item(AttentionKind::Resource, subject, &reason, "quota")
+        });
     }
     // Stable sort: equal keys keep their input order.
     items.sort_by_key(|i| (i.kind, i.since.is_none(), i.since));
@@ -160,6 +163,7 @@ fn item(
         reason: sanitize_for_terminal(reason),
         action,
         since: None,
+        ratio: None,
     }
 }
 
@@ -356,12 +360,14 @@ fn row(
 
 /// `glyph word`: the session chip for sessions; its own word otherwise.
 fn chip(it: &AttentionItem, theme: &Theme, nerd_font: bool) -> Span<'static> {
+    // Resource rows: High at least, Critical once spent / 100% (#1382).
+    let resource = gauge_level(it.ratio.unwrap_or(0.0).max(0.8)).style(theme);
     let (icon, word, style) = match &it.subject {
         Subject::Session { status, .. } => return status_chip_for_mode(*status, theme, nerd_font),
         Subject::DoctorCheck => (IconId::ChipErrored, "doctor", error_style(theme)),
         Subject::GhAuth => (IconId::ChipErrored, "gh auth", error_style(theme)),
-        Subject::Budget => (IconId::Warning, "budget", gauge_level(0.8).style(theme)),
-        Subject::Quota { .. } => (IconId::Warning, "quota", gauge_level(0.8).style(theme)),
+        Subject::Budget => (IconId::Warning, "budget", resource),
+        Subject::Quota { .. } => (IconId::Warning, "quota", resource),
     };
     Span::styled(format!("{} {word}", get_for_mode(icon, nerd_font)), style)
 }
