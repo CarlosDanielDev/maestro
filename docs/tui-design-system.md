@@ -351,6 +351,26 @@ Message text goes through `sanitize_for_terminal` inside `draw`. Glyphs and
 the countdown bar come from `icons::get_for_mode` (`CheckCircle`, `DotFill`,
 `Warning`, `XCircle`, `GaugeFilled`, `GaugeEmpty`), so ASCII mode works.
 
+### Command palette (`crates/maestro-tui/src/tui/ds/palette.rs`, #1255)
+
+Implements `palette` from `docs/design-system/index.html` §04 and the §06
+`⌃K` row. `⌃K` opens it on any screen, except while a text field has focus
+(the field keeps `⌃K`) or a modal is up.
+
+| Item | For |
+|---|---|
+| `registry::actions_on(bindings, mode)` | The actions reachable on a screen: Global plus its screen block, one binding per action (the first chord), hidden aliases and `⌃K` left out. The palette lists these; Help (#1398) can read the same list |
+| `registry::PALETTE_COMMANDS` / `PaletteCommand` | Commands with no key, declared next to the bindings (`network`) |
+| `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` returns the reason an action cannot run; it shows with `⊘` and ⏎ does nothing |
+| `palette::fuzzy_hits(query, label)` | Case-insensitive subsequence match; the hit indices are drawn `UNDERLINED` |
+| `PaletteState` (`app.palette`) | The open palette: a canonical `Input` query (keys go through `feed`), the selection. `handle_key` returns `Outcome::{Open, Close, Run}`; `draw` dims the whole frame, then draws the Rounded box on `surface_overlay` with an `INSERT` chip |
+
+⏎ closes the palette and runs the entry: a tab opens its screen, any other
+binding goes through `handle_key` as its own key, so a destructive one
+still asks first. A new binding in `registry()` shows up with no palette
+edit. While open the palette counts as text input (`is_text_input_mode`)
+and blocks the log drawer; a quit chord closes it.
+
 ### Activity log pane and log drawer (`crates/maestro-tui/src/tui/ds/log_drawer.rs`, #1263)
 
 Implements the Activity log row of "Shell rules" in `docs/design-system/index.html`. The pane is drawn only on Home, Dashboard and the session Overview; other screens draw no log row. Decision: `docs/design-system/decisions.md` (2026-11-17).
@@ -495,8 +515,7 @@ screen moves into the registry one at a time.
 To register a screen: add its block to `registry()`, give its `mode_keymap`
 arm an empty hint list, and keep the test green. Do not redeclare a Global
 key (`Esc` back, `/` filter) in a screen: that is a `Shadow`. The §06 rows
-`⌃K` (palette) and `⌃Q` (quit) are declared as the target; today `⌃K` is
-unbound and `⌃Q` toggles TurboQuant until #1260.
+`⌃K` opens the command palette (#1255, below) and `⌃Q` quits (#1260).
 
 ---
 

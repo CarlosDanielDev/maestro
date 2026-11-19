@@ -230,7 +230,7 @@ pub fn registry() -> &'static [Binding] {
             Binding::new(chord, Scope::Global, action, danger, label)
         };
         let ch = |c| Chord::key(KeyCode::Char(c));
-        // §06 Global. ⌃K (palette) is the target and still unbound. ⌃Q quits
+        // §06 Global. ⌃K opens the palette (#1255). ⌃Q quits
         // (#1260): an idle fleet at once, else through the Confirm Exit hold.
         // The TurboQuant toggle it replaced is [`TURBOQUANT_TOGGLE`] (a
         // Settings field, no chord); `Q` still opens the TurboQuant dashboard.
@@ -303,6 +303,29 @@ pub fn registry() -> &'static [Binding] {
         v
     });
     &REGISTRY
+}
+
+/// A ⌃K palette command with no key (#1255), declared next to the bindings
+/// ([`PALETTE_COMMANDS`]). `Network`: diagnostics moved off Home (§02).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteCommand {
+    Network,
+}
+
+pub const PALETTE_COMMANDS: &[(&str, PaletteCommand)] = &[("network", PaletteCommand::Network)];
+
+/// What the ⌃K palette lists on `mode`: Global plus `mode`'s screen block,
+/// the first binding per action (no `F1` after `?`), no hidden alias, no ⌃K.
+pub fn actions_on(bindings: &[Binding], mode: TuiMode) -> Vec<&Binding> {
+    let mut out: Vec<&Binding> = Vec::new();
+    for b in bindings {
+        let here = b.scope == Scope::Global || b.scope.is_screen_of(mode);
+        let new = !out.iter().any(|o| o.action == b.action);
+        if here && new && b.footer && b.action != Action::Palette {
+            out.push(b);
+        }
+    }
+    out
 }
 
 /// Every §06 rule `bindings` breaks; empty means clean. A chord seen twice

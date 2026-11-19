@@ -68,6 +68,7 @@ fn shows_log_pane(app: &App) -> bool {
 pub(crate) fn log_drawer_blocked(app: &App) -> bool {
     let state = &app.screen_state;
     app.help_state.is_some()
+        || app.palette.is_some()
         || match app.tui_mode {
             TuiMode::ConfirmExit
             | TuiMode::ConfirmKill(_)
@@ -921,6 +922,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         );
     } else if let Some(view) = app.toasts.visible(std::time::Instant::now()) {
         crate::tui::ds::toast::draw(f, f.area(), &view, &theme);
+    }
+
+    // #1255: the ⌃K palette dims everything under it.
+    if let Some(palette) = app.palette.as_ref() {
+        palette.draw(f, &theme);
     }
 
     if let Some(ref help) = app.help_state {
