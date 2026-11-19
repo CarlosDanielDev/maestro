@@ -94,13 +94,11 @@ impl App {
     }
 
     /// Exit path (#1266): record every agent as paused (or kept) for
-    /// `maestro resume` and save that state. Agents are not stopped yet:
-    /// the caller stops them after the final save. Returns how many
-    /// sessions are Paused.
+    /// `maestro resume`. Nothing is saved or stopped here: `save_on_exit`
+    /// saves next and stops the agents only after that save. Returns how
+    /// many sessions are Paused.
     pub fn pause_for_exit(&mut self) -> usize {
-        let paused = self.pool.pause_for_exit();
-        self.sync_state();
-        paused
+        self.pool.pause_for_exit()
     }
 
     /// Check if all sessions are done.

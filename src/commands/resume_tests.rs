@@ -104,7 +104,7 @@ async fn resume_restores_quit_paused_session() {
     );
 
     // The confirmed quit.
-    crate::tui::save_on_exit(&mut app);
+    crate::tui::save_on_exit(&mut app).expect("saved");
     drop(app);
 
     // `maestro resume` reads exactly what that quit wrote.

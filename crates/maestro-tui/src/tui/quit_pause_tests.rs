@@ -53,19 +53,11 @@ async fn quit_pauses_not_kills() {
     let queued_id = queued.id;
     app.pool.enqueue(queued);
 
-    // Step 1 records and saves before any agent is stopped.
+    // Step 1 only records: nothing stops before the save.
     app.pause_for_exit();
     assert!(!turn.is_cancelled(), "nothing may stop before the save");
-    let early = app.store.load().expect("state saved before the stop");
-    assert!(
-        early
-            .sessions
-            .iter()
-            .any(|s| s.id == running_id && s.status == SessionStatus::Paused),
-        "the Paused record must be on disk before the agent stops"
-    );
 
-    save_on_exit(&mut app);
+    save_on_exit(&mut app).expect("saved");
     assert!(turn.is_cancelled(), "the agent is stopped after the save");
 
     let saved = app.store.load().expect("state saved");
@@ -118,7 +110,7 @@ fn plain_launch_keeps_saved_paused() {
     app.pool.keep_saved_paused(std::slice::from_ref(&paused));
     app.pool.keep_saved_paused(std::slice::from_ref(&paused));
 
-    save_on_exit(&mut app);
+    save_on_exit(&mut app).expect("saved");
 
     let saved = app.store.load().expect("state saved");
     let kept: Vec<_> = (saved.sessions.iter())
@@ -186,7 +178,7 @@ async fn quit_leaves_gates_running_alone() {
         managed.session.transition_to(to, why).unwrap();
     }
 
-    save_on_exit(&mut app);
+    save_on_exit(&mut app).expect("saved");
 
     let s = app.pool.get_session(id).unwrap();
     assert_eq!(s.status, SessionStatus::GatesRunning);
@@ -194,4 +186,87 @@ async fn quit_leaves_gates_running_alone() {
         !(s.activity_log.iter()).any(|e| e.message.contains("Killed at quit")),
         "no kill line for a session that was not killed"
     );
+}
+
+fn running_session(app: &mut App) -> uuid::Uuid {
+    let running = session("running");
+    let id = running.id;
+    app.pool.enqueue(running);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(id).expect("promoted");
+    for (to, why) in [
+        (SessionStatus::Spawning, TransitionReason::Promoted),
+        (SessionStatus::Running, TransitionReason::Spawned),
+    ] {
+        managed.session.transition_to(to, why).unwrap();
+    }
+    id
+}
+
+fn paused_on_disk(store: &crate::state::store::StateStore, id: uuid::Uuid) -> bool {
+    (store.load().ok()).is_some_and(|state| {
+        (state.sessions.iter()).any(|s| s.id == id && s.status == SessionStatus::Paused)
+    })
+}
+
+/// #1266 judge: the Paused records are on disk at the moment the agents
+/// stop (the exit's only save runs before the stop).
+#[test]
+fn exit_saves_before_it_stops_agents() {
+    let mut app = make_test_app("exit-order-1266");
+    let id = running_session(&mut app);
+    let mut on_disk_at_stop = None;
+
+    save_then(&mut app, |app| {
+        on_disk_at_stop = Some(paused_on_disk(&app.store, id));
+    })
+    .expect("saved");
+
+    assert_eq!(on_disk_at_stop, Some(true), "stop ran before the save");
+}
+
+/// #1266 judge: the upgrade-restart key saves (and stops) before the exec;
+/// any other key does nothing.
+#[test]
+fn restart_key_saves_before_exec() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = make_test_app("restart-key-1266");
+    let id = running_session(&mut app);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state-1266.json");
+    app.store = crate::state::store::StateStore::new(path.clone());
+    let probe = crate::state::store::StateStore::new(path);
+    app.upgrade_state = crate::updater::UpgradeState::ReadyToRestart {
+        version: "9.9.9".into(),
+        backup_path: "/nonexistent-1266".into(),
+    };
+    let other = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(on_restart_key(&mut app, &other, || unreachable!()).is_none());
+
+    let mut on_disk_at_exec = false;
+    let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+    let result = on_restart_key(&mut app, &yes, || {
+        on_disk_at_exec = paused_on_disk(&probe, id);
+        Ok(())
+    });
+
+    assert!(matches!(result, Some(Ok(()))));
+    assert!(on_disk_at_exec, "the exec ran before the state was saved");
+}
+
+/// #1266 judge: when the exit save fails, `save_on_exit` errs with a clear
+/// message (the run exits non-zero with it) and never stays silent.
+#[test]
+fn failed_exit_save_is_an_error() {
+    let mut app = make_test_app("exit-save-fails-1266");
+    let _ = running_session(&mut app);
+    let blocker = tempfile::NamedTempFile::new().unwrap();
+    // A path under a regular file cannot be written.
+    app.store = crate::state::store::StateStore::new(blocker.path().join("state.json"));
+
+    let err = save_on_exit(&mut app).expect_err("a failed save must not be silent");
+
+    let msg = err.to_string();
+    assert!(msg.contains("could not save maestro state"), "{msg}");
+    assert!(msg.contains("1 paused agent(s) are not recorded"), "{msg}");
 }

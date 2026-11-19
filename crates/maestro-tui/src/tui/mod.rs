@@ -204,7 +204,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     // Save before the terminal teardown: a failed teardown (`?`) must not
     // skip it.
-    save_on_exit(&mut app);
+    let saved = save_on_exit(&mut app);
 
     if let Some(terminal) = terminal.as_mut() {
         disable_raw_mode()?;
@@ -216,23 +216,45 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     print_summary(&app);
 
-    result.and_then(|()| once_exit_status(&app))
+    // A failed exit save is loud: the run exits non-zero with it.
+    result.and(saved).and_then(|()| once_exit_status(&app))
 }
 
 /// Exit path for every way out of the loop (and the upgrade restart):
 /// record the agents as paused (never kill them, #1266), save state so
 /// `maestro resume` can bring them back, and only then stop the agents.
-pub fn save_on_exit(app: &mut App) {
-    app.pause_for_exit();
+/// Errs when the paused agents could not be written to disk.
+pub fn save_on_exit(app: &mut App) -> anyhow::Result<()> {
+    save_then(app, |app| app.pool.stop_all_turns())
+}
 
+/// [`save_on_exit`] with the stop step passed in, so a test can see the
+/// state on disk at the moment the agents stop. `stop` always runs (the
+/// agents cannot outlive maestro), but only after the save.
+fn save_then(app: &mut App, stop: impl FnOnce(&mut App)) -> anyhow::Result<()> {
+    let paused = app.pause_for_exit();
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
     app.state.update_total_cost();
     app.state.last_updated = Some(chrono::Utc::now());
     let _ = app.state.compact(app.turboquant_adapter.as_deref());
-    if let Err(e) = app.store.save(&app.state) {
-        eprintln!("Warning: failed to save state: {}", e);
-    }
-    app.pool.stop_all_turns();
+    let saved = app.store.save(&app.state);
+    stop(app);
+    saved.map_err(|e| {
+        anyhow::anyhow!(
+            "could not save maestro state at exit ({e:#}): {paused} paused agent(s) are \
+             not recorded for maestro resume; their worktrees are kept under .maestro/worktrees"
+        )
+    })
+}
+
+/// The upgrade restart key (`y` on ReadyToRestart): `None` for any other
+/// key; otherwise the result of [`save_and_restart`].
+fn on_restart_key(
+    app: &mut App,
+    key: &crossterm::event::KeyEvent,
+    restart: impl FnOnce() -> anyhow::Result<()>,
+) -> Option<anyhow::Result<()>> {
+    input_handler::is_restart_key(app, key).then(|| save_and_restart(app, restart))
 }
 
 /// Upgrade restart (#1266): save and stop the agents like a quit, then run
@@ -242,13 +264,12 @@ fn save_and_restart(
     app: &mut App,
     restart: impl FnOnce() -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    save_on_exit(app);
-    let result = restart();
+    // Never exec over state that did not reach the disk.
+    let result = save_on_exit(app).and_then(|()| restart());
     if result.is_err() {
         app.activity_log.push_simple(
             "MAESTRO".into(),
-            "Restart failed after the agents were stopped and saved · quit, then run maestro resume"
-                .into(),
+            "Restart failed and the agents were stopped · quit, then run maestro resume".into(),
             LogLevel::Warn,
         );
     }
@@ -367,13 +388,13 @@ async fn event_loop(
                         }
                         continue;
                     }
-                    if input_handler::is_restart_key(app, &key) {
-                        let restarted = save_and_restart(app, || {
-                            disable_raw_mode().ok();
-                            leave_tui_mode(terminal.backend_mut()).ok();
-                            terminal.show_cursor().ok();
-                            crate::updater::installer::restart_with_same_args()
-                        });
+                    let restarted = on_restart_key(app, &key, || {
+                        disable_raw_mode().ok();
+                        leave_tui_mode(terminal.backend_mut()).ok();
+                        terminal.show_cursor().ok();
+                        crate::updater::installer::restart_with_same_args()
+                    });
+                    if let Some(restarted) = restarted {
                         if let Err(e) = restarted {
                             enable_raw_mode().ok();
                             enter_tui_mode(&mut io::stdout()).ok();
