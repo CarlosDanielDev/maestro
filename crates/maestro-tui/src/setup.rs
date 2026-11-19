@@ -16,31 +16,41 @@ pub fn setup_app_from_config(
     worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
     max_concurrent_override: Option<usize>,
 ) -> App {
-    setup_app_from_config_with_bypass(loaded, store, worktree_mgr, max_concurrent_override, false)
+    setup_app_from_config_with_bypass(
+        loaded,
+        store,
+        worktree_mgr,
+        max_concurrent_override,
+        false,
+        None,
+    )
 }
 
 /// Variant of `setup_app_from_config` that also threads the bypass-review
 /// CLI flag (#328). When `bypass_review` is true the session pool is
 /// constructed with `bypassPermissions`, the App's `bypass_active` flag is
-/// set, and an audit-log entry is recorded.
+/// set, and an audit-log entry is recorded. `agent_id` is the agent the
+/// run resolved (`None` = `agents.default`), see [`setup_app_for_agent`].
 pub fn setup_app_from_config_with_bypass(
     loaded: LoadedConfig,
     store: StateStore,
     worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
     max_concurrent_override: Option<usize>,
     bypass_review: bool,
+    agent_id: Option<&str>,
 ) -> App {
     let workspace_trusted = matches!(
         crate::config::trust::evaluate_with_default_store(&loaded.path, &loaded.config),
         crate::config::trust::TrustDecision::Trusted,
     );
-    setup_app_from_config_with_trust(
+    setup_app_for_agent(
         loaded,
         store,
         worktree_mgr,
         max_concurrent_override,
         bypass_review,
         workspace_trusted,
+        agent_id,
     )
 }
 
@@ -58,17 +68,51 @@ pub fn setup_app_from_config_with_trust(
     bypass_review: bool,
     workspace_trusted: bool,
 ) -> App {
+    setup_app_for_agent(
+        loaded,
+        store,
+        worktree_mgr,
+        max_concurrent_override,
+        bypass_review,
+        workspace_trusted,
+        None,
+    )
+}
+
+/// [`setup_app_from_config_with_trust`] for the agent sessions will run
+/// (#1411). `maestro run` passes the agent it resolved, which can differ
+/// from `agents.default`; `None` means the default agent. The pool mode
+/// and the ▲ BYPASS chip are set here, together, from one value.
+pub fn setup_app_for_agent(
+    loaded: LoadedConfig,
+    store: StateStore,
+    worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+    max_concurrent_override: Option<usize>,
+    bypass_review: bool,
+    workspace_trusted: bool,
+    agent_id: Option<&str>,
+) -> App {
     let LoadedConfig { config, path } = loaded;
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     // Bypass overrides the configured permission mode for this session only.
-    // Otherwise use the mode sessions really get (`agents.<default>` first,
-    // then `[sessions]`), the same one a Settings save applies, so the
-    // ▲ BYPASS chip always matches it (#1395).
-    let permission_mode = if bypass_review {
-        "bypassPermissions".to_string()
+    // Otherwise use the mode sessions really get (the agent's own value
+    // first, then `[sessions]`), so the ▲ BYPASS chip always matches it
+    // (#1395, #1411). The log names where bypass came from.
+    let agent_id = agent_id.unwrap_or(&config.agents.default);
+    let agent_mode = config.agent_permission_mode(agent_id);
+    let (permission_mode, bypass_source) = if bypass_review {
+        (
+            "bypassPermissions".to_string(),
+            BypassSource::Cli.label().to_string(),
+        )
+    } else if let Some(mode) = agent_mode {
+        (mode, format!("agent {agent_id}"))
     } else {
-        config.effective_default_permission_mode()
+        (
+            config.sessions.permission_mode.clone(),
+            BypassSource::Config.label().to_string(),
+        )
     };
 
     let permission_mode_for_app = permission_mode.clone();
@@ -81,17 +125,13 @@ pub fn setup_app_from_config_with_trust(
         config.sessions.allowed_tools.clone(),
     );
 
-    // Bypass mode is activatable via three paths (#328 AC):
+    // Bypass mode is activatable via these paths (#328 AC, #1411):
     //   - CLI flag (`--bypass-review`)
-    //   - Config (`agents.<default>.permission_mode`, else `[sessions]`)
+    //   - Config (`agents.<id>.permission_mode`, else `[sessions]`)
+    //   - a mode's own `permission_mode` (see `App::add_session`)
     //   - TUI toggle (Ctrl+B at runtime)
-    if bypass_review || permission_mode == "bypassPermissions" {
-        let source = if bypass_review {
-            BypassSource::Cli
-        } else {
-            BypassSource::Config
-        };
-        app.activate_bypass(source);
+    if permission_mode == "bypassPermissions" {
+        app.activate_bypass_from(&bypass_source);
     }
 
     app.install_budget(&config.budget);

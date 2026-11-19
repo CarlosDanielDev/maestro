@@ -202,6 +202,17 @@ bypass warning (`BypassWarningState::confirm`; `new()` is the `⌃B` session-onl
 draws both last, over the whole frame. Both modes are text-input modes
 (`is_text_input_mode`), so typed `q`, `M`, digits never reach a global key.
 
+Bypass paths (#1411): the pool mode and the `▲ BYPASS` chip are set together.
+`setup::setup_app_for_agent` reads the run's agent (`Config::effective_permission_mode_for`)
+and calls `App::activate_bypass_from(source)` with `cli`, `config` or `agent <id>`;
+`App::add_session` calls `App::note_mode_bypass` for a mode whose own
+`permission_mode` is bypass (log `mode <name>`, pool default untouched). In
+Settings, choosing `bypassPermissions` for an agent is a pending bypass
+request like the Sessions row: the same `settings_bypass_warning()` opens,
+`Esc` puts the agent's last saved value back. A Ctrl+S save never turns
+bypass on: `App::refuse_unconfirmed_bypass` keeps the pool out of bypass and
+logs why; only a typed CONFIRM turns it on.
+
 ### Hold to confirm — `crates/maestro-tui/src/tui/ds/confirm.rs` (#1260)
 
 Implements §04 `confirm` and §05 "Quitting while agents run". No keyboard

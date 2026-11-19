@@ -378,3 +378,12 @@ first. One entry per decision.
 - **Section:** `§02.20 Agent graph` (edges touch their file labels), `§02.21 Interaction` and `§02.3 Create milestone` (composer and wizard key handling). No visual target changes.
 - **Rejected:** accepting the 24 agent-graph snapshot changes (brings back the #569 gap); snapping node positions to cell centres (tried: labels placed by `place_label` then drift, more snapshots changed); staying on ratatui 0.29 until tui-textarea ships a 0.30 build (blocks Dependabot, and tui-textarea moved to ratatui-textarea); keeping two ratatui copies with `deny.toml` skips (types do not match, it does not build).
 - **Source:** #1413.
+
+## 2026-11-18 — Every bypass path shows the chip; a Settings save never turns bypass on
+
+- **What:** one value sets the pool mode and the `▲ BYPASS` chip on every path. `maestro run` passes its resolved agent into setup (`setup_app_for_agent`) instead of resetting the pool afterwards; the log names the source (`cli`, `config`, `agent <id>`). A mode with its own `permission_mode = "bypassPermissions"` turns the chip on when its session is added and logs `mode <name>`. Settings › Providers: setting an agent's Permission Mode to `bypassPermissions` opens the same Settings bypass warning as the Sessions row (#1239, same `with_text`); `Esc` puts the agent's last saved value back and stages nothing. A Ctrl+S save never turns bypass on and never sets the warning as acknowledged; when it asks for bypass with no CONFIRM in that flow, the pool stays out of bypass and the log says so.
+- **Why:** the chip and the pool drifted on three paths (#1411); bypass auto-accepts every review concern and the repo is public.
+- **Section:** `§02.24 Guards` (bypass), `§02.15 Settings` ("Danger confirm"), status bar `▲ BYPASS` chip.
+- **Differs from the target:** the warning keeps the #1239 text, whose `writes` row names `sessions.permission_mode`; for an agent it writes `agents.<id>.permission_mode`. The issue asked for the same text; a per-agent row is a follow-up. A mode's bypass shows the chip but leaves the pool default as it is (only that mode's sessions run in bypass), so `⌃B` off does not stop a mode session that was already queued.
+- **Rejected:** a sync check after each path (ADR option b: three paths had already drifted); turning the pool to bypass for a mode (widens bypass to every session); clamping a mode's bypass to the pool mode (drops a documented config feature without an owner decision).
+- **Source:** #1411.

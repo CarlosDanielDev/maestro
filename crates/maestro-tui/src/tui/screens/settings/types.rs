@@ -129,4 +129,7 @@ pub struct SettingsScreen {
     /// (#908 — mirrors the `teams.<id>.extends` validator pattern).
     pub(super) role_override_warnings:
         Vec<crate::orchestration::team_role_overrides::RoleOverrideWarning>,
+    /// Agent ids whose `bypassPermissions` choice was answered with the
+    /// typed CONFIRM in this Settings flow (#1411).
+    pub(super) confirmed_agent_bypass: std::collections::BTreeSet<String>,
 }

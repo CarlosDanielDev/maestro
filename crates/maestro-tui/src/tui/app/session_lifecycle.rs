@@ -18,6 +18,7 @@ impl App {
         self.completion_summary_dismissed = false;
 
         self.record_queue_session(&session);
+        self.note_mode_bypass(&session);
         self.pool.enqueue(session);
 
         // Try to promote and spawn

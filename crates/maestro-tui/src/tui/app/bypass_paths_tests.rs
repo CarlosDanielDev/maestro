@@ -1,0 +1,195 @@
+//! #1411: every path that sets the session permission mode (start,
+//! `maestro run`, a mode's own `permission_mode`) shows `▲ BYPASS` and logs
+//! the source when the result is bypass. Each App comes from the real setup
+//! function and the status bar is drawn at 100x30 (above the 80x24
+//! SizeGuard minimum).
+
+use ratatui::{Terminal, backend::TestBackend};
+
+use crate::config::{Config, LoadedConfig};
+use crate::session::types::Session;
+use crate::session::worktree::MockWorktreeManager;
+use crate::setup::setup_app_for_agent;
+use crate::state::store::StateStore;
+use crate::tui::app::App;
+use crate::tui::ui;
+
+const BYPASS: &str = "bypassPermissions";
+
+/// `[sessions]` says `default`. `claude` is the default agent; `worker` is
+/// a second agent that `maestro run --agent worker` can pick. The command
+/// is not a built-in binary, so an untrusted workspace never spawns it.
+fn config(claude_mode: &str, worker_mode: &str, mode_bypass: bool) -> Config {
+    let modes = if mode_bypass {
+        "[modes.yolo]\npermission_mode = \"bypassPermissions\"\n"
+    } else {
+        ""
+    };
+    let body = format!(
+        r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+permission_mode = "default"
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "/nonexistent/agent-1411"
+permission_mode = "{claude_mode}"
+[agents.worker]
+kind = "claude"
+command = "/nonexistent/agent-1411"
+permission_mode = "{worker_mode}"
+{modes}"#
+    );
+    toml::from_str(&body).expect("test config parses")
+}
+
+/// The App the way `maestro run` builds it for `agent` (`None` = start).
+fn run_app(config: Config, bypass_review: bool, agent: Option<&str>) -> (App, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut app = setup_app_for_agent(
+        LoadedConfig {
+            config,
+            path: dir.path().join("maestro.toml"),
+        },
+        StateStore::new(dir.path().join("state-1411.json")),
+        Box::new(MockWorktreeManager::new()),
+        None,
+        bypass_review,
+        false,
+        agent,
+    );
+    app.show_mascot = false;
+    app.gh_auth_ok = true;
+    app.no_splash = true;
+    (app, dir)
+}
+
+pub(super) fn chip_drawn(app: &mut App) -> bool {
+    let mut t = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+    t.draw(|f| ui::draw(f, app)).expect("draw");
+    let buf = t.backend().buffer();
+    let mut out = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            out.push_str(buf[(x, y)].symbol());
+        }
+    }
+    out.contains("▲ BYPASS")
+}
+
+pub(super) fn last_bypass_log(app: &App) -> Option<String> {
+    (app.activity_log.entries().iter().rev())
+        .find(|e| e.message.starts_with("Bypass mode enabled"))
+        .map(|e| e.message.clone())
+}
+
+#[test]
+fn run_path_bypass_sets_chip_and_logs_source() {
+    // The run's agent asks for bypass, `[sessions]` does not.
+    let (mut app, _dir) = run_app(config("default", BYPASS, false), false, Some("worker"));
+    assert_eq!(app.pool.permission_mode(), BYPASS);
+    assert!(app.bypass_active);
+    assert!(chip_drawn(&mut app), "▲ BYPASS must be drawn");
+    let log = last_bypass_log(&app).expect("a [BYPASS] log line");
+    assert!(log.contains("(agent worker)"), "got: {log}");
+    assert!(!app.bypass_warning_acknowledged);
+
+    // `--bypass-review` wins over an agent mode of `default`.
+    let (mut app, _dir) = run_app(config("default", "default", false), true, Some("worker"));
+    assert_eq!(app.pool.permission_mode(), BYPASS, "pool stays in bypass");
+    assert!(app.bypass_active);
+    assert!(chip_drawn(&mut app));
+    let log = last_bypass_log(&app).expect("a [BYPASS] log line");
+    assert!(log.contains("(cli)"), "got: {log}");
+
+    // The run's agent says `default` while the default agent says bypass:
+    // the run's agent is the one sessions get.
+    let (mut app, _dir) = run_app(config(BYPASS, "default", false), false, Some("worker"));
+    assert_eq!(app.pool.permission_mode(), "default");
+    assert!(!app.bypass_active);
+    assert!(!chip_drawn(&mut app));
+}
+
+/// A session whose mode carries `permission_mode = "bypassPermissions"`.
+fn yolo_session(config: &Config) -> Session {
+    let mode_config = crate::modes::resolve_session_mode_config("yolo", Some(config));
+    Session::new("p".into(), "opus".into(), "yolo".into(), Some(7), None)
+        .with_mode_config(mode_config)
+}
+
+#[tokio::test]
+async fn bypass_chip_matches_pool_mode_on_every_path() {
+    // Start, no agent picked: the default agent's mode.
+    for (claude_mode, on) in [("default", false), (BYPASS, true)] {
+        let (mut app, _dir) = run_app(config(claude_mode, "default", false), false, None);
+        assert_eq!(
+            app.pool.permission_mode() == BYPASS,
+            on,
+            "start {claude_mode}"
+        );
+        assert_eq!(app.bypass_active, on, "start {claude_mode}");
+        assert_eq!(chip_drawn(&mut app), on, "start {claude_mode}");
+    }
+    let (app, _dir) = run_app(config(BYPASS, "default", false), false, None);
+    let log = last_bypass_log(&app).expect("start logs its source");
+    assert!(log.contains("(agent claude)"), "got: {log}");
+
+    // `maestro run` setup, every agent/flag mix.
+    for (worker_mode, flag) in [("default", false), (BYPASS, false), ("default", true)] {
+        let (mut app, _dir) = run_app(config("default", worker_mode, false), flag, Some("worker"));
+        let pool_bypass = app.pool.permission_mode() == BYPASS;
+        assert_eq!(
+            app.bypass_active, pool_bypass,
+            "run {worker_mode} flag={flag}"
+        );
+        assert_eq!(
+            chip_drawn(&mut app),
+            pool_bypass,
+            "run {worker_mode} flag={flag}"
+        );
+    }
+
+    // A mode's own permission_mode: the session it spawns runs in bypass,
+    // so the chip shows and the log names the mode.
+    let cfg = config("default", "default", true);
+    let (mut app, _dir) = run_app(cfg.clone(), false, None);
+    let session = yolo_session(&cfg);
+    let id = session.id;
+    app.add_session(session).await.expect("enqueue");
+    let managed = app.pool.get_active_mut(id).expect("promoted");
+    assert_eq!(managed.permission_mode.as_deref(), Some(BYPASS));
+    assert!(app.bypass_active, "a bypass session must turn the chip on");
+    assert!(chip_drawn(&mut app));
+    let log = last_bypass_log(&app).expect("a [BYPASS] log line");
+    assert!(log.contains("(mode yolo)"), "got: {log}");
+    assert!(!app.bypass_warning_acknowledged);
+
+    // After a Settings save: a save with no CONFIRM, then one with it.
+    use super::agents_tests::{choose_agent_bypass, ctrl_s, settings_app, type_confirm};
+    let (mut app, _dir) = settings_app(BYPASS);
+    ctrl_s(&mut app).await;
+    let pool_bypass = app.pool.permission_mode() == BYPASS;
+    assert!(
+        !pool_bypass,
+        "unconfirmed save keeps the pool out of bypass"
+    );
+    assert_eq!(app.bypass_active, pool_bypass);
+    assert_eq!(chip_drawn(&mut app), pool_bypass);
+
+    let (mut app, _dir) = settings_app("default");
+    choose_agent_bypass(&mut app).await;
+    type_confirm(&mut app).await;
+    ctrl_s(&mut app).await;
+    let pool_bypass = app.pool.permission_mode() == BYPASS;
+    assert!(pool_bypass, "confirmed save puts the pool in bypass");
+    assert_eq!(app.bypass_active, pool_bypass);
+    assert_eq!(chip_drawn(&mut app), pool_bypass);
+}

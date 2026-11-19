@@ -121,29 +121,26 @@ pub async fn cmd_run(
         max_concurrent_override
     };
 
+    let agent_has_permission_mode = matches!(
+        resolved_agent.config.kind,
+        crate::config::AgentKind::Claude
+            | crate::config::AgentKind::Codex
+            | crate::config::AgentKind::Qwen
+            | crate::config::AgentKind::Opencode
+    );
+    // #1411: setup sets the pool mode and the ▲ BYPASS chip together from
+    // the run's agent, so nothing here may change the pool mode afterwards.
     let mut app = setup_app_from_config_with_bypass(
         loaded,
         store,
         worktree_mgr,
         effective_max_concurrent,
         bypass_review,
+        agent_has_permission_mode.then_some(resolved_agent.id.as_str()),
     );
     app.pool.set_provider(selected_provider);
     app.selected_agent_id = resolved_agent.id.clone();
-    if matches!(
-        resolved_agent.config.kind,
-        crate::config::AgentKind::Claude
-            | crate::config::AgentKind::Codex
-            | crate::config::AgentKind::Qwen
-            | crate::config::AgentKind::Opencode
-    ) {
-        app.pool.set_permission_mode(
-            resolved_agent
-                .config
-                .permission_mode
-                .clone()
-                .unwrap_or_else(|| config.sessions.permission_mode.clone()),
-        );
+    if agent_has_permission_mode {
         app.pool
             .set_allowed_tools(resolved_agent.config.allowed_tools.clone());
     }

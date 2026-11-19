@@ -1072,10 +1072,12 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.prompt_history
                 .set_max_entries(config.sessions.max_prompt_history);
 
-            // 5. Bypass flag follows permission_mode.
+            // 5. Bypass flag follows permission_mode, but a save never
+            // turns it on (#1411): only a typed CONFIRM answered in this
+            // Settings flow does, and that already set `bypass_active`.
             let should_bypass = new_permission_mode == "bypassPermissions";
             if should_bypass && !app.bypass_active {
-                app.confirm_bypass_activation("settings");
+                app.refuse_unconfirmed_bypass();
             } else if !should_bypass && app.bypass_active {
                 app.deactivate_bypass("settings");
             }
