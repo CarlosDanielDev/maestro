@@ -243,6 +243,9 @@ async fn settings_save_never_enables_bypass_without_confirm() {
         .map(|e| e.message.clone())
         .collect();
     assert!(refused, "the save says why bypass stayed off: {all:?}");
+    let ctrl_b_on = (app.activity_log.entries().iter())
+        .any(|e| e.message.contains("Ctrl+B turns it on for this run"));
+    assert!(ctrl_b_on, "chip off: Ctrl+B turns it on: {all:?}");
 
     // The typed CONFIRM answered in this save's flow is what turns it on.
     let (mut app, _dir) = settings_app("default");

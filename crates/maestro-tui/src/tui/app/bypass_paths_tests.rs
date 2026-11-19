@@ -232,6 +232,19 @@ async fn mode_bypass_never_reaches_the_pool_through_a_save() {
             "default",
             "screen {claude_on_screen}"
         );
+        // The refusal must say what ⌃B really does now: the chip is on, so
+        // ⌃B turns bypass off, it does not turn it on.
+        let refusal = (app.activity_log.entries().iter())
+            .find(|e| e.message.starts_with("Bypass not turned on"))
+            .map(|e| e.message.clone());
+        if claude_on_screen == BYPASS {
+            let refusal = refusal.expect("the save says why");
+            assert!(!refusal.contains("turns it on"), "got: {refusal}");
+            assert!(
+                refusal.contains("Ctrl+B turns bypass off"),
+                "got: {refusal}"
+            );
+        }
 
         let plain = Session::new(
             "p".into(),

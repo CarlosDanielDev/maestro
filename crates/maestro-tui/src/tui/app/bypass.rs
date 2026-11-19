@@ -66,11 +66,19 @@ impl App {
     pub(crate) fn refuse_unconfirmed_bypass(&mut self) {
         self.pool.set_permission_mode("default".to_string());
         self.session_config.permission_mode = "default".to_string();
+        // Say what ⌃B really does now: with the chip lit by a mode's
+        // session it turns bypass off, not on.
+        let ctrl_b = if self.bypass_active {
+            "The chip is on for a mode's sessions; Ctrl+B turns bypass off."
+        } else {
+            "Ctrl+B turns it on for this run."
+        };
         self.activity_log.push_simple(
             "BYPASS".into(),
-            "Bypass not turned on: the saved permission_mode is bypassPermissions, \
-             but no typed CONFIRM was given. Ctrl+B turns it on for this run."
-                .into(),
+            format!(
+                "Bypass not turned on: the saved permission_mode is bypassPermissions, \
+                 but no typed CONFIRM was given. {ctrl_b}"
+            ),
             LogLevel::Warn,
         );
     }
