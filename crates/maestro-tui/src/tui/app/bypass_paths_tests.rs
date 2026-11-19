@@ -246,3 +246,65 @@ async fn mode_bypass_never_reaches_the_pool_through_a_save() {
         assert_eq!(managed.permission_mode.as_deref(), Some("default"));
     }
 }
+
+/// #1411 (judge round 2): a mode-bypass session that was still queued
+/// when ⌃B turned bypass off must light the chip again when it spawns.
+#[tokio::test]
+async fn queued_mode_bypass_lights_the_chip_when_it_spawns() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut cfg = config("default", "default", true);
+    cfg.sessions.max_concurrent = 1;
+    let (mut app, _dir) = run_app(cfg.clone(), false, None);
+    let first = Session::new(
+        "a".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(1),
+        None,
+    );
+    let first_id = first.id;
+    app.add_session(first).await.expect("enqueue");
+    let queued = yolo_session(&cfg);
+    let queued_id = queued.id;
+    app.add_session(queued).await.expect("enqueue");
+    assert!(
+        app.pool.get_active_mut(queued_id).is_none(),
+        "setup: yolo is queued"
+    );
+
+    // ⌃B turns the chip off while the yolo session still waits.
+    if app.bypass_active {
+        app.tui_mode = crate::tui::app::TuiMode::Landing;
+        let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
+        crate::tui::input_handler::handle_key(&mut app, ctrl_b).await;
+    }
+    assert!(!app.bypass_active, "setup: chip off");
+    let before = app.activity_log.entries().len();
+
+    // A slot frees; the next promotion spawns the yolo session.
+    app.pool.finalize_retain_worktree(first_id);
+    let third = Session::new(
+        "c".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(3),
+        None,
+    );
+    app.add_session(third).await.expect("enqueue");
+
+    let managed = app.pool.get_active_mut(queued_id).expect("yolo promoted");
+    assert_eq!(managed.permission_mode.as_deref(), Some(BYPASS));
+    assert!(
+        app.bypass_active,
+        "a bypass session spawning lights the chip"
+    );
+    assert!(chip_drawn(&mut app));
+    let fresh = &app.activity_log.entries()[before..];
+    assert!(
+        (fresh.iter())
+            .any(|e| e.message.starts_with("Bypass mode enabled")
+                && e.message.contains("(mode yolo)")),
+        "a fresh [BYPASS] line names the mode"
+    );
+    assert_eq!(app.pool.permission_mode(), "default", "the pool stays out");
+}

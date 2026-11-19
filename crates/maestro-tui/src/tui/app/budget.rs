@@ -31,6 +31,9 @@ impl App {
     /// `completion_pipeline.rs` so the gate logic stays in one place.
     pub(super) fn try_enter_prespawn_gate(&mut self, id: uuid::Uuid) -> bool {
         use crate::tui::app::types::TuiMode;
+        // Every spawn loop calls this first, so the ▲ BYPASS chip is on
+        // before a bypass session starts (#1411).
+        self.note_spawn_bypass(id);
         let decision = self
             .pool
             .get_session(id)
@@ -88,6 +91,7 @@ impl App {
             'y' | 's' => {
                 self.budget_skip_once.insert(session_id);
                 self.tui_mode = TuiMode::Overview;
+                self.note_spawn_bypass(session_id);
                 let tx = self.pool.event_tx();
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
                     let label = session_label(&managed.session);

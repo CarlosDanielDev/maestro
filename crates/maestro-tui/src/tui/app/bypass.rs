@@ -4,7 +4,6 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use crate::review::bypass::BypassSource;
-use crate::session::types::Session;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningState};
@@ -41,17 +40,24 @@ impl App {
         );
     }
 
-    /// #1411: a mode's own `permission_mode` wins for that session
-    /// (`SessionPool::try_promote`), so a bypass mode must show the chip
-    /// and log `mode <name>`. Only that mode's sessions run in bypass: the
-    /// pool default is left as it is.
-    pub(crate) fn note_mode_bypass(&mut self, session: &Session) {
-        let mode_bypass = (session.mode_config.as_ref()).and_then(|m| m.permission_mode.as_deref())
-            == Some("bypassPermissions");
-        if mode_bypass && !self.bypass_active {
-            self.bypass_active = true;
-            self.log_bypass_enabled(&format!("mode {}", session.mode));
+    /// #1411: a session is about to spawn. A mode's own `permission_mode`
+    /// wins for that session (`SessionPool::try_promote`), so when the
+    /// session runs in bypass the chip must be on and the log must name the
+    /// mode, also when ⌃B turned the chip off while it was queued. Only
+    /// that mode's sessions run in bypass: the pool default is left alone.
+    pub(crate) fn note_spawn_bypass(&mut self, id: uuid::Uuid) {
+        if self.bypass_active {
+            return;
         }
+        let Some(managed) = self.pool.get_active_mut(id) else {
+            return;
+        };
+        if managed.permission_mode.as_deref() != Some("bypassPermissions") {
+            return;
+        }
+        let source = format!("mode {}", managed.session.mode);
+        self.bypass_active = true;
+        self.log_bypass_enabled(&source);
     }
 
     /// #1411: a Settings save asked for bypass, but no typed CONFIRM was

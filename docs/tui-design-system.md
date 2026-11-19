@@ -205,8 +205,9 @@ draws both last, over the whole frame. Both modes are text-input modes
 Bypass paths (#1411): the pool mode and the `▲ BYPASS` chip are set together.
 `setup::setup_app_for_agent` reads the run's agent (`Config::effective_permission_mode_for`)
 and calls `App::activate_bypass_from(source)` with `cli`, `config` or `agent <id>`;
-`App::add_session` calls `App::note_mode_bypass` for a mode whose own
-`permission_mode` is bypass (log `mode <name>`, pool default untouched). In
+Right before every spawn, `App::note_spawn_bypass(id)` lights the chip when
+the session's own mode makes it run in bypass (log `mode <name>`, pool
+default untouched), also after ⌃B turned the chip off while it was queued. In
 Settings, choosing `bypassPermissions` for an agent or a mode is a pending
 bypass request like the Sessions row (`settings/tabs/bypass_request.rs`):
 `SettingsScreen::bypass_warning()` opens the Settings warning naming the key
