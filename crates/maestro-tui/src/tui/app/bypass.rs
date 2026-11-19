@@ -12,26 +12,6 @@ use crate::tui::screens::bypass_warning::{BypassWarningOutcome, BypassWarningSta
 /// Activity-log source for a bypass turned on from Settings (#1239).
 const SETTINGS_CONFIRM_SOURCE: &str = "settings (typed CONFIRM)";
 
-/// The bypass warning opened from Settings. Unlike ⌃B it says the real
-/// scope: Ctrl+S writes the value to the committed `maestro.toml`.
-fn settings_bypass_warning() -> BypassWarningState {
-    let row = |label: &str, text: &str| (label.to_string(), text.to_string());
-    BypassWarningState::with_text(
-        "DANGER: enable bypass for every future session?",
-        vec![
-            row("", "Bypass auto-accepts EVERY review concern."),
-            row("", ""),
-            row("does", "edits files, commits and pushes, no asking"),
-            row(
-                "writes",
-                "sessions.permission_mode to maestro.toml (committed)",
-            ),
-            row("scope", "every future session after Ctrl+S; this run now"),
-            row("or", "Ctrl+B turns it on for this run only"),
-        ],
-    )
-}
-
 impl App {
     /// Mark bypass mode active and audit-log it with the real activation
     /// source (#1148): the `--bypass-review` CLI flag or the
@@ -141,7 +121,8 @@ impl App {
             self.drop_settings_bypass_request();
             return;
         }
-        self.screen_state.bypass_warning_screen = Some(settings_bypass_warning());
+        self.screen_state.bypass_warning_screen =
+            (self.screen_state.settings_screen.as_ref()).map(|s| s.bypass_warning());
         self.navigate_to(TuiMode::BypassWarning);
     }
 
@@ -170,10 +151,21 @@ impl App {
         else {
             return false;
         };
+        let targets = screen.pending_bypass_targets();
+        let pool = targets.iter().any(|t| screen.bypass_target_is_pool(t));
         screen.resolve_bypass_request(confirmed);
         self.screen_state.bypass_warning_screen = None;
-        if confirmed {
+        if confirmed && pool {
             self.confirm_bypass_activation(SETTINGS_CONFIRM_SOURCE);
+        } else if confirmed {
+            // #1411: a mode or a non-default agent reaches only its own
+            // sessions; the chip lights when such a session is added.
+            let msg = format!(
+                "Bypass staged for {} ({SETTINGS_CONFIRM_SOURCE}); its sessions run in bypass after Ctrl+S",
+                targets.join(", ")
+            );
+            self.activity_log
+                .push_simple("BYPASS".into(), msg, LogLevel::Warn);
         }
         true
     }

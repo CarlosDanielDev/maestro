@@ -1,4 +1,4 @@
-use crate::commands::setup::{setup_app_from_config_with_bypass, startup_cleanup};
+use crate::commands::setup::{setup_app_for_agent, startup_cleanup};
 use crate::config::Config;
 use crate::provider::{create_provider, github::client::RepoProvider};
 use crate::session::types::Session;
@@ -121,29 +121,19 @@ pub async fn cmd_run(
         max_concurrent_override
     };
 
-    let agent_has_permission_mode = matches!(
-        resolved_agent.config.kind,
-        crate::config::AgentKind::Claude
-            | crate::config::AgentKind::Codex
-            | crate::config::AgentKind::Qwen
-            | crate::config::AgentKind::Opencode
-    );
-    // #1411: setup sets the pool mode and the ▲ BYPASS chip together from
-    // the run's agent, so nothing here may change the pool mode afterwards.
-    let mut app = setup_app_from_config_with_bypass(
+    let workspace_trusted =
+        crate::config::trust::evaluate_with_default_store(&loaded.path, &loaded.config)
+            == crate::config::trust::TrustDecision::Trusted;
+    let mut app = setup_run_app(
         loaded,
         store,
         worktree_mgr,
         effective_max_concurrent,
         bypass_review,
-        agent_has_permission_mode.then_some(resolved_agent.id.as_str()),
+        &resolved_agent,
+        workspace_trusted,
     );
     app.pool.set_provider(selected_provider);
-    app.selected_agent_id = resolved_agent.id.clone();
-    if agent_has_permission_mode {
-        app.pool
-            .set_allowed_tools(resolved_agent.config.allowed_tools.clone());
-    }
     app.flags = feature_flags;
 
     if resume {
@@ -273,3 +263,43 @@ pub async fn cmd_run(
 
     crate::tui::run(app).await
 }
+
+/// Build the run's App for its resolved agent (#1411). Setup sets the pool
+/// mode and the ▲ BYPASS chip together from that agent, so nothing after
+/// this may change the pool mode.
+fn setup_run_app(
+    loaded: crate::config::LoadedConfig,
+    store: StateStore,
+    worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+    max_concurrent: Option<usize>,
+    bypass_review: bool,
+    resolved_agent: &crate::config::ResolvedAgentConfig,
+    workspace_trusted: bool,
+) -> crate::tui::app::App {
+    let agent_has_permission_mode = matches!(
+        resolved_agent.config.kind,
+        crate::config::AgentKind::Claude
+            | crate::config::AgentKind::Codex
+            | crate::config::AgentKind::Qwen
+            | crate::config::AgentKind::Opencode
+    );
+    let mut app = setup_app_for_agent(
+        loaded,
+        store,
+        worktree_mgr,
+        max_concurrent,
+        bypass_review,
+        workspace_trusted,
+        agent_has_permission_mode.then_some(resolved_agent.id.as_str()),
+    );
+    app.selected_agent_id = resolved_agent.id.clone();
+    if agent_has_permission_mode {
+        app.pool
+            .set_allowed_tools(resolved_agent.config.allowed_tools.clone());
+    }
+    app
+}
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;

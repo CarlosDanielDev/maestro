@@ -1014,6 +1014,10 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // 2. Pool-level session config. Affects the next-launched
             // session; already-running sessions keep their spawn-time
             // values (Claude reads its flags once at process start).
+            // The pool is in bypass only after a pool-level confirm
+            // (⌃B, Settings CONFIRM) or a CLI/config start; a mode's
+            // bypass lights the chip but never the pool (#1411).
+            let pool_was_bypass = app.pool.permission_mode() == "bypassPermissions";
             let new_permission_mode = config.effective_default_permission_mode();
             app.pool.set_permission_mode(new_permission_mode.clone());
             app.pool
@@ -1073,18 +1077,19 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .set_max_entries(config.sessions.max_prompt_history);
 
             // 5. Bypass flag follows permission_mode, but a save never
-            // turns it on (#1411): only a typed CONFIRM answered in this
-            // Settings flow does, and that already set `bypass_active`.
-            // It turns bypass off only when the save itself moved the
-            // mode off bypass; a ⌃B or CLI bypass stays on, pool included.
+            // turns pool bypass on (#1411): only a typed CONFIRM answered
+            // in this Settings flow does, and that already put the pool in
+            // bypass. It turns bypass off only when the save itself moved
+            // the mode off bypass; a ⌃B or CLI bypass stays on, pool
+            // included.
             let should_bypass = new_permission_mode == "bypassPermissions";
             let saved_off = (app.config.as_ref())
                 .is_some_and(|c| c.effective_default_permission_mode() == "bypassPermissions");
-            if should_bypass && !app.bypass_active {
+            if should_bypass && !pool_was_bypass {
                 app.refuse_unconfirmed_bypass();
-            } else if !should_bypass && app.bypass_active && saved_off {
+            } else if !should_bypass && pool_was_bypass && saved_off {
                 app.deactivate_bypass("settings");
-            } else if app.bypass_active {
+            } else if pool_was_bypass {
                 app.pool
                     .set_permission_mode("bypassPermissions".to_string());
             }

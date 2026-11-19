@@ -1,6 +1,7 @@
 pub mod advanced;
 pub mod agents;
 pub mod budget;
+mod bypass_request;
 pub mod flags;
 pub mod gates;
 pub mod github;
@@ -17,7 +18,7 @@ pub mod turboquant;
 use crate::config::Config;
 use crate::config::schema::{TableSchema, schema_for_config};
 use crate::tui::screens::settings::schema_tab::sync::sync_to_config;
-use crate::tui::widgets::{Dropdown, WidgetKind};
+use crate::tui::widgets::WidgetKind;
 
 use super::{CAVEMAN_LABEL, SettingsField, SettingsScreen, widget_by_label};
 
@@ -142,126 +143,6 @@ fn bypass_toggle_on(screen: &SettingsScreen) -> Option<bool> {
     match widget_by_label(fields, BYPASS_LABEL)? {
         WidgetKind::Toggle(w) => Some(w.value),
         _ => None,
-    }
-}
-
-/// Providers tab (`[agents]`), see `build_fields`.
-const AGENTS_TAB: usize = 7;
-const BYPASS_MODE: &str = "bypassPermissions";
-
-/// Every agent's Permission Mode dropdown on the Providers tab, by id.
-fn agent_mode_dropdowns(screen: &mut SettingsScreen) -> Vec<(String, &mut Dropdown)> {
-    let mut out = Vec::new();
-    let Some(fields) = screen.fields_per_tab.get_mut(AGENTS_TAB) else {
-        return out;
-    };
-    for field in fields {
-        let WidgetKind::DynamicMap(map) = &mut field.widget else {
-            continue;
-        };
-        let section = map.section_path.clone();
-        for entry in map.entries_mut() {
-            let label = entry.label_for(&section, "permission_mode");
-            let id = entry.id.clone();
-            let dropdown = (entry.fields.iter_mut()).find_map(|f| match &mut f.widget {
-                WidgetKind::Dropdown(d) if d.label == label => Some(d),
-                _ => None,
-            });
-            out.extend(dropdown.map(|d| (id, d)));
-        }
-    }
-    out
-}
-
-impl SettingsScreen {
-    /// True when a bypass choice is not yet staged: the Sessions toggle
-    /// was flipped on (#1239), or an agent's Permission Mode was set to
-    /// `bypassPermissions` (#1411), and the typed-CONFIRM warning has not
-    /// been answered.
-    pub(crate) fn bypass_request_pending(&self) -> bool {
-        self.sessions_bypass_pending() || !self.agent_bypass_pending_ids().is_empty()
-    }
-
-    fn sessions_bypass_pending(&self) -> bool {
-        bypass_toggle_on(self) == Some(true) && self.config.sessions.permission_mode != BYPASS_MODE
-    }
-
-    /// Agents whose dropdown says `bypassPermissions` while the config
-    /// does not stage it and no typed CONFIRM answered it in this flow.
-    fn agent_bypass_pending_ids(&self) -> Vec<String> {
-        let Some(fields) = self.fields_per_tab.get(AGENTS_TAB) else {
-            return Vec::new();
-        };
-        let maps = fields.iter().filter_map(|f| match &f.widget {
-            WidgetKind::DynamicMap(map) => Some(map),
-            _ => None,
-        });
-        let mut out = Vec::new();
-        for map in maps {
-            for entry in map.entries() {
-                let label = entry.label_for(&map.section_path, "permission_mode");
-                let chosen = entry.fields.iter().any(|f| {
-                    matches!(&f.widget, WidgetKind::Dropdown(d)
-                        if d.label == label && d.selected_value() == BYPASS_MODE)
-                });
-                // The schema sync copies widgets into `config` as they
-                // change, so the baseline is the config as last opened or
-                // saved.
-                let staged = self.original_config.agent_permission_mode(&entry.id);
-                if chosen
-                    && staged.as_deref() != Some(BYPASS_MODE)
-                    && !self.confirmed_agent_bypass.contains(&entry.id)
-                {
-                    out.push(entry.id.clone());
-                }
-            }
-        }
-        out
-    }
-
-    /// Answer a pending bypass request. Confirmed stages the Sessions
-    /// `permission_mode = "bypassPermissions"` and marks each pending
-    /// agent as confirmed (its dropdown is saved by the schema sync).
-    /// Cancelled turns the toggle back off and puts each agent's staged
-    /// mode back in its dropdown, so nothing is staged.
-    pub(crate) fn resolve_bypass_request(&mut self, confirmed: bool) {
-        let sessions = self.sessions_bypass_pending();
-        let agents = self.agent_bypass_pending_ids();
-        if confirmed {
-            if sessions {
-                self.config.sessions.permission_mode = BYPASS_MODE.to_string();
-            }
-            self.confirmed_agent_bypass.extend(agents);
-            return;
-        }
-        let mut old_modes = Vec::new();
-        for id in agents {
-            let old = (self.original_config.agents.entries.get(&id))
-                .and_then(|a| a.permission_mode.clone());
-            if let Some(agent) = self.config.agents.entries.get_mut(&id) {
-                agent.permission_mode = old.clone();
-            }
-            // An unset mode shows as the schema default, `default`.
-            old_modes.push((id, old.unwrap_or_else(|| "default".to_string())));
-        }
-        for (id, d) in agent_mode_dropdowns(self) {
-            if let Some((_, old)) = old_modes.iter().find(|(pending, _)| *pending == id) {
-                d.selected = d.options.iter().position(|o| o == old).unwrap_or(0);
-            }
-        }
-        if !sessions {
-            return;
-        }
-        let Some(fields) = self.fields_per_tab.get_mut(1) else {
-            return;
-        };
-        if let Some(WidgetKind::Toggle(w)) = fields
-            .iter_mut()
-            .map(|f| &mut f.widget)
-            .find(|w| w.label() == BYPASS_LABEL)
-        {
-            w.value = false;
-        }
     }
 }
 

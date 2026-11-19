@@ -207,9 +207,12 @@ Bypass paths (#1411): the pool mode and the `▲ BYPASS` chip are set together.
 and calls `App::activate_bypass_from(source)` with `cli`, `config` or `agent <id>`;
 `App::add_session` calls `App::note_mode_bypass` for a mode whose own
 `permission_mode` is bypass (log `mode <name>`, pool default untouched). In
-Settings, choosing `bypassPermissions` for an agent is a pending bypass
-request like the Sessions row: the same `settings_bypass_warning()` opens,
-`Esc` puts the agent's last saved value back. A Ctrl+S save never turns
+Settings, choosing `bypassPermissions` for an agent or a mode is a pending
+bypass request like the Sessions row (`settings/tabs/bypass_request.rs`):
+`SettingsScreen::bypass_warning()` opens the Settings warning naming the key
+it writes, `Esc` puts the last saved value back. Only the Sessions row and
+the default agent put the pool in bypass on CONFIRM; a mode or another agent
+is staged for its own sessions. A Ctrl+S save never turns
 bypass on: `App::refuse_unconfirmed_bypass` keeps the pool out of bypass and
 logs why; only a typed CONFIRM turns it on. A save turns bypass off only when
 it moved the saved mode off bypass itself (a ⌃B or CLI bypass stays on).

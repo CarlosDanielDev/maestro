@@ -41,6 +41,8 @@ default = "claude"
 kind = "claude"
 command = "claude"
 permission_mode = "{claude_mode}"
+[modes.yolo]
+permission_mode = "default"
 "#
     )
 }
@@ -117,8 +119,16 @@ fn drawn(app: &mut App) -> String {
 /// The agent's Permission Mode dropdown as the widget holds it, and
 /// whether the map's focus sits on it.
 fn agent_dropdown(app: &App) -> (String, bool) {
+    mode_dropdown(app, AGENTS_TAB)
+}
+
+const AGENTS_TAB: usize = 7;
+const MODES_TAB: usize = 8;
+
+/// The first entry's Permission Mode dropdown on `tab` (Providers or Modes).
+fn mode_dropdown(app: &App, tab: usize) -> (String, bool) {
     let screen = app.screen_state.settings_screen.as_ref().expect("settings");
-    let map = (screen.fields_per_tab[7].iter())
+    let map = (screen.fields_per_tab[tab].iter())
         .find_map(|f| match &f.widget {
             WidgetKind::DynamicMap(m) => Some(m),
             _ => None,
@@ -145,13 +155,17 @@ fn staged_agent_mode(app: &App) -> Option<String> {
 /// Walk focus down to the agent's Permission Mode row, then press → until
 /// it reads `bypassPermissions` or the warning opens.
 async fn focus_agent_mode(app: &mut App) {
+    focus_mode_row(app, AGENTS_TAB).await;
+}
+
+async fn focus_mode_row(app: &mut App, tab: usize) {
     for _ in 0..40 {
-        if agent_dropdown(app).1 {
+        if mode_dropdown(app, tab).1 {
             break;
         }
         press(app, KeyCode::Down).await;
     }
-    assert!(agent_dropdown(app).1, "focus reached Permission Mode");
+    assert!(mode_dropdown(app, tab).1, "focus reached Permission Mode");
 }
 
 pub(super) async fn choose_agent_bypass(app: &mut App) {
@@ -177,6 +191,10 @@ async fn settings_agents_bypass_requires_typed_confirm() {
     assert!(
         screen.contains(SETTINGS_SCOPE),
         "same scope text as #1239: {screen}"
+    );
+    assert!(
+        screen.contains("agents.claude.permission_mode"),
+        "names the key it writes: {screen}"
     );
     assert!(!app.bypass_active);
 
@@ -276,4 +294,55 @@ async fn settings_save_keeps_a_bypass_confirmed_this_session() {
     assert!(!app.bypass_active);
     assert_ne!(app.pool.permission_mode(), BYPASS);
     assert!(!chip_drawn(&mut app));
+}
+
+/// #1411 (judge round): Settings › Modes offers `bypassPermissions` too.
+/// It needs the typed CONFIRM, names `modes.<id>.permission_mode`, and a
+/// confirm stages only that mode: the pool stays out of bypass.
+#[tokio::test]
+async fn settings_modes_bypass_requires_typed_confirm() {
+    let (mut app, _dir) = settings_app("default");
+    let screen = app.screen_state.settings_screen.as_mut().expect("settings");
+    screen.jump_to_tab(SettingsTab::Modes);
+    focus_mode_row(&mut app, MODES_TAB).await;
+    for _ in 0..6 {
+        if app.tui_mode == TuiMode::BypassWarning || mode_dropdown(&app, MODES_TAB).0 == BYPASS {
+            break;
+        }
+        press(&mut app, KeyCode::Right).await;
+    }
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    let screen = drawn(&mut app);
+    assert!(screen.contains("modes.yolo.permission_mode"), "{screen}");
+    assert!(screen.contains(SETTINGS_SCOPE), "{screen}");
+
+    press(&mut app, KeyCode::Esc).await;
+    assert_eq!(app.tui_mode, TuiMode::Settings);
+    assert_eq!(
+        mode_dropdown(&app, MODES_TAB).0,
+        "default",
+        "old value back"
+    );
+
+    // Choose it again and confirm: staged for the mode only.
+    for _ in 0..6 {
+        if app.tui_mode == TuiMode::BypassWarning {
+            break;
+        }
+        press(&mut app, KeyCode::Right).await;
+    }
+    type_confirm(&mut app).await;
+    assert_eq!(app.tui_mode, TuiMode::Settings);
+    ctrl_s(&mut app).await;
+    let screen = app.screen_state.settings_screen.as_ref().expect("settings");
+    assert_eq!(
+        screen.config.modes["yolo"].permission_mode.as_deref(),
+        Some(BYPASS),
+        "the confirmed mode is saved"
+    );
+    assert_eq!(app.pool.permission_mode(), "default", "the pool stays out");
+    assert!(
+        !app.bypass_active,
+        "the chip lights when a yolo session is added"
+    );
 }

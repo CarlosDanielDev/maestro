@@ -20,12 +20,16 @@ const BYPASS: &str = "bypassPermissions";
 /// a second agent that `maestro run --agent worker` can pick. The command
 /// is not a built-in binary, so an untrusted workspace never spawns it.
 fn config(claude_mode: &str, worker_mode: &str, mode_bypass: bool) -> Config {
+    toml::from_str(&config_body(claude_mode, worker_mode, mode_bypass)).expect("test config parses")
+}
+
+fn config_body(claude_mode: &str, worker_mode: &str, mode_bypass: bool) -> String {
     let modes = if mode_bypass {
         "[modes.yolo]\npermission_mode = \"bypassPermissions\"\n"
     } else {
         ""
     };
-    let body = format!(
+    format!(
         r#"[project]
 repo = "owner/repo"
 base_branch = "main"
@@ -47,8 +51,7 @@ kind = "claude"
 command = "/nonexistent/agent-1411"
 permission_mode = "{worker_mode}"
 {modes}"#
-    );
-    toml::from_str(&body).expect("test config parses")
+    )
 }
 
 /// The App the way `maestro run` builds it for `agent` (`None` = start).
@@ -192,4 +195,54 @@ async fn bypass_chip_matches_pool_mode_on_every_path() {
     assert!(pool_bypass, "confirmed save puts the pool in bypass");
     assert_eq!(app.bypass_active, pool_bypass);
     assert_eq!(chip_drawn(&mut app), pool_bypass);
+}
+
+/// Open Settings on the App with `screen_body` staged, saving to a temp
+/// `maestro.toml` inside `dir`.
+fn open_settings(app: &mut App, dir: &tempfile::TempDir, screen_body: &str) {
+    use crate::tui::app::TuiMode;
+    use crate::tui::screens::settings::SettingsScreen;
+    let path = dir.path().join("maestro.toml");
+    std::fs::write(&path, screen_body).expect("write maestro.toml");
+    let config: Config = toml::from_str(screen_body).expect("config parses");
+    let screen = SettingsScreen::new(config, app.flags.clone()).with_config_path(path);
+    app.screen_state.settings_screen = Some(screen);
+    app.tui_mode = TuiMode::Settings;
+}
+
+/// #1411 (judge round): a mode's bypass lights the chip but must never
+/// reach the pool, also not through a later, unrelated Ctrl+S.
+#[tokio::test]
+async fn mode_bypass_never_reaches_the_pool_through_a_save() {
+    use super::agents_tests::ctrl_s;
+    for claude_on_screen in ["default", BYPASS] {
+        let body = config_body("default", "default", true);
+        let cfg: Config = toml::from_str(&body).expect("config parses");
+        let (mut app, dir) = run_app(cfg.clone(), false, None);
+        app.add_session(yolo_session(&cfg)).await.expect("enqueue");
+        assert!(app.bypass_active, "setup: the mode lit the chip");
+
+        // A save the user did not confirm bypass in (the second one even
+        // stages an unconfirmed default-agent bypass).
+        let screen_body = config_body(claude_on_screen, "default", true);
+        open_settings(&mut app, &dir, &screen_body);
+        ctrl_s(&mut app).await;
+        assert_eq!(
+            app.pool.permission_mode(),
+            "default",
+            "screen {claude_on_screen}"
+        );
+
+        let plain = Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(8),
+            None,
+        );
+        let id = plain.id;
+        app.add_session(plain).await.expect("enqueue");
+        let managed = app.pool.get_active_mut(id).expect("promoted");
+        assert_eq!(managed.permission_mode.as_deref(), Some("default"));
+    }
 }
