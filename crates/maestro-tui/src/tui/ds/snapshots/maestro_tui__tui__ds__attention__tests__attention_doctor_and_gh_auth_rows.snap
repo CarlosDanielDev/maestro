@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/ds/attention_tests.rs
+expression: terminal.backend()
+---
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Needs you (2) ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃▌✗ doctor       doctor   git: not a git repository                   ⏎ details┃"
+"┃ ✗ gh auth      gh       GitHub CLI is logged out · run gh aut…      ⏎ fix    ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

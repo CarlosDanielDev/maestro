@@ -88,16 +88,19 @@ fn landing_log_keeps_the_old_height_from_40_rows() {
 }
 
 #[test]
-fn landing_80x28_draws_mission_control_above_the_log() {
+fn landing_80x27_and_80x28_draw_mission_control_above_the_log() {
     // #1264: Home is Mission Control; the Release Console is gone from it.
-    let mut app = landing_app();
-    let rows = draw_rows(&mut app, 80, 28);
-    let text = rows.join("\n");
-    for needle in ["Budget & quota", "Needs you", "Fleet", LOG_MESSAGE] {
-        assert!(text.contains(needle), "missing {needle:?}:\n{text}");
+    // #1382: it fits at 80x27 again, not only from 80x28.
+    for h in [27u16, 28] {
+        let mut app = landing_app();
+        let rows = draw_rows(&mut app, 80, h);
+        let text = rows.join("\n");
+        for needle in ["Budget & quota", "Needs you", "Fleet", LOG_MESSAGE] {
+            assert!(text.contains(needle), "80x{h}: missing {needle:?}:\n{text}");
+        }
+        assert!(!text.contains("Release Console v"), "{text}");
+        assert!(!text.contains("|  \\/  |"), "big logo must be off:\n{text}");
     }
-    assert!(!text.contains("Release Console v"), "{text}");
-    assert!(!text.contains("|  \\/  |"), "big logo must be off:\n{text}");
 }
 
 #[test]

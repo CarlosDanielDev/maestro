@@ -406,3 +406,12 @@ first. One entry per decision.
 - **Spawn time:** the chip check runs right before every spawn (`App::note_spawn_bypass`, called from `try_enter_prespawn_gate`, the budget proceed path and the first interaction turn), so a mode-bypass session that was queued when ⌃B turned bypass off lights the chip again when it starts.
 - **Rejected:** a sync check after each path (ADR option b: three paths had already drifted); turning the pool to bypass for a mode (widens bypass to every session); clamping a mode's bypass to the pool mode (drops a documented config feature without an owner decision).
 - **Source:** #1411.
+
+## 2026-11-19 — v0.34.0 judge follow-ups: one status colour, Critical resource chips, Block footer, title restore
+
+- **What:** (1) `ds::toast` keeps at most 5 error toasts waiting; a newer error drops the oldest. (2) `Theme::status_color` maps `NeedsPr` / `ConflictFix` to the v1 tokens `status_needs_pr` / `status_conflict`, so the chip (`ds::status_chip`, which now just calls `status_color`) and the older rows draw one colour per state. (3) The Needs-you budget / quota chips use `GaugeLevel::Critical` (high + bold) once spent / at 100% of a window, High below. (4) On a budget **Block** the footer shows only `n Cancel` (plus the `⌃Q quit` pin): `y` / `s` do nothing there since #1243. Warn keeps `y Proceed  n Cancel  s Skip-once`. (5) The first terminal-title write pushes the shell's title (XTWINOPS `CSI 22;0 t`); quit writes `maestro`, then pops it (`CSI 23;0 t`), so a terminal with a title stack gets the shell's title back and one without keeps `maestro`.
+- **Why:** #1382 (judge notes on #1359, #1363, #1381, #1385).
+- **Section:** `§04` `#c-toast`, `#c-chip`, `#c-attention`; `§04 ds::key_hints` footer.
+- **Differs from the issue:** the landing "compact console" item is already true on main: #1383 made Home Mission Control (no Release Console), and it fits at 80x27; the test now checks 80x27 and 80x28. The "`q quit` under the log drawer" item is already true: since #1260 the pin is `⌃Q quit`, and ⌃Q quits with the drawer open (`log_drawer_open` snapshot shows `Esc Close log   ⌃L close … ⌃Q quit`).
+- **Rejected:** a per-mode Block entry in `navigation/mode_hints.rs` (its keymap is per `TuiMode`, it cannot see Warn vs Block; the footer already overrides hints per state for Confirm Exit); a budget Block that fails the first interaction turn in the chat instead of opening the gate modal (two gate UIs for one rule).
+- **Source:** #1382.

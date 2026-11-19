@@ -4,6 +4,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 use super::*;
+use crate::tui::ds::gauge::GaugeLevel;
 
 fn t0() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 17, 15, 0, 0).unwrap()
@@ -205,5 +206,51 @@ fn attention_empty_busy() {
     let text = terminal.backend().to_string();
     assert!(text.contains("All clear. Agents are working."));
     assert!(!text.contains("Nothing needs you"));
+    assert_snapshot!(terminal.backend());
+}
+
+fn chip_of(input: &AttentionInput, want: &str) -> Span<'static> {
+    let theme = Theme::dark();
+    let item = rank(input)
+        .into_iter()
+        .find(|i| tag(i) == want)
+        .expect("row present");
+    chip(&item, &theme, true)
+}
+
+#[test]
+fn resource_chips_are_critical_when_spent_or_full() {
+    let theme = Theme::dark();
+    let critical = GaugeLevel::Critical.style(&theme);
+    let high = GaugeLevel::High.style(&theme);
+    let at = |spent: f64, used_pct: f64| AttentionInput {
+        budget: Some(BudgetSignal { spent, cap: 20.0 }),
+        quota: vec![QuotaSignal {
+            provider: "claude".into(),
+            used_pct,
+        }],
+        ..AttentionInput::default()
+    };
+    let alert = at(16.0, 92.0);
+    assert_eq!(chip_of(&alert, "budget").style, high);
+    assert_eq!(chip_of(&alert, "quota:claude").style, high);
+    for (spent, used_pct) in [(20.0, 100.0), (25.0, 130.0)] {
+        let full = at(spent, used_pct);
+        assert_eq!(chip_of(&full, "budget").style, critical, "{spent}");
+        assert_eq!(chip_of(&full, "quota:claude").style, critical, "{used_pct}");
+    }
+}
+
+#[test]
+fn attention_doctor_and_gh_auth_rows() {
+    let items = rank(&AttentionInput {
+        doctor_failures: vec!["git: not a git repository".into()],
+        gh_auth_lost: true,
+        ..AttentionInput::default()
+    });
+    let terminal = draw_queue(80, &items, false);
+    let text = terminal.backend().to_string();
+    assert!(text.contains("doctor"), "doctor row drawn");
+    assert!(text.contains("gh auth"), "gh-auth row drawn");
     assert_snapshot!(terminal.backend());
 }
