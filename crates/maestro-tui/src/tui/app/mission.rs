@@ -24,6 +24,8 @@ impl App {
             milestone: self.milestone_card(),
             gate: self.action_gate(),
             now,
+            whats_new: self.whats_new.clone(),
+            first_run: self.first_run,
         }
     }
 
