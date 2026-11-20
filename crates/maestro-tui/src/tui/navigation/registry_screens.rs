@@ -51,5 +51,32 @@ pub(super) fn blocks() -> Vec<Binding> {
     ]);
     let graph = Scope::Screen(TuiMode::AgentGraph);
     v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
+    // #1265: `r` reloads here as on every other screen; run-all is `R` and
+    // keeps its confirm (2+ issues open the queue review first). The footer
+    // stays `MilestoneScreen::footer_hints`.
+    let milestones = Scope::Screen(TuiMode::MilestoneView);
+    v.extend([
+        s(milestones, ch('r'), A::Reload, "reload"),
+        Binding::new(
+            ch('R'),
+            milestones,
+            A::RunAll,
+            Danger::Destructive,
+            "run all",
+        ),
+    ]);
+    // #1265: `P` retries the PR of the selected Overview session, so it is
+    // no longer a global. Hidden: the Overview footer stays its
+    // `mode_keymap` list; the palette lists `retry PR` as a command.
+    v.push(
+        Binding::new(
+            ch('P'),
+            Scope::Screen(TuiMode::Overview),
+            A::RetryPr,
+            Danger::Destructive,
+            "retry PR",
+        )
+        .hidden(),
+    );
     v
 }

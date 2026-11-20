@@ -387,8 +387,8 @@ Implements `palette` from `docs/design-system/index.html` §04 and the §06
 | Item | For |
 |---|---|
 | `registry::actions_on(bindings, mode)` | The actions reachable on a screen: Global plus its screen block, one binding per action (the first chord), hidden aliases and `⌃K` left out. The palette lists these; Help (#1398) can read the same list |
-| `registry::PALETTE_COMMANDS` / `PaletteCommand` | Commands with no key, declared next to the bindings (`network`) |
-| `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` returns the reason an action cannot run; it shows with `⊘` and ⏎ does nothing |
+| `registry::PALETTE_COMMANDS` / `PaletteCommand` | `(label, key, command)`: commands with no global key, declared next to the bindings (`network`; #1265: `TurboQuant dashboard` (`Q` on Dashboard), `session-complete modal (Settings)`, `review concerns`, `retry PR` (`P` on Overview)). `key` is shown at the right of the row, `""` for none |
+| `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` takes the entry's `Run` and returns the reason it cannot run (`review concerns` with no review, `retry PR` off Overview); it shows with `⊘` and ⏎ does nothing |
 | `palette::fuzzy_hits(query, label)` | Case-insensitive subsequence match; the hit indices are drawn `UNDERLINED` |
 | `PaletteState` (`app.palette`) | The open palette: a canonical `Input` query (keys go through `feed`), the selection. `handle_key` returns `Outcome::{Open, Close, Run}`; `draw` dims the whole frame, then draws the Rounded box on `surface_overlay` with an `INSERT` chip |
 
@@ -491,10 +491,7 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Ctrl+X` | Exit | always |
 | `F1`, `?` | Help overlay | `?` skipped in text-input mode |
 | `F2`…`F12` | Mode F-key table (`mode_keymap`) | consumed even if inactive |
-| `Shift+Q` | TurboQuant A/B dashboard | skipped in text-input mode |
-| `Shift+M` | Session-complete modal | skipped in text-input mode |
-| `Shift+C` | Auto-review concerns panel | when pending |
-| `Shift+P` | Retry PR creation | skipped in text-input mode |
+| `Shift+P` | Retry PR creation | Overview only, skipped in text-input mode (#1265) |
 | `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode. Overview keeps `1`-`9` for session detail |
 | `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
 | `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
@@ -507,7 +504,7 @@ Text-input mode is one check: `is_text_input_mode` in `input_handler.rs`
 is active, while a PRD field is edited and while a Roadmap label or assignee
 filter is edited. Every global bare-key handler asks it: the upgrade keys
 `u` / `n` / `Esc` (bare only), the run loop's `y` restart
-(`is_restart_key`, bare only), `q`, `?`, `A`, `e`, the Shift globals above and
+(`is_restart_key`, bare only), `q`, `?`, `A`, `e`, `Shift+P` and
 the `1`-`7` tab switch. A new text field whose screen does not report `Insert`
 must be added there; `global_bare_keys_never_fire_on_any_text_input_surface`
 in `input_handler_text_input_tests.rs` walks every surface, so add it to
@@ -534,7 +531,7 @@ screen moves into the registry one at a time.
 | `Chord::key(code)` / `Chord::ctrl(c)` / `Chord::label()` | The key, and the text a hint shows (`⌃K`, `Enter`, `G`) |
 | `Scope::Global` / `Scope::Screen(mode)` / `Scope::Panel(mode, name)` | Where it applies. Global ⊃ Screen ⊃ Panel (`Scope::encloses`); a screen matches its mode with any payload |
 | `Danger::Safe` / `Danger::Destructive` | Drives the case rules |
-| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `Q M C P`), then one block per registered screen (`LogViewer`, `SessionSummary`) |
+| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `A`), then one block per registered screen (`LogViewer`, `SessionSummary`, Milestones `r` reload / `R` run all, Overview `P` retry PR hidden; #1265) |
 | `check(bindings)` | The rules as `Violation`s: `Duplicate` (same chord twice in one scope), `Shadow` (an inner scope reuses an enclosing scope's chord), `LowercaseDestructive` (destructive on a bare lowercase letter), `UppercaseSafe` (safe on a bare uppercase letter with no `.exception`). Ctrl chords, digits and symbols skip the case rules |
 | `footer_hints(mode)` | The footer hints of a registered screen, in registry order; `mode_keymap` uses them in place of its own list |
 

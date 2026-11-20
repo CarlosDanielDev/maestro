@@ -57,19 +57,20 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
     terminal.backend().buffer().clone()
 }
 
-const EXPECTED_LABELS: [&str; 5] = [
+const EXPECTED_LABELS: [&str; 6] = [
     "live_preview",
     "preset",
     "ascii_icons",
     "show_mascot",
     "mascot_style",
+    "modal_on_complete",
 ];
 
 #[test]
 fn theme_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[THEME_TAB_INDEX];
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), EXPECTED_LABELS.len());
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected);
     }
@@ -79,7 +80,7 @@ fn theme_tab_flag_off_field_count_and_labels() {
 fn theme_tab_flag_on_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[THEME_TAB_INDEX];
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), EXPECTED_LABELS.len());
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected);
     }

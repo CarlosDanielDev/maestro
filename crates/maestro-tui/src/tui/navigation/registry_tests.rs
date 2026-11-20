@@ -73,17 +73,13 @@ fn registry_declares_quit_keys_and_cycle_agent() {
 }
 
 /// #1260: ⌃Q is Quit only; the TurboQuant toggle is the Settings field
-/// [`TURBOQUANT_TOGGLE`], so no chord toggles TurboQuant.
+/// [`TURBOQUANT_TOGGLE`], so no chord toggles TurboQuant (#1265: no chord
+/// opens its dashboard either; the palette does).
 #[test]
 fn registry_turboquant_toggle_is_a_settings_field() {
     let q = registry().iter().filter(|b| b.chord == Chord::ctrl('q'));
     assert!(q.clone().count() == 1 && q.into_iter().all(|b| b.action == Action::Quit));
-    assert!(
-        registry()
-            .iter()
-            .filter(|b| b.label.contains("TurboQuant"))
-            .all(|b| b.action == Action::TurboquantDashboard)
-    );
+    assert!(!registry().iter().any(|b| b.label.contains("TurboQuant")));
     assert_eq!(TURBOQUANT_TOGGLE, "Settings › TurboQuant › Enabled");
 }
 

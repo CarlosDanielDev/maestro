@@ -1,5 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/theme_presets.rs
+assertion_line: 67
 expression: "render_theme_preview(ThemePreset::NoColor, \"no-color\")"
 ---
 Buffer {
@@ -11,7 +12,7 @@ Buffer {
         "│  Advanced        │○ ascii_icons                                              │",
         "│  Providers       │✓ show_mascot                                              │",
         "│  Budget          │mascot_style:  sprite                                    │",
-        "│  Flags           │                                                           │",
+        "│  Flags           │✓ modal_on_complete                                        │",
         "│  Gates           │                                                           │",
         "│  GitHub          │                                                           │",
         "│  Layout          │                                                           │",

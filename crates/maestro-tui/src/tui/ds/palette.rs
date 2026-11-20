@@ -52,25 +52,32 @@ pub struct Entry {
 }
 
 /// The entries for `mode`: every action [`actions_on`] returns, then the
-/// palette-only commands. `disabled` gives the reason an action cannot run.
+/// palette-only commands. `disabled` gives the reason an entry cannot run.
 pub fn entries(
     bindings: &[Binding],
     mode: TuiMode,
-    disabled: impl Fn(Action) -> Option<&'static str>,
+    disabled: impl Fn(Run) -> Option<&'static str>,
 ) -> Vec<Entry> {
-    let keyed = actions_on(bindings, mode).into_iter().map(|b| Entry {
-        label: b.label,
-        key: b.chord.label(),
-        run: Run::Binding(b.action, b.chord),
-        destructive: b.danger == Danger::Destructive,
-        disabled: disabled(b.action),
+    let keyed = actions_on(bindings, mode).into_iter().map(|b| {
+        let run = Run::Binding(b.action, b.chord);
+        Entry {
+            label: b.label,
+            key: b.chord.label(),
+            run,
+            destructive: b.danger == Danger::Destructive,
+            disabled: disabled(run),
+        }
     });
-    let commands = PALETTE_COMMANDS.iter().map(|&(label, command)| Entry {
-        label,
-        key: "",
-        run: Run::Command(command),
-        destructive: false,
-        disabled: None,
+    let commands = PALETTE_COMMANDS.iter().map(|&(label, key, command)| {
+        let run = Run::Command(command);
+        Entry {
+            label,
+            key,
+            run,
+            // Retry PR writes a PR, like its Overview key `P` (#1265).
+            destructive: command == PaletteCommand::RetryPr,
+            disabled: disabled(run),
+        }
     });
     keyed.chain(commands).collect()
 }

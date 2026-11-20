@@ -698,6 +698,7 @@ For tier-resolution rules, the `maestro team` CLI surface, and cookbook walkthro
 | `ascii_icons` | bool | `false` | Use ASCII-only icons in terminals without emoji support |
 | `show_mascot` | bool | `true` | Show the Clawd mascot companion in the TUI |
 | `mascot_style` | enum (`sprite`, `ascii`) | `sprite` | Visual style for the mascot — `sprite` is pixel art, `ascii` is Unicode block art |
+| `modal_on_complete` | bool | `true` | Show the Session Complete modal when all sessions finish |
 <!-- END AUTOGEN:tui -->
 
 ### `[tui.layout]`

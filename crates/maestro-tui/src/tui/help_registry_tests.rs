@@ -121,7 +121,8 @@ fn help_lists_every_registry_binding_for_mode() {
 #[tokio::test]
 async fn help_search_finds_global_chords() {
     // `/team` is checked on Home only: Home has `t  Teams`; no key on
-    // Dashboard opens Teams, and Help must not invent one.
+    // Dashboard opens Teams, and Help must not invent one. Since #1265
+    // `/turbo` and `/setting` find the ⌃K palette rows.
     let cases = [
         (
             TuiMode::Landing,
@@ -166,8 +167,9 @@ async fn help_dashboard_80x24() {
         ("s", "Status"),
         ("c", "Cost"),
         ("t", "Token Report"),
-        ("Q", "TurboQuant"),
-        ("M", "complete modal"),
+        // #1265: Dashboard's own `Q` and `M`, no longer eaten by globals.
+        ("Q", "TurboQuant Savings"),
+        ("M", "Review Milestone"),
         ("u", "upgrade"),
     ] {
         assert!(has_row(&rows, key, name), "no {key} {name} row\n{text}");

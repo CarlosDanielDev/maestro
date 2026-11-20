@@ -5,7 +5,7 @@
 
 use std::sync::LazyLock;
 
-use super::{Action, Chord, Scope, TURBOQUANT_TOGGLE, registry};
+use super::{Action, Chord, Scope, registry};
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup};
 
@@ -21,7 +21,9 @@ struct Row {
 fn detail(action: Action) -> Option<String> {
     match action {
         Action::Quit => Some("asks first while work is live".into()),
-        Action::TurboquantDashboard => Some(format!("dashboard; on/off in {TURBOQUANT_TOGGLE}")),
+        // #1265: where the retired Shift globals went, so `/turbo` and
+        // `/setting` still find them. One row at 80 columns.
+        Action::Palette => Some("TurboQuant, modal Settings, retry PR".into()),
         _ => None,
     }
 }
@@ -89,7 +91,7 @@ pub fn screen_help_group(mode: TuiMode) -> Option<KeyBindingGroup> {
 }
 
 /// True when `chord` is a Global binding, so a screen's own key list can
-/// leave it to the Global group (`Q`, `M`, `u` on Dashboard).
+/// leave it to the Global group (`u` on Dashboard).
 pub fn is_global(chord: Chord) -> bool {
     registry()
         .iter()

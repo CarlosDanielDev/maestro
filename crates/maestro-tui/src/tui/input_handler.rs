@@ -902,11 +902,13 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
 /// #1255: ⌃K opens the palette over the current screen. Its entries are
 /// read from the registry now, so a disabled action shows why.
 fn open_palette(app: &mut App) {
-    use crate::tui::ds::palette::{PaletteState, entries};
-    use crate::tui::navigation::registry::{Action, registry};
+    use crate::tui::ds::palette::{PaletteState, Run, entries};
+    use crate::tui::navigation::registry::{PaletteCommand, registry};
     let review = app.pending_review_report.is_some();
-    let list = entries(registry(), app.tui_mode, |action| match action {
-        Action::ReviewConcerns if !review => Some("no review pending"),
+    let overview = app.tui_mode == app::TuiMode::Overview;
+    let list = entries(registry(), app.tui_mode, |run| match run {
+        Run::Command(PaletteCommand::ReviewConcerns) if !review => Some("no review pending"),
+        Run::Command(PaletteCommand::RetryPr) if !overview => Some("on Overview only"),
         _ => None,
     });
     app.palette = Some(PaletteState::new(list));
@@ -947,6 +949,23 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
             let toast = Toast::new(Severity::Info, NETWORK_PENDING);
             app.push_toast(toast, std::time::Instant::now());
             KeyAction::Consumed
+        }
+        Some(Run::Command(PaletteCommand::TurboquantDashboard)) => {
+            app.navigate_to(app::TuiMode::TurboquantDashboard);
+            KeyAction::Consumed
+        }
+        Some(Run::Command(PaletteCommand::CompleteModal)) => {
+            handle_screen_action(app, screens::ScreenAction::Push(app::TuiMode::Settings));
+            KeyAction::Consumed
+        }
+        Some(Run::Command(PaletteCommand::ReviewConcerns)) => {
+            app.navigate_to(app::TuiMode::PrReview);
+            KeyAction::Consumed
+        }
+        // `P` on Overview, through `handle_key` like a bound key.
+        Some(Run::Command(PaletteCommand::RetryPr)) => {
+            let p = KeyEvent::new(KeyCode::Char('P'), KeyModifiers::NONE);
+            Box::pin(handle_key(app, p)).await
         }
     }
 }
@@ -989,50 +1008,17 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
-    // Shift+Q opens TurboQuant A/B dashboard
-    if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
-        app.navigate_to(app::TuiMode::TurboquantDashboard);
-        return true;
-    }
-
-    // Shift+M toggles the session-complete modal (#866). Persists to
-    // `~/.maestro/maestro.toml` so the preference survives restarts.
-    if key.code == KeyCode::Char('M') && !is_text_input_mode(app) {
-        if let Some(ref mut config) = app.config {
-            let new_state = !config.tui.modal_on_complete;
-            config.tui.modal_on_complete = new_state;
-            let label = if new_state {
-                "[Modal] Session-complete ON"
-            } else {
-                "[Modal] Session-complete OFF"
-            };
-            app.activity_log
-                .push_simple("MOD".into(), label.into(), LogLevel::Info);
-            if let Some(path) = app.config_path.clone()
-                && let Err(e) = config.save_into_existing(&path)
-            {
-                app.activity_log.push_simple(
-                    "MOD".into(),
-                    format!("Persist failed: {e}"),
-                    LogLevel::Warn,
-                );
-            }
-        }
-        return true;
-    }
-
-    // Shift+C opens the auto-review concerns panel when one is pending (#327).
-    if key.code == KeyCode::Char('C')
-        && app.pending_review_report.is_some()
-        && !is_text_input_mode(app)
-    {
-        app.navigate_to(app::TuiMode::PrReview);
-        return true;
-    }
+    // #1265: Shift+Q/M/C are no longer globals. TurboQuant and the
+    // concerns panel open from the ⌃K palette; the session-complete modal
+    // is a Settings row, saved only by Settings' ⌃S.
 
     // Shift+P manually triggers PR creation for the selected session
-    // when a PendingPr entry awaits retry (#521).
-    if key.code == KeyCode::Char('P') && !is_text_input_mode(app) {
+    // when a PendingPr entry awaits retry (#521). Overview only (#1265):
+    // the selection it acts on is the Overview grid.
+    if key.code == KeyCode::Char('P')
+        && app.tui_mode == app::TuiMode::Overview
+        && !is_text_input_mode(app)
+    {
         if let Some(issue_number) = app
             .pool
             .session_at_index(app.panel_view.selected_index())

@@ -1,5 +1,6 @@
 ---
-source: src/tui/snapshot_tests/settings_theme_parity.rs
+source: crates/maestro-tui/src/tui/snapshot_tests/settings_theme_parity.rs
+assertion_line: 106
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -10,7 +11,7 @@ Buffer {
         "○ ascii_icons                                                                   ",
         "✓ show_mascot                                                                   ",
         "mascot_style:  sprite                                                         ",
-        "                                                                                ",
+        "✓ modal_on_complete                                                             ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -45,5 +46,8 @@ Buffer {
         x: 0, y: 4, fg: White, bg: Reset, underline: Reset, modifier: NONE,
         x: 14, y: 4, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
         x: 24, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 5, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 19, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }
