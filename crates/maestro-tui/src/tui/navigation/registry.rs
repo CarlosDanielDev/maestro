@@ -276,40 +276,6 @@ pub fn registry() -> &'static [Binding] {
     &REGISTRY
 }
 
-/// A ⌃K palette command with no global key (#1255). `Network`: diagnostics
-/// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
-/// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PaletteCommand {
-    Network,
-    TurboquantDashboard,
-    CompleteModal,
-    ReviewConcerns,
-    RetryPr,
-}
-
-/// `(label, command, key)`: `key` is the key that runs it outside the
-/// palette and the one screen it works on; the palette shows it there only.
-pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, Option<(&str, TuiMode)>)] = &[
-    ("network", PaletteCommand::Network, None),
-    (
-        "TurboQuant dashboard",
-        PaletteCommand::TurboquantDashboard,
-        Some(("Q", TuiMode::Dashboard)),
-    ),
-    (
-        "session-complete modal (Settings)",
-        PaletteCommand::CompleteModal,
-        None,
-    ),
-    ("review concerns", PaletteCommand::ReviewConcerns, None),
-    (
-        "retry PR",
-        PaletteCommand::RetryPr,
-        Some(("P", TuiMode::Overview)),
-    ),
-];
-
 /// What the ⌃K palette lists on `mode`: Global plus `mode`'s screen block,
 /// the first binding per action (no `F1` after `?`), no hidden alias, no ⌃K.
 pub fn actions_on(bindings: &[Binding], mode: TuiMode) -> Vec<&Binding> {
@@ -393,6 +359,7 @@ pub fn footer_hints(mode: TuiMode) -> Option<&'static [InlineHint]> {
 
 #[path = "registry_screens.rs"]
 mod screens;
+pub use screens::{KeyOn, PALETTE_COMMANDS, PaletteCommand};
 
 #[path = "registry_help.rs"]
 mod help;

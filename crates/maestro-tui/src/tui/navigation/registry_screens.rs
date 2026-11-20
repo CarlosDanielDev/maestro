@@ -1,4 +1,5 @@
-//! The per-screen blocks of [`super::registry`], one per registered screen.
+//! The per-screen blocks of [`super::registry`], one per registered screen,
+//! and the ⌃K palette-only commands (#1255, #1265).
 //! Esc is the Global "back" on every screen, so no block redeclares it.
 
 use crossterm::event::KeyCode;
@@ -80,3 +81,39 @@ pub(super) fn blocks() -> Vec<Binding> {
     );
     v
 }
+
+/// A ⌃K palette command with no global key (#1255). `Network`: diagnostics
+/// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
+/// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteCommand {
+    Network,
+    TurboquantDashboard,
+    CompleteModal,
+    ReviewConcerns,
+    RetryPr,
+}
+
+/// The key that runs a palette command outside the palette, and the one
+/// screen it works on; the palette shows it there only.
+pub type KeyOn = Option<(&'static str, TuiMode)>;
+
+pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
+    ("network", PaletteCommand::Network, None),
+    (
+        "TurboQuant dashboard",
+        PaletteCommand::TurboquantDashboard,
+        Some(("Q", TuiMode::Dashboard)),
+    ),
+    (
+        "session-complete modal (Settings)",
+        PaletteCommand::CompleteModal,
+        None,
+    ),
+    ("review concerns", PaletteCommand::ReviewConcerns, None),
+    (
+        "retry PR",
+        PaletteCommand::RetryPr,
+        Some(("P", TuiMode::Overview)),
+    ),
+];
