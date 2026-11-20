@@ -1,0 +1,24 @@
+---
+source: crates/maestro-tui/src/tui/help_registry_tests.rs
+expression: "first_page.join(\"\\n\")"
+---
+Help — Dashboard Mode                                                 
+                                                                      
+  Mode: Normal                                                        
+                                                                      
+  Actions                                                             
+    Enter             Execute selected action                         
+    i                 Browse Issues                                   
+    m                 Browse Milestones                               
+    r                 Run Prompt                                      
+    a                 Adapt Project                                   
+    p                 Review PRs                                      
+    s                 Status                                          
+    c                 Cost Report                                     
+    t                 Token Report                                    
+    S                 Settings                                        
+    n                 Release Notes                                   
+    R                 Refresh Suggestions                             
+                                                                      
+  Navigation                                                          
+    j/Down            Move down
