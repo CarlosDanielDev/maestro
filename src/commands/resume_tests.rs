@@ -14,7 +14,7 @@ use std::path::Path;
 
 const AGENT_SESSION_ID: &str = "11111111-2222-3333-4444-555555555555";
 
-fn git(dir: &Path, args: &[&str]) {
+pub(super) fn git(dir: &Path, args: &[&str]) {
     let ok = std::process::Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -24,7 +24,7 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(ok, "git {args:?} failed");
 }
 
-fn init_repo(dir: &Path) {
+pub(super) fn init_repo(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     git(dir, &["config", "user.email", "ci@example.com"]);
     git(dir, &["config", "user.name", "CI"]);
@@ -33,7 +33,7 @@ fn init_repo(dir: &Path) {
     git(dir, &["commit", "-q", "-m", "init"]);
 }
 
-fn issue_session(n: u64) -> Session {
+pub(super) fn issue_session(n: u64) -> Session {
     Session::new(
         format!("implement #{n}"),
         "opus".into(),
@@ -43,7 +43,7 @@ fn issue_session(n: u64) -> Session {
     )
 }
 
-fn walk(session: &mut Session, steps: &[SessionStatus]) {
+pub(super) fn walk(session: &mut Session, steps: &[SessionStatus]) {
     for &to in steps {
         session
             .transition_to(to, TransitionReason::Spawned)
@@ -215,126 +215,4 @@ async fn cap_stop_survives_a_plain_launch_and_resumes() {
     let managed = pool.get_active_mut(id).expect("restored with its id");
     assert_eq!(managed.worktree_path.as_ref(), Some(&kept));
     assert!(kept.join("work.txt").exists(), "the kept work survives");
-}
-
-/// #1423: what a quit saved for an Interactive, a CiFix and a ConflictFix
-/// session comes back from `maestro resume` in its own kept worktree, bound
-/// to its saved agent session id, still that kind of session.
-#[tokio::test]
-async fn resume_restores_interactive_and_fix_sessions() {
-    use crate::session::types::{CiFixContext, ConflictFixContext, SessionMode};
-    use SessionStatus::{CiFix, Completed, ConflictFix, Running, Spawning};
-    const IDS: [&str; 3] = [
-        "aaaaaaaa-0000-0000-0000-000000001423",
-        "bbbbbbbb-0000-0000-0000-000000001423",
-        "cccccccc-0000-0000-0000-000000001423",
-    ];
-    let repo = tempfile::tempdir().unwrap();
-    init_repo(repo.path());
-    let state_dir = tempfile::tempdir().unwrap();
-    let store_path = state_dir.path().join("state-1423.json");
-    let worktrees = || Box::new(GitWorktreeManager::new(repo.path().to_path_buf()));
-    let config: Config = toml::from_str(
-        "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n[notifications]\n\
-         [agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
-         command = \"maestro-missing-agent-1423\"\n",
-    )
-    .unwrap();
-    let loaded = LoadedConfig {
-        config,
-        path: state_dir.path().join("maestro.toml"),
-    };
-    let mut app = setup_app_from_config(
-        loaded,
-        StateStore::new(store_path.clone()),
-        worktrees(),
-        None,
-    );
-
-    let mut chat = issue_session(1423);
-    chat.session_mode = SessionMode::Interactive;
-    chat.agent_id = Some("q".into());
-    let mut ci = issue_session(1424);
-    ci.ci_fix_context = Some(CiFixContext {
-        pr_number: 9,
-        issue_number: 1424,
-        branch: "maestro/issue-1424".into(),
-        attempt: 1,
-    });
-    let mut conflict = issue_session(1425);
-    conflict.conflict_fix_context = Some(ConflictFixContext {
-        pr_number: 10,
-        issue_number: 1425,
-        branch: "maestro/issue-1425".into(),
-        conflicting_files: vec!["README.md".into()],
-    });
-    let ids = [chat.id, ci.id, conflict.id];
-    for s in [chat, ci, conflict] {
-        app.pool.enqueue(s);
-    }
-    let _ = app.pool.try_promote();
-    let walks: [&[SessionStatus]; 3] = [&[Spawning, Running, Completed], &[CiFix], &[ConflictFix]];
-    let mut kept = Vec::new();
-    for ((id, steps), agent_id) in ids.iter().zip(walks).zip(IDS) {
-        let managed = app.pool.get_active_mut(*id).unwrap();
-        walk(&mut managed.session, steps);
-        assert!(managed.session.bind_agent_session_id(agent_id));
-        kept.push(managed.worktree_path.clone().unwrap());
-    }
-    std::fs::write(kept[0].join("chat.txt"), "uncommitted").unwrap();
-
-    // The confirmed quit, then `maestro resume` on exactly what it wrote.
-    crate::tui::save_on_exit(&mut app).expect("saved");
-    drop(app);
-    let state = StateStore::new(store_path).load().unwrap();
-    let picked = resumable_sessions(&state, None);
-    assert_eq!(picked.len(), 3, "all three kinds resume");
-    let probe = GitWorktreeManager::new(repo.path().to_path_buf());
-    let restored: Vec<Session> = (picked.iter())
-        .map(|s| restore_session(s, &probe).expect("restorable"))
-        .collect();
-    let get = |id| restored.iter().find(|s| s.id == id).unwrap();
-    for (id, agent_id) in ids.iter().zip(IDS) {
-        assert_eq!(get(*id).agent_session_id.as_deref(), Some(agent_id));
-    }
-    assert_eq!(get(ids[0]).session_mode, SessionMode::Interactive);
-    assert_eq!(get(ids[0]).agent_id.as_deref(), Some("q"), "same agent");
-    assert!(get(ids[1]).ci_fix_context.is_some(), "still a CI fix");
-    assert!(
-        get(ids[2]).conflict_fix_context.is_some(),
-        "still a conflict fix"
-    );
-
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut pool = SessionPool::new(3, worktrees(), tx);
-    for s in restored {
-        pool.enqueue(s);
-    }
-    let _ = pool.try_promote();
-    for (id, path) in ids.iter().zip(&kept) {
-        let managed = pool.get_active_mut(*id).expect("restored with its id");
-        assert_eq!(
-            managed.worktree_path.as_ref(),
-            Some(path),
-            "a resumed session must run in its own kept worktree, never the main checkout"
-        );
-    }
-    assert!(kept[0].join("chat.txt").exists(), "the kept work survives");
-}
-
-/// #1423: an adopted conversation is never picked up by `maestro resume`,
-/// even when a crash left it saved live: it runs in its transcript's cwd,
-/// and resume would run it in a worktree instead.
-#[test]
-fn resume_skips_an_adopted_conversation() {
-    let mut state = crate::state::types::MaestroState::default();
-    let mut adopted = issue_session(1426);
-    adopted.session_mode = crate::session::types::SessionMode::Interactive;
-    adopted.adopted_cwd = Some(std::env::temp_dir());
-    walk(
-        &mut adopted,
-        &[SessionStatus::Spawning, SessionStatus::Running],
-    );
-    state.sessions.push(adopted);
-    assert!(resumable_sessions(&state, None).is_empty());
 }

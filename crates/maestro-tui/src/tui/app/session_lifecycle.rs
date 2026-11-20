@@ -6,6 +6,15 @@ use crate::tui::activity_log::LogLevel;
 
 impl App {
     pub async fn add_session(&mut self, mut session: Session) -> anyhow::Result<()> {
+        // `maestro resume` of a chat that was waiting for the user (#1423):
+        // it comes back idle in its kept worktree; no turn, no spend.
+        if session.status == crate::session::types::SessionStatus::Interactive
+            && let Some(worktree) = session.worktree_path.clone()
+        {
+            self.pool.restore_idle_chat(session, worktree);
+            self.sync_state();
+            return Ok(());
+        }
         // #1144: flag gates-configured sessions before enqueue so the
         // stream handler parks them in GATES_RUNNING at stream
         // completion (see `mark_gates_pending`).

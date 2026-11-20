@@ -86,6 +86,25 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
              work in it by hand, or remove that worktree and resume again."
         ));
     }
+    // A recorded path must be this session's own worktree (#1423): never
+    // `.` or the repo root, so resume never runs an agent in the main
+    // checkout.
+    if let Some(path) = &s.worktree_path
+        && !is_own_worktree(path, &slug)
+    {
+        return Err(format!(
+            "Skipping {slug}: its recorded path {} is not its worktree \
+             (.maestro/worktrees/{slug}); work in it by hand.",
+            path.display()
+        ));
+    }
+    let idle_chat = s.status == SessionStatus::Interactive;
+    if idle_chat && s.worktree_path.is_none() {
+        return Err(format!(
+            "Skipping {slug}: this chat ran in the main checkout, not a worktree; \
+             open the issue's chat again instead."
+        ));
+    }
     let mut new_session = Session::new(
         s.prompt.clone(),
         s.model.clone(),
@@ -108,9 +127,28 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
     if let Some(id) = s.agent_session_id.as_deref() {
         new_session.bind_agent_session_id(id);
     }
+    if idle_chat {
+        // Waiting for the user, as it was at quit: `App::add_session`
+        // registers it without sending a turn.
+        new_session.status = SessionStatus::Interactive;
+        new_session.settled_from = s.settled_from;
+        new_session.log_activity("Resumed: waiting for your next message".into());
+    }
     Ok(new_session)
+}
+
+/// `path` is `<repo>/.maestro/worktrees/<slug>` and, when it is on disk, a
+/// git worktree (a `.git` file, not the main checkout's `.git` directory).
+fn is_own_worktree(path: &std::path::Path, slug: &str) -> bool {
+    path.is_absolute()
+        && path.ends_with(std::path::Path::new(".maestro/worktrees").join(slug))
+        && (!path.exists() || path.join(".git").is_file())
 }
 
 #[cfg(test)]
 #[path = "resume_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "resume_kinds_tests.rs"]
+mod kinds_tests;

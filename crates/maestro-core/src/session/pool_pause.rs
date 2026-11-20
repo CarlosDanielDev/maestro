@@ -110,8 +110,11 @@ impl SessionPool {
                 // move to Killed; leave them as they are.
                 _ => continue,
             }
+            // A session that fell back to the main checkout runs in `.`
+            // (#1423): never record that as its worktree.
             if managed.session.worktree_path.is_none() {
-                managed.session.worktree_path = managed.worktree_path.clone();
+                managed.session.worktree_path =
+                    (managed.worktree_path.clone()).filter(|p| p.is_absolute());
             }
         }
         paused
@@ -132,13 +135,20 @@ impl SessionPool {
         }
     }
 
-    /// Keep sessions an earlier run saved for `maestro resume` — Paused, and
-    /// stopped by the cap with a recorded worktree — in the pool's finished
-    /// list, so this run's state saves do not drop them.
+    /// Keep sessions an earlier run saved for `maestro resume` in the
+    /// pool's finished list, so this run's state saves do not drop them:
+    /// Paused; Interactive, CiFix and ConflictFix (#1423); and, with a
+    /// recorded worktree, Queued, Stalled, Retrying and cap-stopped ones.
+    /// Never an adopted conversation (resume skips it).
     pub fn keep_saved_resumable(&mut self, saved: &[Session]) {
         let resumable = |s: &&Session| {
-            s.status == SessionStatus::Paused
-                || (RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some())
+            use SessionStatus::*;
+            s.adopted_cwd.is_none()
+                && match s.status {
+                    Paused | Interactive | CiFix | ConflictFix => true,
+                    Queued | Stalled | Retrying => s.worktree_path.is_some(),
+                    _ => RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some(),
+                }
         };
         for s in saved.iter().filter(resumable) {
             if self.get_session(s.id).is_none() {
