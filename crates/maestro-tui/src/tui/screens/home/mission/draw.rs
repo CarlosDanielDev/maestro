@@ -1,7 +1,7 @@
 //! Mission Control layout at the three breakpoints (design §02 `home()`):
 //!
-//! - Wide: Actions + Milestone · Needs you / Fleet · Budget & quota (the
-//!   rest of the right column is the Insight slot, filled by a later issue).
+//! - Wide: Actions + Milestone · Needs you / Fleet · Budget & quota and
+//!   the Insight column's What's new card (#1279).
 //! - Regular: the right column drops; quota is a one-line strip on top.
 //! - Compact: one column, strip / Needs you / Fleet; Actions run by key.
 
@@ -11,6 +11,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::insight;
 use super::{
     HomeFocus, MilestoneCard, MissionControl, MissionView, QuotaRow, actions, disabled_reason,
 };
@@ -42,6 +43,11 @@ pub fn draw(
     theme: &Theme,
     nerd_font: bool,
 ) {
+    let area = if view.first_run {
+        insight::first_run_logo(f, area, theme, nerd_font)
+    } else {
+        area
+    };
     state.actions_visible = !matches!(bp, Breakpoint::Compact | Breakpoint::TooSmall);
     if !state.actions_visible {
         state.focus = HomeFocus::NeedsYou;
@@ -74,9 +80,10 @@ pub fn draw(
             ctx.needs_you(f, needs);
             ctx.fleet(f, fleet, false);
             let budget_h = view.budget.len() as u16 + 2;
-            let [budget, _insight_slot] =
+            let [budget, insight_col] =
                 Layout::vertical([Constraint::Length(budget_h), Constraint::Min(0)]).areas(right);
             ctx.budget_panel(f, budget);
+            insight::whats_new(f, insight_col, &view.whats_new, theme);
         }
         Breakpoint::Regular => {
             let [left, center] =

@@ -895,7 +895,7 @@ fn release_ref_trend() -> Vec<u64> {
     item_counts
 }
 
-fn whats_new_highlights() -> Vec<(ChangeCategory, &'static ChangeItem)> {
+pub(crate) fn whats_new_highlights() -> Vec<(ChangeCategory, &'static ChangeItem)> {
     let version = env!("CARGO_PKG_VERSION");
     changelog::changelog().highlights_with_category(version, 4)
 }
@@ -959,7 +959,7 @@ fn column_width_for_layout(layout: &WelcomeLayout) -> u16 {
     }
 }
 
-fn header_for_width(use_nerd_font: bool, width: u16) -> &'static [&'static str] {
+pub(crate) fn header_for_width(use_nerd_font: bool, width: u16) -> &'static [&'static str] {
     let nerd_header_width = NERD_HEADER
         .iter()
         .map(|line| line.width())
