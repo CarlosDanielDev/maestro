@@ -242,6 +242,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let spinner_tick = app.spinner_tick;
     match app.tui_mode {
         TuiMode::Overview => {
+            // #1384: the grid keys build their layout from this area.
+            app.panel_view.drawn_area = Some(chunks[1]);
             // #1264: a Home `⏎` jump puts the grid cursor on its session.
             app.panel_view
                 .apply_reveal(app.pool.all_sessions().len(), chunks[1]);
@@ -1237,6 +1239,13 @@ fn draw_footer(
     } else {
         key_hints::from_pairs(&pairs)
     };
+    // #1384: drop hints whose key does nothing here. Home draws before
+    // the footer, so `actions_visible` is this frame's.
+    let hidden = crate::tui::navigation::mode_hints::hidden_hint_keys(
+        app.tui_mode,
+        app.screen_state.mission_control.actions_visible,
+    );
+    hints.retain(|h| !hidden.contains(&h.key));
     // #1399: session keys are dimmed while there is no session to act on.
     // The overrides below never show these keys, so this stays right.
     let dimmed = if pairs.is_empty() {

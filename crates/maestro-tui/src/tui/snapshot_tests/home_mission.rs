@@ -221,7 +221,14 @@ fn home_compact() {
             "Budget & quota",
             "Activity Log",
         ],
-        &["Release Console", "INSIGHT", "v0.32 TUI Redesign", "MODEL"],
+        // #1384: no Actions panel, so the footer does not offer Tab.
+        &[
+            "Release Console",
+            "INSIGHT",
+            "v0.32 TUI Redesign",
+            "MODEL",
+            "Next panel",
+        ],
     );
     assert_snapshot!("home_compact", t.backend());
 }

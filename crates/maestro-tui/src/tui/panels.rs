@@ -118,10 +118,12 @@ impl GridState {
 
     /// Inverse of [`selected_index`](Self::selected_index): put the cursor
     /// on the flat session `index` (page, row, column) for `layout` (#1264).
-    pub fn select_index(&mut self, index: usize, layout: &GridLayout) {
-        if layout.sessions_per_page == 0 || layout.cols == 0 {
+    /// An index past the last session selects the last one (#1384).
+    pub fn select_index(&mut self, index: usize, session_count: usize, layout: &GridLayout) {
+        if layout.sessions_per_page == 0 || layout.cols == 0 || session_count == 0 {
             return;
         }
+        let index = index.min(session_count - 1);
         let on_page = index % layout.sessions_per_page;
         self.current_page = index / layout.sessions_per_page;
         self.selected_row = on_page / layout.cols;
@@ -213,6 +215,10 @@ pub struct PanelView {
     /// Scroll offset for the message area in agent panels.
     pub scroll_offset: u16,
     pub grid_state: GridState,
+    /// #1384: the area the Overview grid was last drawn in. The arrow and
+    /// page keys build their layout from it, so they move the grid the
+    /// user sees, not one sized for the whole terminal.
+    pub drawn_area: Option<Rect>,
 }
 
 impl PanelView {
@@ -222,6 +228,7 @@ impl PanelView {
             pending_reveal: None,
             scroll_offset: 0,
             grid_state: GridState::new(),
+            drawn_area: None,
         }
     }
 
@@ -237,6 +244,13 @@ impl PanelView {
         self.selected.unwrap_or(0)
     }
 
+    /// The grid layout for `session_count` sessions in the area the grid
+    /// was last drawn in (#1384). Before the first draw, a 120x40 area.
+    pub fn grid_layout(&self, session_count: usize) -> GridLayout {
+        let area = self.drawn_area.unwrap_or(Rect::new(0, 0, 120, 40));
+        GridLayout::calculate(session_count, area.width, area.height)
+    }
+
     /// Select session `index` now and move the grid cursor to it at the
     /// next draw (`apply_reveal`), so the highlight follows the selection.
     pub fn reveal(&mut self, index: usize) {
@@ -249,7 +263,7 @@ impl PanelView {
     pub fn apply_reveal(&mut self, session_count: usize, area: Rect) {
         if let Some(index) = self.pending_reveal.take() {
             let layout = GridLayout::calculate(session_count, area.width, area.height);
-            self.grid_state.select_index(index, &layout);
+            self.grid_state.select_index(index, session_count, &layout);
             self.scroll_offset = 0;
         }
     }
@@ -714,7 +728,7 @@ mod tests {
             let layout = GridLayout::calculate(count, w, h);
             for index in 0..count {
                 let mut g = GridState::new();
-                g.select_index(index, &layout);
+                g.select_index(index, count, &layout);
                 assert_eq!(g.selected_index(&layout), index, "{count} in {w}x{h}");
                 assert!(g.selected_col < layout.cols && g.selected_row < layout.rows);
             }
@@ -726,9 +740,26 @@ mod tests {
         let layout = GridLayout::calculate(15, 120, 40);
         assert!(layout.total_pages > 1, "{layout:?}");
         let mut g = GridState::new();
-        g.select_index(layout.sessions_per_page + 1, &layout);
+        g.select_index(layout.sessions_per_page + 1, 15, &layout);
         assert_eq!(g.current_page, 1);
         assert_eq!((g.selected_row, g.selected_col), (0, 1));
+    }
+
+    #[test]
+    fn grid_state_select_index_clamps_to_the_session_count() {
+        let layout = GridLayout::calculate(3, 120, 40);
+        let mut v = PanelView::new();
+        v.grid_state.select_index(100, 3, &layout);
+        assert_eq!(v.grid_state.selected_index(&layout), 2, "last session");
+        assert_eq!(v.grid_state.current_page, 0);
+        // The draw slices the page out of `sessions`: it must not panic.
+        let s: Vec<Session> = (0..3)
+            .map(|i| Session::new(format!("t{i}"), "m".into(), "o".into(), Some(i), None))
+            .collect();
+        let refs: Vec<&Session> = s.iter().collect();
+        let theme = Theme::default();
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        t.draw(|f| v.draw(f, &refs, f.area(), &theme, 0)).unwrap();
     }
 
     #[test]
