@@ -14,7 +14,7 @@ use std::path::Path;
 
 const AGENT_SESSION_ID: &str = "11111111-2222-3333-4444-555555555555";
 
-fn git(dir: &Path, args: &[&str]) {
+pub(super) fn git(dir: &Path, args: &[&str]) {
     let ok = std::process::Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -24,7 +24,7 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(ok, "git {args:?} failed");
 }
 
-fn init_repo(dir: &Path) {
+pub(super) fn init_repo(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     git(dir, &["config", "user.email", "ci@example.com"]);
     git(dir, &["config", "user.name", "CI"]);
@@ -33,7 +33,7 @@ fn init_repo(dir: &Path) {
     git(dir, &["commit", "-q", "-m", "init"]);
 }
 
-fn issue_session(n: u64) -> Session {
+pub(super) fn issue_session(n: u64) -> Session {
     Session::new(
         format!("implement #{n}"),
         "opus".into(),
@@ -43,7 +43,7 @@ fn issue_session(n: u64) -> Session {
     )
 }
 
-fn walk(session: &mut Session, steps: &[SessionStatus]) {
+pub(super) fn walk(session: &mut Session, steps: &[SessionStatus]) {
     for &to in steps {
         session
             .transition_to(to, TransitionReason::Spawned)

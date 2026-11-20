@@ -70,10 +70,10 @@ impl SessionPool {
     /// Exit path, step 1 (#1266): record what each session becomes, before
     /// anything is stopped, so the state saved next already holds it.
     /// Running and Paused become Paused; Queued (parked at the pre-spawn
-    /// gate), Spawning, Stalled, Retrying and Errored keep their status —
-    /// `maestro resume` restarts all of these, each in its own worktree,
-    /// recorded here. A status that can neither pause nor resume
-    /// (Interactive, CiFix, ConflictFix, …) is recorded Killed with reason
+    /// gate), Spawning, Stalled, Retrying, Errored, CiFix, ConflictFix and
+    /// Interactive keep their status (#1423) — `maestro resume` restarts all
+    /// of these, each in its own worktree, recorded here. Only what
+    /// [`Self::quit_would_end`] names is recorded Killed with reason
     /// `UserQuit`. Nothing is stopped here: call [`Self::stop_all_turns`]
     /// after the save. Returns how many sessions are Paused.
     pub fn pause_for_exit(&mut self) -> usize {
@@ -81,6 +81,15 @@ impl SessionPool {
         for managed in &mut self.active {
             let status = managed.session.status;
             if status.is_terminal() {
+                continue;
+            }
+            if quit_ends(&managed.session) {
+                let _ = (managed.session)
+                    .transition_to(SessionStatus::Killed, TransitionReason::UserQuit);
+                (managed.session).log_activity(
+                    "Killed at quit: an adopted conversation cannot be resumed; adopt it again"
+                        .into(),
+                );
                 continue;
             }
             match status {
@@ -93,23 +102,30 @@ impl SessionPool {
                 | SessionStatus::Spawning
                 | SessionStatus::Stalled
                 | SessionStatus::Retrying
-                | SessionStatus::Errored => {}
-                // GatesRunning, NeedsPr, NeedsReview: no agent process, and
-                // they cannot move to Killed; leave them as they are.
-                _ if !status.can_transition_to(SessionStatus::Killed) => continue,
-                _ => {
-                    let _ = (managed.session)
-                        .transition_to(SessionStatus::Killed, TransitionReason::UserQuit);
-                    (managed.session)
-                        .log_activity("Killed at quit: this status cannot pause".into());
-                    continue;
-                }
+                | SessionStatus::Errored
+                | SessionStatus::CiFix
+                | SessionStatus::ConflictFix
+                | SessionStatus::Interactive => {}
+                // GatesRunning, NeedsPr: no agent process, and they cannot
+                // move to Killed; leave them as they are.
+                _ => continue,
             }
+            // A session that fell back to the main checkout runs in `.`
+            // (#1423): never record that as its worktree.
             if managed.session.worktree_path.is_none() {
-                managed.session.worktree_path = managed.worktree_path.clone();
+                managed.session.worktree_path =
+                    (managed.worktree_path.clone()).filter(|p| p.is_absolute());
             }
         }
         paused
+    }
+
+    /// Sessions a confirmed quit ends instead of saving for `maestro
+    /// resume` (#1423), so Confirm Exit can name them before the quit.
+    pub fn quit_would_end(&self) -> impl Iterator<Item = &Session> {
+        (self.active.iter())
+            .map(|m| &m.session)
+            .filter(|s| quit_ends(s))
     }
 
     /// Exit path, step 2: interrupt every agent turn (after the save).
@@ -119,13 +135,21 @@ impl SessionPool {
         }
     }
 
-    /// Keep sessions an earlier run saved for `maestro resume` — Paused, and
-    /// stopped by the cap with a recorded worktree — in the pool's finished
-    /// list, so this run's state saves do not drop them.
+    /// Keep sessions an earlier run saved for `maestro resume` in the
+    /// pool's finished list, so this run's state saves do not drop them:
+    /// Paused; Interactive, CiFix and ConflictFix (#1423); and, with a
+    /// recorded worktree, Queued, Spawning, Stalled, Retrying and cap-stopped
+    /// ones.
+    /// Never an adopted conversation (resume skips it).
     pub fn keep_saved_resumable(&mut self, saved: &[Session]) {
         let resumable = |s: &&Session| {
-            s.status == SessionStatus::Paused
-                || (RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some())
+            use SessionStatus::*;
+            s.adopted_cwd.is_none()
+                && match s.status {
+                    Paused | Interactive | CiFix | ConflictFix => true,
+                    Queued | Spawning | Stalled | Retrying => s.worktree_path.is_some(),
+                    _ => RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some(),
+                }
         };
         for s in saved.iter().filter(resumable) {
             if self.get_session(s.id).is_none() {
@@ -141,4 +165,12 @@ impl SessionPool {
             .filter(|m| m.session.status == SessionStatus::Paused)
             .count()
     }
+}
+
+/// A session `maestro resume` cannot bring back (#1423): an adopted
+/// conversation runs in its transcript's own cwd, never a worktree, and
+/// `claude --resume` finds it only there. A quit ends it; the transcript
+/// stays, so it can be adopted again.
+fn quit_ends(s: &Session) -> bool {
+    s.adopted_cwd.is_some() && s.status.can_transition_to(SessionStatus::Killed)
 }

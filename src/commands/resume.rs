@@ -34,11 +34,13 @@ pub async fn cmd_resume(
     let mut app = setup_app_from_config(loaded, store, worktree_mgr, None);
 
     let probe = GitWorktreeManager::new(repo_root);
-    for s in &incomplete {
-        match restore_session(s, &probe) {
-            Ok(session) => app.add_session(session).await?,
-            Err(why) => eprintln!("{why}"),
-        }
+    let plan = plan_resume(&state, &incomplete, &probe);
+    for why in &plan.refused {
+        eprintln!("{why}");
+    }
+    app.pool.keep_saved_resumable(&plan.keep);
+    for session in plan.restore {
+        app.add_session(session).await?;
     }
 
     app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
@@ -72,8 +74,14 @@ fn resumable_sessions<'a>(state: &'a MaestroState, filter: Option<&str>) -> Vec<
                     | SessionStatus::Stalled
                     | SessionStatus::Errored
                     | SessionStatus::Retrying
+                    | SessionStatus::CiFix
+                    | SessionStatus::ConflictFix
+                    | SessionStatus::Interactive
             )
         })
+        // An adopted conversation lives in its transcript's cwd, never a
+        // worktree (#1423): resume would run it in the wrong place.
+        .filter(|s| s.adopted_cwd.is_none())
         .filter(|s| match filter {
             Some(filter) => {
                 s.id.to_string().starts_with(filter)
@@ -97,7 +105,12 @@ fn select_first_turn(
         .into_iter()
         .filter(|s| {
             // Bound, or never spawned: a never-run prompt spends only once.
-            if s.agent_session_id.is_some() || s.started_at.is_none() {
+            // An idle chat comes back waiting for the user (#1423): no turn
+            // runs, with or without an id (most agents return none).
+            if s.agent_session_id.is_some()
+                || s.started_at.is_none()
+                || s.status == SessionStatus::Interactive
+            {
                 return true;
             }
             let label = match s.issue_number {
@@ -119,6 +132,39 @@ fn select_first_turn(
     (picked, notes)
 }
 
+/// What `cmd_resume` does with the sessions it picked (#1423): each one
+/// restored, or a line saying why not, plus every saved record it does
+/// not restore, for `SessionPool::keep_saved_resumable` — so this run's
+/// state saves keep a skipped or refused record for a later resume.
+struct ResumePlan {
+    restore: Vec<Session>,
+    refused: Vec<String>,
+    keep: Vec<Session>,
+}
+
+fn plan_resume(
+    state: &MaestroState,
+    picked: &[&Session],
+    worktrees: &dyn WorktreeManager,
+) -> ResumePlan {
+    let (mut restore, mut refused) = (Vec::new(), Vec::new());
+    for s in picked {
+        match restore_session(s, worktrees) {
+            Ok(session) => restore.push(session),
+            Err(why) => refused.push(why),
+        }
+    }
+    let keep = (state.sessions.iter())
+        .filter(|s| !restore.iter().any(|r| r.id == s.id))
+        .cloned()
+        .collect();
+    ResumePlan {
+        restore,
+        refused,
+        keep,
+    }
+}
+
 /// A fresh queued session that continues the saved one `s` (#1266): it
 /// keeps its id, worktree and agent conversation, so it picks up in its
 /// own kept worktree. Refused when that worktree is still on disk but was
@@ -132,6 +178,32 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
              work in it by hand, or remove that worktree and resume again."
         ));
     }
+    // A recorded path must be this session's own worktree (#1423): never
+    // `.` or the repo root, so resume never runs an agent in the main
+    // checkout.
+    if let Some(path) = &s.worktree_path
+        && !is_own_worktree(path, &slug)
+    {
+        return Err(format!(
+            "Skipping {slug}: its recorded path {} is not its worktree \
+             (.maestro/worktrees/{slug}); work in it by hand.",
+            path.display()
+        ));
+    }
+    let idle_chat = s.status == SessionStatus::Interactive;
+    if idle_chat && s.worktree_path.is_none() {
+        return Err(format!(
+            "Skipping {slug}: this chat ran in the main checkout, not a worktree; \
+             open the issue's chat again instead."
+        ));
+    }
+    // An idle chat is never re-promoted, so nothing would make a new
+    // worktree for it: its next message would fail to spawn.
+    if idle_chat && !s.worktree_path.as_ref().is_some_and(|p| p.exists()) {
+        return Err(format!(
+            "Skipping {slug}: this chat's worktree is gone; open the issue's chat again instead."
+        ));
+    }
     let mut new_session = Session::new(
         s.prompt.clone(),
         s.model.clone(),
@@ -143,15 +215,42 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
     new_session.retry_count = s.retry_count;
     new_session.id = s.id;
     new_session.worktree_path = s.worktree_path.clone();
+    // Still the same kind of session (#1423): a chat, a CI fix or a
+    // conflict fix, on the same agent, so the saved conversation resumes.
+    new_session.agent_id = s.agent_id.clone();
+    new_session.session_mode = s.session_mode;
+    new_session.produce_pr = s.produce_pr;
+    new_session.turns = s.turns.clone();
+    new_session.ci_fix_context = s.ci_fix_context.clone();
+    new_session.conflict_fix_context = s.conflict_fix_context.clone();
     // Keeps the first-turn marker (#1424): a re-run quit before it spawns
     // is still noted on the next resume. Spawn sets it again.
     new_session.started_at = s.started_at;
     if let Some(id) = s.agent_session_id.as_deref() {
         new_session.bind_agent_session_id(id);
     }
+    if idle_chat {
+        // Waiting for the user, as it was at quit: `App::add_session`
+        // registers it without sending a turn.
+        new_session.status = SessionStatus::Interactive;
+        new_session.settled_from = s.settled_from;
+        new_session.log_activity("Resumed: waiting for your next message".into());
+    }
     Ok(new_session)
+}
+
+/// `path` is `<repo>/.maestro/worktrees/<slug>` and, when it is on disk, a
+/// git worktree (a `.git` file, not the main checkout's `.git` directory).
+fn is_own_worktree(path: &std::path::Path, slug: &str) -> bool {
+    path.is_absolute()
+        && path.ends_with(std::path::Path::new(".maestro/worktrees").join(slug))
+        && (!path.exists() || path.join(".git").is_file())
 }
 
 #[cfg(test)]
 #[path = "resume_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "resume_kinds_tests.rs"]
+mod kinds_tests;

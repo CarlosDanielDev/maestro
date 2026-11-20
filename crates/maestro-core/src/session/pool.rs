@@ -542,6 +542,24 @@ impl SessionPool {
         // spawns this ManagedSession directly, bypassing `try_promote`'s
         // `resolve_provider`, so the provider is resolved here too.
         session.agent_id = agent_id;
+        self.register_interactive(session, worktree_path, branch)
+    }
+
+    /// `maestro resume` of a chat that was waiting for the user (#1423):
+    /// register it, idle, in its kept worktree with its saved turns and
+    /// agent session id. Nothing is spawned: the next turn goes only when
+    /// the user types.
+    pub fn restore_idle_chat(&mut self, session: Session, worktree_path: PathBuf) -> Uuid {
+        let branch = format!("maestro/{}", session_slug(&session));
+        self.register_interactive(session, worktree_path, branch)
+    }
+
+    fn register_interactive(
+        &mut self,
+        session: Session,
+        worktree_path: PathBuf,
+        branch: String,
+    ) -> Uuid {
         let provider = Arc::clone(self.resolve_provider(&session));
         let mut managed =
             ManagedSession::with_worktree(session, Some(worktree_path), Some(branch), None);

@@ -1387,6 +1387,9 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
             question,
             bold(theme.accent_warning),
         )));
+        if let Some(ends) = quit_ends_line(app) {
+            lines.push(Line::from(Span::styled(ends, bold(theme.accent_error))));
+        }
         lines.push(Line::from(""));
         let hold = app
             .screen_state
@@ -1437,6 +1440,27 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
     let block =
         panel("Confirm Exit", focus, theme).padding(ratatui::widgets::Padding::horizontal(1));
     f.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// The sessions a quit ends instead of saving for `maestro resume`
+/// (#1423), named before the quit. At most four labels, so the line fits
+/// in 80 columns.
+fn quit_ends_line(app: &App) -> Option<String> {
+    const SHOWN: usize = 4;
+    let ends: Vec<String> = (app.pool.quit_would_end())
+        .map(crate::tui::app::helpers::session_label)
+        .collect();
+    if ends.is_empty() {
+        return None;
+    }
+    let mut line = format!(
+        "Quit ends (no resume): {}",
+        ends[..ends.len().min(SHOWN)].join(", ")
+    );
+    if ends.len() > SHOWN {
+        line.push_str(&format!(" +{}", ends.len() - SHOWN));
+    }
+    Some(line)
 }
 
 pub(crate) fn draw_completion_overlay(
