@@ -68,7 +68,7 @@ fn local_ten_am() -> chrono::DateTime<chrono::Utc> {
         .with_timezone(&chrono::Utc)
 }
 
-fn busy_app() -> App {
+pub(super) fn busy_app() -> App {
     busy_app_after(0)
 }
 
@@ -82,6 +82,15 @@ fn busy_app_after(runners: u128) -> App {
     app.gh_auth_ok = true;
     app.bypass_active = false;
     app.no_splash = true;
+    // A fixed card, so the snapshots do not change with CHANGELOG.md.
+    app.whats_new = crate::tui::screens::home::mission::WhatsNew {
+        version: "9.9.9".to_string(),
+        items: vec![
+            "Home shows the What's new card.".to_string(),
+            "The logo shows on the first run only, then Mission Control keeps the rows."
+                .to_string(),
+        ],
+    };
     app.resource_monitor = Box::new(crate::system::monitor::MockResourceMonitor::new(
         22 * 1024 * 1024,
         16 * 1024 * 1024 * 1024,
@@ -140,13 +149,13 @@ fn no_milestone_app() -> App {
     app
 }
 
-fn draw(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
+pub(super) fn draw(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
     t.draw(|f| ui::draw(f, app)).unwrap();
     t
 }
 
-fn rows(t: &Terminal<TestBackend>) -> Vec<String> {
+pub(super) fn rows(t: &Terminal<TestBackend>) -> Vec<String> {
     let buf = t.backend().buffer();
     (0..buf.area.height)
         .map(|y| {
@@ -166,7 +175,7 @@ fn assert_regions(text: &str, regions: &[&str], gone: &[&str]) {
     }
 }
 
-async fn press(app: &mut App, code: KeyCode) {
+pub(super) async fn press(app: &mut App, code: KeyCode) {
     let key = KeyEvent::new(code, KeyModifiers::NONE);
     let area = Rect::new(0, 0, 120, 36);
     if handle_key_under_size_guard(app, key, area).await.is_none() {

@@ -187,6 +187,10 @@ pub struct App {
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
     pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
     pub no_splash: bool,
+    /// No saved state when maestro started (#1279): Home shows the logo.
+    pub first_run: bool,
+    /// What Home's What's new card shows (#1279).
+    pub whats_new: crate::tui::screens::home::mission::WhatsNew,
     pub show_mascot: bool,
     pub mascot_style: crate::mascot::MascotStyle,
     pub mascot_animator: MascotAnimator,
@@ -423,6 +427,8 @@ impl App {
                 crate::config::default_max_prompt_history(),
             ),
             no_splash: false,
+            first_run: false,
+            whats_new: crate::tui::screens::home::mission::WhatsNew::installed(),
             show_mascot: true,
             mascot_style: crate::mascot::MascotStyle::default(),
             mascot_animator: MascotAnimator::new(&SystemClock),
