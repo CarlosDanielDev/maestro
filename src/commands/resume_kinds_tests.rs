@@ -9,12 +9,12 @@ use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedT
 use crate::commands::setup::setup_app_from_config;
 use crate::config::{Config, LoadedConfig};
 use crate::session::interaction::{TurnRecord, TurnRole};
+use crate::session::pool::SessionPool;
 use crate::session::types::{
     CiFixContext, ConflictFixContext, Session, SessionMode, SessionStatus,
 };
 use crate::session::worktree::{GitWorktreeManager, WorktreeManager};
 use crate::state::store::StateStore;
-use crate::tui::app::App;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -23,28 +23,32 @@ const CI_ID: &str = "bbbbbbbb-0000-0000-0000-000000001423";
 const CONFLICT_ID: &str = "cccccccc-0000-0000-0000-000000001423";
 
 /// An app on `repo` whose agent command does not exist: nothing here may
-/// start a real agent.
-fn app_at(repo: &Path, store_path: &Path) -> App {
-    let config: Config = toml::from_str(
-        "[project]\nrepo = \"owner/repo\"\n[sessions]\nmax_concurrent = 4\n[budget]\n[notifications]\n\
-         [agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
-         command = \"maestro-missing-agent-1423\"\n",
-    )
-    .unwrap();
-    let loaded = LoadedConfig {
-        config,
-        path: store_path.with_file_name("maestro.toml"),
-    };
-    let worktrees = Box::new(GitWorktreeManager::new(repo.to_path_buf()));
-    setup_app_from_config(loaded, StateStore::new(store_path.into()), worktrees, None)
+/// start a real agent. A macro, so this test (layer 3) never names the TUI
+/// `App` type.
+macro_rules! app_at {
+    ($repo:expr, $store_path:expr) => {{
+        let config: Config = toml::from_str(
+            "[project]\nrepo = \"owner/repo\"\n[sessions]\nmax_concurrent = 4\n[budget]\n\
+             [notifications]\n[agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
+             command = \"maestro-missing-agent-1423\"\n",
+        )
+        .unwrap();
+        let store_path: &Path = $store_path;
+        let loaded = LoadedConfig {
+            config,
+            path: store_path.with_file_name("maestro.toml"),
+        };
+        let worktrees = Box::new(GitWorktreeManager::new(Path::to_path_buf($repo)));
+        setup_app_from_config(loaded, StateStore::new(store_path.into()), worktrees, None)
+    }};
 }
 
 /// An idle chat (settled into Interactive, two saved turns), a CI fix and a
 /// conflict fix, each bound to an agent session id. Returns their ids and
 /// kept worktrees, in that order.
-fn chat_and_fixes(app: &mut App) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
+fn chat_and_fixes(pool: &mut SessionPool) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
     use SessionStatus::{CiFix, Completed, ConflictFix, Running, Spawning};
-    let chat = (app.pool).create_interaction_session(
+    let chat = pool.create_interaction_session(
         1423,
         false,
         "opus".into(),
@@ -67,18 +71,18 @@ fn chat_and_fixes(app: &mut App) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
     });
     let ids = [chat, ci.id, conflict.id];
     for s in [ci, conflict] {
-        app.pool.enqueue(s);
+        pool.enqueue(s);
     }
-    let _ = app.pool.try_promote();
+    let _ = pool.try_promote();
     let walks: [&[SessionStatus]; 3] = [&[Spawning, Running, Completed], &[CiFix], &[ConflictFix]];
     let mut kept = Vec::new();
     for ((id, steps), agent_id) in ids.iter().zip(walks).zip([CHAT_ID, CI_ID, CONFLICT_ID]) {
-        let managed = app.pool.get_active_mut(*id).unwrap();
+        let managed = pool.get_active_mut(*id).unwrap();
         walk(&mut managed.session, steps);
         assert!(managed.session.bind_agent_session_id(agent_id));
         kept.push(managed.worktree_path.clone().unwrap());
     }
-    let chat = &mut app.pool.get_active_mut(ids[0]).unwrap().session;
+    let chat = &mut pool.get_active_mut(ids[0]).unwrap().session;
     assert_eq!(chat.status, SessionStatus::Interactive, "setup: idle chat");
     for (role, content) in [(TurnRole::User, "fix it"), (TurnRole::Agent, "done")] {
         chat.turns.push(TurnRecord {
@@ -109,15 +113,15 @@ async fn resume_restores_interactive_and_fix_sessions() {
     init_repo(repo.path());
     let state_dir = tempfile::tempdir().unwrap();
     let store_path = state_dir.path().join("state-1423.json");
-    let mut app = app_at(repo.path(), &store_path);
-    let (ids, kept) = chat_and_fixes(&mut app);
+    let mut app = app_at!(repo.path(), &store_path);
+    let (ids, kept) = chat_and_fixes(&mut app.pool);
     std::fs::write(kept[0].join("chat.txt"), "uncommitted").unwrap();
     crate::tui::save_on_exit(&mut app).expect("saved");
     drop(app);
 
     let sessions = restored(repo.path(), &store_path);
     assert_eq!(sessions.len(), 3, "all three kinds resume");
-    let mut app = app_at(repo.path(), &store_path);
+    let mut app = app_at!(repo.path(), &store_path);
     app.workspace_trusted = true;
     let agent = Arc::new(ScriptedProvider::new(
         (0..3)
@@ -187,8 +191,8 @@ async fn chat_and_fix_sessions_survive_a_plain_launch() {
     init_repo(repo.path());
     let state_dir = tempfile::tempdir().unwrap();
     let store_path = state_dir.path().join("state-1423.json");
-    let mut app = app_at(repo.path(), &store_path);
-    let (ids, _) = chat_and_fixes(&mut app);
+    let mut app = app_at!(repo.path(), &store_path);
+    let (ids, _) = chat_and_fixes(&mut app.pool);
     let stalled = issue_session(1426);
     let stalled_id = stalled.id;
     app.pool.enqueue(stalled);
@@ -201,7 +205,7 @@ async fn chat_and_fix_sessions_survive_a_plain_launch() {
     drop(app);
 
     // A plain launch, as `maestro` / `maestro run` set it up.
-    let mut app = app_at(repo.path(), &store_path);
+    let mut app = app_at!(repo.path(), &store_path);
     let saved = app.state.sessions.clone();
     app.pool.keep_saved_resumable(&saved);
     crate::tui::save_on_exit(&mut app).expect("saved");
@@ -227,7 +231,7 @@ fn resume_never_runs_a_chat_in_the_main_checkout() {
     probe.create("issue-1427").unwrap(); // so the chat falls back to `.`
     let state_dir = tempfile::tempdir().unwrap();
     let store_path = state_dir.path().join("state-1423.json");
-    let mut app = app_at(repo.path(), &store_path);
+    let mut app = app_at!(repo.path(), &store_path);
     let id = (app.pool).create_interaction_session(
         1427,
         false,
