@@ -2,7 +2,7 @@
 //! session in its own kept worktree (a real git worktree, not a mock), and
 //! never in the main checkout.
 
-use super::{restore_session, resumable_sessions};
+use super::{restore_session, resumable_sessions, select_first_turn};
 use crate::commands::setup::setup_app_from_config;
 use crate::config::{Config, LoadedConfig};
 use crate::session::pool::SessionPool;
@@ -215,4 +215,67 @@ async fn cap_stop_survives_a_plain_launch_and_resumes() {
     let managed = pool.get_active_mut(id).expect("restored with its id");
     assert_eq!(managed.worktree_path.as_ref(), Some(&kept));
     assert!(kept.join("work.txt").exists(), "the kept work survives");
+}
+
+/// #1424: a session saved during its first turn has no agent session id,
+/// so resuming it would run its first prompt again and spend again.
+fn first_turn_and_bound() -> (Session, Session) {
+    let mut first_turn = issue_session(1424);
+    walk(
+        &mut first_turn,
+        &[SessionStatus::Spawning, SessionStatus::Running],
+    );
+    first_turn.started_at = Some(chrono::Utc::now()); // spawned, no id yet
+    let mut bound = issue_session(1425);
+    walk(
+        &mut bound,
+        &[SessionStatus::Spawning, SessionStatus::Running],
+    );
+    assert!(bound.bind_agent_session_id(AGENT_SESSION_ID));
+    (first_turn, bound)
+}
+
+#[test]
+fn resume_skips_first_turn_session_by_default() {
+    let (first_turn, bound) = first_turn_and_bound();
+    let never_started = issue_session(1426); // queued, its prompt never ran
+
+    let (picked, notes) = select_first_turn(vec![&first_turn, &bound, &never_started], false);
+
+    let ids: Vec<_> = picked.iter().map(|s| s.id).collect();
+    assert_eq!(
+        ids,
+        vec![bound.id, never_started.id],
+        "a started first turn is skipped; a never-started session spends once"
+    );
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].contains("#1424"), "{}", notes[0]);
+    assert!(
+        notes[0].contains("re-runs its first prompt (spends again)"),
+        "{}",
+        notes[0]
+    );
+    assert!(notes[0].contains("--rerun-first-turn"), "{}", notes[0]);
+}
+
+#[test]
+fn resume_rerun_first_turn_flag_includes_it() {
+    let (first_turn, bound) = first_turn_and_bound();
+
+    let (picked, notes) = select_first_turn(vec![&first_turn, &bound], true);
+
+    let ids: Vec<_> = picked.iter().map(|s| s.id).collect();
+    assert_eq!(ids, vec![first_turn.id, bound.id], "both resume, in order");
+    assert_eq!(notes.len(), 1, "the re-run is still announced: {notes:?}");
+    assert!(notes[0].contains("spends again"), "{}", notes[0]);
+
+    // The bound session resumes unchanged in both modes.
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let probe = GitWorktreeManager::new(repo.path().to_path_buf());
+    for rerun in [false, true] {
+        let (picked, _) = select_first_turn(vec![&bound], rerun);
+        let restored = restore_session(picked[0], &probe).expect("restorable");
+        assert_eq!(restored.agent_session_id.as_deref(), Some(AGENT_SESSION_ID));
+    }
 }

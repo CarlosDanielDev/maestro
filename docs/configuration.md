@@ -919,6 +919,7 @@ Initialize `maestro.toml` in the current directory.
 | Flag | Config equivalent | Notes |
 | --- | --- | --- |
 | `--session <ID>` | — | Resume a specific session by ID. |
+| `--rerun-first-turn` | — | Also resume sessions saved during their first turn. They have no agent session yet, so they re-run their first prompt and spend again. Without it they are skipped, each with a line saying so. |
 
 `--role` is intentionally absent on `resume`. The role of the resumed session is recovered from its saved state.
 
