@@ -283,3 +283,41 @@ async fn confirm_exit_hold() {
     );
     insta::assert_snapshot!("confirm_exit_hold", terminal.backend());
 }
+
+/// #1423: a session a quit cannot save for `maestro resume` (an adopted
+/// conversation: it runs outside any worktree) is named in Confirm Exit,
+/// before the quit, at 80x24. Sessions resume can bring back are not.
+#[tokio::test]
+async fn confirm_exit_names_sessions_quit_would_kill() {
+    const KILLS: &str = "Quit ends (no resume):";
+    let mut app = app(TuiMode::Landing, 1);
+    let _ = handle_key(&mut app, ctrl('x')).await;
+    let out = text(&mut app, 80, 24);
+    assert!(!out.contains(KILLS), "nothing to kill:\n{out}");
+
+    let mut app = self::app(TuiMode::Landing, 1);
+    let cwd = tempfile::tempdir().unwrap();
+    let adopted = (app.pool)
+        .create_adopted_session(
+            "eeeeeeee-0000-0000-0000-000000001423",
+            cwd.path().to_path_buf(),
+            None,
+            "opus".into(),
+        )
+        .expect("adopted")
+        .session_id;
+    let _ = handle_key(&mut app, ctrl('x')).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    let out = text(&mut app, 80, 24);
+    let row = (popup_rows(&out).into_iter())
+        .find(|r| r.contains(KILLS))
+        .unwrap_or_else(|| panic!("the adopted session is not named:\n{out}"));
+    assert!(
+        row.contains(&format!("S-{}", &adopted.to_string()[..8])),
+        "{row}"
+    );
+    assert!(
+        !row.contains("#400"),
+        "a resumable session is not named: {row}"
+    );
+}

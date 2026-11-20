@@ -36,7 +36,7 @@ async fn quit_pauses_not_kills() {
     let turn = managed.arm_turn_for_test();
     let worktree = managed.worktree_path.clone();
     assert!(worktree.is_some(), "setup: the mock gives a worktree");
-    // A status that cannot pause: killed at quit, with the reason recorded.
+    // A status that cannot pause: kept for resume (#1423), not killed.
     let ci_fix = session("ci-fix");
     let ci_id = ci_fix.id;
     app.pool.enqueue(ci_fix);
@@ -80,17 +80,10 @@ async fn quit_pauses_not_kills() {
         "a session parked at the budget gate stays queued"
     );
     let ci = find(ci_id).expect("ci-fix saved");
-    assert_eq!(ci.status, SessionStatus::Killed);
-    assert_eq!(
-        ci.transition_history.last().map(|t| t.reason),
-        Some(TransitionReason::UserQuit)
-    );
-    assert_eq!(
-        (saved.sessions.iter())
-            .filter(|s| s.status == SessionStatus::Killed)
-            .count(),
-        1,
-        "quit kills only what cannot pause"
+    assert_eq!(ci.status, SessionStatus::CiFix, "kept for resume (#1423)");
+    assert!(
+        !(saved.sessions.iter()).any(|s| s.status == SessionStatus::Killed),
+        "quit kills nothing here"
     );
 }
 
@@ -298,5 +291,92 @@ fn resume_all_skips_a_cancelled_turn() {
         app.pool.get_session(id).map(|s| s.status),
         Some(SessionStatus::Paused),
         "r must not mark a cancelled turn Running"
+    );
+}
+
+/// #1423: a confirmed quit saves Interactive, CiFix and ConflictFix sessions
+/// for `maestro resume` (status kept, worktree and agent session id
+/// recorded), not Killed. Only an adopted conversation, which runs outside
+/// any worktree, is still ended at quit.
+#[tokio::test]
+async fn quit_saves_interactive_and_fix_sessions() {
+    use crate::session::types::SessionMode;
+    const IDS: [&str; 3] = [
+        "aaaaaaaa-0000-0000-0000-000000001423",
+        "bbbbbbbb-0000-0000-0000-000000001423",
+        "cccccccc-0000-0000-0000-000000001423",
+    ];
+    let mut app = make_test_app("quit-save-1423");
+    let mut chat = session("chat");
+    chat.session_mode = SessionMode::Interactive;
+    let (ci, conflict) = (session("ci-fix"), session("conflict-fix"));
+    let ids = [chat.id, ci.id, conflict.id];
+    for s in [chat, ci, conflict] {
+        app.pool.enqueue(s);
+    }
+    let _ = app.pool.try_promote();
+    let walks: [&[(SessionStatus, TransitionReason)]; 3] = [
+        &[
+            (SessionStatus::Spawning, TransitionReason::Promoted),
+            (SessionStatus::Running, TransitionReason::Spawned),
+            // Settles into the kept-alive Interactive status.
+            (SessionStatus::Completed, TransitionReason::StreamCompleted),
+        ],
+        &[(SessionStatus::CiFix, TransitionReason::CiFixStarted)],
+        &[(
+            SessionStatus::ConflictFix,
+            TransitionReason::ConflictFixStarted,
+        )],
+    ];
+    let mut worktrees = Vec::new();
+    for ((id, steps), agent_id) in ids.iter().zip(walks).zip(IDS) {
+        let managed = app.pool.get_active_mut(*id).expect("promoted");
+        for &(to, why) in steps {
+            managed.session.transition_to(to, why).unwrap();
+        }
+        assert!(managed.session.bind_agent_session_id(agent_id));
+        worktrees.push(managed.worktree_path.clone());
+        assert!(worktrees.last().unwrap().is_some(), "setup: mock worktree");
+    }
+    let adopted_dir = tempfile::tempdir().unwrap();
+    let adopted = (app.pool)
+        .create_adopted_session(
+            "dddddddd-0000-0000-0000-000000001423",
+            adopted_dir.path().to_path_buf(),
+            None,
+            "opus".into(),
+        )
+        .expect("adopted")
+        .session_id;
+
+    save_on_exit(&mut app).expect("saved");
+
+    let saved = app.store.load().expect("state saved");
+    let find = |id| saved.sessions.iter().find(|s| s.id == id).expect("saved");
+    let kinds = [
+        SessionStatus::Interactive,
+        SessionStatus::CiFix,
+        SessionStatus::ConflictFix,
+    ];
+    for (((id, kind), worktree), agent_id) in ids.iter().zip(kinds).zip(&worktrees).zip(IDS) {
+        let s = find(*id);
+        assert_eq!(s.status, kind, "quit must keep {kind:?}, not kill it");
+        assert_eq!(
+            &s.worktree_path, worktree,
+            "{kind:?}: resume needs the worktree"
+        );
+        assert_eq!(s.agent_session_id.as_deref(), Some(agent_id), "{kind:?}");
+    }
+    assert_eq!(
+        find(adopted).status,
+        SessionStatus::Killed,
+        "adopted: no worktree"
+    );
+    assert_eq!(
+        (saved.sessions.iter())
+            .filter(|s| s.status == SessionStatus::Killed)
+            .count(),
+        1,
+        "quit kills only the adopted conversation"
     );
 }

@@ -444,3 +444,12 @@ first. One entry per decision.
 - **Differs from the target:** agents do not stay alive across the exit (ADR on #1266: a stopped process outside maestro is invisible and leaks). The process is stopped; resume restarts it in the kept worktree, on `--resume <agent session id>` when one was bound (today that id binds at the end of a turn, so a quit mid-first-turn restarts the prompt in the same worktree). Interactive, CiFix and ConflictFix sessions are still killed at exit: their status cannot become Paused and `maestro resume` does not pick them up.
 - **Rejected:** leaving SIGSTOPped agents running after maestro exits (orphans); keeping `kill_all` on the exit path for non-cap quits (kills work the operator did not choose to kill); a new spawn guard for the cap (the pre-spawn gate already blocks at the cap).
 - **Source:** #1266.
+
+## 2026-11-19 — A quit saves Interactive, CiFix and ConflictFix sessions; Confirm Exit names what it still ends
+
+- **What:** `SessionPool::pause_for_exit` keeps the status of Interactive, CiFix and ConflictFix sessions (like Queued and Stalled) and records their worktree path; `maestro resume` picks them up and restores each one in its own kept worktree with its agent session id, agent, `session_mode` (plus turns and the Produce-PR choice) and CI / conflict fix context, so it comes back as the same kind of session. The one kind a quit still ends is an adopted conversation (`adopted_cwd` set): it runs in its transcript's cwd, never a worktree, so resume cannot bring it back. While one is open, the live-work Confirm Exit shows a red line under the question, `Quit ends (no resume): S-1a2b3c4d, #12` (at most four labels, then `+N`, so it fits at 80x24), before the quit. `maestro resume` never picks an adopted conversation.
+- **Why:** #1423: these sessions were killed at quit and the work in flight was lost; the exit summary named them only after the quit.
+- **Section:** quit dialog in `c-confirm`; flow-map node `exit` ("Exit: agents paused, resumable").
+- **Differs from the target:** this supersedes the #1266 entry's "Interactive, CiFix and ConflictFix sessions are still killed at exit". An adopted conversation is still ended at quit; its transcript stays, so it can be adopted again.
+- **Rejected:** resuming adopted conversations in their original cwd (resume restarts through the pool, which always gives a worktree; running in the transcript cwd can be the main checkout); moving these statuses to Paused (no valid transition, and a Paused row reads as SIGSTOPped).
+- **Source:** #1423.

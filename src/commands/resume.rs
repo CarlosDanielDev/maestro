@@ -55,8 +55,14 @@ fn resumable_sessions<'a>(state: &'a MaestroState, filter: Option<&str>) -> Vec<
                     | SessionStatus::Stalled
                     | SessionStatus::Errored
                     | SessionStatus::Retrying
+                    | SessionStatus::CiFix
+                    | SessionStatus::ConflictFix
+                    | SessionStatus::Interactive
             )
         })
+        // An adopted conversation lives in its transcript's cwd, never a
+        // worktree (#1423): resume would run it in the wrong place.
+        .filter(|s| s.adopted_cwd.is_none())
         .filter(|s| match filter {
             Some(filter) => {
                 s.id.to_string().starts_with(filter)
@@ -91,6 +97,14 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
     new_session.retry_count = s.retry_count;
     new_session.id = s.id;
     new_session.worktree_path = s.worktree_path.clone();
+    // Still the same kind of session (#1423): a chat, a CI fix or a
+    // conflict fix, on the same agent, so the saved conversation resumes.
+    new_session.agent_id = s.agent_id.clone();
+    new_session.session_mode = s.session_mode;
+    new_session.produce_pr = s.produce_pr;
+    new_session.turns = s.turns.clone();
+    new_session.ci_fix_context = s.ci_fix_context.clone();
+    new_session.conflict_fix_context = s.conflict_fix_context.clone();
     if let Some(id) = s.agent_session_id.as_deref() {
         new_session.bind_agent_session_id(id);
     }
