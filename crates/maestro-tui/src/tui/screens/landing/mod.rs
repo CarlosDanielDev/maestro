@@ -8,6 +8,7 @@ use crate::mascot::{MascotState, MascotStyle};
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
+use crate::tui::navigation::registry::Chord;
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{Frame, layout::Rect};
@@ -150,34 +151,39 @@ impl Default for LandingScreen {
 /// screen still lends Home its help entry.
 impl KeymapProvider for LandingScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        // #1398: one row per Home action letter, named as Home draws it.
+        let letters = crate::tui::screens::home::mission::actions()
+            .into_iter()
+            .map(|a| KeyBinding {
+                key: Chord::key(KeyCode::Char(a.key)).label(),
+                description: a.label,
+            });
+        let mut bindings = vec![
+            KeyBinding {
+                key: "j/Down",
+                description: "Next row",
+            },
+            KeyBinding {
+                key: "k/Up",
+                description: "Previous row",
+            },
+            KeyBinding {
+                key: "Enter",
+                description: "Open the selected row",
+            },
+            KeyBinding {
+                key: "Tab",
+                description: "Switch Needs you / Actions",
+            },
+        ];
+        bindings.extend(letters);
+        bindings.push(KeyBinding {
+            key: "n",
+            description: "Release notes",
+        });
         vec![KeyBindingGroup {
             title: "Home",
-            bindings: vec![
-                KeyBinding {
-                    key: "j/Down",
-                    description: "Next row",
-                },
-                KeyBinding {
-                    key: "k/Up",
-                    description: "Previous row",
-                },
-                KeyBinding {
-                    key: "Enter",
-                    description: "Open the selected row",
-                },
-                KeyBinding {
-                    key: "Tab",
-                    description: "Switch Needs you / Actions",
-                },
-                KeyBinding {
-                    key: "d/f/a/i/m/r/p/h/s/t",
-                    description: "Run an action",
-                },
-                KeyBinding {
-                    key: "n",
-                    description: "Release notes",
-                },
-            ],
+            bindings,
         }]
     }
 }

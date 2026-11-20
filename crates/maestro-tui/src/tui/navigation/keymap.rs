@@ -20,23 +20,40 @@ pub trait KeymapProvider {
     fn keybindings(&self) -> Vec<KeyBindingGroup>;
 }
 
-/// Return the global keybindings that apply regardless of active screen.
-/// Backed by a static allocation to avoid per-frame heap work.
+/// Return the global keybindings that apply regardless of active screen:
+/// the registry's Global keys (#1398). Backed by a static allocation to
+/// avoid per-frame heap work.
 pub fn global_keybindings() -> &'static [KeyBindingGroup] {
     use std::sync::LazyLock;
-    static GLOBALS: LazyLock<Vec<KeyBindingGroup>> = LazyLock::new(|| {
+    static GLOBALS: LazyLock<Vec<KeyBindingGroup>> =
+        LazyLock::new(|| vec![super::registry::global_help_group()]);
+    &GLOBALS
+}
+
+/// Help groups that depend on the mode (#1398): the registry block of its
+/// screen, the digit tab rows on a tab screen, and the Overview keys on
+/// Overview (`handle_overview_keys`), which mean other things elsewhere.
+pub fn mode_help_groups(mode: crate::tui::app::TuiMode) -> Vec<KeyBindingGroup> {
+    let mut groups: Vec<KeyBindingGroup> = super::registry::screen_help_group(mode)
+        .into_iter()
+        .collect();
+    if crate::tui::ds::tab_bar::tab_index(mode).is_some() {
+        groups.push(super::registry::tab_help_group());
+    }
+    if mode == crate::tui::app::TuiMode::Overview {
+        groups.extend_from_slice(overview_keybindings());
+    }
+    groups
+}
+
+/// The Overview keys the registry does not declare yet (no Overview block).
+pub fn overview_keybindings() -> &'static [KeyBindingGroup] {
+    use std::sync::LazyLock;
+    static OVERVIEW: LazyLock<Vec<KeyBindingGroup>> = LazyLock::new(|| {
         vec![
             KeyBindingGroup {
                 title: "Navigation",
                 bindings: vec![
-                    KeyBinding {
-                        key: "Tab",
-                        description: "Cycle focus between panes",
-                    },
-                    KeyBinding {
-                        key: "Esc",
-                        description: "Return to previous screen / Close help",
-                    },
                     KeyBinding {
                         key: "Enter",
                         description: "Open detail / Execute action",
@@ -44,10 +61,6 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                     KeyBinding {
                         key: "1-9",
                         description: "Jump to session detail by index",
-                    },
-                    KeyBinding {
-                        key: "? / F1",
-                        description: "Toggle help overlay",
                     },
                 ],
             },
@@ -92,14 +105,6 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Kill selected session",
                     },
                     KeyBinding {
-                        key: "Shift+P",
-                        description: "Manually retry PR creation for selected session",
-                    },
-                    KeyBinding {
-                        key: "A",
-                        description: "Cycle agent for new sessions",
-                    },
-                    KeyBinding {
                         key: "d",
                         description: "Toggle activity log",
                     },
@@ -124,24 +129,14 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
             },
             KeyBindingGroup {
                 title: "General",
-                bindings: vec![
-                    KeyBinding {
-                        key: "S / F2",
-                        description: "Session summary",
-                    },
-                    KeyBinding {
-                        key: "^Q / q / Ctrl+c / ^X",
-                        description: "Quit maestro (asks while agents run)",
-                    },
-                    KeyBinding {
-                        key: "Ctrl+L",
-                        description: "Toggle the activity log drawer (Esc closes)",
-                    },
-                ],
+                bindings: vec![KeyBinding {
+                    key: "S / F2",
+                    description: "Session summary",
+                }],
             },
         ]
     });
-    &GLOBALS
+    &OVERVIEW
 }
 
 /// Action dispatched when an F-key is pressed. Paired with a label in
@@ -560,7 +555,7 @@ mod tests {
     /// an F6 alias.
     #[test]
     fn global_keybindings_views_group_describes_f6_as_deps() {
-        let views = global_keybindings()
+        let views = overview_keybindings()
             .iter()
             .find(|g| g.title == "Views")
             .expect("Views group");

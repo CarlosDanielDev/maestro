@@ -97,6 +97,40 @@ pub fn filter_bindings(groups: &[KeyBindingGroup], query: &str) -> Vec<KeyBindin
         .collect()
 }
 
+/// The groups Help draws (#1398): a Global row is left out when the
+/// screen's own rows name one of its keys, because the screen takes that
+/// key first (`Tab` cycles the view on Overview, not "next panel").
+pub fn shown_groups(groups: &[KeyBindingGroup]) -> Vec<KeyBindingGroup> {
+    let globals = crate::tui::navigation::keymap::global_keybindings();
+    let is_global = |g: &KeyBindingGroup| globals.iter().any(|x| x.title == g.title);
+    let screen_keys: Vec<&str> = groups
+        .iter()
+        .filter(|g| !is_global(g))
+        .flat_map(|g| &g.bindings)
+        .flat_map(|b| key_tokens(b.key))
+        .collect();
+    groups
+        .iter()
+        .map(|g| {
+            let mut g = g.clone();
+            if is_global(&g) {
+                g.bindings
+                    .retain(|b| !key_tokens(b.key).any(|k| screen_keys.contains(&k)));
+            }
+            g
+        })
+        .collect()
+}
+
+/// The single keys a Help row names: `t / F5` → `t`, `F5`; `j/Down` →
+/// `j`, `Down`. `Shift+Up/Down` and `/` stay whole.
+fn key_tokens(key: &str) -> impl Iterator<Item = &str> {
+    key.split(" / ").flat_map(|k| {
+        let pair = k.len() > 1 && !k.contains('+') && k.contains('/');
+        k.split(if pair { '/' } else { '\0' })
+    })
+}
+
 /// Draws the Help overlay. The scroll is clamped to the content end and
 /// written back into `state`, so `k` moves up at once after an overscroll.
 pub fn draw_help_overlay_with_search(
@@ -116,8 +150,9 @@ pub fn draw_help_overlay_with_search(
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(popup);
     let search_query = state.search_query.as_str();
-    let groups = filter_bindings(&mode_km.help_groups, search_query);
-    let key_col = key_column_width(&mode_km.help_groups, inner.width);
+    let shown = shown_groups(&mode_km.help_groups);
+    let groups = filter_bindings(&shown, search_query);
+    let key_col = key_column_width(&shown, inner.width);
 
     let title = format!("Help — {} Mode", mode_km.mode_label);
     let mut help_text = vec![
@@ -257,3 +292,7 @@ pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect 
 #[cfg(test)]
 #[path = "help_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "help_registry_tests.rs"]
+mod registry_tests;

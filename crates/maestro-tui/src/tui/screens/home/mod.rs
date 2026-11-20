@@ -13,6 +13,7 @@ use crate::tui::marquee::MarqueeState;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::focus::{FocusId, FocusRing};
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
+use crate::tui::navigation::registry::{self, Chord};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{Frame, layout::Rect};
@@ -194,7 +195,36 @@ impl HomeScreen {
 
 impl KeymapProvider for HomeScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        // #1398: one row per `QUICK_ACTIONS` letter, so Help cannot miss a
+        // bound key. Letters the registry binds globally (`Q`, `M`, `u`,
+        // `q`) are taken before this screen; the Global group lists them.
+        let letters = QUICK_ACTIONS.iter().filter_map(|(label, c, _)| {
+            let chord = Chord::key(KeyCode::Char(*c));
+            (!registry::is_global(chord)).then_some(KeyBinding {
+                key: chord.label(),
+                description: label,
+            })
+        });
+        let mut actions = vec![KeyBinding {
+            key: "Enter",
+            description: "Execute selected action",
+        }];
+        actions.extend(letters);
+        actions.extend([
+            KeyBinding {
+                key: "n",
+                description: "Release Notes",
+            },
+            KeyBinding {
+                key: "R",
+                description: "Refresh Suggestions",
+            },
+        ]);
         vec![
+            KeyBindingGroup {
+                title: "Actions",
+                bindings: actions,
+            },
             KeyBindingGroup {
                 title: "Navigation",
                 bindings: vec![
@@ -209,47 +239,6 @@ impl KeymapProvider for HomeScreen {
                     KeyBinding {
                         key: "Tab",
                         description: "Cycle focus between panes",
-                    },
-                ],
-            },
-            KeyBindingGroup {
-                title: "Actions",
-                bindings: vec![
-                    KeyBinding {
-                        key: "Enter",
-                        description: "Execute selected action",
-                    },
-                    KeyBinding {
-                        key: "i",
-                        description: "Browse Issues",
-                    },
-                    KeyBinding {
-                        key: "m",
-                        description: "Browse Milestones",
-                    },
-                    KeyBinding {
-                        key: "r",
-                        description: "Run Prompt",
-                    },
-                    KeyBinding {
-                        key: "a",
-                        description: "Adapt Project",
-                    },
-                    KeyBinding {
-                        key: "p",
-                        description: "Review PRs",
-                    },
-                    KeyBinding {
-                        key: "n",
-                        description: "Release Notes",
-                    },
-                    KeyBinding {
-                        key: "R",
-                        description: "Refresh Suggestions",
-                    },
-                    KeyBinding {
-                        key: "q",
-                        description: "Quit",
                     },
                 ],
             },
