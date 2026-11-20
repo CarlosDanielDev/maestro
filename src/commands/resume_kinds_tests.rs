@@ -4,7 +4,7 @@
 //! checkout.
 
 use super::tests::{init_repo, issue_session, walk};
-use super::{restore_session, resumable_sessions};
+use super::{plan_resume, restore_session, resumable_sessions, sessions_to_resume};
 use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
 use crate::commands::setup::setup_app_from_config;
 use crate::config::{Config, LoadedConfig};
@@ -19,8 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const CHAT_ID: &str = "aaaaaaaa-0000-0000-0000-000000001423";
-const CI_ID: &str = "bbbbbbbb-0000-0000-0000-000000001423";
-const CONFLICT_ID: &str = "cccccccc-0000-0000-0000-000000001423";
 
 /// An app on `repo` whose agent command does not exist: nothing here may
 /// start a real agent. A macro, so this test (layer 3) never names the TUI
@@ -28,7 +26,7 @@ const CONFLICT_ID: &str = "cccccccc-0000-0000-0000-000000001423";
 macro_rules! app_at {
     ($repo:expr, $store_path:expr) => {{
         let config: Config = toml::from_str(
-            "[project]\nrepo = \"owner/repo\"\n[sessions]\nmax_concurrent = 4\n[budget]\n\
+            "[project]\nrepo = \"owner/repo\"\n[sessions]\nmax_concurrent = 5\n[budget]\n\
              [notifications]\n[agents]\ndefault = \"q\"\n[agents.q]\nkind = \"qwen\"\n\
              command = \"maestro-missing-agent-1423\"\n",
         )
@@ -43,9 +41,10 @@ macro_rules! app_at {
     }};
 }
 
-/// An idle chat (settled into Interactive, two saved turns), a CI fix and a
-/// conflict fix, each bound to an agent session id. Returns their ids and
-/// kept worktrees, in that order.
+/// An idle chat (spawned, settled into Interactive, two saved turns), a CI
+/// fix and a conflict fix (never spawned), on the qwen agent, which never
+/// returns an agent session id. Returns their ids and kept worktrees, in
+/// that order.
 fn chat_and_fixes(pool: &mut SessionPool) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
     use SessionStatus::{CiFix, Completed, ConflictFix, Running, Spawning};
     let chat = pool.create_interaction_session(
@@ -76,13 +75,13 @@ fn chat_and_fixes(pool: &mut SessionPool) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
     let _ = pool.try_promote();
     let walks: [&[SessionStatus]; 3] = [&[Spawning, Running, Completed], &[CiFix], &[ConflictFix]];
     let mut kept = Vec::new();
-    for ((id, steps), agent_id) in ids.iter().zip(walks).zip([CHAT_ID, CI_ID, CONFLICT_ID]) {
+    for (id, steps) in ids.iter().zip(walks) {
         let managed = pool.get_active_mut(*id).unwrap();
         walk(&mut managed.session, steps);
-        assert!(managed.session.bind_agent_session_id(agent_id));
         kept.push(managed.worktree_path.clone().unwrap());
     }
     let chat = &mut pool.get_active_mut(ids[0]).unwrap().session;
+    chat.started_at = Some(chrono::Utc::now()); // its first turn ran
     assert_eq!(chat.status, SessionStatus::Interactive, "setup: idle chat");
     for (role, content) in [(TurnRole::User, "fix it"), (TurnRole::Agent, "done")] {
         chat.turns.push(TurnRecord {
@@ -95,11 +94,14 @@ fn chat_and_fixes(pool: &mut SessionPool) -> ([uuid::Uuid; 3], Vec<PathBuf>) {
     (ids, kept)
 }
 
-/// Every session `maestro resume` would restart from `store_path`.
+/// Every session `maestro resume` would restart from `store_path`, as
+/// `cmd_resume` picks them (no `--rerun-first-turn`).
 fn restored(repo: &Path, store_path: &Path) -> Vec<Session> {
     let state = StateStore::new(store_path.into()).load().unwrap();
     let probe = GitWorktreeManager::new(repo.to_path_buf());
-    (resumable_sessions(&state, None).iter())
+    let (picked, notes) = sessions_to_resume(&state, None, false);
+    assert!(notes.is_empty(), "nothing here is a first turn: {notes:?}");
+    (picked.iter())
         .map(|s| restore_session(s, &probe).expect("restorable"))
         .collect()
 }
@@ -144,12 +146,12 @@ async fn resume_restores_interactive_and_fix_sessions() {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    let resumed: Vec<_> = (agent.requests.lock().unwrap().iter())
-        .map(|r| r.resume_session_id.clone())
+    let cwds: Vec<_> = (agent.requests.lock().unwrap().iter())
+        .map(|r| r.cwd.clone())
         .collect();
-    assert_eq!(resumed.len(), 2, "only the two fixes start: {resumed:?}");
-    for id in [CI_ID, CONFLICT_ID] {
-        assert!(resumed.contains(&Some(id.to_string())), "{id}: {resumed:?}");
+    assert_eq!(cwds.len(), 2, "only the two fixes start: {cwds:?}");
+    for path in &kept[1..] {
+        assert!(cwds.contains(&Some(path.clone())), "{path:?}: {cwds:?}");
     }
 
     for (id, path) in ids.iter().zip(&kept) {
@@ -168,7 +170,6 @@ async fn resume_restores_interactive_and_fix_sessions() {
     assert!(!chat.has_live_turn(), "an idle chat sends no turn");
     assert_eq!(chat.session.status, SessionStatus::Interactive);
     assert_eq!(chat.session.session_mode, SessionMode::Interactive);
-    assert_eq!(chat.session.agent_session_id.as_deref(), Some(CHAT_ID));
     assert_eq!(chat.session.turns.len(), 2, "its saved turns");
     assert_eq!(chat.session.agent_id.as_deref(), Some("q"), "same agent");
     let ci = &app.pool.get_active_mut(ids[1]).unwrap().session;
@@ -193,13 +194,18 @@ async fn chat_and_fix_sessions_survive_a_plain_launch() {
     let store_path = state_dir.path().join("state-1423.json");
     let mut app = app_at!(repo.path(), &store_path);
     let (ids, _) = chat_and_fixes(&mut app.pool);
-    let stalled = issue_session(1426);
-    let stalled_id = stalled.id;
+    let (stalled, spawning) = (issue_session(1426), issue_session(1434));
+    let (stalled_id, spawning_id) = (stalled.id, spawning.id);
     app.pool.enqueue(stalled);
+    app.pool.enqueue(spawning);
     let _ = app.pool.try_promote();
     walk(
         &mut app.pool.get_active_mut(stalled_id).unwrap().session,
         &[Spawning, Running, Stalled],
+    );
+    walk(
+        &mut app.pool.get_active_mut(spawning_id).unwrap().session,
+        &[Spawning],
     );
     crate::tui::save_on_exit(&mut app).expect("saved");
     drop(app);
@@ -214,7 +220,7 @@ async fn chat_and_fix_sessions_survive_a_plain_launch() {
     let back: Vec<_> = (restored(repo.path(), &store_path).iter())
         .map(|s| s.id)
         .collect();
-    for id in ids.iter().chain([&stalled_id]) {
+    for id in ids.iter().chain([&stalled_id, &spawning_id]) {
         assert!(back.contains(id), "{id} was dropped by the plain launch");
     }
 }
@@ -281,4 +287,107 @@ fn resume_skips_an_adopted_conversation() {
     );
     state.sessions.push(adopted);
     assert!(resumable_sessions(&state, None).is_empty());
+}
+
+/// An idle chat resumes whether or not its agent returned a session id
+/// (codex, minimax, ollama, opencode and qwen never do; a Claude chat
+/// whose first turn errored has none): it comes back waiting, so nothing
+/// re-runs and there is no first-turn note. A saved id is bound again.
+#[test]
+fn idle_chat_without_agent_id_resumes() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let probe = GitWorktreeManager::new(repo.path().to_path_buf());
+    let mut state = crate::state::types::MaestroState::default();
+    for (n, id) in [(1430, None), (1431, Some(CHAT_ID))] {
+        let mut chat = issue_session(n);
+        chat.session_mode = SessionMode::Interactive;
+        walk(
+            &mut chat,
+            &[
+                SessionStatus::Spawning,
+                SessionStatus::Running,
+                SessionStatus::Completed,
+            ],
+        );
+        chat.started_at = Some(chrono::Utc::now());
+        chat.worktree_path = Some(probe.create(&format!("issue-{n}")).unwrap());
+        if let Some(id) = id {
+            assert!(chat.bind_agent_session_id(id));
+        }
+        state.sessions.push(chat);
+    }
+    let (picked, notes) = sessions_to_resume(&state, None, false);
+    assert!(
+        notes.is_empty(),
+        "no first-turn note for an idle chat: {notes:?}"
+    );
+    assert_eq!(picked.len(), 2, "both chats resume");
+    let back: Vec<_> = (picked.iter())
+        .map(|s| restore_session(s, &probe).expect("restorable"))
+        .collect();
+    assert!(back.iter().all(|s| s.status == SessionStatus::Interactive));
+    assert_eq!(back[0].agent_session_id, None);
+    assert_eq!(back[1].agent_session_id.as_deref(), Some(CHAT_ID));
+
+    // Its worktree is gone: refused now, not a spawn error on the next
+    // message.
+    probe.remove("issue-1430").unwrap();
+    assert!(!picked[0].worktree_path.as_ref().unwrap().exists(), "setup");
+    let refused = restore_session(picked[0], &probe).expect_err("its worktree is gone");
+    assert!(refused.contains("worktree is gone"), "{refused}");
+}
+
+/// `maestro resume` keeps the records it does not restore (#1423): a
+/// first-turn session it skips is still in state after the first save,
+/// so `--rerun-first-turn` finds it later.
+#[tokio::test]
+async fn resume_keeps_the_records_it_skips() {
+    use SessionStatus::{CiFix, Running, Spawning};
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let state_dir = tempfile::tempdir().unwrap();
+    let store_path = state_dir.path().join("state-1423.json");
+    let mut app = app_at!(repo.path(), &store_path);
+    let (first, fix) = (issue_session(1432), issue_session(1433));
+    let ids = [first.id, fix.id];
+    for s in [first, fix] {
+        app.pool.enqueue(s);
+    }
+    let _ = app.pool.try_promote();
+    let first = &mut app.pool.get_active_mut(ids[0]).unwrap().session;
+    walk(first, &[Spawning, Running]);
+    first.started_at = Some(chrono::Utc::now()); // quit mid-first-turn
+    walk(
+        &mut app.pool.get_active_mut(ids[1]).unwrap().session,
+        &[CiFix],
+    );
+    crate::tui::save_on_exit(&mut app).expect("saved");
+    drop(app);
+
+    // `maestro resume`, as `cmd_resume` runs it.
+    let state = StateStore::new(store_path.clone()).load().unwrap();
+    let (picked, notes) = sessions_to_resume(&state, None, false);
+    assert_eq!(notes.len(), 1, "setup: the first turn is skipped");
+    let probe = GitWorktreeManager::new(repo.path().to_path_buf());
+    let plan = plan_resume(&state, &picked, &probe);
+    let mut app = app_at!(repo.path(), &store_path);
+    app.workspace_trusted = false; // nothing may spawn here
+    app.pool.keep_saved_resumable(&plan.keep);
+    for s in plan.restore {
+        app.add_session(s).await.unwrap();
+    }
+    crate::tui::save_on_exit(&mut app).expect("saved");
+    drop(app);
+
+    let state = StateStore::new(store_path).load().unwrap();
+    let skipped = (state.sessions.iter())
+        .find(|s| s.id == ids[0])
+        .expect("the skipped record is still saved");
+    assert!(skipped.worktree_path.is_some(), "with its worktree");
+    let (picked, _) = sessions_to_resume(&state, None, true);
+    assert!(
+        picked.iter().any(|s| s.id == ids[0]),
+        "--rerun-first-turn finds it"
+    );
 }

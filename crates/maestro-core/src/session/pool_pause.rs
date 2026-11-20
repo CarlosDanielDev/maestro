@@ -138,7 +138,8 @@ impl SessionPool {
     /// Keep sessions an earlier run saved for `maestro resume` in the
     /// pool's finished list, so this run's state saves do not drop them:
     /// Paused; Interactive, CiFix and ConflictFix (#1423); and, with a
-    /// recorded worktree, Queued, Stalled, Retrying and cap-stopped ones.
+    /// recorded worktree, Queued, Spawning, Stalled, Retrying and cap-stopped
+    /// ones.
     /// Never an adopted conversation (resume skips it).
     pub fn keep_saved_resumable(&mut self, saved: &[Session]) {
         let resumable = |s: &&Session| {
@@ -146,7 +147,7 @@ impl SessionPool {
             s.adopted_cwd.is_none()
                 && match s.status {
                     Paused | Interactive | CiFix | ConflictFix => true,
-                    Queued | Stalled | Retrying => s.worktree_path.is_some(),
+                    Queued | Spawning | Stalled | Retrying => s.worktree_path.is_some(),
                     _ => RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some(),
                 }
         };

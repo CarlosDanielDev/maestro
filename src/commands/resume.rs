@@ -34,11 +34,13 @@ pub async fn cmd_resume(
     let mut app = setup_app_from_config(loaded, store, worktree_mgr, None);
 
     let probe = GitWorktreeManager::new(repo_root);
-    for s in &incomplete {
-        match restore_session(s, &probe) {
-            Ok(session) => app.add_session(session).await?,
-            Err(why) => eprintln!("{why}"),
-        }
+    let plan = plan_resume(&state, &incomplete, &probe);
+    for why in &plan.refused {
+        eprintln!("{why}");
+    }
+    app.pool.keep_saved_resumable(&plan.keep);
+    for session in plan.restore {
+        app.add_session(session).await?;
     }
 
     app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
@@ -103,7 +105,12 @@ fn select_first_turn(
         .into_iter()
         .filter(|s| {
             // Bound, or never spawned: a never-run prompt spends only once.
-            if s.agent_session_id.is_some() || s.started_at.is_none() {
+            // An idle chat comes back waiting for the user (#1423): no turn
+            // runs, with or without an id (most agents return none).
+            if s.agent_session_id.is_some()
+                || s.started_at.is_none()
+                || s.status == SessionStatus::Interactive
+            {
                 return true;
             }
             let label = match s.issue_number {
@@ -123,6 +130,39 @@ fn select_first_turn(
         })
         .collect();
     (picked, notes)
+}
+
+/// What `cmd_resume` does with the sessions it picked (#1423): each one
+/// restored, or a line saying why not, plus every saved record it does
+/// not restore, for `SessionPool::keep_saved_resumable` — so this run's
+/// state saves keep a skipped or refused record for a later resume.
+struct ResumePlan {
+    restore: Vec<Session>,
+    refused: Vec<String>,
+    keep: Vec<Session>,
+}
+
+fn plan_resume(
+    state: &MaestroState,
+    picked: &[&Session],
+    worktrees: &dyn WorktreeManager,
+) -> ResumePlan {
+    let (mut restore, mut refused) = (Vec::new(), Vec::new());
+    for s in picked {
+        match restore_session(s, worktrees) {
+            Ok(session) => restore.push(session),
+            Err(why) => refused.push(why),
+        }
+    }
+    let keep = (state.sessions.iter())
+        .filter(|s| !restore.iter().any(|r| r.id == s.id))
+        .cloned()
+        .collect();
+    ResumePlan {
+        restore,
+        refused,
+        keep,
+    }
 }
 
 /// A fresh queued session that continues the saved one `s` (#1266): it
@@ -155,6 +195,13 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
         return Err(format!(
             "Skipping {slug}: this chat ran in the main checkout, not a worktree; \
              open the issue's chat again instead."
+        ));
+    }
+    // An idle chat is never re-promoted, so nothing would make a new
+    // worktree for it: its next message would fail to spawn.
+    if idle_chat && !s.worktree_path.as_ref().is_some_and(|p| p.exists()) {
+        return Err(format!(
+            "Skipping {slug}: this chat's worktree is gone; open the issue's chat again instead."
         ));
     }
     let mut new_session = Session::new(
