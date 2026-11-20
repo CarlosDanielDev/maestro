@@ -242,19 +242,6 @@ fn home_compact() {
     assert_snapshot!("home_compact", t.backend());
 }
 
-/// #1384: Help names `Tab` only where Tab moves focus (not on Compact).
-#[test]
-fn home_help_offers_tab_only_when_actions_show() {
-    for (w, h, shown) in [(80, 24, false), (120, 36, true)] {
-        let mut app = busy_app();
-        draw(&mut app, w, h);
-        app.help_state = Some(crate::tui::help::HelpOverlayState::new());
-        let text = rows(&draw(&mut app, w, h)).join("\n");
-        assert!(text.contains("Help"), "{text}");
-        assert_eq!(text.contains("Switch Needs you"), shown, "{w}x{h}:\n{text}");
-    }
-}
-
 #[test]
 fn home_wide_no_color() {
     let mut app = busy_app();
@@ -403,3 +390,6 @@ fn home_no_decoration_after_first_run() {
         assert!(r.join("\n").contains("Needs you (3)"), "{w}x60");
     }
 }
+
+#[path = "home_mission_help_tests.rs"]
+mod help_tests;
