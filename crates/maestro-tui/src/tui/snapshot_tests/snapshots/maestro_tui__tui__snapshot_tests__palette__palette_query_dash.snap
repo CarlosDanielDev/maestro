@@ -1,6 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/palette.rs
-assertion_line: 207
+assertion_line: 221
 expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
@@ -11,13 +11,13 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 "┏━━━━━━━│› dash                                                        │━━━━━━━┓"
 "┃ ✓ Noth│──────────────────────────────────────────────────────────────│       ┃"
 "┃   i ne│▌ Dashboard                                                 2 │       ┃"
-"┃       │                                                              │       ┃"
+"┃       │  TurboQuant dashboard                                        │       ┃"
 "┗━━━━━━━│                                                              │━━━━━━━┛"
 "┌───────│                                                              │───────┐"
 "│ No age│                                                              │       │"
 "│       │                                                              │       │"
 "│       │                                                              │       │"
-"│       │⏎ run  ↑↓ pick  Esc close · 1 of 24 commands                  │       │"
+"│       │⏎ run  ↑↓ pick  Esc close · 2 of 24 commands                  │       │"
 "│       ╰──────────────────────────────────────────────────────────────╯       │"
 "│                                                                              │"
 "│                                                                              │"
@@ -30,3 +30,4 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 
 --- underlined ---
  7|           Dash
+ 8|                      dash

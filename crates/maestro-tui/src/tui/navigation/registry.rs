@@ -132,9 +132,6 @@ pub enum Action {
     Undo,
     ToggleLogDrawer,
     ToggleBypass,
-    TurboquantDashboard,
-    ToggleCompleteModal,
-    ReviewConcerns,
     RetryPr,
     ScrollUp,
     ScrollDown,
@@ -145,6 +142,10 @@ pub enum Action {
     CycleAgent,
     /// Agent graph ↔ session panels (#1240).
     TogglePanels,
+    /// Fetch the screen's data again (Milestones `r`, #1265).
+    Reload,
+    /// Launch every open issue of the milestone (Milestones `R`, #1265).
+    RunAll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,10 +214,10 @@ pub enum Violation {
 /// Where the TurboQuant on/off toggle lives since ⌃Q quits (#1260): a
 /// Settings field, not a chord. Settings › TurboQuant › Enabled
 /// (`turboquant.enabled`, built in `screens/settings/tabs/turboquant.rs`),
-/// saved with ⌃S. No binding toggles it; `Q` opens its dashboard.
+/// saved with ⌃S. No binding toggles it; the palette opens its dashboard.
 pub const TURBOQUANT_TOGGLE: &str = "Settings › TurboQuant › Enabled";
 
-/// Kept until the Shift globals are retired (out of scope for #1248).
+/// `A` is the last Shift global; `Q` `M` `C` `P` were retired (#1265).
 const SHIFT_GLOBAL: &str = "Shift global from before §06, checked before every screen";
 
 /// Every declared binding: the §06 Global table, the other keys
@@ -267,10 +268,6 @@ pub fn registry() -> &'static [Binding] {
             g(Chord::ctrl('c'), A::Quit, Destructive, "quit"),
             g(ch('q'), A::Quit, Safe, "quit").hidden(),
             g(ch('A'), A::CycleAgent, Safe, "next agent").exception(SHIFT_GLOBAL),
-            g(ch('Q'), A::TurboquantDashboard, Safe, "TurboQuant").exception(SHIFT_GLOBAL),
-            g(ch('M'), A::ToggleCompleteModal, Safe, "complete modal").exception(SHIFT_GLOBAL),
-            g(ch('C'), A::ReviewConcerns, Safe, "concerns").exception(SHIFT_GLOBAL),
-            g(ch('P'), A::RetryPr, Destructive, "retry PR"),
         ]);
 
         v.extend(screens::blocks());
@@ -278,15 +275,6 @@ pub fn registry() -> &'static [Binding] {
     });
     &REGISTRY
 }
-
-/// A ⌃K palette command with no key (#1255), declared next to the bindings
-/// ([`PALETTE_COMMANDS`]). `Network`: diagnostics moved off Home (§02).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PaletteCommand {
-    Network,
-}
-
-pub const PALETTE_COMMANDS: &[(&str, PaletteCommand)] = &[("network", PaletteCommand::Network)];
 
 /// What the ⌃K palette lists on `mode`: Global plus `mode`'s screen block,
 /// the first binding per action (no `F1` after `?`), no hidden alias, no ⌃K.
@@ -371,6 +359,7 @@ pub fn footer_hints(mode: TuiMode) -> Option<&'static [InlineHint]> {
 
 #[path = "registry_screens.rs"]
 mod screens;
+pub use screens::{KeyOn, PALETTE_COMMANDS, PaletteCommand};
 
 #[path = "registry_help.rs"]
 mod help;

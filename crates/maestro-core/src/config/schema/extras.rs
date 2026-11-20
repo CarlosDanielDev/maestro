@@ -183,6 +183,15 @@ pub(super) const TUI_FIELDS: &[FieldSchema] = &[
         validator: None,
         presentation: None,
     },
+    FieldSchema {
+        key: "modal_on_complete",
+        label: "Session-complete Modal",
+        help: "Show the Session Complete modal when all sessions finish",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+        presentation: None,
+    },
 ];
 
 pub(super) const TUI_THEME_FIELDS: &[FieldSchema] = &[FieldSchema {

@@ -137,10 +137,10 @@ fn palette_entries_follow_registry() {
         quit.key, "⌃Q",
         "the first chord of an action is the one shown"
     );
-    let off = palette::entries(registry(), TuiMode::Landing, |a| {
-        (a == Action::ReviewConcerns).then_some("no review pending")
+    let off = palette::entries(registry(), TuiMode::Landing, |r| {
+        (r == Run::Command(PaletteCommand::ReviewConcerns)).then_some("no review pending")
     });
-    let concerns = off.iter().find(|e| e.label == "concerns").unwrap();
+    let concerns = off.iter().find(|e| e.label == "review concerns").unwrap();
     assert_eq!(concerns.disabled, Some("no review pending"));
 }
 
@@ -163,7 +163,7 @@ async fn palette_has_network() {
     assert!(
         PALETTE_COMMANDS
             .iter()
-            .any(|(label, cmd)| *label == "network" && *cmd == PaletteCommand::Network)
+            .any(|(label, cmd, _)| *label == "network" && *cmd == PaletteCommand::Network)
     );
     let mut app = log_app(TuiMode::Dashboard);
     handle_key(&mut app, ctrl_k()).await;

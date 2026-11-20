@@ -15,6 +15,7 @@ use crate::tui::navigation::keymap::{KeyBindingGroup, KeymapProvider};
 use crate::tui::navigation::registry::{Action, Scope, registry};
 use crate::tui::screens::LandingScreen;
 use crate::tui::screens::home::{HomeScreen, ProjectInfo};
+use crate::tui::screens::milestone::MilestoneScreen;
 
 async fn help_open(mode: TuiMode, width: u16, height: u16) -> (App, Terminal<TestBackend>) {
     let mut app = crate::tui::make_test_app("help-1398");
@@ -94,6 +95,7 @@ fn help_lists_every_registry_binding_for_mode() {
         TuiMode::ConfirmKill(nil),
         TuiMode::Fullscreen(nil),
         TuiMode::AgentGraph,
+        TuiMode::MilestoneView,
     ];
     for mode in modes {
         let km = mode_keymap(mode, None, &[], false);
@@ -121,7 +123,8 @@ fn help_lists_every_registry_binding_for_mode() {
 #[tokio::test]
 async fn help_search_finds_global_chords() {
     // `/team` is checked on Home only: Home has `t  Teams`; no key on
-    // Dashboard opens Teams, and Help must not invent one.
+    // Dashboard opens Teams, and Help must not invent one. Since #1265
+    // `/turbo` and `/setting` find the ⌃K palette rows.
     let cases = [
         (
             TuiMode::Landing,
@@ -166,8 +169,9 @@ async fn help_dashboard_80x24() {
         ("s", "Status"),
         ("c", "Cost"),
         ("t", "Token Report"),
-        ("Q", "TurboQuant"),
-        ("M", "complete modal"),
+        // #1265: Dashboard's own `Q` and `M`, no longer eaten by globals.
+        ("Q", "TurboQuant Savings"),
+        ("M", "Review Milestone"),
         ("u", "upgrade"),
     ] {
         assert!(has_row(&rows, key, name), "no {key} {name} row\n{text}");
@@ -189,6 +193,7 @@ fn shown_for(mode: TuiMode) -> Vec<KeyBindingGroup> {
             vec![],
         )
         .keybindings(),
+        TuiMode::MilestoneView => MilestoneScreen::new(vec![]).keybindings(),
         _ => vec![],
     };
     shown_groups(&mode_keymap(mode, None, &screen, false).help_groups)
@@ -256,6 +261,7 @@ fn help_never_gives_one_key_two_actions() {
         TuiMode::ConfirmKill(nil),
         TuiMode::Fullscreen(nil),
         TuiMode::AgentGraph,
+        TuiMode::MilestoneView,
     ];
     for mode in modes {
         let groups = shown_for(mode);
@@ -288,4 +294,21 @@ fn help_never_gives_one_key_two_actions() {
             "{mode:?} lists the Overview row {key:?}"
         );
     }
+}
+
+/// #1265: the ⌃K row says where the retired globals went and where
+/// TurboQuant is switched on and off; Milestones `R` says when it asks.
+#[test]
+fn help_rows_say_what_is_true() {
+    let km = mode_keymap(TuiMode::MilestoneView, None, &[], false);
+    let rows: Vec<_> = km.help_groups.iter().flat_map(|g| &g.bindings).collect();
+    let row = |key: &str| {
+        rows.iter()
+            .find(|r| r.key.split(" / ").any(|k| k == key))
+            .map(|r| r.description)
+            .unwrap_or_else(|| panic!("no {key} row"))
+    };
+    assert!(row("⌃K").contains("TurboQuant"), "{}", row("⌃K"));
+    assert!(row("⌃K").contains("on/off in Settings"), "{}", row("⌃K"));
+    assert!(row("R").contains("asks first for 2+"), "{}", row("R"));
 }

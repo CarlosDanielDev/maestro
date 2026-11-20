@@ -1,4 +1,5 @@
-//! The per-screen blocks of [`super::registry`], one per registered screen.
+//! The per-screen blocks of [`super::registry`], one per registered screen,
+//! and the ⌃K palette-only commands (#1255, #1265).
 //! Esc is the Global "back" on every screen, so no block redeclares it.
 
 use crossterm::event::KeyCode;
@@ -51,5 +52,68 @@ pub(super) fn blocks() -> Vec<Binding> {
     ]);
     let graph = Scope::Screen(TuiMode::AgentGraph);
     v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
+    // #1265: `r` reloads here as on every other screen; run-all is `R` and
+    // keeps its confirm (2+ issues open the queue review first). The footer
+    // stays `MilestoneScreen::footer_hints`.
+    let milestones = Scope::Screen(TuiMode::MilestoneView);
+    v.extend([
+        s(milestones, ch('r'), A::Reload, "reload"),
+        Binding::new(
+            ch('R'),
+            milestones,
+            A::RunAll,
+            Danger::Destructive,
+            "run all",
+        ),
+    ]);
+    // #1265: `P` retries the PR of the selected Overview session, so it is
+    // no longer a global. Hidden: the Overview footer stays its
+    // `mode_keymap` list; the palette lists `retry PR` as a command.
+    v.push(
+        Binding::new(
+            ch('P'),
+            Scope::Screen(TuiMode::Overview),
+            A::RetryPr,
+            Danger::Destructive,
+            "retry PR",
+        )
+        .hidden(),
+    );
     v
 }
+
+/// A ⌃K palette command with no global key (#1255). `Network`: diagnostics
+/// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
+/// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteCommand {
+    Network,
+    TurboquantDashboard,
+    CompleteModal,
+    ReviewConcerns,
+    RetryPr,
+}
+
+/// The key that runs a palette command outside the palette, and the one
+/// screen it works on; the palette shows it there only.
+pub type KeyOn = Option<(&'static str, TuiMode)>;
+
+pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
+    ("network", PaletteCommand::Network, None),
+    (
+        "TurboQuant dashboard",
+        PaletteCommand::TurboquantDashboard,
+        Some(("Q", TuiMode::Dashboard)),
+    ),
+    (
+        "session-complete modal (Settings)",
+        PaletteCommand::CompleteModal,
+        None,
+    ),
+    ("review concerns", PaletteCommand::ReviewConcerns, None),
+    (
+        "retry PR",
+        PaletteCommand::RetryPr,
+        Some(("P", TuiMode::Overview)),
+    ),
+];

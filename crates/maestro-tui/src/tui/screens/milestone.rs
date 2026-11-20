@@ -89,6 +89,8 @@ pub struct MilestoneScreen {
     /// Focused issue index within the right-pane Issue List tab (#325).
     pub focused_issue: usize,
     spinner_tick: usize,
+    /// Set by `r` (#1265); dispatch takes it and queues `FetchMilestones`.
+    reload_requested: bool,
 }
 
 impl MilestoneScreen {
@@ -102,7 +104,13 @@ impl MilestoneScreen {
             active_tab: MilestoneTab::default(),
             focused_issue: 0,
             spinner_tick: 0,
+            reload_requested: false,
         }
+    }
+
+    /// True once after `r` asked for a reload (#1265).
+    pub fn take_reload(&mut self) -> bool {
+        std::mem::take(&mut self.reload_requested)
     }
 
     pub fn set_spinner_context(&mut self, spinner_tick: usize) {
@@ -693,10 +701,6 @@ impl KeymapProvider for MilestoneScreen {
                     description: "View issues",
                 },
                 KeyBinding {
-                    key: "r",
-                    description: "Run all open issues",
-                },
-                KeyBinding {
                     key: "Esc",
                     description: "Back",
                 },
@@ -754,7 +758,13 @@ impl Screen for MilestoneScreen {
                     }
                     return ScreenAction::Push(TuiMode::IssueBrowser);
                 }
+                // #1265: `r` reloads, as on every other screen; run-all
+                // moved to `R` (its queue review asks before 2+ spawns).
                 KeyCode::Char('r') => {
+                    self.loading = true;
+                    self.reload_requested = true;
+                }
+                KeyCode::Char('R') => {
                     return self.handle_run_all();
                 }
                 KeyCode::Char('c') => {
@@ -794,7 +804,8 @@ impl Screen for MilestoneScreen {
         vec![
             ("Enter", "View Issues"),
             ("Tab", "Switch Tab"),
-            ("r", "Run All Open"),
+            ("r", "Reload"),
+            ("R", "Run All"),
             ("Esc", "Back"),
         ]
     }
@@ -1122,10 +1133,10 @@ mod tests {
     }
 
     #[test]
-    fn milestone_screen_key_r_on_milestone_returns_launch_sessions_for_all_open_issues() {
+    fn milestone_screen_key_shift_r_on_milestone_returns_launch_sessions_for_all_open_issues() {
         let issues = vec![make_issue(10), make_issue(11)];
         let mut screen = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Char('R')), InputMode::Normal);
         match action {
             ScreenAction::LaunchSessions(configs) => {
                 assert_eq!(configs.len(), 2);
@@ -1135,10 +1146,21 @@ mod tests {
     }
 
     #[test]
-    fn milestone_screen_key_r_on_empty_milestone_returns_none() {
+    fn milestone_screen_key_shift_r_on_empty_milestone_returns_none() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 5)]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Char('R')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn milestone_screen_key_r_requests_reload_once() {
+        let issues = vec![make_issue(10), make_issue(11)];
+        let mut screen = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None, "r never launches");
+        assert!(screen.loading);
+        assert!(screen.take_reload());
+        assert!(!screen.take_reload(), "taken once");
     }
 
     // ---- MilestoneEntry::progress_ratio ----

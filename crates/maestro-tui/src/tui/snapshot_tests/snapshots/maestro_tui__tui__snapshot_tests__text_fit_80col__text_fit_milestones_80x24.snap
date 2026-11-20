@@ -1,6 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/text_fit_80col.rs
-assertion_line: 219
+assertion_line: 226
 expression: "draw(&mut milestone_app(), 80, 24).backend()"
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
@@ -26,4 +26,4 @@ expression: "draw(&mut milestone_app(), 80, 24).backend()"
 "│                          ││                                                  │"
 "│                          ││                                                  │"
 "└──────────────────────────┘└──────────────────────────────────────────────────┘"
-" Enter View Issues   Tab Switch Tab   r Run All Open   Esc Back         ⌃Q quit "
+" Enter View Issues   Tab Switch Tab   r Reload   R Run All   Esc Back   ⌃Q quit "

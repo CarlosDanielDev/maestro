@@ -682,7 +682,7 @@ impl App {
                     self.activity_log.push_simple(
                         "Review".into(),
                         format!(
-                            "Review for PR #{pr_number}: {count} concern(s) — press [C] to view"
+                            "Review for PR #{pr_number}: {count} concern(s) — ⌃K review concerns to view"
                         ),
                         LogLevel::Info,
                     );

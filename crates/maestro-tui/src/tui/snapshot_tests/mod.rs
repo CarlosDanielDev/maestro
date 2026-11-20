@@ -38,6 +38,7 @@ mod overview;
 mod palette;
 mod prompt_input;
 mod quota_badges;
+mod retired_globals;
 mod roadmap;
 mod schema_tab;
 mod schema_tab_modals;

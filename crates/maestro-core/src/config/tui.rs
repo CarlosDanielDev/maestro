@@ -17,8 +17,8 @@ pub struct TuiConfig {
     #[serde(default)]
     pub mascot_style: MascotStyle,
     /// Fire the "Session Complete" modal when all sessions finish.
-    /// Default `true`. Toggled at runtime via the `MOD` header chip
-    /// (Shift+M) and persisted under `[tui] modal_on_complete` (#866).
+    /// Default `true`. A Settings row (Theme tab), saved with ⌃S under
+    /// `[tui] modal_on_complete` (#866, #1265).
     #[serde(default = "default_modal_on_complete")]
     pub modal_on_complete: bool,
 }

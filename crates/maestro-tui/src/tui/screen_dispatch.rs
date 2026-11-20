@@ -203,6 +203,13 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
     {
         app.pending_commands.push(cmd);
     }
+    // #1265: Milestones `r` asked for a reload.
+    if matches!(app.tui_mode, app::TuiMode::MilestoneView)
+        && let Some(s) = app.screen_state.milestone_screen.as_mut()
+        && s.take_reload()
+    {
+        app.pending_commands.push(app::TuiCommand::FetchMilestones);
+    }
     Some(action)
 }
 

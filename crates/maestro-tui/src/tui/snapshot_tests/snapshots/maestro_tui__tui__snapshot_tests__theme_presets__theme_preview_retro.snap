@@ -1,5 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/theme_presets.rs
+assertion_line: 54
 expression: "render_theme_preview(ThemePreset::Retro, \"retro\")"
 ---
 Buffer {
@@ -11,7 +12,7 @@ Buffer {
         "│  Advanced        │○ ascii_icons                                              │",
         "│  Providers       │✓ show_mascot                                              │",
         "│  Budget          │mascot_style:  sprite                                    │",
-        "│  Flags           │                                                           │",
+        "│  Flags           │✓ modal_on_complete                                        │",
         "│  Gates           │                                                           │",
         "│  GitHub          │                                                           │",
         "│  Layout          │                                                           │",
@@ -71,7 +72,8 @@ Buffer {
         x: 1, y: 6, fg: Rgb(0, 180, 45), bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 19, y: 6, fg: Rgb(0, 100, 25), bg: Reset, underline: Reset, modifier: NONE,
-        x: 20, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 20, y: 6, fg: Rgb(0, 255, 65), bg: Reset, underline: Reset, modifier: NONE,
+        x: 39, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 79, y: 6, fg: Rgb(0, 255, 65), bg: Reset, underline: Reset, modifier: NONE,
         x: 1, y: 7, fg: Rgb(0, 180, 45), bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

@@ -17,8 +17,9 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessi
 // 93 → 94 on 2026-05-23 for `sessions.session_history_cap` (persisted
 // session-history toggle). Bumped 94 → 98 in #1247 for the four theme v1
 // overrides (`surface_bar`, `surface_overlay`, `status_needs_pr`,
-// `status_conflict`).
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 98;
+// `status_conflict`). Bumped 98 → 99 in #1265 for `tui.modal_on_complete`
+// (the retired Shift+M toggle, now a Settings row).
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 99;
 // Bumped 3 → 4 in #788 — `review.reviewers` registered as VecOfStruct.
 // Bumped 4 → 5 in #803 — `teams` registered as FlattenedMap.
 const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 5;
@@ -655,7 +656,12 @@ fn review_table_has_reviewers_vec_of_struct() {
 #[test]
 fn tui_table_has_mascot_fields() {
     let keys = keys_of("tui");
-    for required in ["ascii_icons", "show_mascot", "mascot_style"] {
+    for required in [
+        "ascii_icons",
+        "show_mascot",
+        "mascot_style",
+        "modal_on_complete",
+    ] {
         assert!(
             keys.contains(&required),
             "TUI_FIELDS missing `{required}` — found {keys:?}"
