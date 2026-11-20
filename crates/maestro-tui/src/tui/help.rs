@@ -257,3 +257,7 @@ pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect 
 #[cfg(test)]
 #[path = "help_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "help_registry_tests.rs"]
+mod registry_tests;

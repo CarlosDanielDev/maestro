@@ -552,6 +552,21 @@ palette lists only Global entries there. Fullscreen scroll is
 `ScreenState::fullscreen_scroll`: rows above the tail, 0 follows the tail,
 clamped at draw time, reset when Fullscreen opens.
 
+Help (`?`) is built from the registry (#1398, `navigation/registry_help.rs`):
+
+| Item | For |
+|---|---|
+| `global_help_group()` | The Global scope as the "Global keys" Help group, first in `keymap::global_keybindings()`. One row per (scope, action, label); aliases share the row (`? / F1`, `⌃Q / ⌃X / ⌃C / q`); hidden bindings are listed too |
+| `screen_help_group(mode)` | The registry rows of `mode`'s screen (and panels) as "This screen"; `None` for a mode with no block. `mode_keymap` appends it to `help_groups` |
+| `is_global(chord)` | True for a Global chord, so a screen's own Help list leaves it to the Global group (Dashboard drops `Q M u q`) |
+
+A Help description is the registry `label`; only `Quit` and
+`TurboquantDashboard` add a short detail (`registry_help::detail`), so
+search finds `team` and `setting`. Home's action rows come from
+`home::mission::actions()`, Dashboard's from `QUICK_ACTIONS`.
+`help_lists_every_registry_binding_for_mode` fails when a registry key has
+no Help row.
+
 ---
 
 ## 4. UX rules

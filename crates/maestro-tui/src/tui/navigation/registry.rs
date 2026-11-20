@@ -372,6 +372,10 @@ pub fn footer_hints(mode: TuiMode) -> Option<&'static [InlineHint]> {
 #[path = "registry_screens.rs"]
 mod screens;
 
+#[path = "registry_help.rs"]
+mod help;
+pub use help::{global_help_group, is_global, screen_help_group};
+
 #[cfg(test)]
 #[path = "registry_tests.rs"]
 mod tests;

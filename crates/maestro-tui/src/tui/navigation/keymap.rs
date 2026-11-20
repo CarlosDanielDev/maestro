@@ -25,31 +25,16 @@ pub trait KeymapProvider {
 pub fn global_keybindings() -> &'static [KeyBindingGroup] {
     use std::sync::LazyLock;
     static GLOBALS: LazyLock<Vec<KeyBindingGroup>> = LazyLock::new(|| {
+        // #1398: the Global keys come from the registry; the rows below
+        // are the keys it does not declare yet.
         vec![
+            super::registry::global_help_group(),
             KeyBindingGroup {
                 title: "Navigation",
-                bindings: vec![
-                    KeyBinding {
-                        key: "Tab",
-                        description: "Cycle focus between panes",
-                    },
-                    KeyBinding {
-                        key: "Esc",
-                        description: "Return to previous screen / Close help",
-                    },
-                    KeyBinding {
-                        key: "Enter",
-                        description: "Open detail / Execute action",
-                    },
-                    KeyBinding {
-                        key: "1-9",
-                        description: "Jump to session detail by index",
-                    },
-                    KeyBinding {
-                        key: "? / F1",
-                        description: "Toggle help overlay",
-                    },
-                ],
+                bindings: vec![KeyBinding {
+                    key: "Enter",
+                    description: "Open detail / Execute action",
+                }],
             },
             KeyBindingGroup {
                 title: "Views",
@@ -92,14 +77,6 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Kill selected session",
                     },
                     KeyBinding {
-                        key: "Shift+P",
-                        description: "Manually retry PR creation for selected session",
-                    },
-                    KeyBinding {
-                        key: "A",
-                        description: "Cycle agent for new sessions",
-                    },
-                    KeyBinding {
                         key: "d",
                         description: "Toggle activity log",
                     },
@@ -124,20 +101,10 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
             },
             KeyBindingGroup {
                 title: "General",
-                bindings: vec![
-                    KeyBinding {
-                        key: "S / F2",
-                        description: "Session summary",
-                    },
-                    KeyBinding {
-                        key: "^Q / q / Ctrl+c / ^X",
-                        description: "Quit maestro (asks while agents run)",
-                    },
-                    KeyBinding {
-                        key: "Ctrl+L",
-                        description: "Toggle the activity log drawer (Esc closes)",
-                    },
-                ],
+                bindings: vec![KeyBinding {
+                    key: "S / F2",
+                    description: "Session summary",
+                }],
             },
         ]
     });
