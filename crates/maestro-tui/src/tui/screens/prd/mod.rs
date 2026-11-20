@@ -9,6 +9,7 @@
 pub mod chips;
 pub mod draw;
 pub mod explore;
+mod fit_hints;
 pub mod input;
 pub mod state;
 

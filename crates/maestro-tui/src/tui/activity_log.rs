@@ -1,5 +1,6 @@
 use crate::session::role::role_for_subagent_name;
 use crate::tui::agent_graph::personalities::{chip_glyph_for_role, role_abbrev, role_color};
+use crate::tui::ds::fit::ellipsize_line;
 use crate::tui::theme::Theme;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use ratatui::{
@@ -246,6 +247,8 @@ impl ActivityLog {
             return;
         }
 
+        // A line wider than the pane ends with `…`, not mid-word (#1399).
+        let line_width = block.inner(area).width as usize;
         let end = total.saturating_sub(self.scroll_offset);
         let start = end.saturating_sub(inner_height);
 
@@ -279,7 +282,7 @@ impl ActivityLog {
                     Style::default().fg(entry.level.color(theme)),
                 ));
 
-                ListItem::new(Line::from(spans))
+                ListItem::new(ellipsize_line(Line::from(spans), line_width))
             })
             .collect();
 

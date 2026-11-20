@@ -1,10 +1,11 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/milestone.rs
+assertion_line: 85
 expression: terminal.backend()
 ---
 "┌────────────[ 󰐱 Milestones ]────────────┐[1] Issues  [2] Preview                                                       "
 "│ 󰐱 v1.0                                │                                                                              "
-"│  [▓▓▓▓▓▓▓▓░░░░░░░░] 1/2 issues (50%)   │┌─────────────────────────────────[ Issues ]─────────────────────────────────┐"
+"│  [▓▓▓▓▓▓▓▓▓░░░░░░░░] 1/2 issues (50%)  │┌─────────────────────────────────[ Issues ]─────────────────────────────────┐"
 "│  󰓒 1    󰝦 1                            ││> 󰝦 #10 Implement feature A                                                 │"
 "│                                        ││  󰝦 #11 Fix bug B                                                           │"
 "│                                        ││                                                                            │"

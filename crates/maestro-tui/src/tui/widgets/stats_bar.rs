@@ -71,7 +71,22 @@ impl<'a> StatsBar<'a> {
 
         let overflow = total_width.saturating_sub(viewport_width);
         marquee.advance(overflow, &MarqueeConfig::default());
-        let windowed = visible_spans(&line.spans, marquee.offset, viewport_width);
+        // More text waits to the right until the window reaches the end:
+        // say so with `…` instead of cutting a word at the edge (#1399).
+        let windowed = if marquee.offset < overflow {
+            let mut spans = visible_spans(
+                &line.spans,
+                marquee.offset,
+                viewport_width.saturating_sub(1),
+            );
+            spans.push(Span::styled(
+                "…",
+                Style::default().fg(self.theme.text_muted),
+            ));
+            spans
+        } else {
+            visible_spans(&line.spans, marquee.offset, viewport_width)
+        };
         Paragraph::new(Line::from(windowed)).render(inner, buf);
     }
 

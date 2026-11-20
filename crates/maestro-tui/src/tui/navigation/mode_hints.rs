@@ -69,6 +69,23 @@ const OVERVIEW_HINTS_WITH_GRAPH: &[InlineHint] = &[
     HINT_OV_RETRY_PR,
 ];
 
+/// Overview hints that act on a session; the footer dims them while the
+/// pool is empty, since they would do nothing (#1399).
+const OVERVIEW_SESSION_ONLY_KEYS: &[&str] = &[
+    HINT_OV_DETAIL.key,
+    HINT_OV_COPY.key,
+    HINT_OV_FULL.key,
+    HINT_OV_GRAPH.key,
+];
+
+/// Keys of `mode`'s inline hints that cannot act right now.
+pub fn inactive_hint_keys(mode: TuiMode, has_sessions: bool) -> &'static [&'static str] {
+    match mode {
+        TuiMode::Overview if !has_sessions => OVERVIEW_SESSION_ONLY_KEYS,
+        _ => &[],
+    }
+}
+
 const AGENT_GRAPH_HINTS: &[InlineHint] = &[
     InlineHint {
         key: "Esc",

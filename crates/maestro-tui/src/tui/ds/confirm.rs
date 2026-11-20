@@ -146,11 +146,7 @@ impl TypedConfirm {
             return;
         }
         let y = inner.y + field_row;
-        let count = format!(
-            "{} of {}",
-            self.input.text().chars().count(),
-            self.expected.chars().count()
-        );
+        let count = self.counter();
         let count_w = (count.chars().count() as u16 + 2).min(inner.width);
         f.render_widget(
             Paragraph::new(Span::styled(count, muted)).alignment(Alignment::Right),
@@ -164,6 +160,21 @@ impl TypedConfirm {
             theme,
             true,
         );
+    }
+
+    /// `n of m` while the typed text is a prefix of the token, else
+    /// `does not match`: a wrong letter never reads complete (#1399).
+    fn counter(&self) -> String {
+        let typed = self.input.text();
+        if self.expected.starts_with(&typed) {
+            format!(
+                "{} of {}",
+                typed.chars().count(),
+                self.expected.chars().count()
+            )
+        } else {
+            "does not match".to_string()
+        }
     }
 
     /// `Esc` is always the default; `⏎` reads `(locked)` until the text matches.

@@ -58,6 +58,7 @@ mod size_guard;
 mod status_bar;
 mod status_chips;
 mod team_wizard;
+mod text_fit_80col;
 mod theme_presets;
 mod toasts;
 mod token_dashboard_provider_rollup;

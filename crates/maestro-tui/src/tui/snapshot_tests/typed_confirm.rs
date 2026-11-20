@@ -74,3 +74,20 @@ async fn typed_confirm_bypass() {
     assert!(app.bypass_active, "typed CONFIRM + Enter enables bypass");
     assert_ne!(app.tui_mode, TuiMode::BypassWarning, "the warning closes");
 }
+
+/// #1399: the counter counts the typed text that matches the token, so a
+/// wrong letter never reads complete.
+#[tokio::test]
+async fn typed_confirm_counter_counts_matching_chars() {
+    let mut app = log_app(TuiMode::Overview);
+    let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
+    let _ = handle_key(&mut app, ctrl_b).await;
+    assert_eq!(app.tui_mode, TuiMode::BypassWarning);
+    type_str(&mut app, "CONF").await;
+    let out = format!("{}", screen(&mut app).backend());
+    assert!(out.contains("4 of 7"), "matching prefix:\n{out}");
+    type_str(&mut app, "IRX").await;
+    let out = format!("{}", screen(&mut app).backend());
+    assert!(!out.contains("7 of 7"), "CONFIRX reads complete:\n{out}");
+    assert!(out.contains("does not match"), "{out}");
+}

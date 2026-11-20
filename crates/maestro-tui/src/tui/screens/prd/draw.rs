@@ -4,6 +4,7 @@
 
 use crate::prd::model::{Prd, TimelineStatus};
 use crate::tui::screens::prd::chips::{save_chip, sync_chip};
+use crate::tui::screens::prd::fit_hints::fit_hints;
 use crate::tui::screens::prd::state::{EditTarget, PrdPane, PrdScreen, PrdSection};
 use crate::tui::theme::Theme;
 use ratatui::Frame;
@@ -371,6 +372,7 @@ fn draw_hints(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Theme) {
             }
         }
     };
+    let hint = fit_hints(hint, area.width.saturating_sub(2) as usize);
     f.render_widget(
         Paragraph::new(hint)
             .style(Style::default().fg(theme.text_secondary))
