@@ -228,3 +228,46 @@ async fn retired_actions_in_palette() {
     run_from_palette(&mut app, label(PaletteCommand::RetryPr)).await;
     assert!(!retry_queued(&app), "retry PR off the Overview");
 }
+
+/// #1265 with #1384: Shift+P retries the PR of the session the grid
+/// highlights, after arrow keys, at 80x24 and 80x27.
+#[tokio::test]
+async fn shift_p_retries_the_highlighted_session() {
+    for (w, h) in [(80, 24), (80, 27)] {
+        let mut app = armed_app(TuiMode::Overview);
+        for issue in [43, 44] {
+            let s = Session::new(
+                "task".into(),
+                "claude-opus-4-5".into(),
+                "orchestrator".into(),
+                Some(issue),
+                None,
+            );
+            app.pool.enqueue(s);
+            app.pending_prs.push(awaiting_pending_pr(issue));
+        }
+        let _ = draw(&mut app, w, h);
+        for code in [KeyCode::Down, KeyCode::Right] {
+            handle_key(&mut app, KeyEvent::new(code, KeyModifiers::NONE)).await;
+            let _ = draw(&mut app, w, h);
+        }
+        let count = app.pool.total_count();
+        let layout = app.panel_view.grid_layout(count);
+        let lit = app.panel_view.grid_state.selected_index(&layout);
+        let want = app
+            .pool
+            .session_at_index(lit)
+            .and_then(|s| s.issue_number)
+            .expect("a highlighted session");
+        press(&mut app, 'P').await;
+        for pr in &app.pending_prs {
+            let queued = pr.status == PendingPrStatus::RetryScheduled;
+            assert_eq!(
+                queued,
+                pr.issue_number == want,
+                "{w}x{h}: #{}",
+                pr.issue_number
+            );
+        }
+    }
+}

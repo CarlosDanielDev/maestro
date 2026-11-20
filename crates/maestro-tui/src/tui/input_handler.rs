@@ -1531,10 +1531,9 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
 }
 
 fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
-    // Grid navigation needs terminal size — use a reasonable default
-    let (width, height) = crossterm::terminal::size().unwrap_or((120, 40));
-    let layout = crate::tui::panels::GridLayout::calculate(app.pool.total_count(), width, height);
+    // #1384: the layout of the area the grid is drawn in, not the terminal.
     let total_sessions = app.pool.total_count();
+    let layout = app.panel_view.grid_layout(total_sessions);
     match key.code {
         KeyCode::Up => app.panel_view.grid_state.move_up(),
         KeyCode::Down => app.panel_view.grid_state.move_down(&layout, total_sessions),
@@ -1576,6 +1575,10 @@ mod text_input_tests;
 #[cfg(test)]
 #[path = "input_handler_fullscreen_tests.rs"]
 mod fullscreen_tests;
+
+#[cfg(test)]
+#[path = "input_handler_overview_grid_tests.rs"]
+mod overview_grid_tests;
 
 #[cfg(test)]
 mod tests {

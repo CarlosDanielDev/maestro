@@ -86,6 +86,16 @@ pub fn inactive_hint_keys(mode: TuiMode, has_sessions: bool) -> &'static [&'stat
     }
 }
 
+/// Keys of `mode`'s inline hints that do nothing right now, so the footer
+/// leaves them out. #1384: Compact Home has no Actions panel, so `Tab` has
+/// nowhere to go.
+pub fn hidden_hint_keys(mode: TuiMode, home_actions_visible: bool) -> &'static [&'static str] {
+    match mode {
+        TuiMode::Landing if !home_actions_visible => &["Tab"],
+        _ => &[],
+    }
+}
+
 const AGENT_GRAPH_HINTS: &[InlineHint] = &[
     InlineHint {
         key: "Esc",

@@ -26,7 +26,7 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 "┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
 "│HH:MM:SS [S-1] seeded log line                                                │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" Enter Open   j/k Move   Tab Next panel                                 ⌃Q quit "
+" Enter Open   j/k Move                                                  ⌃Q quit "
 
 --- underlined ---
  7|           Dash
