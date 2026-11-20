@@ -1,4 +1,8 @@
+use crate::budget::sanitize::sanitize_cost;
 use crate::session::types::{Session, SessionStatus};
+use crate::tui::ds::fit::ellipsize_line;
+use crate::tui::ds::money::money;
+use crate::tui::screens::landing::draw::ellipsize;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -38,16 +42,27 @@ fn draw_budget_gauge(
     area: Rect,
     theme: &Theme,
 ) {
+    // `ds::money` never prints `$-0.00` (#1399); the percent uses the same
+    // clean value so it never reads `-0%`.
+    let total_cost = sanitize_cost(total_cost);
     let (ratio, label) = match budget_limit {
         Some(limit) if limit > 0.0 => {
             let pct = (total_cost / limit * 100.0).min(100.0);
             let ratio = (total_cost / limit).min(1.0);
             (
                 ratio,
-                format!("${:.2} / ${:.2} ({:.0}%)", total_cost, limit, pct),
+                format!(
+                    "{} / {} ({:.0}%)",
+                    money(Some(total_cost)),
+                    money(Some(limit)),
+                    pct
+                ),
             )
         }
-        _ => (0.0, format!("${:.2} spent (no budget limit)", total_cost)),
+        _ => (
+            0.0,
+            format!("{} spent (no budget limit)", money(Some(total_cost))),
+        ),
     };
 
     let color = if ratio >= 0.9 {
@@ -135,10 +150,19 @@ fn draw_summary_stats(
     f.render_widget(Paragraph::new(stats).block(block), area);
 }
 
+/// Widest Title column; it shrinks so the header fits the panel (#1399).
+const TITLE_W: usize = 45;
+/// Header columns other than Title: indent, ID, the four separators and
+/// Cost / Status / Elapsed.
+const FIXED_W: usize = 2 + 12 + 4 + 30;
+
 fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &Theme) {
+    let block = theme.styled_block("Session Costs", false);
+    let inner_w = block.inner(area).width as usize;
+    let title_w = inner_w.saturating_sub(FIXED_W).min(TITLE_W);
     let mut lines: Vec<Line> = vec![Line::from(vec![Span::styled(
         format!(
-            "  {:<12} {:<45} {:>10} {:>10} {:>10}",
+            "  {:<12} {:<title_w$} {:>10} {:>10} {:>10}",
             "ID", "Title", "Cost", "Status", "Elapsed"
         ),
         Style::default()
@@ -147,7 +171,7 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
     )])];
 
     lines.push(Line::from(Span::styled(
-        format!("  {}", "─".repeat(89)),
+        format!("  {}", "─".repeat(FIXED_W - 2 + title_w)),
         Style::default().fg(theme.border_inactive),
     )));
 
@@ -166,7 +190,9 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
         };
 
         let title = session.issue_title.as_deref().unwrap_or(&session.prompt);
-        let title_display: String = if title.chars().count() > 43 {
+        let title_display: String = if title_w < TITLE_W {
+            ellipsize(title, title_w)
+        } else if title.chars().count() > 43 {
             let truncated: String = title.chars().take(40).collect();
             format!("{}...", truncated)
         } else {
@@ -183,25 +209,31 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
             ),
             Span::raw(" "),
             Span::styled(
-                format!("{:<45}", title_display),
+                format!("{:<title_w$}", title_display),
                 Style::default().fg(theme.text_primary),
             ),
+            // Same separators as the header, so the columns line up and a
+            // 12-letter status never runs into the cost (#1399).
             Span::styled(
-                format!("{:>10}", session.cost_display()),
+                format!(" {:>10}", session.cost_display()),
                 Style::default().fg(theme.accent_warning),
             ),
             Span::styled(
-                format!("{:>10}", session.status.label()),
+                format!(" {:>10}", ellipsize(session.status.label(), 10)),
                 Style::default().fg(status_color),
             ),
             Span::styled(
-                format!("{:>10}", session.elapsed_display()),
+                format!(" {:>10}", session.elapsed_display()),
                 Style::default().fg(theme.text_secondary),
             ),
         ]));
     }
 
-    let paragraph = Paragraph::new(lines).block(theme.styled_block("Session Costs", false));
+    let lines: Vec<Line> = lines
+        .into_iter()
+        .map(|l| ellipsize_line(l, inner_w))
+        .collect();
+    let paragraph = Paragraph::new(lines).block(block);
 
     f.render_widget(paragraph, area);
 }

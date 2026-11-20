@@ -1,9 +1,9 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/overview.rs
+assertion_line: 19
 expression: terminal.backend()
 ---
 "┌───────────────────────────────────────────────────[ No sessions ]────────────────────────────────────────────────────┐"
-"│Waiting for sessions to start…                                                                                        │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
@@ -22,7 +22,8 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
-"│                                                                                                                      │"
+"│                                                No agents are running.                                                │"
+"│                          Esc back to the Dashboard, then i Issues or r Prompt to start one.                          │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"

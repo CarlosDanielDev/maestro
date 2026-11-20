@@ -1,11 +1,11 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/status_bar.rs
+assertion_line: 94
 expression: out
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                                                          ↑ 9.8.7 u"
 " Overview                                                                                              Esc back  ? help "
 "┌───────────────────────────────────────────────────[ No sessions ]────────────────────────────────────────────────────┐"
-"│Waiting for sessions to start…                                                                                        │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
@@ -17,7 +17,8 @@ expression: out
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
-"│                                                                                                                      │"
+"│                                                No agents are running.                                                │"
+"│                          Esc back to the Dashboard, then i Issues or r Prompt to start one.                          │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"

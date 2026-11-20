@@ -19,6 +19,12 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+/// Launch-dialog option sentences (#919), multi-issue and single-issue.
+const PRODUCE_PR_MULTI: &str = "Produce PR — sessions end when a linked PR is created";
+const INTERACTION_MULTI: &str = "Interaction — chat with the agent; sessions stay alive";
+const PRODUCE_PR_SINGLE: &str = "Produce PR — session ends when a linked PR is created";
+const INTERACTION_SINGLE: &str = "Interaction — chat with the agent; session stays alive";
+
 impl IssueBrowserScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         use crate::config::LayoutMode;
@@ -456,6 +462,16 @@ impl IssueBrowserScreen {
         let inner = block.inner(overlay_area);
         f.render_widget(block, overlay_area);
 
+        // #1399: an option row wraps when its sentence is wider than the dialog.
+        use crate::tui::widgets::unified_pr_toggle::checkbox_rows;
+        let (produce_label, interaction_label) = if is_multi {
+            (PRODUCE_PR_MULTI, INTERACTION_MULTI)
+        } else {
+            (PRODUCE_PR_SINGLE, INTERACTION_SINGLE)
+        };
+        let produce_rows = checkbox_rows(produce_label, overlay.produce_pr, inner.width);
+        let interaction_rows = checkbox_rows(interaction_label, overlay.interaction, inner.width);
+
         if is_multi {
             let issue_list_height = overlay.selected_issues.len().min(8) as u16 + 2;
             let chunks = Layout::default()
@@ -466,8 +482,8 @@ impl IssueBrowserScreen {
                     Constraint::Length(1),                 // unified PR toggle
                     Constraint::Min(3),                    // text area
                     Constraint::Length(1),                 // "Options:" label (#919)
-                    Constraint::Length(1),                 // Produce PR checkbox
-                    Constraint::Length(1),                 // Interaction checkbox
+                    Constraint::Length(produce_rows),      // Produce PR checkbox
+                    Constraint::Length(interaction_rows),  // Interaction checkbox
                     Constraint::Length(1),                 // Launch button
                 ])
                 .split(inner);
@@ -522,7 +538,7 @@ impl IssueBrowserScreen {
                 chunks[5],
                 overlay.produce_pr,
                 overlay.focus == LaunchFocus::ProducePr,
-                "Produce PR — sessions end when a linked PR is created",
+                produce_label,
                 theme,
             );
             draw_checkbox(
@@ -530,7 +546,7 @@ impl IssueBrowserScreen {
                 chunks[6],
                 overlay.interaction,
                 overlay.focus == LaunchFocus::Interaction,
-                "Interaction — chat with the agent; sessions stay alive",
+                interaction_label,
                 theme,
             );
 
@@ -555,12 +571,12 @@ impl IssueBrowserScreen {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1), // hint
-                    Constraint::Min(3),    // text area
-                    Constraint::Length(1), // "Options:" label
-                    Constraint::Length(1), // Produce PR checkbox
-                    Constraint::Length(1), // Interaction checkbox
-                    Constraint::Length(1), // Launch button
+                    Constraint::Length(1),                // hint
+                    Constraint::Min(3),                   // text area
+                    Constraint::Length(1),                // "Options:" label
+                    Constraint::Length(produce_rows),     // Produce PR checkbox
+                    Constraint::Length(interaction_rows), // Interaction checkbox
+                    Constraint::Length(1),                // Launch button
                 ])
                 .split(inner);
 
@@ -589,7 +605,7 @@ impl IssueBrowserScreen {
                 chunks[3],
                 overlay.produce_pr,
                 overlay.focus == LaunchFocus::ProducePr,
-                "Produce PR — session ends when a linked PR is created",
+                produce_label,
                 theme,
             );
             draw_checkbox(
@@ -597,7 +613,7 @@ impl IssueBrowserScreen {
                 chunks[4],
                 overlay.interaction,
                 overlay.focus == LaunchFocus::Interaction,
-                "Interaction — chat with the agent; session stays alive",
+                interaction_label,
                 theme,
             );
 

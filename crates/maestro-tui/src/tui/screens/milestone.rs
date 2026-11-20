@@ -1,6 +1,7 @@
 use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
 use crate::provider::types::{Issue, Milestone};
 use crate::tui::app::TuiMode;
+use crate::tui::ds::fit::ellipsize_line;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -426,12 +427,23 @@ impl MilestoneScreen {
                 Span::styled(title, title_style),
             ]);
             let title_area = Rect::new(inner.x, y, inner.width, 1);
-            f.render_widget(Paragraph::new(title_line), title_area);
+            f.render_widget(
+                Paragraph::new(ellipsize_line(title_line, inner.width as usize)),
+                title_area,
+            );
 
             let ratio = entry.progress_ratio();
             let pct = ratio * 100.0;
             let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
-            let bar_width = gauge_area.width.saturating_sub(20) as usize;
+            let label = format!(
+                "] {}/{} issues ({:.0}%)",
+                entry.closed_issues,
+                entry.total_issues(),
+                pct
+            );
+            // The bar takes what the `[` and the label leave, so the label
+            // is never cut (#1399).
+            let bar_width = (gauge_area.width as usize).saturating_sub(1 + label.width());
             let (filled, empty) = compact_gauge_bar_counts(pct, bar_width);
             let gauge_color = theme.milestone_gauge_color(pct);
             let gauge_line = Line::from(vec![
@@ -444,17 +456,12 @@ impl MilestoneScreen {
                     icons::get(IconId::GaugeEmpty).repeat(empty),
                     Style::default().fg(theme.gauge_background),
                 ),
-                Span::styled(
-                    format!(
-                        "] {}/{} issues ({:.0}%)",
-                        entry.closed_issues,
-                        entry.total_issues(),
-                        pct
-                    ),
-                    Style::default().fg(gauge_color),
-                ),
+                Span::styled(label, Style::default().fg(gauge_color)),
             ]);
-            f.render_widget(Paragraph::new(gauge_line), gauge_area);
+            f.render_widget(
+                Paragraph::new(ellipsize_line(gauge_line, gauge_area.width as usize)),
+                gauge_area,
+            );
 
             let status_line = Line::from(vec![
                 Span::styled(

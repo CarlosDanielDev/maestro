@@ -1237,6 +1237,16 @@ fn draw_footer(
     } else {
         key_hints::from_pairs(&pairs)
     };
+    // #1399: session keys are dimmed while there is no session to act on.
+    // The overrides below never show these keys, so this stays right.
+    let dimmed = if pairs.is_empty() {
+        crate::tui::navigation::mode_hints::inactive_hint_keys(
+            app.tui_mode,
+            !app.pool.all_sessions().is_empty(),
+        )
+    } else {
+        &[]
+    };
     // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
     if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
         hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
@@ -1257,7 +1267,7 @@ fn draw_footer(
         hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
     }
     let pin_quit = app.tui_mode != TuiMode::ConfirmExit;
-    key_hints::draw(f, area, &hints, pin_quit, theme);
+    key_hints::draw_dimmed(f, area, &hints, dimmed, pin_quit, theme);
 }
 
 /// [`active_screen`] plus the screens it leaves out, for footer hints only.

@@ -1,0 +1,29 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/text_fit_80col.rs
+assertion_line: 211
+expression: "draw(&mut prd_app(), 80, 24).backend()"
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+"┌ 👋 Welcome to your PRD ──────────────────────────────────────────────────────┐" Hidden by multi-width symbols: [(3, " ")]
+"│Live document for your project. [Tab] switches pane, [j/k] moves rows, [n] add│"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌ PRD — focus: Vision & Purpose ───────────────────────────────────────────────┐"
+"│Vision: 0 chars • Goals: 0 • Non-Goals: 0 • Stakeholders: 0 • Timeline: 0     │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌ Sections ────────────────┐┌ Vision & Purpose ────────────────────────────────┐"
+"│  Vision & Purpose        ││(no vision yet — synced from your PRD issue on    │"
+"│  Goals                   ││GitHub, or press [y] to refresh)                  │"
+"│  Non-Goals               ││                                                  │"
+"│  Current State           ││                                                  │"
+"│  Stakeholders            ││                                                  │"
+"│  Timeline                ││                                                  │"
+"│                          ││                                                  │"
+"│                          ││                                                  │"
+"│                          ││                                                  │"
+"│                          ││                                                  │"
+"└──────────────────────────┘└──────────────────────────────────────────────────┘"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│[Tab] pane  [j/k] section  [s] save  [e] export  [y] sync  [o] explore        │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                        ⌃Q quit "

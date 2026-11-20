@@ -7,6 +7,7 @@ pub mod checklist;
 pub mod confirm;
 pub mod crumb_bar;
 pub mod filter_chips;
+pub mod fit;
 pub mod fleet_table;
 pub mod gauge;
 pub mod key_hints;

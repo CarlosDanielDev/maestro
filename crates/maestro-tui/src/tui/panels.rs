@@ -275,12 +275,13 @@ impl PanelView {
         spinner_tick: usize,
     ) {
         if sessions.is_empty() {
-            let block = theme.styled_block("No sessions", false);
-            let msg = Paragraph::new("Waiting for sessions to start…")
-                .style(Style::default().fg(theme.text_secondary))
-                .block(block)
-                .wrap(Wrap { trim: true });
-            f.render_widget(msg, area);
+            // #1399: name the keys that start work, not a wait that never ends.
+            crate::tui::widgets::EmptyState::idle(
+                "No sessions",
+                "No agents are running.",
+                "Esc back to the Dashboard, then i Issues or r Prompt to start one.",
+            )
+            .render(f, area, theme);
             return;
         }
 

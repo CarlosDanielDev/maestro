@@ -95,6 +95,7 @@ survives NO_COLOR. Use `styled_block` for the two everyday states; call
 | `ds::breakpoint::MIN_SIZE` | `(80, 24)` |
 | `ds::size_guard::draw(f, area, theme)` | "Terminal too small" screen: the minimum and the current size. `ui::draw` draws it for every mode when `from_area` is `TooSmall`, so no screen needs its own size floor. The `TuiMode` confirms `ConfirmExit`, `ConfirmKill` and `BudgetPreSpawn` are drawn on top of the guard. While the guard is shown, a key goes only to one of those confirms; every other key (global chords included) is ignored, except `Ctrl+C`. Resize events always go through. Confirms that live inside a screen (Settings discard, Fleet board / Adopt picker live confirm) stay hidden, and their keys are ignored |
 | `ds::size_guard::is_shown(area)` | The one size test: `ui::draw` uses it to draw the guard, and the run loop uses it (`input_handler::handle_key_under_size_guard`) to swallow keys |
+| `ds::fit::ellipsize_line(line, width)` | One styled row that does not fit ends with `…` at `width`, spans keep their style (#1399). The `&str` form is `screens::landing::draw::ellipsize`. Use it on one-row strips (log lines, panel rows, table rows); dialog body text wraps instead |
 
 Enforced by `screens_use_theme_colors_only` in `tests/tui_design_system.rs`:
 any `Color::` (except `Color::Reset`) in a non-test screen file fails CI.
@@ -163,6 +164,7 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `StatsBar::new(StatsBarData, theme)` | Top stats row with marquee overflow |
 | `CiMonitorWidget::new(checks, theme).pr_number(n).max_visible_rows(n)` | CI check list |
 | `unified_pr_toggle::{draw_unified_pr_toggle, draw_checkbox, focus_bar}` | Checkbox row + focus bar |
+| `unified_pr_toggle::checkbox_rows(label, checked, width)` | Rows `draw_checkbox` needs: a label wider than the row wraps at words under its first column (#1399). Give the checkbox `Constraint::Length(checkbox_rows(..))` |
 | `bypass_indicator::render_line` | The `▲ BYPASS` chip (`BYPASS_CHIP`, reverse warn + bold). Only `ds::status_bar` draws it; no screen draws its own bypass banner |
 
 ### Armed-Enter — the only way a screen starts a GitHub write (#1250)
@@ -194,6 +196,7 @@ token; `Esc` cancels and is the default.
 | `TypedConfirm::new(title, expected, action, consequences)` | `consequences` = `(label, text)` rows (`("kept", "…")`); an empty label draws the text alone. `action` names `⏎` (`kill`, `enable`). Field = `Input::single_line` (max 16) |
 | `handle_key(key) -> ConfirmOutcome` | `Pending` / `Confirmed` / `Cancelled`. `Esc` cancels; `⏎` is inert until `matches()` (typed text == `expected`, case-sensitive); every other key edits the field |
 | `render(f, area, theme)` | Centred in `area`, `ds::panel` `Focus::Danger` (Double). Consequences, `Type <token> to confirm:`, the field with `n of m`, then `Esc cancel (default)` and `⏎ <action> (locked)` until it matches |
+| counter | `n of m` counts the typed text only while it is a prefix of the token; any wrong letter shows `does not match`, so `CONFIRX` never reads `7 of 7` (#1399) |
 
 Token rule (the #1261 ADR): the issue number for a per-session action
 (kill), a word for a global one (bypass: `CONFIRM`). Users today: kill
@@ -282,6 +285,7 @@ these rows.
 | `ds::crumb_bar::crumbs(stack, current)` / `crumb_label(mode)` | Crumb labels from the nav stack: tab name for a tab, else `breadcrumb_label` |
 | `ds::key_hints::draw(f, area, &hints, pin_quit, theme)` | The footer: `key label` pairs, cut from the end at their drawn width, the quit hint `ds::key_hints::QUIT` pinned right (`pin_quit = false` only in the quit dialog). `QUIT` is `⌃Q quit` (#1260) |
 | `ds::key_hints::from_pairs(&[(key, label)])` | A screen's `(key, label)` list as `InlineHint`s, in order |
+| `ds::key_hints::draw_dimmed(f, area, &hints, dimmed, pin_quit, theme)` | `draw`, with the hints whose key is in `dimmed` drawn muted + DIM: shown, but they cannot act now. `ui::draw_footer` passes `navigation::mode_hints::inactive_hint_keys(mode, has_sessions)`: on Overview with no session, `Enter` `c` `f` `g` (#1399) |
 | `ds::bar_row::draw_left_right(f, area, left, right)` | One row with a flush-right part that drops when it does not fit |
 | `Screen::footer_hints(&self)` | A screen's footer hints for its current state, most important first. Empty (the default) means the footer shows the mode's `mode_keymap` hints |
 
