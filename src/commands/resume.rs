@@ -7,14 +7,21 @@ use crate::session::worktree::{GitWorktreeManager, WorktreeManager};
 use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 
-pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
+pub async fn cmd_resume(
+    session_filter: Option<String>,
+    rerun_first_turn: bool,
+) -> anyhow::Result<()> {
     let loaded = Config::find_and_load_with_path()?;
     let provider_config = loaded.config.effective_provider_config();
     let store = StateStore::new(StateStore::default_path());
     let state = store.load()?;
     let repo_root = std::env::current_dir()?;
 
-    let incomplete = resumable_sessions(&state, session_filter.as_deref());
+    let (incomplete, notes) =
+        sessions_to_resume(&state, session_filter.as_deref(), rerun_first_turn);
+    for note in &notes {
+        println!("{note}");
+    }
 
     if incomplete.is_empty() {
         println!("No incomplete sessions to resume.");
@@ -37,6 +44,16 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
 
     crate::tui::run(app).await
+}
+
+/// What `cmd_resume` restores, plus one line per first-turn session it
+/// skips or re-runs (#1424).
+fn sessions_to_resume<'a>(
+    state: &'a MaestroState,
+    filter: Option<&str>,
+    rerun_first_turn: bool,
+) -> (Vec<&'a Session>, Vec<String>) {
+    select_first_turn(resumable_sessions(state, filter), rerun_first_turn)
 }
 
 /// Saved sessions `maestro resume` picks up, narrowed by an id prefix or
@@ -67,6 +84,41 @@ fn resumable_sessions<'a>(state: &'a MaestroState, filter: Option<&str>) -> Vec<
         .collect()
 }
 
+/// Splits off sessions saved during their first turn (#1424): spawned
+/// but with no agent session id, resuming one runs its first prompt again
+/// and spends again. They are skipped unless `rerun_first_turn` is set;
+/// either way each gets a line saying so.
+fn select_first_turn(
+    sessions: Vec<&Session>,
+    rerun_first_turn: bool,
+) -> (Vec<&Session>, Vec<String>) {
+    let mut notes = Vec::new();
+    let picked = sessions
+        .into_iter()
+        .filter(|s| {
+            // Bound, or never spawned: a never-run prompt spends only once.
+            if s.agent_session_id.is_some() || s.started_at.is_none() {
+                return true;
+            }
+            let label = match s.issue_number {
+                Some(n) => format!("#{n}"),
+                None => session_slug(s),
+            };
+            let tail = if rerun_first_turn {
+                "re-running it (--rerun-first-turn)"
+            } else {
+                "skipped; pass --rerun-first-turn to include it"
+            };
+            notes.push(format!(
+                "{label} has no saved agent session — resuming re-runs its first \
+                 prompt (spends again); {tail}."
+            ));
+            rerun_first_turn
+        })
+        .collect();
+    (picked, notes)
+}
+
 /// A fresh queued session that continues the saved one `s` (#1266): it
 /// keeps its id, worktree and agent conversation, so it picks up in its
 /// own kept worktree. Refused when that worktree is still on disk but was
@@ -91,6 +143,9 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
     new_session.retry_count = s.retry_count;
     new_session.id = s.id;
     new_session.worktree_path = s.worktree_path.clone();
+    // Keeps the first-turn marker (#1424): a re-run quit before it spawns
+    // is still noted on the next resume. Spawn sets it again.
+    new_session.started_at = s.started_at;
     if let Some(id) = s.agent_session_id.as_deref() {
         new_session.bind_agent_session_id(id);
     }

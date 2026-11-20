@@ -96,7 +96,10 @@ async fn main() -> anyhow::Result<()> {
     // Subcommands that open the TUI run here; the rest are headless and
     // live in `maestro-cli` (#1307).
     match cli.command {
-        Some(Commands::Resume { session }) => cmd_resume(session).await,
+        Some(Commands::Resume {
+            session,
+            rerun_first_turn,
+        }) => cmd_resume(session, rerun_first_turn).await,
         Some(Commands::Run {
             prompt,
             issue,

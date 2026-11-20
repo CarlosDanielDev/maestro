@@ -200,6 +200,11 @@ pub enum Commands {
         /// Resume a specific session by ID
         #[arg(long)]
         session: Option<String>,
+
+        /// Also resume sessions saved during their first turn (no agent
+        /// session yet): they re-run their first prompt and spend again
+        #[arg(long)]
+        rerun_first_turn: bool,
     },
     /// Test Slack webhook configuration
     TestSlack,
@@ -1406,6 +1411,35 @@ mod tests {
             result.is_err(),
             "resume must NOT accept --role (saved role is inherited)"
         );
+    }
+
+    #[test]
+    fn resume_help_names_rerun_first_turn_flag() {
+        // #1424: re-running a first turn spends again, so it is opt-in.
+        let mut cmd = <Cli as clap::CommandFactory>::command();
+        let help = cmd
+            .find_subcommand_mut("resume")
+            .expect("resume subcommand")
+            .render_help()
+            .to_string();
+        assert!(help.contains("--rerun-first-turn"), "{help}");
+
+        let cli = Cli::try_parse_from(["maestro", "resume", "--rerun-first-turn"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Resume {
+                rerun_first_turn: true,
+                ..
+            })
+        ));
+        let cli = Cli::try_parse_from(["maestro", "resume"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Resume {
+                rerun_first_turn: false,
+                ..
+            })
+        ));
     }
 
     // ------------------------------------------------------------------
