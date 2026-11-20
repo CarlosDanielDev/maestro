@@ -701,14 +701,6 @@ impl KeymapProvider for MilestoneScreen {
                     description: "View issues",
                 },
                 KeyBinding {
-                    key: "r",
-                    description: "Reload milestones",
-                },
-                KeyBinding {
-                    key: "R",
-                    description: "Run all open issues (asks first)",
-                },
-                KeyBinding {
                     key: "Esc",
                     description: "Back",
                 },

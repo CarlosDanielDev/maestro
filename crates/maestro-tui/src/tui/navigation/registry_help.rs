@@ -21,9 +21,10 @@ struct Row {
 fn detail(action: Action) -> Option<String> {
     match action {
         Action::Quit => Some("asks first while work is live".into()),
-        // #1265: where the retired Shift globals went, so `/turbo` and
-        // `/setting` still find them. One row at 80 columns.
-        Action::Palette => Some("TurboQuant, modal Settings, retry PR".into()),
+        // #1265: where the retired Shift `Q` went, and where TurboQuant is
+        // switched (TURBOQUANT_TOGGLE). One row at 80 columns.
+        Action::Palette => Some("TurboQuant; on/off in Settings".into()),
+        Action::RunAll => Some("asks first for 2+ open issues".into()),
         _ => None,
     }
 }

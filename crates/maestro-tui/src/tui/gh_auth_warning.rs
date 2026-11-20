@@ -24,11 +24,14 @@ pub(crate) fn line(theme: &Theme) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            " PR create paused · fix: ",
+            " PR create paused · ",
             Style::default().fg(theme.text_muted),
         ),
         Span::styled("gh auth login", Style::default().fg(theme.accent_info)),
-        Span::styled(", then Shift+P", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            ", then Shift+P on Overview",
+            Style::default().fg(theme.text_muted),
+        ),
     ])
 }
 

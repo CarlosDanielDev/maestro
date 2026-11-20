@@ -266,7 +266,7 @@ TurboQuant on/off toggle is the Settings › TurboQuant › Enabled field
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
-| `gh_auth_warning.rs` | `draw(f, area, theme)`, `line(theme)`, `GH_AUTH_EXPIRED` | The one-line `⊘ gh auth expired · PR create paused · fix: gh auth login, then Shift+P` drawn on the log row while `App::gh_auth_ok` is false (#1241). Pure draw: the recheck is `app/gh_auth.rs` (one `gh auth status` on the blocking pool, before a PR action is refused), never the draw path |
+| `gh_auth_warning.rs` | `draw(f, area, theme)`, `line(theme)`, `GH_AUTH_EXPIRED` | The one-line `⊘ gh auth expired · PR create paused · gh auth login, then Shift+P on Overview` (#1265: `P` retries on Overview only; `fix:` dropped so it fits 80 columns) drawn on the log row while `App::gh_auth_ok` is false (#1241). Pure draw: the recheck is `app/gh_auth.rs` (one `gh auth status` on the blocking pool, before a PR action is refused), never the draw path |
 | `agent_badge.rs` | `agent_label`, `agent_kind_for_id` | Per-agent label and kind; the colour is `theme.agent_color(agent_id)` |
 
 ### Shell rows: TabBar, CrumbBar, footer (`crates/maestro-tui/src/tui/ds/`, #1258)
@@ -387,7 +387,7 @@ Implements `palette` from `docs/design-system/index.html` §04 and the §06
 | Item | For |
 |---|---|
 | `registry::actions_on(bindings, mode)` | The actions reachable on a screen: Global plus its screen block, one binding per action (the first chord), hidden aliases and `⌃K` left out. The palette lists these; Help (#1398) can read the same list |
-| `registry::PALETTE_COMMANDS` / `PaletteCommand` | `(label, key, command)`: commands with no global key, declared next to the bindings (`network`; #1265: `TurboQuant dashboard` (`Q` on Dashboard), `session-complete modal (Settings)`, `review concerns`, `retry PR` (`P` on Overview)). `key` is shown at the right of the row, `""` for none |
+| `registry::PALETTE_COMMANDS` / `PaletteCommand` | `(label, command, Option<(key, screen)>)`: commands with no global key, declared next to the bindings (`network`; #1265: `TurboQuant dashboard` (`Q` on Dashboard), `session-complete modal (Settings)`, `review concerns`, `retry PR` (`P` on Overview)). the key is shown at the right of the row only on its screen |
 | `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` takes the entry's `Run` and returns the reason it cannot run (`review concerns` with no review, `retry PR` off Overview); it shows with `⊘` and ⏎ does nothing |
 | `palette::fuzzy_hits(query, label)` | Case-insensitive subsequence match; the hit indices are drawn `UNDERLINED` |
 | `PaletteState` (`app.palette`) | The open palette: a canonical `Input` query (keys go through `feed`), the selection. `handle_key` returns `Outcome::{Open, Close, Run}`; `draw` dims the whole frame, then draws the Rounded box on `surface_overlay` with an `INSERT` chip |

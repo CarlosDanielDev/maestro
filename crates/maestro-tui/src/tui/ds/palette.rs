@@ -68,11 +68,14 @@ pub fn entries(
             disabled: disabled(run),
         }
     });
-    let commands = PALETTE_COMMANDS.iter().map(|&(label, key, command)| {
+    let commands = PALETTE_COMMANDS.iter().map(|&(label, command, key)| {
         let run = Run::Command(command);
         Entry {
             label,
-            key,
+            key: match key {
+                Some((key, on)) if on == mode => key,
+                _ => "",
+            },
             run,
             // Retry PR writes a PR, like its Overview key `P` (#1265).
             destructive: command == PaletteCommand::RetryPr,

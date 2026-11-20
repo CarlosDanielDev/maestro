@@ -165,23 +165,30 @@ async fn run_from_palette(app: &mut App, label: &str) {
 
 #[tokio::test]
 async fn retired_actions_in_palette() {
-    // Each retired Shift global, its palette entry and its new key: `Q` on
-    // Dashboard, `P` on Overview, "" where the palette is the way in.
+    // Each retired Shift global, its palette entry and its new key, shown
+    // only on the screen where that key works: `Q` on Dashboard, `P` on
+    // Overview, "" where the palette is the way in.
+    use PaletteCommand::{CompleteModal, RetryPr, ReviewConcerns, TurboquantDashboard};
     let want = [
-        (PaletteCommand::TurboquantDashboard, "Q"),
-        (PaletteCommand::CompleteModal, ""),
-        (PaletteCommand::ReviewConcerns, ""),
-        (PaletteCommand::RetryPr, "P"),
+        (TuiMode::Overview, TurboquantDashboard, ""),
+        (TuiMode::Dashboard, TurboquantDashboard, "Q"),
+        (TuiMode::Overview, CompleteModal, ""),
+        (TuiMode::Overview, ReviewConcerns, ""),
+        (TuiMode::Overview, RetryPr, "P"),
+        (TuiMode::Dashboard, RetryPr, ""),
     ];
+    for (mode, cmd, key) in want {
+        let list = palette::entries(registry(), mode, |_| None);
+        let e = list.iter().find(|e| e.run == Run::Command(cmd));
+        let e = e.unwrap_or_else(|| panic!("{cmd:?} has no palette entry"));
+        assert_eq!(e.key, key, "{cmd:?} on {mode:?}");
+    }
     let list = palette::entries(registry(), TuiMode::Overview, |_| None);
     let entry = |cmd| {
         list.iter()
             .find(|e| e.run == Run::Command(cmd))
             .unwrap_or_else(|| panic!("{cmd:?} has no palette entry"))
     };
-    for (cmd, key) in want {
-        assert_eq!(entry(cmd).key, key, "{cmd:?}");
-    }
 
     // Each entry runs its action.
     let label = |cmd| entry(cmd).label;
@@ -269,5 +276,20 @@ async fn shift_p_retries_the_highlighted_session() {
                 pr.issue_number
             );
         }
+    }
+}
+
+/// #1265: `P` retries only on Overview, so every recovery hint that names
+/// it says where.
+#[test]
+fn shift_p_hints_name_overview() {
+    let theme = crate::tui::theme::Theme::dark();
+    let warning: String = crate::tui::gh_auth_warning::line(&theme)
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    for hint in [crate::tui::app::AUTH_RECOVERY_HINT, warning.as_str()] {
+        assert!(hint.contains("Shift+P on Overview"), "{hint}");
     }
 }

@@ -1,5 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/gh_auth_expired.rs
+assertion_line: 58
 expression: t.backend()
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
@@ -15,7 +16,7 @@ expression: t.backend()
 "┃  [a]  Adapt Project  ┃│                          ││                          │"
 "┃  [p]  Review PRs     ┃│                          ││                          │"
 "┗━━━━━━━━━━━━ ↓ 7 more ┛└──────────────────────────┘└──────────────────────────┘"
-" ⊘ gh auth expired  PR create paused · fix: gh auth login, then Shift+P────────┐"
+" ⊘ gh auth expired  PR create paused · gh auth login, then Shift+P on Overview─┐"
 "│No activity yet                                                               │"
 "│                                                                              │"
 "│                                                                              │"

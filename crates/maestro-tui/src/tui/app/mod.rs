@@ -83,7 +83,8 @@ use tokio::sync::mpsc;
 /// Reused at every site that tells the user what to do once `gh auth
 /// login` finishes. Without this, the same advice ships in multiple
 /// phrasings and drifts over time.
-pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
+pub(crate) const AUTH_RECOVERY_HINT: &str =
+    "Run `gh auth login` then press Shift+P on Overview to retry.";
 
 fn default_enabled_agent_id(config: &Config) -> String {
     let ids = crate::agent_provider_map::enabled_agent_ids(config);
@@ -505,7 +506,7 @@ impl App {
             app.activity_log.push_simple(
                 "#orphan-prs".into(),
                 format!(
-                    "{} pending PR(s) restored from previous run: {} — focus the matching session and press Shift+P to retry",
+                    "{} pending PR(s) restored from previous run: {} — focus the matching session on Overview and press Shift+P to retry",
                     recovered_prs_count,
                     issue_list.join(", ")
                 ),

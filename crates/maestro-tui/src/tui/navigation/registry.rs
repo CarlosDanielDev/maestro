@@ -288,22 +288,26 @@ pub enum PaletteCommand {
     RetryPr,
 }
 
-/// `(label, key, command)`; `key` is the key that runs it outside the
-/// palette, `""` for none.
-pub const PALETTE_COMMANDS: &[(&str, &str, PaletteCommand)] = &[
-    ("network", "", PaletteCommand::Network),
+/// `(label, command, key)`: `key` is the key that runs it outside the
+/// palette and the one screen it works on; the palette shows it there only.
+pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, Option<(&str, TuiMode)>)] = &[
+    ("network", PaletteCommand::Network, None),
     (
         "TurboQuant dashboard",
-        "Q",
         PaletteCommand::TurboquantDashboard,
+        Some(("Q", TuiMode::Dashboard)),
     ),
     (
         "session-complete modal (Settings)",
-        "",
         PaletteCommand::CompleteModal,
+        None,
     ),
-    ("review concerns", "", PaletteCommand::ReviewConcerns),
-    ("retry PR", "P", PaletteCommand::RetryPr),
+    ("review concerns", PaletteCommand::ReviewConcerns, None),
+    (
+        "retry PR",
+        PaletteCommand::RetryPr,
+        Some(("P", TuiMode::Overview)),
+    ),
 ];
 
 /// What the ⌃K palette lists on `mode`: Global plus `mode`'s screen block,

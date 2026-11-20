@@ -163,7 +163,7 @@ async fn palette_has_network() {
     assert!(
         PALETTE_COMMANDS
             .iter()
-            .any(|(label, _, cmd)| *label == "network" && *cmd == PaletteCommand::Network)
+            .any(|(label, cmd, _)| *label == "network" && *cmd == PaletteCommand::Network)
     );
     let mut app = log_app(TuiMode::Dashboard);
     handle_key(&mut app, ctrl_k()).await;
