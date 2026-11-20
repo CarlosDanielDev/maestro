@@ -268,6 +268,20 @@ impl PanelView {
         }
     }
 
+    /// Put the grid cursor on `selected` for the layout the grid is drawn
+    /// with (#1384). Sessions come and go and the area resizes between
+    /// keys; this keeps the highlighted panel the selected session and the
+    /// page inside the session list.
+    pub fn sync_to_layout(&mut self, session_count: usize, area: Rect) {
+        if session_count == 0 {
+            return;
+        }
+        let layout = GridLayout::calculate(session_count, area.width, area.height);
+        let index = self.selected_index().min(session_count - 1);
+        self.grid_state.select_index(index, session_count, &layout);
+        self.selected = Some(index);
+    }
+
     pub fn draw(
         &self,
         f: &mut Frame,
@@ -301,7 +315,9 @@ impl PanelView {
 
         let layout = GridLayout::calculate(sessions.len(), area.width, area.height);
 
-        let page_start = self.grid_state.current_page * layout.sessions_per_page;
+        // #1384: a stale page (sessions dismissed) must not slice past the end.
+        let page = self.grid_state.current_page.min(layout.total_pages - 1);
+        let page_start = page * layout.sessions_per_page;
         let page_end = sessions.len().min(page_start + layout.sessions_per_page);
         let page_sessions = &sessions[page_start..page_end];
 
@@ -358,11 +374,7 @@ impl PanelView {
 
         // Page indicator
         if let Some(ind_area) = indicator_area {
-            let text = format!(
-                " Page {}/{} — [/] prev/next ",
-                self.grid_state.current_page + 1,
-                layout.total_pages
-            );
+            let text = format!(" Page {}/{} — [/] prev/next ", page + 1, layout.total_pages);
             f.render_widget(
                 Paragraph::new(text).style(Style::default().fg(theme.text_muted)),
                 ind_area,
@@ -760,6 +772,30 @@ mod tests {
         let theme = Theme::default();
         let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
         t.draw(|f| v.draw(f, &refs, f.area(), &theme, 0)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_a_page_past_the_end_does_not_panic() {
+        let mut v = PanelView::new();
+        v.grid_state.current_page = 5;
+        let s: Vec<Session> = (0..3)
+            .map(|i| Session::new(format!("t{i}"), "m".into(), "o".into(), Some(i), None))
+            .collect();
+        let refs: Vec<&Session> = s.iter().collect();
+        let theme = Theme::default();
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        t.draw(|f| v.draw(f, &refs, f.area(), &theme, 0)).unwrap();
+    }
+
+    #[test]
+    fn sync_to_layout_clamps_and_follows_the_layout() {
+        let mut v = PanelView::new();
+        v.selected = Some(9);
+        let area = Rect::new(0, 0, 80, 21);
+        v.sync_to_layout(4, area);
+        let layout = GridLayout::calculate(4, 80, 21);
+        assert_eq!(v.selected, Some(3));
+        assert_eq!(v.grid_state.selected_index(&layout), 3);
     }
 
     #[test]

@@ -132,3 +132,72 @@ async fn overview_arrow_keeps_highlight_and_selection_in_sync() {
         }
     }
 }
+
+fn task(issue: u64) -> Session {
+    Session::new(
+        format!("task {issue}"),
+        "claude-opus-4-5".into(),
+        "orchestrator".into(),
+        Some(issue),
+        None,
+    )
+}
+
+/// The session `k` / Enter / `f` / `l` / `c` act on is the highlighted one.
+fn assert_target_is_highlighted(app: &mut App, w: u16, h: u16, what: &str) {
+    let buf = draw(app, w, h);
+    let selected = selected_issue(app);
+    assert!(selected.is_some(), "{what}: no session selected");
+    assert_eq!(highlighted_issue(app, &buf), selected, "{what}");
+}
+
+#[tokio::test]
+async fn overview_session_added_after_selecting_keeps_highlight_on_target() {
+    for (w, h) in [(80, 24), (80, 27)] {
+        let mut app = overview_app(4);
+        draw(&mut app, w, h);
+        press(&mut app, KeyCode::Down).await;
+        press(&mut app, KeyCode::Right).await;
+        assert_target_is_highlighted(&mut app, w, h, "4 sessions");
+        app.pool.enqueue(task(FIRST_ISSUE + 4));
+        assert_target_is_highlighted(&mut app, w, h, &format!("5th added at {w}x{h}"));
+    }
+}
+
+#[tokio::test]
+async fn overview_resize_keeps_highlight_on_target() {
+    let mut app = overview_app(5);
+    draw(&mut app, 80, 27);
+    press(&mut app, KeyCode::Down).await;
+    press(&mut app, KeyCode::Right).await;
+    assert_target_is_highlighted(&mut app, 80, 27, "80x27");
+    assert_target_is_highlighted(&mut app, 120, 27, "resized to 120x27");
+    assert_target_is_highlighted(&mut app, 80, 24, "resized to 80x24");
+}
+
+#[tokio::test]
+async fn overview_dismiss_on_a_later_page_does_not_panic_the_draw() {
+    for (w, h) in [(80, 24), (80, 27)] {
+        let mut app = overview_app(0);
+        // 8 finished sessions, then 4 queued ones that `D` keeps.
+        for i in 0..8 {
+            app.pool.enqueue(task(FIRST_ISSUE + i));
+            for id in app.pool.try_promote() {
+                app.pool.get_session_mut(id).unwrap().status =
+                    crate::session::types::SessionStatus::Completed;
+                app.pool.finalize(id);
+            }
+        }
+        for i in 8..12 {
+            app.pool.enqueue(task(FIRST_ISSUE + i));
+        }
+        assert_eq!(app.pool.total_count(), 12);
+        draw(&mut app, w, h);
+        press(&mut app, KeyCode::Char(']')).await;
+        press(&mut app, KeyCode::Char(']')).await;
+        assert!(app.panel_view.grid_state.current_page > 0, "{w}x{h}");
+        press(&mut app, KeyCode::Char('D')).await;
+        assert_eq!(app.pool.total_count(), 4, "D dismissed the finished ones");
+        assert_target_is_highlighted(&mut app, w, h, &format!("after D at {w}x{h}"));
+    }
+}

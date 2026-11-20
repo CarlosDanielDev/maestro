@@ -247,6 +247,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             // #1264: a Home `⏎` jump puts the grid cursor on its session.
             app.panel_view
                 .apply_reveal(app.pool.all_sessions().len(), chunks[1]);
+            // #1384: the highlight follows `selected` after adds, dismisses
+            // and resizes, not only after a key.
+            app.panel_view
+                .sync_to_layout(app.pool.total_count(), chunks[1]);
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
                 f,
@@ -932,7 +936,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     let input_mode = active_screen_input_mode(app);
+    // #1384: like the footer, Help leaves out keys that do nothing here.
+    let hidden = crate::tui::navigation::mode_hints::hidden_hint_keys(
+        app.tui_mode,
+        app.screen_state.mission_control.actions_visible,
+    );
     if let Some(help) = app.help_state.as_mut() {
+        let mut mode_km = mode_km;
+        for group in &mut mode_km.help_groups {
+            group.bindings.retain(|b| !hidden.contains(&b.key));
+        }
         help::draw_help_overlay_with_search(f, f.area(), &mode_km, input_mode, help, &theme);
     }
 }
