@@ -9,7 +9,9 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let repo_root = std::env::current_dir()?;
     startup_cleanup(&repo_root);
 
-    let store = StateStore::new(StateStore::default_path());
+    let state_path = StateStore::default_path();
+    let first_run = is_first_run(&state_path);
+    let store = StateStore::new(state_path);
     let state = store.load().unwrap_or_default();
 
     let has_incomplete = has_incomplete(&state.sessions);
@@ -135,6 +137,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     }
 
     app.gh_auth_ok = gh_auth_ok;
+    app.first_run = first_run;
 
     app.screen_state.home_screen = Some(crate::tui::screens::HomeScreen::new(
         project_info,
@@ -147,6 +150,12 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         .push(crate::tui::app::TuiCommand::FetchSuggestionData);
 
     crate::tui::run(app).await
+}
+
+/// No state file yet: maestro never ran (and quit) here (#1279). Every
+/// quit saves the state file, so only the first run sees `true`.
+fn is_first_run(state_path: &std::path::Path) -> bool {
+    !state_path.exists()
 }
 
 /// App for repos without a `maestro.toml` (#1036). Seeded with the serde
@@ -167,6 +176,17 @@ fn no_config_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_run_is_true_only_until_state_is_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("maestro-state-1279.json");
+        assert!(is_first_run(&path), "no state file yet");
+        StateStore::new(path.clone())
+            .save(&crate::state::types::MaestroState::default())
+            .unwrap();
+        assert!(!is_first_run(&path), "a saved state means a later run");
+    }
 
     #[test]
     fn dashboard_fallback_without_config_does_not_bypass() {

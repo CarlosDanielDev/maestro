@@ -9,6 +9,7 @@
 
 pub mod dispatch;
 mod draw;
+mod insight;
 
 pub use draw::draw;
 
@@ -114,6 +115,32 @@ pub struct MissionView {
     pub milestone: MilestoneCard,
     pub gate: ActionGate,
     pub now: DateTime<Utc>,
+    /// The Wide Insight column's card (#1279).
+    pub whats_new: WhatsNew,
+    /// No saved state when maestro started: Home shows the logo once.
+    pub first_run: bool,
+}
+
+/// The installed version's highlights, for the What's new card.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WhatsNew {
+    pub version: String,
+    pub items: Vec<String>,
+}
+
+impl WhatsNew {
+    /// Up to four highlights of the running version, read from the
+    /// embedded CHANGELOG.
+    pub fn installed() -> Self {
+        let items = crate::tui::screens::landing::draw::whats_new_highlights()
+            .into_iter()
+            .map(|(_, item)| item.text.clone())
+            .collect();
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            items,
+        }
+    }
 }
 
 /// The panel that takes `↑↓` and `⏎`.

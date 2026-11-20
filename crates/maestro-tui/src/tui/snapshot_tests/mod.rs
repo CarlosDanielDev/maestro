@@ -17,6 +17,7 @@ mod dep_graph;
 mod detail;
 mod fullscreen;
 mod gh_auth_expired;
+mod home_insight;
 mod home_mission;
 mod home_small_terminal;
 mod init_turboquant_header;

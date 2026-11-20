@@ -443,7 +443,20 @@ Implements `§02 Home: Mission Control` of `docs/design-system/index.html` (the 
 | `ds::fleet_table::draw(f, area, &[FleetRow], compact, theme, nerd_font)` | `Fleet (n)` panel: `STATUS ISSUE TITLE MODEL CONTEXT COST TIME`, Compact `STATUS ISSUE TITLE CTX COST`. Chip via `status_chip_for_mode`, cost via `money` (`$?` unpriced), context with its 50% / 70% steps. Empty: `No agents yet. i new issue` |
 | `ds::gauge::bar(ratio, width, nerd_font)` | `(filled, empty)` cells from `GaugeFilled` / `GaugeEmpty` (`▓░`, ASCII `#-`); ratio clamped to `0..=1`, NaN empty. Colour the filled part with `gauge_level(ratio).style(theme)` |
 
-Rules: no key hints in Home panel titles (they live in the footer: `Enter Open  j/k Move  Tab Next panel`). Home draws no logo and no link chart (`home_no_decoration_after_first_run` guards it). Full-app Home snapshots leave session times unset so they do not depend on the clock.
+Rules: no key hints in Home panel titles (they live in the footer: `Enter Open  j/k Move  Tab Next panel`). Home draws no logo after the first run (#1279) and no link chart (`home_no_decoration_after_first_run` guards it). Full-app Home snapshots leave session times unset so they do not depend on the clock.
+
+### Home Insight column and first-run logo (`screens/home/mission/insight.rs`, #1279)
+
+Implements the What's new card of `§02 Home: Mission Control` (`whatsNew()` in `docs/design-system/index.html`) and finding 5 ("Big logo only on first run"). Decision: `docs/design-system/decisions.md` (2026-11-20, Home What's new and first-run logo).
+
+| Item | For |
+|---|---|
+| `MissionView.whats_new` / `WhatsNew { version, items }` | The card's data. `WhatsNew::installed()` reads up to four highlights of `CARGO_PKG_VERSION` from the embedded CHANGELOG; `App.whats_new` holds it, so tests set a fixed card and snapshots do not change with CHANGELOG.md |
+| `insight::whats_new(f, area, &WhatsNew, theme)` | Wide only, under Budget & quota: `What's new v<version>`, one ` + text` line per highlight (cut with `…`), then ` n all notes` (the key is not in the title). No highlights: ` No notes for v<version>.` Sized to its lines |
+| `MissionView.first_run` / `App.first_run` | `true` when no `maestro-state.json` existed at start (`commands::dashboard::is_first_run`); every quit saves the state file, so later runs are `false` |
+| `insight::first_run_logo(f, area, theme, nerd_font) -> Rect` | First run only: the landing logo (`landing::draw::header_for_width`) and `v<version>` on top of Home, when 24 body rows are left under it; returns the area Mission Control gets. A short terminal skips the logo |
+
+Rules: the Throughput and Change mix cards of the design are not drawn yet (no measured throughput source); the network chart stays off Home, and palette `network` still shows a toast (its numbers were synthetic). Tests: `snapshot_tests/home_insight.rs`.
 
 ---
 
