@@ -1,4 +1,5 @@
 use super::ProjectStatsScreen;
+use crate::tui::ds::fit::ellipsize_line;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::EmptyState;
 use ratatui::{
@@ -158,12 +159,14 @@ impl ProjectStatsScreen {
         maestro.push(Span::raw("   "));
         maestro.extend(metric_spans("failed", i.failed, theme.accent_error, theme));
 
-        let lines = vec![Line::from(backlog), Line::from(maestro)];
+        let block = theme.styled_block("Issues", false);
+        let width = block.inner(area).width as usize;
+        let lines = vec![
+            ellipsize_line(Line::from(backlog), width),
+            ellipsize_line(Line::from(maestro), width),
+        ];
 
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Issues", false)),
-            area,
-        );
+        f.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     fn draw_sessions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -226,12 +229,14 @@ impl ProjectStatsScreen {
             ),
         ];
 
-        let lines = vec![Line::from(runs), Line::from(spend)];
+        let block = theme.styled_block("Sessions", false);
+        let width = block.inner(area).width as usize;
+        let lines = vec![
+            ellipsize_line(Line::from(runs), width),
+            ellipsize_line(Line::from(spend), width),
+        ];
 
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Sessions", false)),
-            area,
-        );
+        f.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     fn draw_recent(&self, f: &mut Frame, area: Rect, theme: &Theme) {

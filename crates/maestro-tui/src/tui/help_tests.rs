@@ -198,7 +198,7 @@ fn key_column_is_capped_and_long_keys_keep_one_space() {
 // #1397: the Help overlay drawn at 80 columns. The scroll stops at the
 // content end and every key keeps a gap before its description.
 
-mod drawn {
+pub(crate) mod drawn {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
@@ -207,14 +207,14 @@ mod drawn {
     use crate::tui::screens::LandingScreen;
 
     const FOOTER: &str = "[j/k] Scroll  [/] Search  [?/F1/Esc] Close";
-    const LONG_KEY: &str = "d/f/a/i/m/r/p/h/s/t";
-    const SIZES: [(u16, u16); 2] = [(80, 24), (80, 27)];
+    const LONG_KEY: &str = "⌃Q / ⌃X / ⌃C / q";
+    pub(crate) const SIZES: [(u16, u16); 2] = [(80, 24), (80, 27)];
 
-    async fn press(app: &mut App, code: KeyCode) {
+    pub(crate) async fn press(app: &mut App, code: KeyCode) {
         handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
     }
 
-    fn draw(app: &mut App, terminal: &mut Terminal<TestBackend>) -> Vec<String> {
+    pub(crate) fn draw(app: &mut App, terminal: &mut Terminal<TestBackend>) -> Vec<String> {
         terminal.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
         let buf = terminal.backend().buffer();
         (0..buf.area.height)
@@ -227,7 +227,7 @@ mod drawn {
     }
 
     /// The text rows inside the Help box, without its borders.
-    fn inner_rows(rows: &[String], width: u16, height: u16) -> Vec<String> {
+    pub(crate) fn inner_rows(rows: &[String], width: u16, height: u16) -> Vec<String> {
         let popup = crate::tui::help::centered_rect(90, 90, Rect::new(0, 0, width, height));
         assert!(
             rows[popup.y as usize].contains("[ Help ]"),
@@ -304,14 +304,21 @@ mod drawn {
     async fn help_key_line_keeps_gap_for_long_keys() {
         for (w, h) in SIZES {
             let (mut app, mut terminal) = help_open(w, h).await;
-            let inner = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            // #1398: the longest key (quit) is in the Global group, below
+            // the first page, so read every page.
+            let mut inner = inner_rows(&draw(&mut app, &mut terminal), w, h);
+            for _ in 0..60 {
+                press(&mut app, KeyCode::Char('j')).await;
+                inner.extend(inner_rows(&draw(&mut app, &mut terminal), w, h));
+            }
+            let col = |row: &str, pat: &str| row[..row.find(pat).unwrap()].chars().count();
             let long = inner
                 .iter()
-                .find(|r| r.contains("Run an action"))
-                .unwrap_or_else(|| panic!("{w}x{h}: Run an action row\n{}", inner.join("\n")));
-            let at = long.find("Run an action").unwrap();
+                .find(|r| r.contains(LONG_KEY))
+                .unwrap_or_else(|| panic!("{w}x{h}: quit row\n{}", inner.join("\n")));
+            let at = col(long, "quit — ");
             assert!(
-                long[..at].ends_with(' '),
+                long[..long.find("quit — ").unwrap()].ends_with(' '),
                 "{w}x{h}: no gap before the description: {long:?}"
             );
             // Key column = longest key of this mode + 2.
@@ -325,16 +332,12 @@ mod drawn {
                 .map(|b| b.key.chars().count())
                 .max()
                 .unwrap();
-            assert!(longest >= LONG_KEY.len());
-            let key_at = long.find(LONG_KEY).unwrap();
+            assert!(longest >= LONG_KEY.chars().count());
+            let key_at = col(long, LONG_KEY);
             assert_eq!(at, key_at + longest + 2, "{w}x{h}: {long:?}");
             // Short keys line up in the same column.
             let short = inner.iter().find(|r| r.contains("Release notes")).unwrap();
-            assert_eq!(
-                short.find("Release notes").unwrap(),
-                at,
-                "{w}x{h}: {short:?}"
-            );
+            assert_eq!(col(short, "Release notes"), at, "{w}x{h}: {short:?}");
         }
     }
 }

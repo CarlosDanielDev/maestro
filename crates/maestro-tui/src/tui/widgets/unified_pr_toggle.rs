@@ -61,6 +61,10 @@ pub fn draw_unified_pr_toggle(f: &mut Frame, area: Rect, checked: bool, theme: &
 /// checkboxes (the issue-launch dialog, #733). When `focused`, the whole row
 /// is painted with the standard selection bar (`focused_selection_style`),
 /// matching the issue-list selected row.
+///
+/// A label wider than `area` wraps at word boundaries onto the rows below,
+/// under the label's first column (#1399); size the row with
+/// [`checkbox_rows`].
 pub fn draw_checkbox(
     f: &mut Frame,
     area: Rect,
@@ -69,21 +73,25 @@ pub fn draw_checkbox(
     label: &str,
     theme: &Theme,
 ) {
-    let indicator = if icons::use_nerd_font() {
-        if checked {
-            "\u{f046}" // nf-fa-check_square
-        } else {
-            "\u{f096}" // nf-fa-square_o
-        }
-    } else if checked {
-        "[x]"
-    } else {
-        "[ ]"
-    };
+    let indicator = checkbox_indicator(checked);
+    let prefix = format!("  {} ", indicator);
+    let rows = wrap_label(label, prefix.width(), area.width as usize);
 
     if focused {
+        let lines: Vec<Line> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let lead = if i == 0 {
+                    prefix.clone()
+                } else {
+                    " ".repeat(prefix.width())
+                };
+                Line::from(format!("{lead}{row}"))
+            })
+            .collect();
         f.render_widget(
-            focus_bar(&format!("  {} {}", indicator, label), area, theme),
+            Paragraph::new(lines).style(focused_selection_style(theme)),
             area,
         );
         return;
@@ -94,24 +102,70 @@ pub fn draw_checkbox(
     } else {
         theme.text_muted
     };
+    let label_style = Style::default().fg(if checked {
+        theme.text_primary
+    } else {
+        theme.text_secondary
+    });
 
-    let line = Line::from(vec![
-        Span::styled(
-            format!("  {} ", indicator),
-            Style::default()
-                .fg(check_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            label.to_string(),
-            Style::default().fg(if checked {
-                theme.text_primary
+    let lines: Vec<Line> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let lead = if i == 0 {
+                Span::styled(
+                    prefix.clone(),
+                    Style::default()
+                        .fg(check_color)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
-                theme.text_secondary
-            }),
-        ),
-    ]);
-    f.render_widget(Paragraph::new(line), area);
+                Span::raw(" ".repeat(prefix.width()))
+            };
+            Line::from(vec![lead, Span::styled(row, label_style)])
+        })
+        .collect();
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn checkbox_indicator(checked: bool) -> &'static str {
+    if icons::use_nerd_font() {
+        if checked {
+            "\u{f046}" // nf-fa-check_square
+        } else {
+            "\u{f096}" // nf-fa-square_o
+        }
+    } else if checked {
+        "[x]"
+    } else {
+        "[ ]"
+    }
+}
+
+/// Greedy word wrap of `label` into rows of `width - indent` columns. A
+/// word wider than a row stays whole on its own row (the area clips it).
+fn wrap_label(label: &str, indent: usize, width: usize) -> Vec<String> {
+    let room = width.saturating_sub(indent).max(1);
+    let mut rows: Vec<String> = Vec::new();
+    let mut row = String::new();
+    for word in label.split(' ').filter(|w| !w.is_empty()) {
+        if row.is_empty() {
+            row.push_str(word);
+        } else if row.width() + 1 + word.width() <= room {
+            row.push(' ');
+            row.push_str(word);
+        } else {
+            rows.push(std::mem::replace(&mut row, word.to_string()));
+        }
+    }
+    rows.push(row);
+    rows
+}
+
+/// Rows [`draw_checkbox`] needs to show `label` whole in `width` columns.
+pub fn checkbox_rows(label: &str, checked: bool, width: u16) -> u16 {
+    let indent = format!("  {} ", checkbox_indicator(checked)).width();
+    wrap_label(label, indent, width as usize).len() as u16
 }
 
 /// Build a full-width selection bar: `content` padded with spaces to `area`

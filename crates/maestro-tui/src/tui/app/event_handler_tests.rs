@@ -248,8 +248,9 @@ async fn headless_permission_refusal_is_logged_and_toasted() {
             }
             screen.push('\n');
         }
+        // #1399: at 80 columns the log line ends with `…` after `cannot as`.
         assert!(
-            screen.contains("Headless Claude cannot ask"),
+            screen.contains("Headless Claude cannot"),
             "the refusal toast is drawn at {w}x{h}:\n{screen}"
         );
     }

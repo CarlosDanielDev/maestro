@@ -1,6 +1,6 @@
 pub mod focus;
 pub mod keymap;
-mod mode_hints;
+pub(crate) mod mode_hints;
 pub mod registry;
 pub mod sidebar_state;
 

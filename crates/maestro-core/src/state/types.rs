@@ -131,7 +131,8 @@ impl MaestroState {
     }
 
     pub fn update_total_cost(&mut self) {
-        self.total_cost_usd = self.sessions.iter().map(|s| s.cost_usd).sum();
+        // `+ 0.0` turns the `-0.0` of an empty f64 sum into `0.0` (#1399).
+        self.total_cost_usd = self.sessions.iter().map(|s| s.cost_usd).sum::<f64>() + 0.0;
     }
 
     /// Trim persisted session history to `cap` most-recent terminal
@@ -266,6 +267,18 @@ mod tests {
         s.cost_usd = cost;
         s.started_at = Some(chrono::Utc::now());
         s
+    }
+
+    /// #1399: an empty f64 sum is `-0.0`, which prints as `$-0.00`.
+    #[test]
+    fn update_total_cost_with_no_sessions_is_positive_zero() {
+        let mut state = MaestroState::default();
+        state.update_total_cost();
+        assert!(
+            state.total_cost_usd.is_sign_positive(),
+            "got {:?}",
+            state.total_cost_usd
+        );
     }
 
     #[test]

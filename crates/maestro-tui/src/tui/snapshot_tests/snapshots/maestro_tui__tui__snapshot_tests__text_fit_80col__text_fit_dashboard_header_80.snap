@@ -1,0 +1,8 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/text_fit_80col.rs
+assertion_line: 225
+expression: "stats_bar_rows(80).join(\"\\n\")"
+---
+────────────────────────────────────────────────────────────────────────────────
+  CarlosDanielDev/maestro   main   @CarlosDanielDev  │  󰝦 99 open  76 close…
+────────────────────────────────────────────────────────────────────────────────
