@@ -20,7 +20,7 @@ struct Row {
 /// Help text the registry label does not hold. Kept short and true.
 fn detail(action: Action) -> Option<String> {
     match action {
-        Action::Quit => Some("asks before it stops live agents or a team run".into()),
+        Action::Quit => Some("asks first while work is live".into()),
         Action::TurboquantDashboard => Some(format!("dashboard; on/off in {TURBOQUANT_TOGGLE}")),
         _ => None,
     }
@@ -53,10 +53,10 @@ fn rows() -> &'static [Row] {
     &ROWS
 }
 
-fn group(title: &'static str, keep: impl Fn(Scope) -> bool) -> KeyBindingGroup {
+fn group(title: &'static str, keep: impl Fn(&Row) -> bool) -> KeyBindingGroup {
     let bindings = rows()
         .iter()
-        .filter(|r| keep(r.scope))
+        .filter(|r| keep(r))
         .map(|r| KeyBinding {
             key: &r.key,
             description: &r.description,
@@ -65,15 +65,25 @@ fn group(title: &'static str, keep: impl Fn(Scope) -> bool) -> KeyBindingGroup {
     KeyBindingGroup { title, bindings }
 }
 
-/// The Global scope as one Help group.
+fn is_tab(r: &Row) -> bool {
+    matches!(r.action, Action::SwitchTab(_))
+}
+
+/// The Global scope as one Help group, without the digit tab rows: the
+/// digits switch tabs only on the seven tab screens ([`tab_help_group`]).
 pub fn global_help_group() -> KeyBindingGroup {
-    group("Global keys", |s| s == Scope::Global)
+    group("Global keys", |r| r.scope == Scope::Global && !is_tab(r))
+}
+
+/// The digit rows (`1  Home` … `7  PRD`), for a tab screen only.
+pub fn tab_help_group() -> KeyBindingGroup {
+    group("Tabs", |r| r.scope == Scope::Global && is_tab(r))
 }
 
 /// The registry bindings of `mode`'s screen (and its panels), if any.
 pub fn screen_help_group(mode: TuiMode) -> Option<KeyBindingGroup> {
-    let g = group("This screen", |s| {
-        s != Scope::Global && Scope::Screen(mode).encloses(s)
+    let g = group("This screen", |r| {
+        r.scope != Scope::Global && Scope::Screen(mode).encloses(r.scope)
     });
     (!g.bindings.is_empty()).then_some(g)
 }

@@ -803,7 +803,7 @@ pub fn mode_keymap(
         help_groups.extend_from_slice(screen_bindings);
     }
     help_groups.extend_from_slice(global_keybindings());
-    help_groups.extend(super::registry::screen_help_group(mode));
+    help_groups.extend(super::keymap::mode_help_groups(mode));
 
     ModeKeyMap {
         mode_label,

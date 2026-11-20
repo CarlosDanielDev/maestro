@@ -374,7 +374,7 @@ mod screens;
 
 #[path = "registry_help.rs"]
 mod help;
-pub use help::{global_help_group, is_global, screen_help_group};
+pub use help::{global_help_group, is_global, screen_help_group, tab_help_group};
 
 #[cfg(test)]
 #[path = "registry_tests.rs"]
