@@ -17,10 +17,8 @@ pub async fn cmd_resume(
     let state = store.load()?;
     let repo_root = std::env::current_dir()?;
 
-    let (incomplete, notes) = select_first_turn(
-        resumable_sessions(&state, session_filter.as_deref()),
-        rerun_first_turn,
-    );
+    let (incomplete, notes) =
+        sessions_to_resume(&state, session_filter.as_deref(), rerun_first_turn);
     for note in &notes {
         println!("{note}");
     }
@@ -46,6 +44,16 @@ pub async fn cmd_resume(
     app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
 
     crate::tui::run(app).await
+}
+
+/// What `cmd_resume` restores, plus one line per first-turn session it
+/// skips or re-runs (#1424).
+fn sessions_to_resume<'a>(
+    state: &'a MaestroState,
+    filter: Option<&str>,
+    rerun_first_turn: bool,
+) -> (Vec<&'a Session>, Vec<String>) {
+    select_first_turn(resumable_sessions(state, filter), rerun_first_turn)
 }
 
 /// Saved sessions `maestro resume` picks up, narrowed by an id prefix or
@@ -135,6 +143,9 @@ fn restore_session(s: &Session, worktrees: &dyn WorktreeManager) -> Result<Sessi
     new_session.retry_count = s.retry_count;
     new_session.id = s.id;
     new_session.worktree_path = s.worktree_path.clone();
+    // Keeps the first-turn marker (#1424): a re-run quit before it spawns
+    // is still noted on the next resume. Spawn sets it again.
+    new_session.started_at = s.started_at;
     if let Some(id) = s.agent_session_id.as_deref() {
         new_session.bind_agent_session_id(id);
     }
