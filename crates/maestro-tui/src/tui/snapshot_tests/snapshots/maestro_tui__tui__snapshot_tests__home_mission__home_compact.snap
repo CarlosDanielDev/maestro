@@ -25,4 +25,4 @@ expression: t.backend()
 "┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
 "│10:00:00 [S-1] home-mission-log-1264                                          │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" Enter Open   j/k Move   Tab Next panel                                 ⌃Q quit "
+" Enter Open   j/k Move                                                  ⌃Q quit "
