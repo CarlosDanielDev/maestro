@@ -32,7 +32,7 @@ mod interaction_pipeline_provider_tests;
 mod interaction_pipeline_tests;
 mod issue_completion;
 mod kill_confirm;
-mod mission;
+pub(crate) mod mission;
 mod plugins;
 mod pr_retry;
 mod pushup_marker;
@@ -84,7 +84,7 @@ use tokio::sync::mpsc;
 /// login` finishes. Without this, the same advice ships in multiple
 /// phrasings and drifts over time.
 pub(crate) const AUTH_RECOVERY_HINT: &str =
-    "Run `gh auth login` then press Shift+P on Overview to retry.";
+    "Run `gh auth login`, then press ⏎ twice on the PR row in Dashboard to retry.";
 
 fn default_enabled_agent_id(config: &Config) -> String {
     let ids = crate::agent_provider_map::enabled_agent_ids(config);
@@ -349,7 +349,7 @@ impl App {
         // (PR-already-exists check) prevents double-firing when the prior
         // run actually succeeded but crashed before clearing the entry.
         let recovered_completions = state.pending_completions.clone();
-        // Recover the pending-PR retry queue from prior run so Shift+P
+        // Recover the pending-PR retry queue from prior run so the Dashboard PR-row retry
         // (#521) can resurrect them after a maestro restart. The schema has
         // always supported this; only the rehydration was missing.
         // Apply PENDING_PRS_REHYDRATE_CAP defensively: a corrupt or
@@ -496,7 +496,7 @@ impl App {
         }
         if recovered_prs_count > 0 {
             // List the actual issue numbers so the user knows which panels
-            // to focus before pressing Shift+P, instead of guessing across
+            // to act on with the Dashboard PR-row retry, instead of guessing across
             // the whole pool.
             let issue_list: Vec<String> = app
                 .pending_prs
@@ -506,7 +506,7 @@ impl App {
             app.activity_log.push_simple(
                 "#orphan-prs".into(),
                 format!(
-                    "{} pending PR(s) restored from previous run: {} — focus the matching session on Overview and press Shift+P to retry",
+                    "{} pending PR(s) restored from previous run: {} — open Dashboard (2) and press ⏎ twice on a PR pipeline row to retry",
                     recovered_prs_count,
                     issue_list.join(", ")
                 ),
@@ -898,7 +898,7 @@ impl App {
             .chain(&self.completions_in_flight)
             .cloned()
             .collect();
-        // Mirror the pending-PR retry queue so Shift+P (#521) can resurrect
+        // Mirror the pending-PR retry queue so the Dashboard PR-row retry (#521) can resurrect
         // entries after a restart — without this the in-memory queue is
         // lost on shutdown.
         self.state.pending_prs = self.pending_prs.clone();
@@ -1426,8 +1426,8 @@ enabled = true
                 warn.message
             );
             assert!(
-                warn.message.contains("Shift+P"),
-                "the warn must mention Shift+P so users know how to recover"
+                warn.message.contains("Dashboard"),
+                "the warn must name Dashboard so users know how to recover"
             );
             assert_eq!(warn.session_label, "#orphan-prs");
         }

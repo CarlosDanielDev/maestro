@@ -101,7 +101,7 @@ pub fn overview_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Resume all paused sessions (SIGCONT)",
                     },
                     KeyBinding {
-                        key: "k / F10",
+                        key: "X / F10",
                         description: "Kill selected session",
                     },
                     KeyBinding {
@@ -474,10 +474,11 @@ mod tests {
 
     #[test]
     fn mode_keymap_dashboard_has_hints() {
+        // #1280: the Work list keys, from the registry block.
         let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let keys: Vec<&str> = km.hints.iter().map(|h| h.key).collect();
-        assert!(keys.contains(&"i"));
-        assert!(keys.contains(&"r"));
+        assert!(keys.contains(&"Enter"), "{keys:?}");
+        assert!(keys.contains(&"X"), "{keys:?}");
     }
 
     #[test]

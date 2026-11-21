@@ -29,7 +29,7 @@ pub(crate) fn line(theme: &Theme) -> Line<'static> {
         ),
         Span::styled("gh auth login", Style::default().fg(theme.accent_info)),
         Span::styled(
-            ", then Shift+P on Overview",
+            ", then ⏎ ⏎ on Dashboard",
             Style::default().fg(theme.text_muted),
         ),
     ])

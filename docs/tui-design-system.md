@@ -267,7 +267,7 @@ TurboQuant on/off toggle is the Settings › TurboQuant › Enabled field
 | `markdown.rs` | `render_markdown(input, theme, width)` | Markdown → `Text` |
 | `clipboard_toast.rs` | `draw_copy_toast` | "Copied" confirmation (thin caller of `ds::toast`) |
 | `budget_banner.rs` | `draw_budget_banner_if_alerting` | Budget alert banner |
-| `gh_auth_warning.rs` | `draw(f, area, theme)`, `line(theme)`, `GH_AUTH_EXPIRED` | The one-line `⊘ gh auth expired · PR create paused · gh auth login, then Shift+P on Overview` (#1265: `P` retries on Overview only; `fix:` dropped so it fits 80 columns) drawn on the log row while `App::gh_auth_ok` is false (#1241). Pure draw: the recheck is `app/gh_auth.rs` (one `gh auth status` on the blocking pool, before a PR action is refused), never the draw path |
+| `gh_auth_warning.rs` | `draw(f, area, theme)`, `line(theme)`, `GH_AUTH_EXPIRED` | The one-line `⊘ gh auth expired · PR create paused · gh auth login, then ⏎ ⏎ on Dashboard` (#1280: the PR pipeline row's armed ⏎ is the retry; `fix:` dropped so it fits 80 columns) drawn on the log row while `App::gh_auth_ok` is false (#1241). Pure draw: the recheck is `app/gh_auth.rs` (one `gh auth status` on the blocking pool, before a PR action is refused), never the draw path |
 | `agent_badge.rs` | `agent_label`, `agent_kind_for_id` | Per-agent label and kind; the colour is `theme.agent_color(agent_id)` |
 
 ### Shell rows: TabBar, CrumbBar, footer (`crates/maestro-tui/src/tui/ds/`, #1258)
@@ -388,8 +388,8 @@ Implements `palette` from `docs/design-system/index.html` §04 and the §06
 | Item | For |
 |---|---|
 | `registry::actions_on(bindings, mode)` | The actions reachable on a screen: Global plus its screen block, one binding per action (the first chord), hidden aliases and `⌃K` left out. The palette lists these; Help (#1398) can read the same list |
-| `registry::PALETTE_COMMANDS` / `PaletteCommand` | `(label, command, Option<(key, screen)>)`: commands with no global key, declared next to the bindings (`network`; #1265: `TurboQuant dashboard` (`Q` on Dashboard), `session-complete modal (Settings)`, `review concerns`, `retry PR` (`P` on Overview)). the key is shown at the right of the row only on its screen |
-| `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` takes the entry's `Run` and returns the reason it cannot run (`review concerns` with no review, `retry PR` off Overview); it shows with `⊘` and ⏎ does nothing |
+| `registry::PALETTE_COMMANDS` / `PaletteCommand` | `(label, command, Option<(key, screen)>)`: commands with no global key, declared next to the bindings (`network`; #1265: `TurboQuant dashboard` (`Q` on Dashboard), `session-complete modal (Settings)`, `review concerns`; #1280: `retry PR (Dashboard PR pipeline)` opens the Dashboard on the first pending PR row and writes nothing). the key is shown at the right of the row only on its screen |
+| `palette::entries(bindings, mode, disabled)` | One `Entry` per action, then the palette-only commands. `disabled` takes the entry's `Run` and returns the reason it cannot run (`review concerns` with no review); it shows with `⊘` and ⏎ does nothing |
 | `palette::fuzzy_hits(query, label)` | Case-insensitive subsequence match; the hit indices are drawn `UNDERLINED` |
 | `PaletteState` (`app.palette`) | The open palette: a canonical `Input` query (keys go through `feed`), the selection. `handle_key` returns `Outcome::{Open, Close, Run}`; `draw` dims the whole frame, then draws the Rounded box on `surface_overlay` with an `INSERT` chip |
 
@@ -459,7 +459,6 @@ Implements the What's new card of `§02 Home: Mission Control` (`whatsNew()` in 
 
 Rules: the Throughput and Change mix cards of the design are not drawn yet (no measured throughput source); the network chart stays off Home, and palette `network` still shows a toast (its numbers were synthetic). Tests: `snapshot_tests/home_insight.rs`.
 
-
 ### Wizard frame and stepper (`widgets/wizard_frame.rs`, `ds/stepper.rs`, #1274)
 
 Implements the shared wizard frame of `docs/design-system/index.html` §02.2 (Create issue) and §02.3 (Create milestone), reused by §02.11 Adapt and the team wizards: `stepper()` and `field()` with errors on the bottom border. Decision: `docs/design-system/decisions.md` (2026-11-21, Shared wizard frame).
@@ -472,6 +471,22 @@ Implements the shared wizard frame of `docs/design-system/index.html` §02.2 (Cr
 | `wizard_frame::field_block(label, focused, error, theme)` | A form field's block: `theme.styled_block` (Plain / Thick on focus); an error turns the border `accent_error` and puts ` ✗ message ` on the bottom border |
 
 Rules: `WizardFrame::draw` (3-row `Step i/n: label` header, footer error + hints) stays as the compatibility path until each wizard migrates (#1281–#1284); new wizard code uses `draw_stepped`. The CrumbBar stays the shell row drawn by `ui::draw`, so the frame shows its state on the stepper row. The new types are re-exported from `widgets` next to the old ones. Tests: `ds/stepper.rs`, `widgets/wizard_frame_tests.rs` (`stepper_{wide,collapsed}`, `wizard_frame_checklist_wide_only`, `wizard_field_error_border`, full-screen `wizard_frame_compact_80x24` and `wizard_frame_wide_checklist`).
+
+### Dashboard cockpit (`screens/dashboard/`, #1280)
+
+Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.html` (its work list, session detail and PR detail drawings). `TuiMode::Dashboard` draws it; `TuiMode::Overview` is an alias: `ui::draw` turns it into `TuiMode::Dashboard` before it draws (`route_overview_alias`), so every route to the old grid lands here. Decision: `docs/design-system/decisions.md` (2026-11-21, Dashboard cockpit).
+
+| Item | For |
+|---|---|
+| `WorkList::rebuild(sessions, open_prs, pending)` / `WorkKey` / `Group` | One list, three groups: Sessions (pool order; `FailedGates` and `Errored` stay here), PR pipeline (open PRs under CI polling by number, then the restored `PendingPr`s), Finished · this run (`Completed`, `Killed`). The selection is a `WorkKey`, not an index; it falls back to the first row when its key is gone. Headers are not stops for `j k ↑ ↓` |
+| `pipeline_stage(status)` | `(current, failed)` step of `run ─ gates ─ push ─ PR ─ CI`; the detail draws it with `ds::stepper::stepper_line` (a failed step is `✗` + `accent_error`; Compact gets `Step n/N`) |
+| `ScreenState::dashboard` (`screens::dashboard::Dashboard`) | Rows, selection, the armed `⏎` of a pending PR row (`ArmedEnter` + `armed_for`), and a test clock |
+| `dashboard::dispatch::dispatch_input(app, event)` | Taken before `HomeScreen`, whose letters (`QUICK_ACTIONS`, `n`, `R`) still answer the rest. `j k ↑ ↓` move; `⏎` opens a session's Detail, an open PR's PR list, or arms a pending PR (second `⏎` within `ARM_WINDOW` runs `App::trigger_manual_pr_retry`); `X` opens the TypedConfirm kill (`App::open_kill_confirm`, live sessions only); `l` the session log; `D` dismisses finished sessions; `e` opens the CI Error Review while a check fails (taken in `handle_global_shortcuts`). Any other key disarms, also keys that never reach the screen (`dispatch::note_key`, first thing in `handle_key`: tab digits, overlays, chords); `Esc` while armed only disarms. Every move copies the marked session into `PanelView::selected` (`usize::MAX` on a PR row), so Detail opened with `⏎` kills (`X` / F10), goes full screen (`f` / F3) and copies (`c`) the session it shows |
+| `pr_lock_reason(pending)` | `PermanentlyFailed`, `Retrying` (a create is running) and `RetryScheduled` (one is queued) rows are `Blocked` (Enter inert, the bar says why), so ⏎ ⏎ never starts a second `gh pr create`. A signed-out gh does not lock: the retry is the gh call that turns `gh_auth_ok` back on; the detail says to run `gh auth login` |
+| `dashboard::draw::draw(f, area, &view, &mut dash, bp, theme, nerd_font)` | View strip (`o Ops` drawn; `c t` open the Cost and Token screens; `g` muted until the Deps view), then Work list + detail: Wide 66 / Regular 58 columns beside it, Compact stacked. Rows reuse `status_chip_for_mode`, `money`, `ellipsize_line`; overflow shows `↓ n more` on the bottom border. The Activity pane under it stays the shell's |
+| `pending_chip(status, theme, nerd_font)` / `ci_chip(checks, ..)` | PR rows: `◐ needs retry`, `○ auto-retry`, `↻ retrying`, `✗ stopped` (chip icons, so ASCII mode works); open PRs `◆ CI running`, `↯ CI failing`, `✓ CI passed` |
+
+Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
 ---
 
@@ -519,7 +534,6 @@ Handled **before** any screen by `handle_global_shortcuts` in
 | `Ctrl+X` | Exit | always |
 | `F1`, `?` | Help overlay | `?` skipped in text-input mode |
 | `F2`…`F12` | Mode F-key table (`mode_keymap`) | consumed even if inactive |
-| `Shift+P` | Retry PR creation | Overview only, skipped in text-input mode (#1265) |
 | `1`-`7` | Switch tab (`ds::tab_bar::TABS`, in `tab_key_target`) | only on a tab screen, not in text-input mode. Overview keeps `1`-`9` for session detail |
 | `Ctrl+Z` | Run the visible toast's undo | only while an undo toast is visible; else the screen gets it |
 | `Esc` | Dismiss the visible error toast | only while an error toast is visible; else the screen gets it |
@@ -532,7 +546,7 @@ Text-input mode is one check: `is_text_input_mode` in `input_handler.rs`
 is active, while a PRD field is edited and while a Roadmap label or assignee
 filter is edited. Every global bare-key handler asks it: the upgrade keys
 `u` / `n` / `Esc` (bare only), the run loop's `y` restart
-(`is_restart_key`, bare only), `q`, `?`, `A`, `e`, `Shift+P` and
+(`is_restart_key`, bare only), `q`, `?`, `A`, `e` and
 the `1`-`7` tab switch. A new text field whose screen does not report `Insert`
 must be added there; `global_bare_keys_never_fire_on_any_text_input_surface`
 in `input_handler_text_input_tests.rs` walks every surface, so add it to
@@ -559,7 +573,7 @@ screen moves into the registry one at a time.
 | `Chord::key(code)` / `Chord::ctrl(c)` / `Chord::label()` | The key, and the text a hint shows (`⌃K`, `Enter`, `G`) |
 | `Scope::Global` / `Scope::Screen(mode)` / `Scope::Panel(mode, name)` | Where it applies. Global ⊃ Screen ⊃ Panel (`Scope::encloses`); a screen matches its mode with any payload |
 | `Danger::Safe` / `Danger::Destructive` | Drives the case rules |
-| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `A`), then one block per registered screen (`LogViewer`, `SessionSummary`, Milestones `r` reload / `R` run all, Overview `P` retry PR hidden; #1265) |
+| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `A`), then one block per registered screen (`LogViewer`, `SessionSummary`, Milestones `r` reload / `R` run all; #1265; Dashboard work list, #1280) |
 | `check(bindings)` | The rules as `Violation`s: `Duplicate` (same chord twice in one scope), `Shadow` (an inner scope reuses an enclosing scope's chord), `LowercaseDestructive` (destructive on a bare lowercase letter), `UppercaseSafe` (safe on a bare uppercase letter with no `.exception`). Ctrl chords, digits and symbols skip the case rules |
 | `footer_hints(mode)` | The footer hints of a registered screen, in registry order; `mode_keymap` uses them in place of its own list |
 

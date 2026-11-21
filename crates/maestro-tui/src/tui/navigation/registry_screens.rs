@@ -66,32 +66,48 @@ pub(super) fn blocks() -> Vec<Binding> {
             "run all",
         ),
     ]);
-    // #1265: `P` retries the PR of the selected Overview session, so it is
-    // no longer a global. Hidden: the Overview footer stays its
-    // `mode_keymap` list; the palette lists `retry PR` as a command.
-    v.push(
+    // #1280: the Dashboard cockpit (`screens::dashboard::dispatch`). Its
+    // launcher letters are `HomeScreen` keys; Help lists them from
+    // `QUICK_ACTIONS`. `⏎` on a pending PR row arms, a second `⏎` writes.
+    let dash = Scope::Screen(TuiMode::Dashboard);
+    v.extend([
+        s(dash, ch('j'), A::ScrollDown, "Down"),
+        s(dash, ch('k'), A::ScrollUp, "Up"),
+        s(dash, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
+        s(dash, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
+        s(dash, Chord::key(KeyCode::Enter), A::Expand, "open · arm PR"),
+        Binding::new(ch('X'), dash, A::Kill, Danger::Destructive, "kill"),
+        s(dash, ch('l'), A::Expand, "log"),
         Binding::new(
-            ch('P'),
-            Scope::Screen(TuiMode::Overview),
-            A::RetryPr,
+            ch('D'),
+            dash,
+            A::Dismiss,
             Danger::Destructive,
-            "retry PR",
-        )
-        .hidden(),
-    );
+            "dismiss finished",
+        ),
+        // `handle_global_shortcuts` runs it while a CI check fails (#695).
+        s(dash, ch('e'), A::Expand, "CI error review").hidden(),
+    ]);
+    // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
+    // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
+    // the retry, behind the armed bar.
     v
 }
 
 /// A ⌃K palette command with no global key (#1255). `Network`: diagnostics
 /// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
 /// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
+/// `PrPipeline` (#1280) opens the Dashboard on its first pending PR row,
+/// where ⏎ ⏎ retries; it writes nothing itself. `AgentGraph` (#1280) was
+/// Overview's `g`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
     TurboquantDashboard,
     CompleteModal,
     ReviewConcerns,
-    RetryPr,
+    PrPipeline,
+    AgentGraph,
 }
 
 /// The key that runs a palette command outside the palette, and the one
@@ -112,8 +128,9 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
     ),
     ("review concerns", PaletteCommand::ReviewConcerns, None),
     (
-        "retry PR",
-        PaletteCommand::RetryPr,
-        Some(("P", TuiMode::Overview)),
+        "retry PR (Dashboard PR pipeline)",
+        PaletteCommand::PrPipeline,
+        None,
     ),
+    ("agent graph", PaletteCommand::AgentGraph, None),
 ];

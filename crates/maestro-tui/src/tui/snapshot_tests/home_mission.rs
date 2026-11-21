@@ -291,33 +291,8 @@ async fn home_disabled_action_inert() {
     assert_eq!(app.tui_mode, TuiMode::Prd);
 }
 
-/// The Overview panel whose title holds `needle` is the highlighted one:
-/// its top-left corner has `border_active` + BOLD (`panels::draw_single_panel`).
-fn highlighted(t: &Terminal<TestBackend>, theme: &Theme, needle: &str) -> bool {
-    let buf = t.backend().buffer();
-    let r = rows(t);
-    let y = r
-        .iter()
-        .position(|l| l.contains(needle))
-        .unwrap_or_else(|| panic!("no panel {needle:?} on screen:\n{}", r.join("\n")));
-    let title_x = (0..buf.area.width)
-        .find(|x| {
-            let rest: String = (*x..buf.area.width)
-                .map(|x| buf[(x, y as u16)].symbol())
-                .collect();
-            rest.starts_with(needle)
-        })
-        .unwrap_or(0);
-    let corner = (0..title_x)
-        .rev()
-        .find(|x| buf[(*x, y as u16)].symbol() == "╔")
-        .unwrap_or_else(|| panic!("no corner left of {needle:?}"));
-    let cell = &buf[(corner, y as u16)];
-    cell.fg == theme.border_active && cell.modifier.contains(ratatui::style::Modifier::BOLD)
-}
-
 /// ⏎ on the top Needs-you row (gates failed, #412) opens the session
-/// Overview and highlights #412's panel, also when it is on page 2.
+/// Overview, which is the Dashboard (#1280), with #412 selected.
 async fn enter_opens_overview_on(runners: u128) {
     let mut app = busy_app_after(runners);
     let t = draw(&mut app, 120, 36);
@@ -339,22 +314,24 @@ async fn enter_opens_overview_on(runners: u128) {
         .map(|s| s.id);
     assert_eq!(selected, Some(Uuid::from_u128(FAILED_ID)));
 
+    // #1280: Overview routes to the Dashboard; the jump selects #412 in
+    // the Work list, also when it is far down the list.
     let t = draw(&mut app, 120, 36);
-    if runners > 0 {
-        assert!(
-            app.panel_view.grid_state.current_page > 0,
-            "#412 is past the first page"
-        );
-    }
-    let theme = app.theme.clone();
-    assert!(
-        highlighted(&t, &theme, "#412 — Auth refactor"),
-        "#412 must be the highlighted panel (runners {runners}):\n{}",
+    assert_eq!(app.tui_mode, TuiMode::Dashboard);
+    assert_eq!(
+        app.screen_state.dashboard.list.selected_session(),
+        Some(Uuid::from_u128(FAILED_ID))
+    );
+    let marked: Vec<String> = rows(&t).into_iter().filter(|l| l.contains('▌')).collect();
+    assert_eq!(
+        marked.len(),
+        1,
+        "one selected row:\n{}",
         rows(&t).join("\n")
     );
     assert!(
-        runners > 0 || !highlighted(&t, &theme, "#409 — Token refresh"),
-        "only one panel is highlighted"
+        marked[0].contains("#412"),
+        "#412 must be the selected row (runners {runners}): {marked:?}"
     );
 }
 

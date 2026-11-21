@@ -47,6 +47,8 @@ pub(super) async fn handle_key_under_size_guard(
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
 /// global shortcuts, and screen dispatch in priority order.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+    // #1280: a key the Dashboard does not take disarms its armed PR row.
+    screens::dashboard::dispatch::note_key(app, &key);
     // If confirm exit dialog is showing, handle it
     if app.tui_mode == app::TuiMode::ConfirmExit {
         return handle_confirm_exit(app, &key);
@@ -100,7 +102,10 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
     // letter still types into editors.
     if key.code == KeyCode::Char('e')
         && !is_text_input_mode(app)
-        && app.tui_mode == app::TuiMode::Overview
+        && matches!(
+            app.tui_mode,
+            app::TuiMode::Overview | app::TuiMode::Dashboard
+        )
         && app.has_visible_ci_failure()
     {
         app.request_ci_error_review();
@@ -905,10 +910,12 @@ fn open_palette(app: &mut App) {
     use crate::tui::ds::palette::{PaletteState, Run, entries};
     use crate::tui::navigation::registry::{PaletteCommand, registry};
     let review = app.pending_review_report.is_some();
-    let overview = app.tui_mode == app::TuiMode::Overview;
+    let agent_graph = app.is_agent_graph_enabled();
     let list = entries(registry(), app.tui_mode, |run| match run {
         Run::Command(PaletteCommand::ReviewConcerns) if !review => Some("no review pending"),
-        Run::Command(PaletteCommand::RetryPr) if !overview => Some("on Overview only"),
+        Run::Command(PaletteCommand::AgentGraph) if !agent_graph => {
+            Some("views.agent_graph_enabled is off")
+        }
         _ => None,
     });
     app.palette = Some(PaletteState::new(list));
@@ -962,10 +969,17 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
             app.navigate_to(app::TuiMode::PrReview);
             KeyAction::Consumed
         }
-        // `P` on Overview, through `handle_key` like a bound key.
-        Some(Run::Command(PaletteCommand::RetryPr)) => {
-            let p = KeyEvent::new(KeyCode::Char('P'), KeyModifiers::NONE);
-            Box::pin(handle_key(app, p)).await
+        // #1280: the Dashboard with the first pending PR row selected;
+        // its ⏎ ⏎ (armed) is the retry, so the palette writes nothing.
+        // #1280: the Agent graph was Overview's `g`; Esc comes back.
+        Some(Run::Command(PaletteCommand::AgentGraph)) => {
+            app.navigate_to(app::TuiMode::AgentGraph);
+            KeyAction::Consumed
+        }
+        Some(Run::Command(PaletteCommand::PrPipeline)) => {
+            handle_screen_action(app, screens::ScreenAction::Push(app::TuiMode::Dashboard));
+            screens::dashboard::dispatch::select_first_pending_pr(app);
+            KeyAction::Consumed
         }
     }
 }
@@ -1012,22 +1026,8 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
     // concerns panel open from the ⌃K palette; the session-complete modal
     // is a Settings row, saved only by Settings' ⌃S.
 
-    // Shift+P manually triggers PR creation for the selected session
-    // when a PendingPr entry awaits retry (#521). Overview only (#1265):
-    // the selection it acts on is the Overview grid.
-    if key.code == KeyCode::Char('P')
-        && app.tui_mode == app::TuiMode::Overview
-        && !is_text_input_mode(app)
-    {
-        if let Some(issue_number) = app
-            .pool
-            .session_at_index(app.panel_view.selected_index())
-            .and_then(|s| s.issue_number)
-        {
-            app.trigger_manual_pr_retry(issue_number);
-        }
-        return true;
-    }
+    // #1280: Shift+P (#521, Overview only since #1265) is retired with the
+    // Overview grid; ⏎ ⏎ on a Dashboard PR pipeline row is the retry.
 
     // Ctrl+B toggles bypass mode from any screen (#328 AC: TUI toggle).
     if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -1396,7 +1396,10 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('r'), _) => {
             app.resume_all();
         }
-        (KeyCode::Char('k'), _) => {
+        // #1280: kill is `X` in Detail as on the Dashboard list (`k` is up
+        // there); the target is `panel_view.selected`, which the Dashboard
+        // keeps on its marked session.
+        (KeyCode::Char('X'), _) => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected)
                 && let Some(session) = app.pool.get_session(id)
@@ -2311,75 +2314,6 @@ mod tests {
         assert_eq!(app.pool.total_count(), count_before);
         let sessions = app.pool.all_sessions();
         assert_eq!(sessions[0].status, SessionStatus::Running);
-    }
-
-    // ── Issue #521: Shift+P manual PR retry keybinding ──────────────────
-
-    fn make_awaiting_pending_pr(issue_number: u64) -> crate::provider::github::types::PendingPr {
-        crate::provider::github::types::awaiting_pending_pr(issue_number)
-    }
-
-    #[tokio::test]
-    async fn shift_p_with_pending_pr_queues_retry() {
-        use crate::provider::github::types::PendingPrStatus;
-        let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
-        let s = Session::new(
-            "task".into(),
-            "claude-opus-4-5".into(),
-            "orchestrator".into(),
-            Some(42),
-            None,
-        );
-        app.pool.enqueue(s);
-        app.panel_view.selected = Some(0);
-        app.pending_prs.push(make_awaiting_pending_pr(42));
-
-        let _ = handle_key(&mut app, key('P')).await;
-
-        assert_eq!(
-            app.pending_prs[0].status,
-            PendingPrStatus::RetryScheduled,
-            "Shift+P must queue the pending PR for retry"
-        );
-    }
-
-    #[tokio::test]
-    async fn shift_p_without_pending_pr_is_noop() {
-        let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
-        let s = Session::new(
-            "task".into(),
-            "claude-opus-4-5".into(),
-            "orchestrator".into(),
-            Some(42),
-            None,
-        );
-        app.pool.enqueue(s);
-        app.panel_view.selected = Some(0);
-
-        let log_len_before = app.activity_log.entries().len();
-
-        let _ = handle_key(&mut app, key('P')).await;
-
-        assert!(app.pending_prs.is_empty());
-        assert_eq!(app.activity_log.entries().len(), log_len_before);
-    }
-
-    #[tokio::test]
-    async fn shift_p_in_text_input_mode_is_noop() {
-        use crate::provider::github::types::PendingPrStatus;
-        let mut app = make_app();
-        app.tui_mode = TuiMode::PromptInput;
-        app.pending_prs.push(make_awaiting_pending_pr(42));
-
-        let _ = handle_key(&mut app, key('P')).await;
-
-        assert_eq!(
-            app.pending_prs[0].status,
-            PendingPrStatus::AwaitingManualRetry,
-            "text-input mode must block Shift+P"
-        );
     }
 
     // ── Issue #560: failed-gates recovery handler — `[s]` shell ───────

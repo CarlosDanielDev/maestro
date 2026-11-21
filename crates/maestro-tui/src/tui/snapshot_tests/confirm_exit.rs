@@ -74,9 +74,14 @@ fn popup_rows(out: &str) -> Vec<String> {
         .iter()
         .position(|r| r.contains("[ Confirm Exit ]"))
         .unwrap_or_else(|| panic!("no Confirm Exit box:\n{out}"));
-    let col = rows[top]
+    // The last corner left of the title: a panel border under the box
+    // can share its top row (#1280 Dashboard detail pane).
+    let title_at = rows[top].find("[ Confirm Exit ]").expect("box title");
+    let col = rows[top][..title_at]
         .chars()
-        .position(|c| matches!(c, '┌' | '╔' | '╭'))
+        .collect::<Vec<_>>()
+        .iter()
+        .rposition(|c| matches!(c, '┌' | '╔' | '╭'))
         .expect("top-left corner");
     let bottom = (top + 1..rows.len())
         .find(|&i| matches!(rows[i].chars().nth(col), Some('└' | '╚' | '╰')))

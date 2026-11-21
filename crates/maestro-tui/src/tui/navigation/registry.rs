@@ -132,7 +132,6 @@ pub enum Action {
     Undo,
     ToggleLogDrawer,
     ToggleBypass,
-    RetryPr,
     ScrollUp,
     ScrollDown,
     Top,
@@ -146,6 +145,8 @@ pub enum Action {
     Reload,
     /// Launch every open issue of the milestone (Milestones `R`, #1265).
     RunAll,
+    /// Dismiss the finished sessions (Dashboard `D`, #1280).
+    Dismiss,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

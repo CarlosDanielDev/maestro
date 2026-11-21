@@ -1,4 +1,5 @@
 //! #1261: kill from the Dashboard asks for the session's issue number.
+//! #1280: the kill key is `X` (`k` is "up" on the Dashboard list).
 //! `⏎` is inert until the typed text matches; `y` and `n` are just text.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -50,7 +51,7 @@ fn draw(app: &mut App) -> String {
 #[tokio::test]
 async fn kill_requires_issue_number() {
     let mut app = app_with_407();
-    press(&mut app, KeyCode::Char('k')).await;
+    press(&mut app, KeyCode::Char('X')).await;
     assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     assert!(is_text_input_mode(&app), "typing must not fire global keys");
     let out = draw(&mut app);
@@ -80,13 +81,13 @@ async fn kill_requires_issue_number() {
 #[tokio::test]
 async fn kill_esc_cancels_and_next_open_starts_empty() {
     let mut app = app_with_407();
-    press(&mut app, KeyCode::Char('k')).await;
+    press(&mut app, KeyCode::Char('X')).await;
     type_str(&mut app, "40").await;
     press(&mut app, KeyCode::Esc).await;
     assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     assert!(!kill_attempted(&app));
 
-    press(&mut app, KeyCode::Char('k')).await;
+    press(&mut app, KeyCode::Char('X')).await;
     let out = draw(&mut app);
     assert!(out.contains("0 of 3"), "{out}");
 }

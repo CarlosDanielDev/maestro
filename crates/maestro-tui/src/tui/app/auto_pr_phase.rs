@@ -47,7 +47,7 @@ pub(super) enum PrPhaseOutcome {
     NoClient,
     /// Auth lost and no branch — nothing to defer; log the auth skip.
     AuthSkippedNoBranch,
-    /// Auth lost — PR deferred to the Shift+P recovery queue (#521).
+    /// Auth lost — PR deferred to the Dashboard PR-row retry queue (#521).
     AuthDeferred {
         branch: String,
         diff_files: Vec<String>,
@@ -115,7 +115,7 @@ async fn pr_phase_inner(
     attempted: Arc<Mutex<HashSet<u64>>>,
 ) -> PrPhaseOutcome {
     // Same order as before #1153 (`on_issue_session_completed` then
-    // `run_auto_pr`): auth lost first — defer to the Shift+P recovery
+    // `run_auto_pr`): auth lost first — defer to the Dashboard PR-row retry
     // queue (#521) before the `auto_pr` / branch / client checks —
     // then the success check, then the auto-PR gates.
     if !input.gh_auth_ok {

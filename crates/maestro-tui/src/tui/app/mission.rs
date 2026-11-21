@@ -112,7 +112,7 @@ fn fleet_row(s: &Session, now: DateTime<Utc>) -> FleetRow {
 }
 
 /// `12m03s` like `Session::elapsed_display`, but at `now` so it is testable.
-fn elapsed(s: &Session, now: DateTime<Utc>) -> String {
+pub(crate) fn elapsed(s: &Session, now: DateTime<Utc>) -> String {
     let Some(start) = s.started_at else {
         return "—".to_string();
     };

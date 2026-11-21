@@ -30,7 +30,8 @@ async fn typed_confirm_kill() {
         .enqueue(make_session(SessionStatus::Running, Some(407)));
     let _ = handle_key(
         &mut app,
-        KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+        // #1280: the kill key is `X`.
+        KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE),
     )
     .await;
     assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
