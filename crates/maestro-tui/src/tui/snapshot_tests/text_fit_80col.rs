@@ -14,11 +14,11 @@ use crate::tui::app::{App, TuiMode};
 use crate::tui::marquee::MarqueeState;
 use crate::tui::screens::IssueBrowserScreen;
 use crate::tui::screens::ProjectStatsScreen;
-use crate::tui::screens::issue_browser::{IssuePromptOverlay, LaunchFocus};
 use crate::tui::screens::milestone::{MilestoneEntry, MilestoneScreen};
 use crate::tui::screens::prd::PrdScreen;
 use crate::tui::screens::project_stats::ProjectStatsData;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::launch_dialog::{LaunchDialog, LaunchMode};
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 
 const SIZES: [(u16, u16); 2] = [(80, 24), (80, 27)];
@@ -117,14 +117,10 @@ fn launch_dialog_app() -> App {
         make_gh_issue(1330, "Update the launch dialog copy"),
         make_gh_issue(1329, "Run the gate twice"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1330, "Update the launch dialog copy".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(LaunchDialog::new(
+        vec![(1330, "Update the launch dialog copy".to_string())],
+        LaunchMode::Autonomous,
+    ));
     app.screen_state.issue_browser_screen = Some(screen);
     app
 }
@@ -237,14 +233,19 @@ fn no_row_is_cut_mid_word_at_80_columns_snapshots() {
 fn launch_dialog_options_wrap_80x24() {
     let t = draw(&mut launch_dialog_app(), 80, 24);
     let out = rows(&t).join("\n");
-    // Each sentence ends on its own wrapped row, inside the dialog.
-    for tail in ["created ", "alive "] {
-        assert!(
-            out.contains(tail),
-            "option text cut, {tail:?} missing:\n{out}"
-        );
+    // #1262: every mode states its consequence in full, and the spend,
+    // the worktree and the button row fit inside the dialog.
+    for mode in crate::tui::widgets::launch_dialog::LaunchMode::ALL {
+        assert!(out.contains(mode.consequence()), "{mode:?} cut:\n{out}");
     }
-    assert!(!out.contains("session sta│"), "{out}");
+    for text in [
+        "SPEND",
+        "issue-1330  branch maestro/issue-1330",
+        "⏎ Launch",
+        "Esc cancel",
+    ] {
+        assert!(out.contains(text), "{text:?} missing:\n{out}");
+    }
     assert_snapshot!("launch_dialog_options_wrap_80x24", t.backend());
 }
 

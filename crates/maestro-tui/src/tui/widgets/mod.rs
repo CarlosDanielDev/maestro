@@ -8,6 +8,7 @@ mod ci_monitor;
 mod dropdown;
 mod empty_state;
 pub mod input;
+pub mod launch_dialog;
 mod list_editor;
 mod number_stepper;
 pub mod stats_bar;
