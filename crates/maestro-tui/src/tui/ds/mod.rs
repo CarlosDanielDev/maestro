@@ -20,6 +20,7 @@ pub mod panel;
 pub mod size_guard;
 pub mod status_bar;
 pub mod status_chip;
+pub mod stepper;
 pub mod sub_tabs;
 pub mod tab_bar;
 pub mod toast;

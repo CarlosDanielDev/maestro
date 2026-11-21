@@ -1,0 +1,6 @@
+---
+source: crates/maestro-tui/src/tui/ds/stepper.rs
+assertion_line: 143
+expression: t.backend()
+---
+" ✓ Goals ─ ✗ References ─ ● Plan ─ ○ Create                                                                             "

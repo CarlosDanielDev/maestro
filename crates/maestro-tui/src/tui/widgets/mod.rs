@@ -25,7 +25,10 @@ pub use list_editor::ListEditor;
 pub use number_stepper::NumberStepper;
 pub use text_input::TextInput;
 pub use toggle::Toggle;
-pub use wizard_frame::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
+pub use wizard_frame::{
+    WizardChecklist, WizardFrame, WizardFrameFooter, WizardFrameHeader, WizardLayout,
+    WizardStepHeader,
+};
 
 use crossterm::event::KeyEvent;
 use ratatui::{
