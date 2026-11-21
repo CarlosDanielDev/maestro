@@ -39,6 +39,20 @@ pub fn sync(app: &mut App) {
     }
 }
 
+/// Select the first pending PR row (the ⌃K `retry PR` entry, #1280).
+pub fn select_first_pending_pr(app: &mut App) {
+    sync(app);
+    let list = &mut app.screen_state.dashboard.list;
+    if let Some(key) = list
+        .rows
+        .iter()
+        .copied()
+        .find(|k| matches!(k, WorkKey::PendingPr(_)))
+    {
+        list.select(key);
+    }
+}
+
 /// `Some` when the Dashboard took the key; `None` lets the launcher
 /// letters have it.
 pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {

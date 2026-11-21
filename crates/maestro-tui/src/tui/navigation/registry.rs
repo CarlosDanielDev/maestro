@@ -132,7 +132,6 @@ pub enum Action {
     Undo,
     ToggleLogDrawer,
     ToggleBypass,
-    RetryPr,
     ScrollUp,
     ScrollDown,
     Top,

@@ -42,11 +42,6 @@ const HINT_OV_CYCLE: InlineHint = InlineHint {
     action: "Cycle Views",
     priority: 5,
 };
-const HINT_OV_RETRY_PR: InlineHint = InlineHint {
-    key: "Shift+P",
-    action: "Retry PR",
-    priority: 6,
-};
 
 const OVERVIEW_HINTS_BASE: &[InlineHint] = &[
     HINT_OV_DETAIL,
@@ -55,7 +50,6 @@ const OVERVIEW_HINTS_BASE: &[InlineHint] = &[
     HINT_OV_FULL,
     HINT_OV_SWITCHER,
     HINT_OV_CYCLE,
-    HINT_OV_RETRY_PR,
 ];
 
 const OVERVIEW_HINTS_WITH_GRAPH: &[InlineHint] = &[
@@ -66,7 +60,6 @@ const OVERVIEW_HINTS_WITH_GRAPH: &[InlineHint] = &[
     HINT_OV_GRAPH,
     HINT_OV_SWITCHER,
     HINT_OV_CYCLE,
-    HINT_OV_RETRY_PR,
 ];
 
 /// Overview hints that act on a session; the footer dims them while the

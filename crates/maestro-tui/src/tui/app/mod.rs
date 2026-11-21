@@ -349,7 +349,7 @@ impl App {
         // (PR-already-exists check) prevents double-firing when the prior
         // run actually succeeded but crashed before clearing the entry.
         let recovered_completions = state.pending_completions.clone();
-        // Recover the pending-PR retry queue from prior run so Shift+P
+        // Recover the pending-PR retry queue from prior run so the Dashboard PR-row retry
         // (#521) can resurrect them after a maestro restart. The schema has
         // always supported this; only the rehydration was missing.
         // Apply PENDING_PRS_REHYDRATE_CAP defensively: a corrupt or
@@ -496,7 +496,7 @@ impl App {
         }
         if recovered_prs_count > 0 {
             // List the actual issue numbers so the user knows which panels
-            // to focus before pressing Shift+P, instead of guessing across
+            // to act on with the Dashboard PR-row retry, instead of guessing across
             // the whole pool.
             let issue_list: Vec<String> = app
                 .pending_prs
@@ -898,7 +898,7 @@ impl App {
             .chain(&self.completions_in_flight)
             .cloned()
             .collect();
-        // Mirror the pending-PR retry queue so Shift+P (#521) can resurrect
+        // Mirror the pending-PR retry queue so the Dashboard PR-row retry (#521) can resurrect
         // entries after a restart — without this the in-memory queue is
         // lost on shutdown.
         self.state.pending_prs = self.pending_prs.clone();

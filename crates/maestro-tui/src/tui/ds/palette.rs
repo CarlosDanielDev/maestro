@@ -77,8 +77,9 @@ pub fn entries(
                 _ => "",
             },
             run,
-            // Retry PR writes a PR, like its Overview key `P` (#1265).
-            destructive: command == PaletteCommand::RetryPr,
+            // No palette command writes on its own (#1280: retry PR opens
+            // the PR pipeline row, whose ⏎ ⏎ is armed).
+            destructive: false,
             disabled: disabled(run),
         }
     });

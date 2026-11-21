@@ -167,16 +167,16 @@ async fn run_from_palette(app: &mut App, label: &str) {
 #[tokio::test]
 async fn retired_actions_in_palette() {
     // Each retired Shift global, its palette entry and its new key, shown
-    // only on the screen where that key works: `Q` on Dashboard, `P` on
-    // Overview, "" where the palette is the way in.
-    use PaletteCommand::{CompleteModal, RetryPr, ReviewConcerns, TurboquantDashboard};
+    // only on the screen where that key works: `Q` on Dashboard, "" where
+    // the palette is the way in. #1280 retired `P` with the Overview grid.
+    use PaletteCommand::{CompleteModal, PrPipeline, ReviewConcerns, TurboquantDashboard};
     let want = [
         (TuiMode::Overview, TurboquantDashboard, ""),
         (TuiMode::Dashboard, TurboquantDashboard, "Q"),
         (TuiMode::Overview, CompleteModal, ""),
         (TuiMode::Overview, ReviewConcerns, ""),
-        (TuiMode::Overview, RetryPr, "P"),
-        (TuiMode::Dashboard, RetryPr, ""),
+        (TuiMode::Overview, PrPipeline, ""),
+        (TuiMode::Dashboard, PrPipeline, ""),
     ];
     for (mode, cmd, key) in want {
         let list = palette::entries(registry(), mode, |_| None);
@@ -210,14 +210,21 @@ async fn retired_actions_in_palette() {
     run_from_palette(&mut app, label(PaletteCommand::ReviewConcerns)).await;
     assert_eq!(app.tui_mode, TuiMode::PrReview);
 
-    // #1280: Overview is never on screen now (it routes to the Dashboard),
-    // so the entry stays off; ⏎ ⏎ on the PR row is the retry.
-    let mut app = armed_app(TuiMode::Overview);
-    run_from_palette(&mut app, label(PaletteCommand::RetryPr)).await;
-    assert!(!retry_queued(&app), "retry PR is the PR row's armed ⏎ now");
+    // #1280: `retry PR` opens the Dashboard on the pending PR row and writes
+    // nothing; the row's armed ⏎ ⏎ is the retry. It works from any screen.
+    for mode in [TuiMode::Overview, TuiMode::IssueBrowser] {
+        let mut app = armed_app(mode);
+        run_from_palette(&mut app, label(PaletteCommand::PrPipeline)).await;
+        assert_eq!(app.tui_mode, TuiMode::Dashboard, "from {mode:?}");
+        assert_eq!(
+            app.screen_state.dashboard.list.selected,
+            Some(crate::tui::screens::dashboard::rows::WorkKey::PendingPr(42)),
+            "from {mode:?}"
+        );
+        assert!(!retry_queued(&app), "the palette writes nothing");
+    }
 
-    // Retry PR acts on the Overview selection, so it is off elsewhere, and
-    // review concerns is off with no review pending.
+    // Review concerns is off with no review pending.
     let mut app = armed_app(TuiMode::IssueBrowser);
     app.pending_review_report = None;
     let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
@@ -229,14 +236,11 @@ async fn retired_actions_in_palette() {
             .find(|(e, _)| e.run == Run::Command(cmd))
             .and_then(|(e, _)| e.disabled)
     };
-    assert_eq!(reason(PaletteCommand::RetryPr), Some("on Overview only"));
+    assert_eq!(reason(PaletteCommand::PrPipeline), None);
     assert_eq!(
         reason(PaletteCommand::ReviewConcerns),
         Some("no review pending")
     );
-    let mut app = armed_app(TuiMode::IssueBrowser);
-    run_from_palette(&mut app, label(PaletteCommand::RetryPr)).await;
-    assert!(!retry_queued(&app), "retry PR off the Overview");
 }
 
 /// #1280: Shift+P is inert on the Dashboard (Overview routes there); the
