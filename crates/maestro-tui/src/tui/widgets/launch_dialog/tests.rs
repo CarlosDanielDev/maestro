@@ -123,16 +123,43 @@ fn launch_dialog_warn_still_launches() {
 }
 
 #[test]
-fn launch_dialog_block_counts_every_session() {
-    // One session fits (48.60 + 0.50), three do not (48.60 + 1.50 >= 50).
+fn launch_dialog_block_uses_the_gate_per_session_rule() {
+    // The gate checks each spawn alone against the spend so far, so three
+    // sessions at 48.60 spent (48.60 + 0.50 < 50) are not locked here either.
     let mut d = LaunchDialog::new(
         vec![(1, "a".into()), (2, "b".into()), (3, "c".into())],
         LaunchMode::Autonomous,
     );
     d.set_budget(budget(48.6));
-    assert!(d.block_reason().is_some(), "3 x $0.50 over the cap");
-    d.unified_pr = true;
-    assert!(d.block_reason().is_none(), "one unified session fits");
+    assert!(
+        d.block_reason().is_none(),
+        "the gate would allow each session"
+    );
+    d.set_budget(budget(49.8));
+    assert!(d.block_reason().is_some(), "49.80 + 0.50 >= 50 blocks");
+}
+
+#[test]
+fn launch_dialog_multi_is_autonomous_only() {
+    // Multi launches go to the queue or one unified session, which run
+    // autonomously: the dialog must not promise a chat.
+    let issues = vec![(1, "a".into()), (2, "b".into())];
+    let mut d = LaunchDialog::new(issues, LaunchMode::ChatOpen);
+    assert_eq!(d.mode, LaunchMode::Autonomous, "chat defaults fall back");
+    d.handle_input(&key(KeyCode::Tab));
+    for code in [KeyCode::Down, KeyCode::Up, KeyCode::Char(' ')] {
+        d.handle_input(&key(code));
+        assert_eq!(
+            d.mode,
+            LaunchMode::Autonomous,
+            "{code:?} cannot pick a chat mode"
+        );
+    }
+    assert_eq!(
+        d.handle_input(&key(KeyCode::Enter)),
+        LaunchAction::Confirm(None)
+    );
+    assert_eq!(d.mode.flags(), (true, false));
 }
 
 #[test]
@@ -172,6 +199,12 @@ fn launch_dialog_shift_enter_is_newline_and_enter_trims() {
     let shift_enter = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
     assert_eq!(d.handle_input(&shift_enter), LaunchAction::None);
     assert_eq!(d.editor_text(), "  hi\n");
+    let ctrl_enter = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+    assert_eq!(
+        d.handle_input(&ctrl_enter),
+        LaunchAction::Confirm(Some("hi".into())),
+        "Ctrl+Enter also confirms"
+    );
     assert_eq!(
         d.handle_input(&key(KeyCode::Enter)),
         LaunchAction::Confirm(Some("hi".into()))
@@ -231,6 +264,8 @@ fn launch_dialog_multi() {
     let text = render_screen(&mut screen);
     assert!(text.contains("3 worktrees .maestro/worktrees/issue-{1,2,3}"));
     assert!(text.contains("est ≥ $0.50 each"));
+    assert!(text.contains("single issue only"), "{text}");
+    assert!(!text.contains("opens the chat screen"), "{text}");
     insta::assert_snapshot!(text);
 }
 

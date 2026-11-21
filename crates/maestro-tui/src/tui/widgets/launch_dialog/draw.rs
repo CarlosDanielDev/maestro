@@ -31,7 +31,9 @@ enum Row {
 
 /// Draw the dialog centered in `area`.
 pub fn draw(f: &mut Frame, area: Rect, dialog: &LaunchDialog, theme: &Theme) {
-    let width = 86.min(area.width.saturating_sub(4)).max(20.min(area.width));
+    // Width - 6 starts the frame past the list's two-cell cursor glyph
+    // (column 1), so the glyph never splits the left border.
+    let width = 86.min(area.width.saturating_sub(6)).max(20.min(area.width));
     let inner_w = width.saturating_sub(4) as usize;
     let rows = rows(dialog, theme, inner_w);
     let gaps = rows.iter().filter(|r| matches!(r, Row::Gap)).count() as u16;
@@ -153,6 +155,7 @@ fn rows(d: &LaunchDialog, theme: &Theme, width: usize) -> Vec<Row> {
     rows.push(Row::Editor);
     rows.push(Row::Gap);
     let (key, hint) = match d.focus {
+        _ if d.is_multi() => ("", "Autonomous only with 2+ issues"),
         LaunchFocus::Mode => ("↑↓", "choose"),
         LaunchFocus::Instructions => ("Tab", "to change"),
     };
@@ -175,7 +178,7 @@ fn rows(d: &LaunchDialog, theme: &Theme, width: usize) -> Vec<Row> {
     if let PreSpawnDecision::Warn {
         projected_total,
         limit,
-    } = d.budget.decision(d.sessions())
+    } = d.budget.decision()
     {
         rows.push(Row::Gap);
         rows.push(Row::Text(Line::from(vec![
@@ -225,7 +228,18 @@ fn what_rows(d: &LaunchDialog, theme: &Theme, width: usize, rows: &mut Vec<Row>)
 fn mode_line(d: &LaunchDialog, mode: LaunchMode, theme: &Theme, width: usize) -> Line<'static> {
     let on = d.mode == mode;
     let lit = on && d.focus == LaunchFocus::Mode;
-    let mut label = Style::default().fg(theme.text_primary);
+    // Multi launches run autonomously: the chat modes are shown but off.
+    let off = d.is_multi() && mode != LaunchMode::Autonomous;
+    let consequence = if off {
+        "single issue only"
+    } else {
+        mode.consequence()
+    };
+    let mut label = if off {
+        muted(theme)
+    } else {
+        Style::default().fg(theme.text_primary)
+    };
     if on {
         label = label.add_modifier(Modifier::BOLD);
     }
@@ -238,8 +252,8 @@ fn mode_line(d: &LaunchDialog, mode: LaunchMode, theme: &Theme, width: usize) ->
         Span::styled(format!("{:<18}", mode.label()), label),
     ];
     // The consequence is shown whole or not at all: 21 = bar + radio + label.
-    if width >= 21 + mode.consequence().chars().count() {
-        spans.push(Span::styled(mode.consequence(), muted(theme)));
+    if width >= 21 + consequence.chars().count() {
+        spans.push(Span::styled(consequence, muted(theme)));
     }
     let line = Line::from(spans);
     if lit {

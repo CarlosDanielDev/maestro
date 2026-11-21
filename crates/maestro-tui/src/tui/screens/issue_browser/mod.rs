@@ -1271,8 +1271,8 @@ mod tests {
 
 #[cfg(test)]
 mod multi_overlay_launch_options_tests {
-    //! #919 / #1262: the chosen mode flows into every emitted config
-    //! (per-session AND unified).
+    //! #919 / #1262: multi launches (per-session AND unified) run
+    //! Autonomous, whatever the `[behavior.launch]` default says.
 
     use super::*;
     use crate::tui::screens::test_helpers::key_event;
@@ -1287,7 +1287,7 @@ mod multi_overlay_launch_options_tests {
     }
 
     #[test]
-    fn unified_submit_carries_launch_mode() {
+    fn unified_submit_is_autonomous_even_with_a_chat_default() {
         let mut screen = screen_with_multi_dialog(true, LaunchMode::ChatOpen);
         let action = screen.handle_input(
             &key_event(KeyCode::Enter),
@@ -1295,8 +1295,9 @@ mod multi_overlay_launch_options_tests {
         );
         match action {
             ScreenAction::LaunchUnifiedSession(cfg) => {
-                assert!(!cfg.produce_pr);
-                assert!(cfg.interaction);
+                // Chat modes are single-issue only (#1262 judge): multi runs alone.
+                assert!(cfg.produce_pr);
+                assert!(!cfg.interaction);
                 assert_eq!(cfg.issues.len(), 2);
             }
             other => panic!("expected LaunchUnifiedSession, got {other:?}"),
@@ -1304,7 +1305,7 @@ mod multi_overlay_launch_options_tests {
     }
 
     #[test]
-    fn per_session_multi_submit_carries_launch_mode() {
+    fn per_session_multi_submit_is_autonomous_even_with_a_chat_default() {
         let mut screen = screen_with_multi_dialog(false, LaunchMode::ChatOpen);
         let action = screen.handle_input(
             &key_event(KeyCode::Enter),
@@ -1314,8 +1315,8 @@ mod multi_overlay_launch_options_tests {
             ScreenAction::LaunchSessions(configs) => {
                 assert_eq!(configs.len(), 2);
                 for config in configs {
-                    assert!(!config.produce_pr, "all sessions inherit the choice");
-                    assert!(config.interaction);
+                    assert!(config.produce_pr, "multi is Autonomous only");
+                    assert!(!config.interaction);
                 }
             }
             other => panic!("expected LaunchSessions, got {other:?}"),

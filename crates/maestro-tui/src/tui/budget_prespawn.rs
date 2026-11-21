@@ -164,7 +164,11 @@ pub fn launch_budget(
     app: &crate::tui::app::App,
 ) -> crate::tui::widgets::launch_dialog::LaunchBudget {
     let mut budget = crate::tui::widgets::launch_dialog::LaunchBudget {
-        model: app.session_config.default_model.clone(),
+        // The model the launch really uses: the selected agent's, then the
+        // default (`App::resolve_model_and_mode`; labels only pick the mode).
+        model: app
+            .resolve_model_and_mode(&[], Some(&app.selected_agent_id()))
+            .0,
         spent: app.total_cost,
         ..Default::default()
     };

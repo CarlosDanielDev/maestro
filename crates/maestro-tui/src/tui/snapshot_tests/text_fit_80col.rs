@@ -304,3 +304,47 @@ fn launch_dialog_states_live_budget_through_ui_draw() {
         assert!(out.contains(text), "{text:?} cut:\n{out}");
     }
 }
+
+/// #1262 judge: the selected list row starts with a Nerd Font cursor glyph
+/// (U+F054) that many fonts draw two cells wide. The dialog keeps one blank
+/// column between it and its left border, so the border is never covered.
+#[test]
+fn launch_dialog_left_border_is_whole_at_80x24() {
+    let t = draw(&mut launch_dialog_app(), 80, 24);
+    let buf = t.backend().buffer();
+    let (top, x) = (0..buf.area.height)
+        .find_map(|y| {
+            (0..buf.area.width)
+                .find(|&x| buf[(x, y)].symbol() == "╭")
+                .map(|x| (y, x))
+        })
+        .expect("dialog drawn");
+    let bottom = (top..buf.area.height)
+        .find(|&y| buf[(x, y)].symbol() == "╰")
+        .expect("dialog bottom");
+    for y in top + 1..bottom {
+        assert_eq!(buf[(x, y)].symbol(), "│", "row {y}: left border cell");
+        // A Nerd Font icon (Private Use Area) may render two cells wide.
+        let next = buf[(x - 1, y)].symbol();
+        let icon = next
+            .chars()
+            .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c) || c >= '\u{f0000}');
+        assert!(!icon, "row {y}: icon {next:?} touches the border");
+    }
+}
+
+/// #1262 judge: SPEND names the model the launch really uses: the selected
+/// agent's `model`, then the default (`App::resolve_model_and_mode`).
+#[test]
+fn launch_dialog_names_the_selected_agents_model() {
+    let mut app = launch_dialog_app();
+    let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n[agents]\ndefault = \"claude\"\n\
+                [agents.claude]\nkind = \"claude\"\nenabled = true\ncommand = \"claude\"\n\
+                [agents.qwen]\nkind = \"qwen\"\nenabled = true\ncommand = \"qwen\"\nmodel = \"qwen-2.5\"\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+    app.selected_agent_id = "qwen".to_string();
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(out.contains("qwen-2.5  ·  est ≥ $0.50"), "{out}");
+}

@@ -103,14 +103,16 @@ impl LaunchBudget {
         self.per_session_usd * DEFAULT_FLOOR_PCT
     }
 
-    /// The pre-spawn gate's decision for `sessions` fresh sessions.
-    pub fn decision(&self, sessions: usize) -> PreSpawnDecision {
+    /// The pre-spawn gate's decision for the next fresh session. The gate
+    /// (`App::pre_spawn_decision`) checks each spawn alone against the spend
+    /// so far, so a multi launch uses the same one-session rule.
+    pub fn decision(&self) -> PreSpawnDecision {
         BudgetEnforcer::new(
             self.per_session_usd,
             self.total_usd,
             self.alert_threshold_pct,
         )
-        .check_pre_spawn(self.spent, self.estimate_each() * sessions as f64)
+        .check_pre_spawn(self.spent, self.estimate_each())
     }
 }
 
@@ -144,7 +146,14 @@ pub struct LaunchDialog {
 }
 
 impl LaunchDialog {
+    /// With 2+ issues only `Autonomous` is offered: those launches go to the
+    /// queue or one unified session, which never open the chat.
     pub fn new(selected_issues: Vec<(u64, String)>, mode: LaunchMode) -> Self {
+        let mode = if selected_issues.len() > 1 {
+            LaunchMode::Autonomous
+        } else {
+            mode
+        };
         Self {
             editor: Input::multi_line(InputConfig::new().placeholder("Type your prompt here...")),
             selected_issues,
@@ -180,7 +189,7 @@ impl LaunchDialog {
     /// Why launch is locked, or `None` when `Enter` launches. A projected
     /// `Block` from the pre-spawn gate locks it: Block stays Block.
     pub fn block_reason(&self) -> Option<String> {
-        match self.budget.decision(self.sessions()) {
+        match self.budget.decision() {
             PreSpawnDecision::Block {
                 projected_total,
                 limit,
@@ -241,11 +250,15 @@ impl LaunchDialog {
                 LaunchAction::None
             }
             KeyCode::Up | KeyCode::Char('k') if !instructions => {
-                self.mode = self.mode.step(false);
+                if !self.is_multi() {
+                    self.mode = self.mode.step(false);
+                }
                 LaunchAction::None
             }
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Char(' ') if !instructions => {
-                self.mode = self.mode.step(true);
+                if !self.is_multi() {
+                    self.mode = self.mode.step(true);
+                }
                 LaunchAction::None
             }
             _ => {
