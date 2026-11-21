@@ -160,11 +160,20 @@ impl WizardFrame {
             current: header.current,
             errors: header.errors,
         };
-        let left = stepper::stepper_line(steps, rects.stepper.width, theme);
+        let row = rects.stepper.width;
         let right = header
             .state
             .map(|span| Line::from(vec![span, Span::raw(" ")]))
             .unwrap_or_default();
+        // The stepper gets the room left of the state slot (one column gap),
+        // so it collapses or ends in `…` before the state is dropped.
+        let right_w = right.width() as u16;
+        let room = if right_w > 0 && right_w + 1 < row {
+            row - right_w - 1
+        } else {
+            row
+        };
+        let left = stepper::stepper_line(steps, row, room, theme);
         draw_left_right(f, rects.stepper, left, right);
         if let Some(list) = checklist {
             if let Some(strip) = rects.strip {

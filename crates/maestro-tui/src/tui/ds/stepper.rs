@@ -11,6 +11,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use super::fit::ellipsize_line;
 use crate::tui::theme::Theme;
 
 /// Rows narrower than this draw the collapsed `Step n/N · Label` form.
@@ -54,10 +55,12 @@ impl Steps<'_> {
     }
 }
 
-/// The stepper as one line `width` columns wide: `✓ Goals ─ ● Plan ─ ○ …`
-/// from [`COLLAPSE_BELOW`] columns up when the labels fit, else
-/// `Step n/N · Label   ✓●○   next Label`.
-pub fn stepper_line(steps: Steps<'_>, width: u16, theme: &Theme) -> Line<'static> {
+/// The stepper for a row `row_width` columns wide, of which it may use
+/// `room` (the rest holds a state slot): `✓ Goals ─ ● Plan ─ ○ …` from
+/// [`COLLAPSE_BELOW`] columns up when the labels fit in `room`, else
+/// `Step n/N · Label   ✓●○   next Label`, ending in `…` when even that does
+/// not fit.
+pub fn stepper_line(steps: Steps<'_>, row_width: u16, room: u16, theme: &Theme) -> Line<'static> {
     let muted = Style::default().fg(theme.text_muted);
     let mut full = vec![Span::raw(" ")];
     for (i, label) in steps.labels.iter().enumerate() {
@@ -69,7 +72,7 @@ pub fn stepper_line(steps: Steps<'_>, width: u16, theme: &Theme) -> Line<'static
         full.push(Span::styled(label.to_string(), steps.label_style(i, theme)));
     }
     let full = Line::from(full);
-    if width >= COLLAPSE_BELOW && full.width() < usize::from(width) {
+    if row_width >= COLLAPSE_BELOW && full.width() < usize::from(room) {
         return full;
     }
 
@@ -94,12 +97,12 @@ pub fn stepper_line(steps: Steps<'_>, width: u16, theme: &Theme) -> Line<'static
     if let Some(next) = steps.labels.get(steps.current + 1) {
         spans.push(Span::styled(format!("   next {next}"), muted));
     }
-    Line::from(spans)
+    ellipsize_line(Line::from(spans), usize::from(room))
 }
 
 /// Draw the stepper on the first row of `area`.
 pub fn draw(f: &mut Frame, area: Rect, steps: Steps<'_>, theme: &Theme) {
-    let line = stepper_line(steps, area.width, theme);
+    let line = stepper_line(steps, area.width, area.width, theme);
     f.render_widget(Paragraph::new(line), area);
 }
 
@@ -157,7 +160,7 @@ mod tests {
     #[test]
     fn stepper_collapses_exactly_below_100_columns() {
         let theme = Theme::dark();
-        let text = |w| stepper_line(all_states(), w, &theme).to_string();
+        let text = |w| stepper_line(all_states(), w, w, &theme).to_string();
         assert!(text(COLLAPSE_BELOW).contains("✓ Goals ─"));
         assert!(text(COLLAPSE_BELOW - 1).contains("Step 3/4"));
     }
@@ -176,7 +179,7 @@ mod tests {
             current: 0,
             errors: &[],
         };
-        let out = stepper_line(steps, COLLAPSE_BELOW, &theme).to_string();
+        let out = stepper_line(steps, COLLAPSE_BELOW, COLLAPSE_BELOW, &theme).to_string();
         assert!(
             out.contains("Step 1/4 · A very long first step label"),
             "{out:?}"
@@ -191,7 +194,7 @@ mod tests {
             current: 1,
             errors: &[0, 1],
         };
-        let out = stepper_line(steps, 120, &theme).to_string();
+        let out = stepper_line(steps, 120, 120, &theme).to_string();
         assert!(out.contains("✗ Goals ─ ✗ References"), "{out:?}");
     }
 
@@ -203,8 +206,35 @@ mod tests {
             current: 3,
             errors: &[],
         };
-        let out = stepper_line(steps, 90, &theme).to_string();
+        let out = stepper_line(steps, 90, 90, &theme).to_string();
         assert!(out.contains("Step 4/4 · Create   ✓✓✓●"), "{out:?}");
         assert!(!out.contains("next"), "{out:?}");
+    }
+
+    #[test]
+    fn collapsed_stepper_ellipsizes_long_labels_at_80_columns() {
+        let theme = Theme::dark();
+        let long = [
+            "Pick the milestone to review today",
+            "Check every issue against the definition of ready",
+        ];
+        let steps = Steps {
+            labels: &long,
+            current: 0,
+            errors: &[],
+        };
+        let line = stepper_line(steps, 80, 80, &theme);
+        let out = line.to_string();
+        assert!(line.width() <= 80, "{} cols: {out:?}", line.width());
+        assert!(out.ends_with('…'), "{out:?}");
+    }
+
+    #[test]
+    fn full_form_needs_the_room_not_only_the_row() {
+        let theme = Theme::dark();
+        let out = stepper_line(all_states(), 120, 40, &theme).to_string();
+        assert!(out.starts_with(" Step 3/4 · Plan"), "{out:?}");
+        let line = stepper_line(all_states(), 120, 20, &theme);
+        assert!(line.width() <= 20, "{:?}", line.to_string());
     }
 }

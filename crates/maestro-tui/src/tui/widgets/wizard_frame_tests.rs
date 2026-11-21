@@ -102,6 +102,18 @@ fn render_stepped<F>(
 where
     F: FnOnce(&mut Frame, Rect, &Theme),
 {
+    render_stepped_with(width, STEPS, checklist, body)
+}
+
+fn render_stepped_with<F>(
+    width: u16,
+    steps: &[&str],
+    checklist: bool,
+    body: F,
+) -> Result<Terminal<TestBackend>, Box<dyn std::error::Error>>
+where
+    F: FnOnce(&mut Frame, Rect, &Theme),
+{
     let mut terminal = Terminal::new(TestBackend::new(width, 24))?;
     let theme = Theme::dark();
     terminal.draw(|f| {
@@ -110,7 +122,7 @@ where
             f.area(),
             &theme,
             WizardStepHeader {
-                steps: STEPS,
+                steps,
                 current: 0,
                 errors: &[0],
                 state: Some(Span::raw("● draft saved 12s ago")),
@@ -193,5 +205,45 @@ fn wizard_field_error_border() -> Result<(), Box<dyn std::error::Error>> {
         theme.border_inactive,
         "clean border colour"
     );
+    Ok(())
+}
+
+#[test]
+fn state_slot_survives_a_long_stepper() -> Result<(), Box<dyn std::error::Error>> {
+    // 89 columns: fits a 110-column row alone, not beside the 23-column state.
+    let steps = [
+        "Configure project",
+        "Analyze sources",
+        "Review the plan",
+        "Write all files",
+        "Done",
+    ];
+    let text = screen_text(&render_stepped_with(110, &steps, false, |_, _, _| {})?);
+    let first = text.lines().next().unwrap_or_default();
+    assert!(
+        first.trim_end().ends_with("● draft saved 12s ago"),
+        "{first:?}"
+    );
+    assert!(first.contains("Step 1/5 · Configure project"), "{first:?}");
+    Ok(())
+}
+
+#[test]
+fn wizard_frame_compact_80x24() -> Result<(), Box<dyn std::error::Error>> {
+    let terminal = render_stepped(80, true, |f, area, theme| {
+        let title = field_block("Title *", true, None, theme);
+        f.render_widget(Paragraph::new("").block(title), Rect { height: 3, ..area });
+    })?;
+    assert_snapshot!("wizard_frame_compact_80x24", terminal.backend());
+    Ok(())
+}
+
+#[test]
+fn wizard_frame_wide_checklist() -> Result<(), Box<dyn std::error::Error>> {
+    let terminal = render_stepped(160, true, |f, area, theme| {
+        let title = field_block("Title *", true, None, theme);
+        f.render_widget(Paragraph::new("").block(title), Rect { height: 3, ..area });
+    })?;
+    assert_snapshot!("wizard_frame_wide_checklist", terminal.backend());
     Ok(())
 }
