@@ -458,6 +458,20 @@ Implements the What's new card of `§02 Home: Mission Control` (`whatsNew()` in 
 
 Rules: the Throughput and Change mix cards of the design are not drawn yet (no measured throughput source); the network chart stays off Home, and palette `network` still shows a toast (its numbers were synthetic). Tests: `snapshot_tests/home_insight.rs`.
 
+
+### Wizard frame and stepper (`widgets/wizard_frame.rs`, `ds/stepper.rs`, #1274)
+
+Implements the shared wizard frame of `docs/design-system/index.html` §02.2 (Create issue) and §02.3 (Create milestone), reused by §02.11 Adapt and the team wizards: `stepper()` and `field()` with errors on the bottom border. Decision: `docs/design-system/decisions.md` (2026-11-21, Shared wizard frame).
+
+| Item | For |
+|---|---|
+| `ds::stepper::stepper_line(Steps { labels, current, errors }, width, theme)` / `ds::stepper::draw(f, area, steps, theme)` | One-row progress: `✓ Goals ─ ✗ References ─ ● Plan ─ ○ Create` (done, error, current, ahead; an error wins). Below `COLLAPSE_BELOW` (100) columns, or when the labels do not fit, `Step 3/4 · Plan   ✓✗●○   next Create` |
+| `WizardFrame::draw_stepped(f, area, theme, WizardStepHeader { steps, current, errors, state }, Option<WizardChecklist { title, items }>, \|f, body\| ..)` | The new frame: stepper row with the `state` span flush right (`● draft saved 12s ago`, a writes ledger; each wizard owns its draft), body, and the checklist. No footer row: hints come from `Screen::footer_hints`, errors sit on field borders |
+| `wizard_frame::layout(area, bp, has_checklist) -> WizardLayout` | The frame's rects. With a checklist: Wide splits the body `[Fill(1), Length(CHECKLIST_WIDTH = 42)]` for a `ds::checklist::checklist_panel`; Regular and Compact add one `ds::checklist::ready_strip` row under the stepper instead (notes hidden on Compact) |
+| `wizard_frame::field_block(label, focused, error, theme)` | A form field's block: `theme.styled_block` (Plain / Thick on focus); an error turns the border `accent_error` and puts ` ✗ message ` on the bottom border |
+
+Rules: `WizardFrame::draw` (3-row `Step i/n: label` header, footer error + hints) stays as the compatibility path until each wizard migrates (#1281–#1284); new wizard code uses `draw_stepped`. The CrumbBar stays the shell row drawn by `ui::draw`, so the frame shows its state on the stepper row. Tests: `ds/stepper.rs`, `widgets/wizard_frame.rs` (`stepper_{wide,collapsed}`, `wizard_frame_checklist_wide_only`, `wizard_field_error_border`).
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
