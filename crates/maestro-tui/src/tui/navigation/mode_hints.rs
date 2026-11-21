@@ -155,7 +155,7 @@ pub fn mode_keymap(
                     priority: 3,
                 },
                 InlineHint {
-                    key: "k",
+                    key: "X",
                     action: "Kill",
                     priority: 4,
                 },

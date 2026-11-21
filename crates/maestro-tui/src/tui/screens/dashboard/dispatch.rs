@@ -1,8 +1,9 @@
 //! Dashboard keys (#1280). Taken before the old launcher letters
 //! (`HomeScreen`), which still answer every key this module leaves.
 //! `j k ↑ ↓` move, `⏎` opens a session or arms a pending PR, `X` kills
-//! through the typed confirm, `l` opens the log. Any key but `⏎`
-//! disarms an armed PR; `Esc` then only disarms.
+//! through the typed confirm, `l` opens the log, `D` dismisses finished
+//! sessions. Any key but `⏎` disarms an armed PR, also keys that never
+//! reach this module (`note_key`); `Esc` then only disarms.
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -37,6 +38,35 @@ pub fn sync(app: &mut App) {
     if let Some(id) = reveal {
         dash.list.select(WorkKey::Session(id));
     }
+    mirror_selection(app);
+}
+
+/// The Overview-era keys that still run from Detail (`X` / F10 kill, `f` /
+/// F3 full, `c` copy) read `panel_view.selected`: keep it on the marked
+/// session, or on no session for a PR row (`usize::MAX` selects nothing).
+fn mirror_selection(app: &mut App) {
+    let marked = app.screen_state.dashboard.list.selected_session();
+    let index = marked.and_then(|id| app.pool.all_sessions().iter().position(|s| s.id == id));
+    app.panel_view.selected = Some(index.unwrap_or(usize::MAX));
+}
+
+/// Called for every key before any handler: a key that will not reach the
+/// Dashboard's own `⏎` / `Esc` disarms an armed PR row (a tab switch, an
+/// overlay, a chord, a modal).
+pub fn note_key(app: &mut App, key: &KeyEvent) {
+    if key.kind != KeyEventKind::Press {
+        return;
+    }
+    let plain = (key.modifiers - KeyModifiers::SHIFT).is_empty();
+    let own = app.tui_mode == TuiMode::Dashboard
+        && plain
+        && matches!(key.code, KeyCode::Enter | KeyCode::Esc)
+        && app.help_state.is_none()
+        && app.palette.is_none()
+        && !crate::tui::ui::log_drawer_shown(app);
+    if !own {
+        app.screen_state.dashboard.disarm();
+    }
 }
 
 /// Select the first pending PR row (the ⌃K `retry PR` entry, #1280).
@@ -69,7 +99,9 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {
     let dash = &mut app.screen_state.dashboard;
     let was_armed = matches!(dash.armed.state(), ArmedState::Armed(_));
     dash.disarm();
-    handle_other(app, key, was_armed)
+    let action = handle_other(app, key, was_armed);
+    mirror_selection(app);
+    action
 }
 
 fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<ScreenAction> {
@@ -93,6 +125,7 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
                 app.navigate_to(TuiMode::LogViewer(id));
             }
         }
+        KeyCode::Char('D') => app.dismiss_all_completed(),
         KeyCode::Esc if was_armed => {}
         _ => return None,
     }

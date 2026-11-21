@@ -73,8 +73,15 @@ impl DashboardView<'_> {
 /// A signed-out gh does not lock the row: `gh_auth_ok` turns true again
 /// only after a gh call works, and this retry is that call.
 pub fn pr_lock_reason(pending: &PendingPr) -> Option<&'static str> {
-    (pending.status == PendingPrStatus::PermanentlyFailed)
-        .then_some("retries stopped · the same error repeated; re-run the issue from Home")
+    match pending.status {
+        PendingPrStatus::PermanentlyFailed => {
+            Some("retries stopped · the same error repeated; re-run the issue from Home")
+        }
+        // A create is running or queued: a second one would race it.
+        PendingPrStatus::Retrying => Some("a gh pr create is running for this PR"),
+        PendingPrStatus::RetryScheduled => Some("a retry is already queued for this PR"),
+        PendingPrStatus::AwaitingManualRetry => None,
+    }
 }
 
 /// Issue title, or the prompt when the session has no issue.
@@ -98,3 +105,7 @@ pub fn pr_write_description(pending: &PendingPr) -> String {
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 mod dispatch_tests;
+
+#[cfg(test)]
+#[path = "reach_tests.rs"]
+mod reach_tests;

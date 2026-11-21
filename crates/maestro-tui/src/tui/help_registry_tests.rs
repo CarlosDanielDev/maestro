@@ -166,7 +166,6 @@ async fn help_dashboard_80x24() {
     let text = rows.join("\n");
     assert!(has_row(&first_page, "S", "Settings"), "S on page 1\n{text}");
     for (key, name) in [
-        ("s", "Status"),
         ("c", "Cost"),
         ("t", "Token Report"),
         // #1265: Dashboard's own `Q` and `M`, no longer eaten by globals.

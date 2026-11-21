@@ -78,6 +78,15 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(dash, Chord::key(KeyCode::Enter), A::Expand, "open · arm PR"),
         Binding::new(ch('X'), dash, A::Kill, Danger::Destructive, "kill"),
         s(dash, ch('l'), A::Expand, "log"),
+        Binding::new(
+            ch('D'),
+            dash,
+            A::Dismiss,
+            Danger::Destructive,
+            "dismiss finished",
+        ),
+        // `handle_global_shortcuts` runs it while a CI check fails (#695).
+        s(dash, ch('e'), A::Expand, "CI error review").hidden(),
     ]);
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
@@ -89,7 +98,8 @@ pub(super) fn blocks() -> Vec<Binding> {
 /// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
 /// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
 /// `PrPipeline` (#1280) opens the Dashboard on its first pending PR row,
-/// where ⏎ ⏎ retries; it writes nothing itself.
+/// where ⏎ ⏎ retries; it writes nothing itself. `AgentGraph` (#1280) was
+/// Overview's `g`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
@@ -97,6 +107,7 @@ pub enum PaletteCommand {
     CompleteModal,
     ReviewConcerns,
     PrPipeline,
+    AgentGraph,
 }
 
 /// The key that runs a palette command outside the palette, and the one
@@ -121,4 +132,5 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
         PaletteCommand::PrPipeline,
         None,
     ),
+    ("agent graph", PaletteCommand::AgentGraph, None),
 ];

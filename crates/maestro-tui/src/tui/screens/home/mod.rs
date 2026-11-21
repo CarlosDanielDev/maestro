@@ -79,7 +79,7 @@ const QUICK_ACTIONS: &[(&str, char, QuickActionDispatch)] = &[
         'p',
         QuickActionDispatch::Push(TuiMode::PrReview),
     ),
-    ("Status", 's', QuickActionDispatch::Push(TuiMode::Overview)),
+    // #1280: `s Status` opened Overview, which is this Dashboard now.
     (
         "Cost Report",
         'c',

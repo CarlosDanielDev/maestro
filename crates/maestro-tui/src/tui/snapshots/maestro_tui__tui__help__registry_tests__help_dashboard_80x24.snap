@@ -13,7 +13,6 @@ Help — Dashboard Mode
     r                 Run Prompt                                      
     a                 Adapt Project                                   
     p                 Review PRs                                      
-    s                 Status                                          
     c                 Cost Report                                     
     t                 Token Report                                    
     Q                 TurboQuant Savings                              
@@ -21,4 +20,5 @@ Help — Dashboard Mode
     n                 Release Notes                                   
     R                 Refresh Suggestions                             
                                                                       
-  Global keys
+  Global keys                                                         
+    ⌃K                palette — TurboQuant; on/off in Settings

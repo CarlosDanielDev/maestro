@@ -47,6 +47,8 @@ pub(super) async fn handle_key_under_size_guard(
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
 /// global shortcuts, and screen dispatch in priority order.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+    // #1280: a key the Dashboard does not take disarms its armed PR row.
+    screens::dashboard::dispatch::note_key(app, &key);
     // If confirm exit dialog is showing, handle it
     if app.tui_mode == app::TuiMode::ConfirmExit {
         return handle_confirm_exit(app, &key);
@@ -100,7 +102,10 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
     // letter still types into editors.
     if key.code == KeyCode::Char('e')
         && !is_text_input_mode(app)
-        && app.tui_mode == app::TuiMode::Overview
+        && matches!(
+            app.tui_mode,
+            app::TuiMode::Overview | app::TuiMode::Dashboard
+        )
         && app.has_visible_ci_failure()
     {
         app.request_ci_error_review();
@@ -905,8 +910,12 @@ fn open_palette(app: &mut App) {
     use crate::tui::ds::palette::{PaletteState, Run, entries};
     use crate::tui::navigation::registry::{PaletteCommand, registry};
     let review = app.pending_review_report.is_some();
+    let agent_graph = app.is_agent_graph_enabled();
     let list = entries(registry(), app.tui_mode, |run| match run {
         Run::Command(PaletteCommand::ReviewConcerns) if !review => Some("no review pending"),
+        Run::Command(PaletteCommand::AgentGraph) if !agent_graph => {
+            Some("views.agent_graph_enabled is off")
+        }
         _ => None,
     });
     app.palette = Some(PaletteState::new(list));
@@ -962,6 +971,11 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         }
         // #1280: the Dashboard with the first pending PR row selected;
         // its ⏎ ⏎ (armed) is the retry, so the palette writes nothing.
+        // #1280: the Agent graph was Overview's `g`; Esc comes back.
+        Some(Run::Command(PaletteCommand::AgentGraph)) => {
+            app.navigate_to(app::TuiMode::AgentGraph);
+            KeyAction::Consumed
+        }
         Some(Run::Command(PaletteCommand::PrPipeline)) => {
             handle_screen_action(app, screens::ScreenAction::Push(app::TuiMode::Dashboard));
             screens::dashboard::dispatch::select_first_pending_pr(app);
@@ -1382,7 +1396,10 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('r'), _) => {
             app.resume_all();
         }
-        (KeyCode::Char('k'), _) => {
+        // #1280: kill is `X` in Detail as on the Dashboard list (`k` is up
+        // there); the target is `panel_view.selected`, which the Dashboard
+        // keeps on its marked session.
+        (KeyCode::Char('X'), _) => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected)
                 && let Some(session) = app.pool.get_session(id)

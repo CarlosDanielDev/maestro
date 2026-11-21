@@ -171,9 +171,10 @@ async fn overview_dismiss_on_a_later_page_does_not_panic_the_draw() {
         for _ in 0..12 {
             press(&mut app, KeyCode::Down).await;
         }
-        // The selected row goes away: the selection falls back to a listed one.
-        app.dismiss_all_completed();
-        assert_eq!(app.pool.total_count(), 4, "the finished ones are dismissed");
+        // `D` (the Dashboard key, #1280) dismisses them, the selected row
+        // with them: the selection falls back to a listed one.
+        press(&mut app, KeyCode::Char('D')).await;
+        assert_eq!(app.pool.total_count(), 4, "D dismissed the finished ones");
         assert_target_is_highlighted(&mut app, w, h, &format!("after dismiss at {w}x{h}"));
     }
 }

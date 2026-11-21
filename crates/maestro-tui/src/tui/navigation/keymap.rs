@@ -101,7 +101,7 @@ pub fn overview_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Resume all paused sessions (SIGCONT)",
                     },
                     KeyBinding {
-                        key: "k / F10",
+                        key: "X / F10",
                         description: "Kill selected session",
                     },
                     KeyBinding {
