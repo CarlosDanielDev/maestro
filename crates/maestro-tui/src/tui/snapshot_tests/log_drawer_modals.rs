@@ -250,25 +250,21 @@ async fn shown_drawer_swallows_keys_over_settings_remove_confirm() {
 /// shown drawer does not launch.
 #[tokio::test]
 async fn shown_drawer_swallows_enter_over_issue_prompt() {
-    use crate::tui::screens::issue_browser::{IssuePromptOverlay, LaunchFocus};
+    use crate::tui::widgets::launch_dialog::{LaunchDialog, LaunchMode};
 
     let mut app = log_app(TuiMode::IssueBrowser);
     app.screen_state
         .issue_browser_screen
         .as_mut()
         .unwrap()
-        .prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Launch,
-        produce_pr: true,
-        interaction: false,
-    });
+        .launch_dialog = Some(LaunchDialog::new(
+        vec![(1, "Add login flow".to_string())],
+        LaunchMode::Autonomous,
+    ));
     app.activity_log.drawer_open = true;
     let _ = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
     let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
-    assert!(screen.prompt_overlay.is_some(), "Enter must not launch");
+    assert!(screen.launch_dialog.is_some(), "Enter must not launch");
     assert!(app.pool.all_sessions().is_empty(), "no session launched");
     assert_eq!(app.tui_mode, TuiMode::IssueBrowser);
 }

@@ -1600,7 +1600,7 @@ mod handle_screen_action_tests {
             app.screen_state
                 .issue_browser_screen
                 .as_ref()
-                .map(|b| b.prompt_overlay.is_some())
+                .map(|b| b.launch_dialog.is_some())
                 .unwrap_or(false),
             "no active session → the launch dialog must open"
         );

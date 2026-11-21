@@ -1,8 +1,4 @@
-use super::{
-    FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, LaunchFocus,
-    sanitize_for_terminal,
-};
-use crate::tui::help::centered_rect;
+use super::{FilterMode, FocusPane, IssueBrowserScreen, sanitize_for_terminal};
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
@@ -15,15 +11,9 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Clear, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
-
-/// Launch-dialog option sentences (#919), multi-issue and single-issue.
-const PRODUCE_PR_MULTI: &str = "Produce PR — sessions end when a linked PR is created";
-const INTERACTION_MULTI: &str = "Interaction — chat with the agent; sessions stay alive";
-const PRODUCE_PR_SINGLE: &str = "Produce PR — session ends when a linked PR is created";
-const INTERACTION_SINGLE: &str = "Interaction — chat with the agent; session stays alive";
 
 impl IssueBrowserScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -60,19 +50,20 @@ impl IssueBrowserScreen {
     /// Footer hints: the launch dialog's while it is open, else the list's
     /// (#1258).
     pub(super) fn footer_hints_impl(&self) -> Vec<(&'static str, &'static str)> {
-        match self.prompt_overlay.as_ref() {
-            Some(overlay) if overlay.is_multi() => vec![
+        match self.launch_dialog.as_ref() {
+            Some(dialog) if dialog.is_multi() => vec![
                 ("Enter", "Launch all"),
-                ("Tab", "Next field"),
-                ("Space", "Toggle"),
+                ("Tab", "Instructions/Mode"),
+                ("↑/↓", "Mode"),
                 ("Ctrl+U", "Unified PR"),
                 ("Shift+Enter", "New line"),
                 ("Esc", "Cancel"),
             ],
             Some(_) => vec![
-                ("Tab", "Cycle"),
-                ("Space", "Toggle"),
                 ("Enter", "Launch"),
+                ("Tab", "Instructions/Mode"),
+                ("↑/↓", "Mode"),
+                ("Shift+Enter", "New line"),
                 ("Esc", "Cancel"),
             ],
             None => vec![
@@ -126,9 +117,7 @@ impl IssueBrowserScreen {
             return ScreenAction::None;
         }
 
-        let (produce_pr, interaction) = self.launch_defaults;
-
-        // If multi-select is active, open overlay with all selected issues
+        // If multi-select is active, open the dialog with all selected issues
         if !self.selected_set.is_empty() {
             let selected_issues: Vec<(u64, String)> = self
                 .issues
@@ -136,14 +125,7 @@ impl IssueBrowserScreen {
                 .filter(|i| self.selected_set.contains(&i.number))
                 .map(|i| (i.number, i.title.clone()))
                 .collect();
-            self.prompt_overlay = Some(IssuePromptOverlay {
-                editor: IssuePromptOverlay::make_editor(""),
-                selected_issues,
-                unified_pr: false,
-                focus: LaunchFocus::Prompt,
-                produce_pr,
-                interaction,
-            });
+            self.open_dialog(selected_issues);
             return ScreenAction::None;
         }
 
@@ -163,17 +145,9 @@ impl IssueBrowserScreen {
     /// by the dispatch when no active interaction session exists for the
     /// issue (the resume-or-launch fallback, #738).
     pub(crate) fn open_launch_overlay_for_selected(&mut self) {
-        let (produce_pr, interaction) = self.launch_defaults;
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
-            self.prompt_overlay = Some(IssuePromptOverlay {
-                editor: IssuePromptOverlay::make_editor(""),
-                selected_issues: vec![(issue.number, issue.title.clone())],
-                unified_pr: false,
-                focus: LaunchFocus::Prompt,
-                produce_pr,
-                interaction,
-            });
+            self.open_dialog(vec![(issue.number, issue.title.clone())]);
         }
     }
 
@@ -414,281 +388,6 @@ impl IssueBrowserScreen {
                 .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
-        }
-    }
-
-    pub(super) fn draw_prompt_overlay(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let Some(overlay) = self.prompt_overlay.as_ref() else {
-            return;
-        };
-
-        let is_multi = overlay.is_multi();
-        let height_pct = if is_multi { 65 } else { 62 };
-        let overlay_area = centered_rect(65, height_pct, area);
-        f.render_widget(Clear, overlay_area);
-
-        let raw_title = if is_multi {
-            format!(" {} issues selected ", overlay.selected_issues.len())
-        } else {
-            let (number, ref title) = overlay.selected_issues[0];
-            format!(" #{} — {} ", number, sanitize_for_terminal(title))
-        };
-
-        // Marquee the title when it overflows the dialog's top border. The
-        // `-8` budget leaves room for the corners + styled_block's `[ … ]`.
-        let avail = (overlay_area.width as usize).saturating_sub(8);
-        let title_len = raw_title.chars().count();
-        let title = if avail > 0 && crate::tui::marquee::needs_scroll(title_len, avail) {
-            self.prompt_title_marquee.advance(
-                title_len - avail,
-                &crate::tui::marquee::MarqueeConfig::default(),
-            );
-            crate::tui::marquee::visible_slice(&raw_title, self.prompt_title_marquee.offset, avail)
-        } else {
-            self.prompt_title_marquee.reset();
-            raw_title
-        };
-        // Re-borrow the overlay (the marquee advance above used a disjoint
-        // field, so this stays sound).
-        let overlay = match self.prompt_overlay.as_ref() {
-            Some(o) => o,
-            None => return,
-        };
-
-        let block = theme
-            .styled_block(&title, false)
-            .border_style(Style::default().fg(theme.accent_info));
-
-        let inner = block.inner(overlay_area);
-        f.render_widget(block, overlay_area);
-
-        // #1399: an option row wraps when its sentence is wider than the dialog.
-        use crate::tui::widgets::unified_pr_toggle::checkbox_rows;
-        let (produce_label, interaction_label) = if is_multi {
-            (PRODUCE_PR_MULTI, INTERACTION_MULTI)
-        } else {
-            (PRODUCE_PR_SINGLE, INTERACTION_SINGLE)
-        };
-        let produce_rows = checkbox_rows(produce_label, overlay.produce_pr, inner.width);
-        let interaction_rows = checkbox_rows(interaction_label, overlay.interaction, inner.width);
-
-        if is_multi {
-            let issue_list_height = overlay.selected_issues.len().min(8) as u16 + 2;
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),                 // hint
-                    Constraint::Length(issue_list_height), // issue list
-                    Constraint::Length(1),                 // unified PR toggle
-                    Constraint::Min(3),                    // text area
-                    Constraint::Length(1),                 // "Options:" label (#919)
-                    Constraint::Length(produce_rows),      // Produce PR checkbox
-                    Constraint::Length(interaction_rows),  // Interaction checkbox
-                    Constraint::Length(1),                 // Launch button
-                ])
-                .split(inner);
-
-            let hint = Paragraph::new(Line::from(Span::styled(
-                "Shared prompt for all sessions (optional):",
-                Style::default().fg(theme.text_secondary),
-            )));
-            f.render_widget(hint, chunks[0]);
-
-            let issue_lines: Vec<Line> = overlay
-                .selected_issues
-                .iter()
-                .take(8)
-                .map(|(num, title)| {
-                    Line::from(vec![
-                        Span::styled(
-                            format!("  #{:<5} ", num),
-                            Style::default().fg(theme.accent_info),
-                        ),
-                        Span::styled(
-                            sanitize_for_terminal(title),
-                            Style::default().fg(theme.text_primary),
-                        ),
-                    ])
-                })
-                .collect();
-            let issue_block = theme.styled_block_plain(false);
-            f.render_widget(Paragraph::new(issue_lines).block(issue_block), chunks[1]);
-
-            crate::tui::widgets::unified_pr_toggle::draw_unified_pr_toggle(
-                f,
-                chunks[2],
-                overlay.unified_pr,
-                theme,
-            );
-
-            let prompt_focused = overlay.focus == LaunchFocus::Prompt;
-            Self::draw_overlay_text_area(f, chunks[3], overlay, theme, prompt_focused);
-
-            // Same option rows as the single-issue dialog (#919): the values
-            // apply to every launched session (or the one unified session).
-            let options_label = Paragraph::new(Line::from(Span::styled(
-                "Options (apply to all launched sessions):",
-                Style::default().fg(theme.text_secondary),
-            )));
-            f.render_widget(options_label, chunks[4]);
-
-            use crate::tui::widgets::unified_pr_toggle::draw_checkbox;
-            draw_checkbox(
-                f,
-                chunks[5],
-                overlay.produce_pr,
-                overlay.focus == LaunchFocus::ProducePr,
-                produce_label,
-                theme,
-            );
-            draw_checkbox(
-                f,
-                chunks[6],
-                overlay.interaction,
-                overlay.focus == LaunchFocus::Interaction,
-                interaction_label,
-                theme,
-            );
-
-            let launch_focused = overlay.focus == LaunchFocus::Launch;
-            if launch_focused {
-                f.render_widget(
-                    crate::tui::widgets::unified_pr_toggle::focus_bar(
-                        "  [ Launch all ]",
-                        chunks[7],
-                        theme,
-                    ),
-                    chunks[7],
-                );
-            } else {
-                let launch_button = Paragraph::new(Line::from(Span::styled(
-                    "  [ Launch all ]",
-                    Style::default().fg(theme.text_secondary),
-                )));
-                f.render_widget(launch_button, chunks[7]);
-            }
-        } else {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),                // hint
-                    Constraint::Min(3),                   // text area
-                    Constraint::Length(1),                // "Options:" label
-                    Constraint::Length(produce_rows),     // Produce PR checkbox
-                    Constraint::Length(interaction_rows), // Interaction checkbox
-                    Constraint::Length(1),                // Launch button
-                ])
-                .split(inner);
-
-            let prompt_focused = overlay.focus == LaunchFocus::Prompt;
-            let hint = Paragraph::new(Line::from(Span::styled(
-                "Additional instructions (optional):",
-                Style::default().fg(if prompt_focused {
-                    theme.accent_info
-                } else {
-                    theme.text_secondary
-                }),
-            )));
-            f.render_widget(hint, chunks[0]);
-
-            Self::draw_overlay_text_area(f, chunks[1], overlay, theme, prompt_focused);
-
-            let options_label = Paragraph::new(Line::from(Span::styled(
-                "Options:",
-                Style::default().fg(theme.text_secondary),
-            )));
-            f.render_widget(options_label, chunks[2]);
-
-            use crate::tui::widgets::unified_pr_toggle::draw_checkbox;
-            draw_checkbox(
-                f,
-                chunks[3],
-                overlay.produce_pr,
-                overlay.focus == LaunchFocus::ProducePr,
-                produce_label,
-                theme,
-            );
-            draw_checkbox(
-                f,
-                chunks[4],
-                overlay.interaction,
-                overlay.focus == LaunchFocus::Interaction,
-                interaction_label,
-                theme,
-            );
-
-            let launch_focused = overlay.focus == LaunchFocus::Launch;
-            if launch_focused {
-                f.render_widget(
-                    crate::tui::widgets::unified_pr_toggle::focus_bar(
-                        "  [ Launch ]",
-                        chunks[5],
-                        theme,
-                    ),
-                    chunks[5],
-                );
-            } else {
-                let launch_button = Paragraph::new(Line::from(Span::styled(
-                    "  [ Launch ]",
-                    Style::default().fg(theme.text_secondary),
-                )));
-                f.render_widget(launch_button, chunks[5]);
-            }
-        }
-    }
-
-    fn draw_overlay_text_area(
-        f: &mut Frame,
-        area: Rect,
-        overlay: &IssuePromptOverlay,
-        theme: &Theme,
-        focused: bool,
-    ) {
-        let text_block = theme.styled_block_plain(focused);
-        let inner_w = area.width.saturating_sub(2);
-        let inner_h = area.height.saturating_sub(2);
-
-        // Wrap via the shared editor wrapper so the rendered line breaks and
-        // the visual cursor agree (same backend the prompt screen uses), and
-        // the box scrolls to keep the caret visible.
-        let logical_lines: Vec<String> = overlay.editor.lines().to_vec();
-        let ratatui_textarea::DataCursor(cursor_row, cursor_col) = overlay.editor.cursor();
-        let wrapped =
-            super::super::wrap::wrap_lines(&logical_lines, (cursor_row, cursor_col), inner_w);
-        let scroll = super::super::wrap::scroll_offset_for_cursor(
-            wrapped.cursor.0 as usize,
-            inner_h as usize,
-        );
-
-        let is_empty = logical_lines.len() == 1 && logical_lines[0].is_empty();
-        let paragraph = if is_empty {
-            Paragraph::new(Line::from(Span::styled(
-                "Type your prompt here...",
-                Style::default().fg(theme.text_muted),
-            )))
-        } else {
-            let lines: Vec<Line> = wrapped
-                .lines
-                .iter()
-                .map(|s| {
-                    Line::from(crate::tui::issue_refs::highlight_issue_refs(
-                        s.as_str(),
-                        theme.accent_identifier,
-                        theme.text_primary,
-                    ))
-                })
-                .collect();
-            Paragraph::new(lines)
-        };
-
-        f.render_widget(paragraph.block(text_block).scroll((scroll as u16, 0)), area);
-
-        if focused && inner_w > 0 && inner_h > 0 {
-            let vrow = wrapped.cursor.0 as usize;
-            let vcol = wrapped.cursor.1;
-            if vrow >= scroll && (vrow - scroll) < inner_h as usize {
-                f.set_cursor_position((area.x + 1 + vcol, area.y + 1 + (vrow - scroll) as u16));
-            }
         }
     }
 }

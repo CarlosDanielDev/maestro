@@ -83,6 +83,18 @@ fn on_issue_browser_filter() -> App {
     app
 }
 
+/// #1262: the shared launch dialog, instructions focused.
+fn on_issue_launch_dialog() -> App {
+    let mut app = base_app(TuiMode::IssueBrowser);
+    let mut screen = IssueBrowserScreen::new(vec![]);
+    screen.launch_dialog = Some(crate::tui::widgets::launch_dialog::LaunchDialog::new(
+        vec![(1, "Add login flow".to_string())],
+        crate::tui::widgets::launch_dialog::LaunchMode::Autonomous,
+    ));
+    app.screen_state.issue_browser_screen = Some(screen);
+    app
+}
+
 fn on_issue_wizard_basic_info() -> App {
     use crate::tui::screens::issue_wizard::IssueWizardStep;
     let mut app = base_app(TuiMode::IssueWizard);
@@ -249,12 +261,13 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 13] {
+fn text_surfaces() -> [Surface; 14] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
         ("session switcher", on_session_switcher),
         ("issue browser filter", on_issue_browser_filter),
+        ("issue launch dialog", on_issue_launch_dialog),
         ("issue wizard basic info", on_issue_wizard_basic_info),
         ("milestone wizard", on_milestone_wizard),
         ("prd edit field", on_prd_edit),
@@ -324,6 +337,13 @@ async fn shift_tab_never_types_on_any_text_input_surface() {
                 let back = ring.as_mut().unwrap().previous();
                 assert_eq!(screen.focus_ring.current(), back, "{name}: focus back");
                 assert_eq!(screen.editor_text(), "ab", "{name}: no tab typed");
+            }
+            "issue launch dialog" => {
+                use crate::tui::widgets::launch_dialog::LaunchFocus;
+                let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
+                let dialog = screen.launch_dialog.as_ref().unwrap();
+                assert_eq!(dialog.focus, LaunchFocus::Mode, "{name}: focus back");
+                assert_eq!(dialog.editor_text(), "ab", "{name}: no tab typed");
             }
             "issue wizard basic info" => {
                 use crate::tui::screens::issue_wizard::FieldId;
