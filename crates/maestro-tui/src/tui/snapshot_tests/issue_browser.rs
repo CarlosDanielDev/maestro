@@ -1,10 +1,24 @@
 use super::*;
 use crate::tui::screens::Screen;
-use crate::tui::screens::issue_browser::{
-    FilterMode, IssueBrowserScreen, IssuePromptOverlay, LaunchFocus,
-};
+use crate::tui::screens::issue_browser::{FilterMode, IssueBrowserScreen};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::launch_dialog::{LaunchDialog, LaunchFocus, LaunchMode};
 use insta::assert_snapshot;
+
+/// A launch dialog in a given state (#1262), for snapshots.
+fn launch_dialog_with(
+    issues: Vec<(u64, String)>,
+    text: &str,
+    unified_pr: bool,
+    focus: LaunchFocus,
+    mode: LaunchMode,
+) -> LaunchDialog {
+    let mut dialog = LaunchDialog::new(issues, mode);
+    dialog.editor.set_text(text);
+    dialog.unified_pr = unified_pr;
+    dialog.focus = focus;
+    dialog
+}
 
 #[test]
 fn issue_browser_with_issues() {
@@ -106,14 +120,13 @@ fn issue_browser_prompt_overlay_empty() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "",
+        false,
+        LaunchFocus::Instructions,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -132,14 +145,13 @@ fn issue_browser_prompt_overlay_with_text() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor("focus on error handling"),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "focus on error handling",
+        false,
+        LaunchFocus::Instructions,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -158,14 +170,13 @@ fn issue_browser_launch_options_default() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "",
+        false,
+        LaunchFocus::Instructions,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -184,14 +195,13 @@ fn issue_browser_launch_options_toggled() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Interaction,
-        produce_pr: false,
-        interaction: true,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "",
+        false,
+        LaunchFocus::Mode,
+        LaunchMode::ChatOpen,
+    ));
 
     terminal
         .draw(|f| {
@@ -210,14 +220,13 @@ fn issue_browser_focused_checkbox_row_has_selection_background() {
     let mut terminal = test_terminal();
     let theme = Theme::dark();
     let mut screen = IssueBrowserScreen::new(vec![make_gh_issue(1, "Add login flow")]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Interaction,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "",
+        false,
+        LaunchFocus::Mode,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -242,14 +251,13 @@ fn issue_browser_launch_options_launch_focused() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1, "Add login flow".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Launch,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![(1, "Add login flow".to_string())],
+        "",
+        false,
+        LaunchFocus::Mode,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -270,17 +278,16 @@ fn issue_browser_multi_overlay_launch_options_default() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![
             (1, "Add login flow".to_string()),
             (2, "Fix database crash".to_string()),
         ],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+        "",
+        false,
+        LaunchFocus::Instructions,
+        LaunchMode::Autonomous,
+    ));
 
     terminal
         .draw(|f| {
@@ -299,17 +306,16 @@ fn issue_browser_multi_overlay_launch_options_toggled() {
         make_gh_issue(1, "Add login flow"),
         make_gh_issue(2, "Fix database crash"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![
+    screen.launch_dialog = Some(launch_dialog_with(
+        vec![
             (1, "Add login flow".to_string()),
             (2, "Fix database crash".to_string()),
         ],
-        unified_pr: true,
-        focus: LaunchFocus::Interaction,
-        produce_pr: false,
-        interaction: true,
-    });
+        "",
+        true,
+        LaunchFocus::Mode,
+        LaunchMode::ChatOpen,
+    ));
 
     terminal
         .draw(|f| {

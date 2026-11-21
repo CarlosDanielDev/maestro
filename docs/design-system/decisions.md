@@ -22,6 +22,15 @@ first. One entry per decision.
 
 ---
 
+## 2026-11-21 — Shared launch dialog: the gate's Block locks Enter; the gate stays for every spawn
+
+- **What:** `widgets/launch_dialog/` replaces the Issues launch overlay (two checkboxes) with the §02.8 dialog: what · instructions · MODE radio · SPEND · WHERE · button row. `LaunchMode::flags()` maps to the existing `produce_pr` / `interaction`; `[behavior.launch]` picks the first mode (`(_, false)` is Autonomous). The SPEND block is the pre-spawn gate's own rule (`BudgetEnforcer::check_pre_spawn` with the `DefaultBudgetProjector` floor, 10% of `per_session_usd`, for one session against the spend so far, as `App::pre_spawn_decision` checks each spawn alone): a projected `Block` disables `Enter` and names the reason; `Warn` adds a `!` line and still launches. The standalone pre-spawn modal stays at spawn time. With 2+ issues only Autonomous is offered (the chat modes read `single issue only`): those launches go to the queue or one unified session, which never open the chat, so the dialog must not promise one. SPEND names the model the launch resolves (`resolve_model_and_mode` with the selected agent).
+- **Why:** #1262: one dialog for one decision, and the dialog must never say "go" when the gate would say Block. Spend can move between the dialog and the real spawn (queued sessions start later), so the gate at spawn time stays the enforcement point.
+- **Section:** `§02.8` Issues browser, "Launch dialog `widgets::launch_dialog` shared".
+- **Differs from the target:** `Enter` still launches from the instructions field and `Shift+Enter` is the newline (the target makes `Enter` a newline there and adds `⌃S`); changing that is a key change for every launch path, not this issue. The lock is the gate's projected Block, not `worst case > left` (that would lock launches the gate allows); worst case is shown as a gauge. No `b` fix key on the lock: the line names `[budget] total_usd` in Settings. No milestone / DOR line, no running-session lock and no `from <base>` on WHERE: the browser has no pool, DOR or base-branch data. The dialog starts 3 columns in at 80 wide so the list's Nerd Font cursor glyph (often drawn two cells wide) never covers its left border. Consequence words are shortened to fit 80 columns whole (`opens the chat; stays open after a PR until quit`). `Space` also cycles the mode, as it toggled the checkboxes before.
+- **Rejected:** keeping the separate modal as the only budget step (the dialog would state numbers nothing enforces at the moment of choice); skipping the gate for dialog launches with `budget_skip_once` (a queued session could then start past the cap: Block must stay Block).
+- **Source:** #1262.
+
 ## 2026-11-17 — Agent badge colours are theme tokens, not user overrides
 
 - **What:** seven flat `Theme` fields (`agent_claude` … `agent_unknown`), read through `Theme::agent_color(agent_id)`. The four coloured presets share today's colours; no-color sets them all to `Reset`. They are not in `ThemeOverrides`, as before.

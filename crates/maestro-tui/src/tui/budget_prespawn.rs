@@ -155,3 +155,27 @@ pub fn modal_rect(area: Rect) -> Rect {
         height,
     }
 }
+
+/// The spend the shared launch dialog states before a spawn (#1262), read
+/// from the same `[budget]` section that [`crate::tui::app::App::install_budget`]
+/// gives the gate, so the dialog's projected `Block` is the gate's `Block`.
+/// No config means no enforcer, so nothing is capped here either.
+pub fn launch_budget(
+    app: &crate::tui::app::App,
+) -> crate::tui::widgets::launch_dialog::LaunchBudget {
+    let mut budget = crate::tui::widgets::launch_dialog::LaunchBudget {
+        // The model the launch really uses: the selected agent's, then the
+        // default (`App::resolve_model_and_mode`; labels only pick the mode).
+        model: app
+            .resolve_model_and_mode(&[], Some(&app.selected_agent_id()))
+            .0,
+        spent: app.total_cost,
+        ..Default::default()
+    };
+    if let Some(config) = app.config.as_ref() {
+        budget.per_session_usd = config.budget.per_session_usd;
+        budget.total_usd = config.budget.total_usd;
+        budget.alert_threshold_pct = config.budget.alert_threshold_pct;
+    }
+    budget
+}

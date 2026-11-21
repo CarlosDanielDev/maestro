@@ -14,11 +14,11 @@ use crate::tui::app::{App, TuiMode};
 use crate::tui::marquee::MarqueeState;
 use crate::tui::screens::IssueBrowserScreen;
 use crate::tui::screens::ProjectStatsScreen;
-use crate::tui::screens::issue_browser::{IssuePromptOverlay, LaunchFocus};
 use crate::tui::screens::milestone::{MilestoneEntry, MilestoneScreen};
 use crate::tui::screens::prd::PrdScreen;
 use crate::tui::screens::project_stats::ProjectStatsData;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::launch_dialog::{LaunchDialog, LaunchMode};
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 
 const SIZES: [(u16, u16); 2] = [(80, 24), (80, 27)];
@@ -117,14 +117,10 @@ fn launch_dialog_app() -> App {
         make_gh_issue(1330, "Update the launch dialog copy"),
         make_gh_issue(1329, "Run the gate twice"),
     ]);
-    screen.prompt_overlay = Some(IssuePromptOverlay {
-        editor: IssuePromptOverlay::make_editor(""),
-        selected_issues: vec![(1330, "Update the launch dialog copy".to_string())],
-        unified_pr: false,
-        focus: LaunchFocus::Prompt,
-        produce_pr: true,
-        interaction: false,
-    });
+    screen.launch_dialog = Some(LaunchDialog::new(
+        vec![(1330, "Update the launch dialog copy".to_string())],
+        LaunchMode::Autonomous,
+    ));
     app.screen_state.issue_browser_screen = Some(screen);
     app
 }
@@ -237,14 +233,19 @@ fn no_row_is_cut_mid_word_at_80_columns_snapshots() {
 fn launch_dialog_options_wrap_80x24() {
     let t = draw(&mut launch_dialog_app(), 80, 24);
     let out = rows(&t).join("\n");
-    // Each sentence ends on its own wrapped row, inside the dialog.
-    for tail in ["created ", "alive "] {
-        assert!(
-            out.contains(tail),
-            "option text cut, {tail:?} missing:\n{out}"
-        );
+    // #1262: every mode states its consequence in full, and the spend,
+    // the worktree and the button row fit inside the dialog.
+    for mode in crate::tui::widgets::launch_dialog::LaunchMode::ALL {
+        assert!(out.contains(mode.consequence()), "{mode:?} cut:\n{out}");
     }
-    assert!(!out.contains("session sta│"), "{out}");
+    for text in [
+        "SPEND",
+        "issue-1330  branch maestro/issue-1330",
+        "⏎ Launch",
+        "Esc cancel",
+    ] {
+        assert!(out.contains(text), "{text:?} missing:\n{out}");
+    }
     assert_snapshot!("launch_dialog_options_wrap_80x24", t.backend());
 }
 
@@ -265,4 +266,72 @@ fn overview_empty_state_names_next_action() {
             "{w}x{h} names no key that starts work:\n{out}"
         );
     }
+}
+
+/// #1262: `ui::draw` feeds the dialog the live `[budget]` and spend, so the
+/// real screen states the cap (not the "no budget" default) and locks Enter
+/// on a projected Block.
+#[test]
+fn launch_dialog_states_live_budget_through_ui_draw() {
+    let mut app = launch_dialog_app();
+    let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+    app.total_cost = 12.0;
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(out.contains("$12.00 of $50.00 spent"), "{out}");
+    app.total_cost = 49.8;
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(
+        out.contains("⊘ locked: over the cap ($50.30 of $50.00)"),
+        "{out}"
+    );
+    for text in ["raise [budget] total_usd in Settings", "Esc cancel"] {
+        assert!(out.contains(text), "{text:?} cut:\n{out}");
+    }
+}
+
+/// #1262 judge: the selected list row starts with a Nerd Font cursor glyph
+/// (U+F054) that many fonts draw two cells wide. The dialog keeps one blank
+/// column between it and its left border, so the border is never covered.
+#[test]
+fn launch_dialog_left_border_is_whole_at_80x24() {
+    let t = draw(&mut launch_dialog_app(), 80, 24);
+    let buf = t.backend().buffer();
+    let (top, x) = (0..buf.area.height)
+        .find_map(|y| {
+            (0..buf.area.width)
+                .find(|&x| buf[(x, y)].symbol() == "╭")
+                .map(|x| (y, x))
+        })
+        .expect("dialog drawn");
+    let bottom = (top..buf.area.height)
+        .find(|&y| buf[(x, y)].symbol() == "╰")
+        .expect("dialog bottom");
+    for y in top + 1..bottom {
+        assert_eq!(buf[(x, y)].symbol(), "│", "row {y}: left border cell");
+        // A Nerd Font icon (Private Use Area) may render two cells wide.
+        let next = buf[(x - 1, y)].symbol();
+        let icon = next
+            .chars()
+            .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c) || c >= '\u{f0000}');
+        assert!(!icon, "row {y}: icon {next:?} touches the border");
+    }
+}
+
+/// #1262 judge: SPEND names the model the launch really uses: the selected
+/// agent's `model`, then the default (`App::resolve_model_and_mode`).
+#[test]
+fn launch_dialog_names_the_selected_agents_model() {
+    let mut app = launch_dialog_app();
+    let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n[agents]\ndefault = \"claude\"\n\
+                [agents.claude]\nkind = \"claude\"\nenabled = true\ncommand = \"claude\"\n\
+                [agents.qwen]\nkind = \"qwen\"\nenabled = true\ncommand = \"qwen\"\nmodel = \"qwen-2.5\"\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+    app.selected_agent_id = "qwen".to_string();
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(out.contains("qwen-2.5  ·  est ≥ $0.50"), "{out}");
 }

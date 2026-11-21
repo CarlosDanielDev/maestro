@@ -403,8 +403,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::IssueBrowser => {
+            let budget = crate::tui::budget_prespawn::launch_budget(app);
             if let Some(ref mut screen) = app.screen_state.issue_browser_screen {
                 screen.set_spinner_context(spinner_tick);
+                screen.set_launch_budget(budget);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
