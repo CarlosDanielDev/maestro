@@ -82,11 +82,72 @@ fn run_plan_levels() {
     }
 }
 
+/// Issue numbers named in a cycle error, deduplicated and sorted.
+fn cycle_members(open: &[u64], metas: &HashMap<u64, IssueMeta>, claimed: &[u64]) -> Vec<u64> {
+    let err = run_plan(&set(open), metas, &set(claimed), &HashMap::new(), 1.0)
+        .expect_err("a cycle must be an error")
+        .to_string();
+    assert!(err.contains("cycle"), "{err}");
+    let mut ns: Vec<u64> = err
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    ns.sort_unstable();
+    ns.dedup();
+    ns
+}
+
 #[test]
 fn run_plan_cycle_is_an_error() {
+    let metas = metas_of(vec![
+        open_meta(1, &[2]),
+        open_meta(2, &[1]),
+        open_meta(3, &[]),
+    ]);
+    assert_eq!(cycle_members(&[1, 2, 3], &metas, &[]), vec![1, 2]);
+
+    let metas = metas_of(vec![open_meta(1, &[1])]);
+    assert_eq!(cycle_members(&[1], &metas, &[]), vec![1], "self-edge");
+}
+
+#[test]
+fn run_plan_cycle_behind_a_hold_is_still_reported() {
+    // 1 <-> 2 with 1 claimed: holding 1 must not hide the cycle.
     let metas = metas_of(vec![open_meta(1, &[2]), open_meta(2, &[1])]);
-    let r = run_plan(&set(&[1, 2]), &metas, &HashSet::new(), &HashMap::new(), 1.0);
-    assert!(r.is_err());
+    assert_eq!(cycle_members(&[1, 2], &metas, &[1]), vec![1, 2]);
+
+    // 1 also waits on an outside blocker.
+    let metas = metas_of(vec![open_meta(1, &[2, 500]), open_meta(2, &[1])]);
+    assert_eq!(cycle_members(&[1, 2], &metas, &[]), vec![1, 2]);
+}
+
+#[test]
+fn run_plan_edge_cases() {
+    // Duplicate blocked-by edges count once.
+    let metas = metas_of(vec![open_meta(1, &[]), open_meta(2, &[1, 1])]);
+    assert_eq!(plan(&[1, 2], &metas).waves, vec![vec![1], vec![2]]);
+
+    // A single issue.
+    let metas = metas_of(vec![open_meta(1, &[])]);
+    let p = run_plan(&set(&[1]), &metas, &HashSet::new(), &HashMap::new(), 3.0).unwrap();
+    assert_eq!(p.waves, vec![vec![1]]);
+    assert_eq!(p.worst_case_usd, 3.0);
+}
+
+#[test]
+fn run_plan_open_issue_without_metadata_is_deferred() {
+    // Partial fetch: 2 is open but has no metadata; 3 waits on it.
+    let metas = metas_of(vec![open_meta(1, &[]), open_meta(3, &[2])]);
+    let p = plan(&[1, 2, 3], &metas);
+    assert_eq!(p.waves, vec![vec![1]]);
+    assert_eq!(
+        p.deferred,
+        vec![
+            (2, vec![Hold::NoMetadata]),
+            (3, vec![Hold::WaitsOnDeferred(2)]),
+        ]
+    );
+    assert_eq!(p.worst_case_usd, 1.0);
 }
 
 fn body(blocked_by: &str, files: &[&str]) -> String {
@@ -159,38 +220,39 @@ fn run_plan_deferred_reasons() {
         open_meta(7, &[6]),
         open_meta(8, &[300]),
         open_meta(9, &[5]),
+        open_meta(10, &[200]),
         meta(200, IssueState::Open, Some(9), &[]),
     ]);
-    let open = set(&[4, 5, 6, 7, 8, 9]);
-    let claimed = set(&[5, 77]);
+    let open = set(&[4, 5, 6, 7, 8, 9, 10]);
+    let claimed = set(&[5, 10, 77]);
 
     let p = run_plan(&open, &metas, &claimed, &HashMap::new(), 1.0).unwrap();
 
+    let outside_200 = Hold::BlockedOutside {
+        by: 200,
+        milestone: Some(9),
+    };
     assert_eq!(p.waves, vec![vec![4]]);
     assert_eq!(
         p.deferred,
         vec![
-            (5, Hold::Claimed),
-            (
-                6,
-                Hold::BlockedOutside {
-                    by: 200,
-                    milestone: Some(9)
-                }
-            ),
-            (7, Hold::WaitsOnDeferred(6)),
+            (5, vec![Hold::Claimed]),
+            (6, vec![outside_200.clone()]),
+            (7, vec![Hold::WaitsOnDeferred(6)]),
             (
                 8,
-                Hold::BlockedOutside {
+                vec![Hold::BlockedOutside {
                     by: 300,
                     milestone: None
-                }
+                }]
             ),
-            (9, Hold::WaitsOnDeferred(5)),
+            (9, vec![Hold::WaitsOnDeferred(5)]),
+            // Claimed and blocked outside: both reasons, still a decision.
+            (10, vec![outside_200, Hold::Claimed]),
         ]
     );
     // 77 is claimed but not in the plan: nothing to decide.
-    assert_eq!(p.needs_decision, vec![5]);
+    assert_eq!(p.needs_decision, vec![5, 10]);
 }
 
 #[test]

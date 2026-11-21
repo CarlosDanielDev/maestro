@@ -21,6 +21,8 @@ pub enum Hold {
     },
     /// Waits (inside the set) on an issue that is itself held.
     WaitsOnDeferred(IssueNumber),
+    /// Open, but `metas` has no entry for it (partial fetch).
+    NoMetadata,
 }
 
 /// The result of [`run_plan`].
@@ -28,8 +30,8 @@ pub enum Hold {
 pub struct RunPlan {
     /// Launch order. Wave n+1 starts as wave n frees slots.
     pub waves: Vec<Vec<IssueNumber>>,
-    /// Every held issue with its reason, sorted by issue number.
-    pub deferred: Vec<(IssueNumber, Hold)>,
+    /// Every held issue with its reasons, sorted by issue number.
+    pub deferred: Vec<(IssueNumber, Vec<Hold>)>,
     /// Claimed issues the user must take over or skip before launch.
     pub needs_decision: Vec<IssueNumber>,
     /// `(issue, after, shared file)`: issue pushed to a later wave because it
@@ -49,7 +51,9 @@ pub struct RunPlan {
 /// - `files`: each issue's file list (`None` = unknown scope).
 /// - `per_session_cap_usd`: the budget cap of one session.
 ///
-/// Errors only on a dependency cycle inside `open`.
+/// Errors only on a dependency cycle inside `open` (held members included);
+/// the error names the cycle. An open issue missing from `metas` is held with
+/// [`Hold::NoMetadata`], never a panic.
 pub fn run_plan(
     open: &HashSet<IssueNumber>,
     metas: &HashMap<IssueNumber, IssueMeta>,
@@ -57,21 +61,37 @@ pub fn run_plan(
     files: &HashMap<IssueNumber, Option<Vec<String>>>,
     per_session_cap_usd: f64,
 ) -> Result<RunPlan> {
-    let edges = classify_edges(open, None, metas);
+    // classify_edges skips open issues with no meta; give them no edges so
+    // indexing never panics, and hold them below.
+    let mut edges = classify_edges(open, None, metas);
+    for &n in open {
+        edges.entry(n).or_default();
+    }
+    // Report a cycle anywhere in `open`, even one a hold would hide.
+    topo_levels(open, &edges)?;
+
     let mut order: Vec<IssueNumber> = open.iter().copied().collect();
     order.sort_unstable();
 
-    let mut held: HashMap<IssueNumber, Hold> = HashMap::new();
+    let mut held: HashMap<IssueNumber, Vec<Hold>> = HashMap::new();
     for &n in &order {
+        let mut reasons = Vec::new();
+        if !metas.contains_key(&n) {
+            reasons.push(Hold::NoMetadata);
+        }
         let outside = edges[&n].iter().find_map(|e| match e {
             Edge::SameMilestoneOpenExternal(by) | Edge::CrossMilestoneOpenExternal(by) => Some(*by),
             _ => None,
         });
         if let Some(by) = outside {
             let milestone = metas.get(&by).and_then(|m| m.milestone);
-            held.insert(n, Hold::BlockedOutside { by, milestone });
-        } else if claimed.contains(&n) {
-            held.insert(n, Hold::Claimed);
+            reasons.push(Hold::BlockedOutside { by, milestone });
+        }
+        if claimed.contains(&n) {
+            reasons.push(Hold::Claimed);
+        }
+        if !reasons.is_empty() {
+            held.insert(n, reasons);
         }
     }
     // Anything that waits on a held issue is held too, to a fixed point.
@@ -86,7 +106,7 @@ pub fn run_plan(
                 _ => None,
             });
             if let Some(d) = dep {
-                held.insert(n, Hold::WaitsOnDeferred(d));
+                held.insert(n, vec![Hold::WaitsOnDeferred(d)]);
             }
         }
         if held.len() == before {
@@ -109,11 +129,11 @@ pub fn run_plan(
         .collect();
     unknown_scope.sort_unstable();
 
-    let mut deferred: Vec<(IssueNumber, Hold)> = held.into_iter().collect();
+    let mut deferred: Vec<(IssueNumber, Vec<Hold>)> = held.into_iter().collect();
     deferred.sort_unstable_by_key(|(n, _)| *n);
     let needs_decision = deferred
         .iter()
-        .filter(|(_, h)| *h == Hold::Claimed)
+        .filter(|(_, h)| h.contains(&Hold::Claimed))
         .map(|(n, _)| *n)
         .collect();
 
