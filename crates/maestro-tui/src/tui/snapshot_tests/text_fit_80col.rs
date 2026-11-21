@@ -280,3 +280,27 @@ fn overview_empty_state_names_next_action() {
         }
     }
 }
+
+/// #1262: `ui::draw` feeds the dialog the live `[budget]` and spend, so the
+/// real screen states the cap (not the "no budget" default) and locks Enter
+/// on a projected Block.
+#[test]
+fn launch_dialog_states_live_budget_through_ui_draw() {
+    let mut app = launch_dialog_app();
+    let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+    app.total_cost = 12.0;
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(out.contains("$12.00 of $50.00 spent"), "{out}");
+    app.total_cost = 49.8;
+    let out = rows(&draw(&mut app, 80, 24)).join("\n");
+    assert!(
+        out.contains("⊘ locked: over the cap ($50.30 of $50.00)"),
+        "{out}"
+    );
+    for text in ["raise [budget] total_usd in Settings", "Esc cancel"] {
+        assert!(out.contains(text), "{text:?} cut:\n{out}");
+    }
+}

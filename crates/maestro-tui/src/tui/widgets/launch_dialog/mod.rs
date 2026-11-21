@@ -185,7 +185,7 @@ impl LaunchDialog {
                 projected_total,
                 limit,
             } => Some(format!(
-                "over the budget cap ({} of {})",
+                "over the cap ({} of {})",
                 money(Some(projected_total)),
                 money(Some(limit)),
             )),

@@ -1,5 +1,6 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/text_fit_80col.rs
+assertion_line: 249
 expression: t.backend()
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
@@ -18,7 +19,7 @@ expression: t.backend()
 "┌─│  ○ Chat, stays open  opens the chat; stays open after a PR until quit    │─┐"
 "│T│                                                                          │ │"
 "│S│ SPEND  $0.00 spent · no total cap                                        │ │"
-"│─│ default model  ·  est ≥ $0.00  ·  no per-session cap                     │ │"
+"│─│ opus  ·  est ≥ $0.00  ·  no per-session cap                              │ │"
 "│ │                                                                          │ │"
 "│ │ WHERE                                                                    │ │"
 "│ │ .maestro/worktrees/issue-1330  branch maestro/issue-1330                 │ │"

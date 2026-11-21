@@ -83,7 +83,7 @@ fn launch_dialog_block_disables() {
     let mut d = single(49.8);
     assert_eq!(
         d.block_reason().as_deref(),
-        Some("over the budget cap ($50.30 of $50.00)")
+        Some("over the cap ($50.30 of $50.00)")
     );
     assert_eq!(d.handle_input(&key(KeyCode::Enter)), LaunchAction::None);
     d.focus = LaunchFocus::Mode;
@@ -97,7 +97,7 @@ fn launch_dialog_block_disables() {
     screen.open_launch_overlay_for_selected();
     let text = render_screen(&mut screen);
     assert!(
-        text.contains("⊘ locked: over the budget cap ($50.30 of $50.00)"),
+        text.contains("⊘ locked: over the cap ($50.30 of $50.00)"),
         "{text}"
     );
     let action = screen.handle_input(

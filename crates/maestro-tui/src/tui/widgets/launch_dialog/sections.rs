@@ -128,7 +128,7 @@ pub(super) fn button_line(d: &LaunchDialog, theme: &Theme) -> Line<'static> {
         let mut spans = vec![
             Span::styled(" ⏎ launch ", muted(theme).add_modifier(Modifier::DIM)),
             Span::styled(
-                format!("  ⊘ locked: {reason} · raise [budget] total_usd in Settings"),
+                format!("  ⊘ locked: {reason}"),
                 Style::default().fg(theme.accent_error),
             ),
         ];

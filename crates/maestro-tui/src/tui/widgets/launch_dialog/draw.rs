@@ -165,6 +165,13 @@ fn rows(d: &LaunchDialog, theme: &Theme, width: usize) -> Vec<Row> {
     rows.push(Row::Gap);
     rows.push(Row::Text(header("WHERE", "", "", theme)));
     rows.push(Row::Text(where_line(d, theme)));
+    if d.block_reason().is_some() {
+        rows.push(Row::Gap);
+        rows.push(Row::Text(Line::from(Span::styled(
+            "⊘ raise [budget] total_usd in Settings to launch",
+            Style::default().fg(theme.accent_error),
+        ))));
+    }
     if let PreSpawnDecision::Warn {
         projected_total,
         limit,
