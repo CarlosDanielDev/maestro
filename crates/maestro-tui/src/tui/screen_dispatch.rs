@@ -169,6 +169,13 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         return Some(crate::tui::screens::home::mission::dispatch::dispatch_input(app, event));
     }
 
+    // #1280: the cockpit keys first; the launcher letters get the rest.
+    if matches!(app.tui_mode, app::TuiMode::Dashboard)
+        && let Some(action) = crate::tui::screens::dashboard::dispatch::dispatch_input(app, event)
+    {
+        return Some(action);
+    }
+
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.screen_state.home_screen.as_mut()?,
         app::TuiMode::Landing => app.screen_state.landing_screen.as_mut()?,

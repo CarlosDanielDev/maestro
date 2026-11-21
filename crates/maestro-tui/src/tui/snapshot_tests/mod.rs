@@ -13,6 +13,7 @@ mod confirm_exit_live_work;
 mod copy_keybinding_hint;
 mod cost_dashboard;
 mod dashboard;
+mod dashboard_cockpit;
 mod dep_graph;
 mod detail;
 mod fullscreen;

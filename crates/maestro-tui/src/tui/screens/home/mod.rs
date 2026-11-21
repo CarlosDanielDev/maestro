@@ -205,11 +205,9 @@ impl KeymapProvider for HomeScreen {
                 description: label,
             })
         });
-        let mut actions = vec![KeyBinding {
-            key: "Enter",
-            description: "Execute selected action",
-        }];
-        actions.extend(letters);
+        // #1280: `Enter`, `j` / `k` and the arrows are the Dashboard work
+        // list keys now (registry block), so they are not listed here.
+        let mut actions: Vec<KeyBinding> = letters.collect();
         actions.extend([
             KeyBinding {
                 key: "n",
@@ -220,29 +218,10 @@ impl KeymapProvider for HomeScreen {
                 description: "Refresh Suggestions",
             },
         ]);
-        vec![
-            KeyBindingGroup {
-                title: "Actions",
-                bindings: actions,
-            },
-            KeyBindingGroup {
-                title: "Navigation",
-                bindings: vec![
-                    KeyBinding {
-                        key: "j/Down",
-                        description: "Move down",
-                    },
-                    KeyBinding {
-                        key: "k/Up",
-                        description: "Move up",
-                    },
-                    KeyBinding {
-                        key: "Tab",
-                        description: "Cycle focus between panes",
-                    },
-                ],
-            },
-        ]
+        vec![KeyBindingGroup {
+            title: "Actions",
+            bindings: actions,
+        }]
     }
 }
 

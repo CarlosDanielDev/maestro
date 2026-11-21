@@ -138,7 +138,33 @@ fn raise_log_toasts(app: &mut App, log_visible: bool) {
     }
 }
 
+/// #1280: `TuiMode::Overview` is an alias for one release (the ADR on the
+/// PR): every route to the session grid now shows the Dashboard. One event
+/// is handled per draw, so a key never sees the alias.
+fn route_overview_alias(app: &mut App) {
+    if app.tui_mode == TuiMode::Overview {
+        app.tui_mode = TuiMode::Dashboard;
+    }
+}
+
+/// The Dashboard cockpit (#1280) in `area`.
+fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect, theme: &crate::tui::theme::Theme) {
+    let bp = crate::tui::ds::breakpoint::Breakpoint::from_area(f.area());
+    crate::tui::screens::dashboard::dispatch::sync(app);
+    let (view, dash) = crate::tui::screens::dashboard::dispatch::split(app);
+    crate::tui::screens::dashboard::draw::draw(
+        f,
+        area,
+        &view,
+        dash,
+        bp,
+        theme,
+        crate::icon_mode::use_nerd_font(),
+    );
+}
+
 pub fn draw(f: &mut Frame, app: &mut App) {
+    route_overview_alias(app);
     // Advance spinner animation on each draw cycle
     app.spinner_tick = app.spinner_tick.wrapping_add(1);
 
@@ -349,15 +375,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
         TuiMode::Dashboard => {
-            if let Some(ref mut screen) = app.screen_state.home_screen {
-                screen.set_mascot(
-                    app.show_mascot,
-                    app.mascot_animator.state(),
-                    app.mascot_animator.frame_index(),
-                    app.mascot_style,
-                );
-                screen.draw(f, chunks[1], &app.theme);
-            }
+            draw_dashboard(f, app, chunks[1], &theme);
         }
         TuiMode::Landing => draw_home(f, app, chunks[1], &theme),
         TuiMode::IssueWizard => {
@@ -592,24 +610,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ConfirmKill(_) => {
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
-            // The dialog itself is drawn last, by `draw_typed_confirm`.
+            // #1280: kill starts on the Dashboard, so it stays under the
+            // dialog. The dialog itself is drawn last, by `draw_typed_confirm`.
+            draw_dashboard(f, app, chunks[1], &theme);
         }
         TuiMode::ConfirmExit => {
             match app.nav_stack.peek() {
-                Some(&TuiMode::Dashboard) => {
-                    if let Some(ref mut screen) = app.screen_state.home_screen {
-                        screen.draw(f, chunks[1], &theme);
-                    }
-                }
+                Some(&TuiMode::Dashboard) => draw_dashboard(f, app, chunks[1], &theme),
                 Some(&TuiMode::Landing) => draw_home(f, app, chunks[1], &theme),
                 Some(&TuiMode::Prd) => {
                     if let (Some(prd), Some(screen)) =

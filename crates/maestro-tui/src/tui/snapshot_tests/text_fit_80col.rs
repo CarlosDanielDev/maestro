@@ -248,6 +248,8 @@ fn launch_dialog_options_wrap_80x24() {
     assert_snapshot!("launch_dialog_options_wrap_80x24", t.backend());
 }
 
+/// #1280: Overview routes to the Dashboard; its empty Work list names the
+/// key that starts work.
 #[test]
 fn overview_empty_state_names_next_action() {
     for (w, h) in SIZES {
@@ -259,23 +261,8 @@ fn overview_empty_state_names_next_action() {
             "{w}x{h}:\n{out}"
         );
         assert!(
-            out.contains("i Issues") && out.contains("r Prompt"),
+            out.contains("Nothing running · start work from 1 Home"),
             "{w}x{h} names no key that starts work:\n{out}"
         );
-        // Session-only footer hints are drawn dimmed.
-        let buf = t.backend().buffer();
-        let footer = buf.area.height - 1;
-        let row = &rows(&t)[footer as usize];
-        for key in ["Enter", "c Copy", "f Full"] {
-            let x = row
-                .find(key)
-                .unwrap_or_else(|| panic!("{key:?} missing from footer {row:?}"));
-            let col = row[..x].chars().count() as u16;
-            let cell = &buf[(col, footer)];
-            assert!(
-                cell.modifier.contains(ratatui::style::Modifier::DIM),
-                "{w}x{h}: {key:?} is not dimmed in {row:?}"
-            );
-        }
     }
 }

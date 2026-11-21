@@ -83,11 +83,12 @@ async fn shift_globals_retired() {
             let mut app = armed_app(mode);
             press(&mut app, c).await;
             let at = format!("{c} on {mode:?}");
-            // The owning screens: Dashboard's own `Q` quick action
-            // ("TurboQuant Savings", shadowed by the global until now) and
-            // Overview's `P`, whose selection it retries.
-            let q_owner = c == 'Q' && mode == TuiMode::Dashboard;
-            let p_owner = c == 'P' && mode == TuiMode::Overview;
+            // The owning screen: Dashboard's own `Q` quick action
+            // ("TurboQuant Savings", shadowed by the global until now).
+            // #1280: Overview routes to the Dashboard, so it owns `Q` too,
+            // and no screen takes `P`; ⏎ ⏎ on the PR row retries (below).
+            let q_owner = c == 'Q' && matches!(mode, TuiMode::Overview | TuiMode::Dashboard);
+            let p_owner = false;
             let tq = app.tui_mode == TuiMode::TurboquantDashboard;
             assert_eq!(tq, q_owner, "{at}");
             assert_ne!(app.tui_mode, TuiMode::PrReview, "{at}");
@@ -209,9 +210,11 @@ async fn retired_actions_in_palette() {
     run_from_palette(&mut app, label(PaletteCommand::ReviewConcerns)).await;
     assert_eq!(app.tui_mode, TuiMode::PrReview);
 
+    // #1280: Overview is never on screen now (it routes to the Dashboard),
+    // so the entry stays off; ⏎ ⏎ on the PR row is the retry.
     let mut app = armed_app(TuiMode::Overview);
     run_from_palette(&mut app, label(PaletteCommand::RetryPr)).await;
-    assert!(retry_queued(&app), "retry PR from the palette on Overview");
+    assert!(!retry_queued(&app), "retry PR is the PR row's armed ⏎ now");
 
     // Retry PR acts on the Overview selection, so it is off elsewhere, and
     // review concerns is off with no review pending.
@@ -236,42 +239,36 @@ async fn retired_actions_in_palette() {
     assert!(!retry_queued(&app), "retry PR off the Overview");
 }
 
-/// #1265 with #1384: Shift+P retries the PR of the session the grid
-/// highlights, after arrow keys, at 80x24 and 80x27.
+/// #1280: Shift+P is inert on the Dashboard (Overview routes there); the
+/// PR row's armed ⏎ retries exactly the PR it shows, at 80x24 and 80x27.
 #[tokio::test]
-async fn shift_p_retries_the_highlighted_session() {
+async fn pr_row_enter_retries_that_pr_only() {
     for (w, h) in [(80, 24), (80, 27)] {
         let mut app = armed_app(TuiMode::Overview);
+        app.pending_prs.clear();
         for issue in [43, 44] {
-            let s = Session::new(
-                "task".into(),
-                "claude-opus-4-5".into(),
-                "orchestrator".into(),
-                Some(issue),
-                None,
-            );
-            app.pool.enqueue(s);
             app.pending_prs.push(awaiting_pending_pr(issue));
         }
         let _ = draw(&mut app, w, h);
-        for code in [KeyCode::Down, KeyCode::Right] {
-            handle_key(&mut app, KeyEvent::new(code, KeyModifiers::NONE)).await;
-            let _ = draw(&mut app, w, h);
-        }
-        let count = app.pool.total_count();
-        let layout = app.panel_view.grid_layout(count);
-        let lit = app.panel_view.grid_state.selected_index(&layout);
-        let want = app
-            .pool
-            .session_at_index(lit)
-            .and_then(|s| s.issue_number)
-            .expect("a highlighted session");
         press(&mut app, 'P').await;
+        assert!(
+            app.pending_prs
+                .iter()
+                .all(|p| p.status != PendingPrStatus::RetryScheduled),
+            "{w}x{h}: P is retired"
+        );
+        // Rows: session #42, then the PR pipeline #43, #44.
+        for _ in 0..2 {
+            handle_key(&mut app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
+        }
+        for _ in 0..2 {
+            handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        }
         for pr in &app.pending_prs {
             let queued = pr.status == PendingPrStatus::RetryScheduled;
             assert_eq!(
                 queued,
-                pr.issue_number == want,
+                pr.issue_number == 44,
                 "{w}x{h}: #{}",
                 pr.issue_number
             );
@@ -279,10 +276,10 @@ async fn shift_p_retries_the_highlighted_session() {
     }
 }
 
-/// #1265: `P` retries only on Overview, so every recovery hint that names
-/// it says where.
+/// #1280: every recovery hint names the Dashboard PR row, not the
+/// retired Shift+P.
 #[test]
-fn shift_p_hints_name_overview() {
+fn recovery_hints_name_the_dashboard_row() {
     let theme = crate::tui::theme::Theme::dark();
     let warning: String = crate::tui::gh_auth_warning::line(&theme)
         .spans
@@ -290,6 +287,9 @@ fn shift_p_hints_name_overview() {
         .map(|s| s.content.as_ref())
         .collect();
     for hint in [crate::tui::app::AUTH_RECOVERY_HINT, warning.as_str()] {
-        assert!(hint.contains("Shift+P on Overview"), "{hint}");
+        assert!(
+            hint.contains("Dashboard") && !hint.contains("Shift+P"),
+            "{hint}"
+        );
     }
 }

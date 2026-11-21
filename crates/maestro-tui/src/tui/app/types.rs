@@ -238,6 +238,8 @@ pub struct ScreenState {
     pub landing_screen: Option<crate::tui::screens::LandingScreen>,
     /// Home Mission Control focus and selections (#1264).
     pub mission_control: crate::tui::screens::home::mission::MissionControl,
+    /// Dashboard work list, selection and armed PR row (#1280).
+    pub dashboard: crate::tui::screens::dashboard::Dashboard,
     pub issue_wizard_screen: Option<crate::tui::screens::IssueWizardScreen>,
     pub project_stats_screen: Option<crate::tui::screens::ProjectStatsScreen>,
     pub milestone_wizard_screen: Option<crate::tui::screens::MilestoneWizardScreen>,

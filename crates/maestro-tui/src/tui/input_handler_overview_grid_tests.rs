@@ -1,5 +1,7 @@
-//! #1384: Overview arrow and page keys move the grid the Overview really
-//! draws, so the highlighted panel is always `panel_view.selected`.
+//! #1384, moved by #1280: Overview routes to the Dashboard, so the keys
+//! that moved the Overview grid now move the Work list. The marked row
+//! (`▌`) is always the session `⏎`, `X` and `l` act on, after keys, added
+//! sessions, resizes and dismissed sessions.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
@@ -7,7 +9,6 @@ use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use super::handle_key;
 use crate::session::types::Session;
 use crate::tui::app::{App, TuiMode};
-use crate::tui::panels::GridLayout;
 
 /// Issue numbers start here so no number is a prefix of another.
 const FIRST_ISSUE: u64 = 101;
@@ -18,14 +19,7 @@ fn overview_app(sessions: usize) -> App {
     app.show_activity_log = false;
     app.no_splash = true;
     for i in 0..sessions {
-        let issue = FIRST_ISSUE + i as u64;
-        app.pool.enqueue(Session::new(
-            format!("task {issue}"),
-            "claude-opus-4-5".into(),
-            "orchestrator".into(),
-            Some(issue),
-            None,
-        ));
+        app.pool.enqueue(task(FIRST_ISSUE + i as u64));
     }
     app.tui_mode = TuiMode::Overview;
     app
@@ -37,27 +31,22 @@ fn draw(app: &mut App, w: u16, h: u16) -> Buffer {
     terminal.backend().buffer().clone()
 }
 
-/// The issue number in the title of the panel drawn with the active
-/// (focus) border; `None` unless exactly one panel has it.
-fn highlighted_issue(app: &App, buf: &Buffer) -> Option<u64> {
-    let active = app.active_theme().border_active;
+/// The issue number on the marked Work row; `None` unless exactly one row
+/// is marked.
+fn highlighted_issue(buf: &Buffer) -> Option<u64> {
     let area = buf.area;
-    let corners: Vec<(u16, u16)> = (area.top()..area.bottom())
-        .flat_map(|y| (area.left()..area.right()).map(move |x| (x, y)))
-        .filter(|&(x, y)| {
-            let c = &buf[(x, y)];
-            c.symbol() == "╔" && c.fg == active
+    let marked: Vec<String> = (area.top()..area.bottom())
+        .map(|y| {
+            (area.left()..area.right())
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
         })
+        .filter(|row| row.contains('▌'))
         .collect();
-    if corners.len() != 1 {
+    if marked.len() != 1 {
         return None;
     }
-    let (x0, y) = corners[0];
-    let title: String = (x0..area.right())
-        .map(|x| buf[(x, y)].symbol().to_string())
-        .take_while(|s| s != "╗")
-        .collect();
-    let digits: String = title
+    let digits: String = marked[0]
         .split('#')
         .nth(1)
         .unwrap_or_default()
@@ -68,9 +57,8 @@ fn highlighted_issue(app: &App, buf: &Buffer) -> Option<u64> {
 }
 
 fn selected_issue(app: &App) -> Option<u64> {
-    app.pool
-        .session_at_index(app.panel_view.selected_index())
-        .and_then(|s| s.issue_number)
+    let id = app.screen_state.dashboard.list.selected_session()?;
+    app.pool.get_session(id).and_then(|s| s.issue_number)
 }
 
 async fn press(app: &mut App, code: KeyCode) {
@@ -79,32 +67,19 @@ async fn press(app: &mut App, code: KeyCode) {
 
 #[tokio::test]
 async fn overview_arrow_keeps_highlight_and_selection_in_sync() {
-    // Prove the case: at 80x24 the body fits fewer rows than the terminal.
-    let mut probe = overview_app(10);
-    draw(&mut probe, 80, 24);
-    let body = probe
-        .panel_view
-        .drawn_area
-        .expect("Overview records its area");
-    assert_ne!(
-        GridLayout::calculate(10, 80, 24),
-        GridLayout::calculate(10, body.width, body.height),
-        "full-terminal and body layouts must differ for this test"
-    );
-
     let keys = [
         KeyCode::Down,
         KeyCode::Right,
         KeyCode::Down,
         KeyCode::Char(']'),
         KeyCode::Down,
-        KeyCode::Right,
+        KeyCode::Char('j'),
         KeyCode::Char(']'),
         KeyCode::Down,
         KeyCode::Left,
         KeyCode::Up,
         KeyCode::Char('['),
-        KeyCode::Down,
+        KeyCode::Char('k'),
         KeyCode::Right,
         KeyCode::Char('['),
     ];
@@ -112,19 +87,16 @@ async fn overview_arrow_keeps_highlight_and_selection_in_sync() {
         for n in 1..=12 {
             let mut app = overview_app(n);
             let buf = draw(&mut app, w, h);
-            assert_eq!(
-                highlighted_issue(&app, &buf),
-                Some(FIRST_ISSUE),
-                "{n} at {w}x{h}"
-            );
+            assert_eq!(app.tui_mode, TuiMode::Dashboard, "Overview routes here");
+            assert_eq!(highlighted_issue(&buf), Some(FIRST_ISSUE), "{n} at {w}x{h}");
             for (step, code) in keys.iter().enumerate() {
                 press(&mut app, *code).await;
-                assert_eq!(app.tui_mode, TuiMode::Overview);
+                assert_eq!(app.tui_mode, TuiMode::Dashboard);
                 let buf = draw(&mut app, w, h);
                 let selected = selected_issue(&app);
                 assert!(selected.is_some(), "{n} at {w}x{h}, step {step}");
                 assert_eq!(
-                    highlighted_issue(&app, &buf),
+                    highlighted_issue(&buf),
                     selected,
                     "{n} sessions at {w}x{h}, step {step} ({code:?})"
                 );
@@ -143,12 +115,12 @@ fn task(issue: u64) -> Session {
     )
 }
 
-/// The session `k` / Enter / `f` / `l` / `c` act on is the highlighted one.
+/// The session `⏎` / `X` / `l` act on is the marked one.
 fn assert_target_is_highlighted(app: &mut App, w: u16, h: u16, what: &str) {
     let buf = draw(app, w, h);
     let selected = selected_issue(app);
     assert!(selected.is_some(), "{what}: no session selected");
-    assert_eq!(highlighted_issue(app, &buf), selected, "{what}");
+    assert_eq!(highlighted_issue(&buf), selected, "{what}");
 }
 
 #[tokio::test]
@@ -157,10 +129,12 @@ async fn overview_session_added_after_selecting_keeps_highlight_on_target() {
         let mut app = overview_app(4);
         draw(&mut app, w, h);
         press(&mut app, KeyCode::Down).await;
-        press(&mut app, KeyCode::Right).await;
+        press(&mut app, KeyCode::Down).await;
         assert_target_is_highlighted(&mut app, w, h, "4 sessions");
+        let before = selected_issue(&app);
         app.pool.enqueue(task(FIRST_ISSUE + 4));
         assert_target_is_highlighted(&mut app, w, h, &format!("5th added at {w}x{h}"));
+        assert_eq!(selected_issue(&app), before, "the target did not move");
     }
 }
 
@@ -169,7 +143,7 @@ async fn overview_resize_keeps_highlight_on_target() {
     let mut app = overview_app(5);
     draw(&mut app, 80, 27);
     press(&mut app, KeyCode::Down).await;
-    press(&mut app, KeyCode::Right).await;
+    press(&mut app, KeyCode::Down).await;
     assert_target_is_highlighted(&mut app, 80, 27, "80x27");
     assert_target_is_highlighted(&mut app, 120, 27, "resized to 120x27");
     assert_target_is_highlighted(&mut app, 80, 24, "resized to 80x24");
@@ -193,11 +167,13 @@ async fn overview_dismiss_on_a_later_page_does_not_panic_the_draw() {
         }
         assert_eq!(app.pool.total_count(), 12);
         draw(&mut app, w, h);
-        press(&mut app, KeyCode::Char(']')).await;
-        press(&mut app, KeyCode::Char(']')).await;
-        assert!(app.panel_view.grid_state.current_page > 0, "{w}x{h}");
-        press(&mut app, KeyCode::Char('D')).await;
-        assert_eq!(app.pool.total_count(), 4, "D dismissed the finished ones");
-        assert_target_is_highlighted(&mut app, w, h, &format!("after D at {w}x{h}"));
+        // Down to the last Finished row, past the visible rows.
+        for _ in 0..12 {
+            press(&mut app, KeyCode::Down).await;
+        }
+        // The selected row goes away: the selection falls back to a listed one.
+        app.dismiss_all_completed();
+        assert_eq!(app.pool.total_count(), 4, "the finished ones are dismissed");
+        assert_target_is_highlighted(&mut app, w, h, &format!("after dismiss at {w}x{h}"));
     }
 }

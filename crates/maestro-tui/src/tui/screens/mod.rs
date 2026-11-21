@@ -7,6 +7,7 @@ pub mod adopt_picker;
 pub mod bypass_dispatch;
 pub mod bypass_warning;
 pub mod ci_error_review;
+pub mod dashboard;
 pub mod fleet_board;
 pub mod gate_output_viewer;
 pub mod hollow_retry;

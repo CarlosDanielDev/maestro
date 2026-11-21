@@ -66,6 +66,19 @@ pub(super) fn blocks() -> Vec<Binding> {
             "run all",
         ),
     ]);
+    // #1280: the Dashboard cockpit (`screens::dashboard::dispatch`). Its
+    // launcher letters are `HomeScreen` keys; Help lists them from
+    // `QUICK_ACTIONS`. `⏎` on a pending PR row arms, a second `⏎` writes.
+    let dash = Scope::Screen(TuiMode::Dashboard);
+    v.extend([
+        s(dash, ch('j'), A::ScrollDown, "Down"),
+        s(dash, ch('k'), A::ScrollUp, "Up"),
+        s(dash, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
+        s(dash, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
+        s(dash, Chord::key(KeyCode::Enter), A::Expand, "open · arm PR"),
+        Binding::new(ch('X'), dash, A::Kill, Danger::Destructive, "kill"),
+        s(dash, ch('l'), A::Expand, "log"),
+    ]);
     // #1265: `P` retries the PR of the selected Overview session, so it is
     // no longer a global. Hidden: the Overview footer stays its
     // `mode_keymap` list; the palette lists `retry PR` as a command.

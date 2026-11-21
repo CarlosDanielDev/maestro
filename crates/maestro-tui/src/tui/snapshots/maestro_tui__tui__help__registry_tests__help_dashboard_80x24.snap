@@ -1,6 +1,5 @@
 ---
 source: crates/maestro-tui/src/tui/help_registry_tests.rs
-assertion_line: 161
 expression: "first_page.join(\"\\n\")"
 ---
 Help — Dashboard Mode                                                 
@@ -8,7 +7,6 @@ Help — Dashboard Mode
   Mode: Normal                                                        
                                                                       
   Actions                                                             
-    Enter             Execute selected action                         
     i                 Browse Issues                                   
     m                 Browse Milestones                               
     M                 Review Milestone                                
@@ -21,4 +19,6 @@ Help — Dashboard Mode
     Q                 TurboQuant Savings                              
     S                 Settings                                        
     n                 Release Notes                                   
-    R                 Refresh Suggestions
+    R                 Refresh Suggestions                             
+                                                                      
+  Global keys

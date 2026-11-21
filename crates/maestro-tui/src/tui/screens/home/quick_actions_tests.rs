@@ -1,6 +1,6 @@
-//! Quick Actions scroll (#1396): the Dashboard panel holds 13 rows but only
-//! 6 fit at 80x24 (8 at 80x27). These tests drive the full app (`2`, then
-//! `j`) and read what `ui::draw` puts on the screen.
+//! Quick Actions scroll (#1396): 13 rows, 6 fit the 80x24 Dashboard body (8
+//! at 80x27). #1280 draws the Work list there, so these drive `HomeScreen`
+//! and draw it in that body rect; its letters still answer on the Dashboard.
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -50,20 +50,43 @@ async fn press(app: &mut App, code: KeyCode, w: u16, h: u16) {
     }
 }
 
-/// `2` opens the Dashboard, then `j` is pressed `downs` times.
+/// `2` opens the Dashboard, then the launcher gets `j` `downs` times.
 async fn dashboard_after(downs: usize, w: u16, h: u16) -> App {
     let mut app = dashboard_app();
     press(&mut app, KeyCode::Char('2'), w, h).await;
     assert_eq!(app.tui_mode, TuiMode::Dashboard, "`2` must open Dashboard");
+    let home = app.screen_state.home_screen.as_mut().unwrap();
     for _ in 0..downs {
-        press(&mut app, KeyCode::Char('j'), w, h).await;
+        home.handle_input(
+            &Event::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
+            InputMode::Normal,
+        );
     }
     app
 }
 
-fn draw(app: &mut App, w: u16, h: u16) -> Buffer {
+/// The Dashboard body as `ui::draw` lays it out: from the view strip down
+/// to the row above the Activity pane (or the footer).
+fn body_rect(app: &mut App, w: u16, h: u16) -> Rect {
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
     t.draw(|f| ui::draw(f, app)).unwrap();
+    let buf = t.backend().buffer();
+    let top = (0..h)
+        .find(|&y| row_text(buf, y, 0, w).contains("o Ops"))
+        .expect("Dashboard view strip");
+    let bottom = (top + 1..h)
+        .find(|&y| row_text(buf, y, 0, w).contains("[ Activity Log ]"))
+        .unwrap_or(h - 1);
+    Rect::new(0, top, w, bottom - top)
+}
+
+/// `HomeScreen` drawn in the Dashboard body.
+fn draw(app: &mut App, w: u16, h: u16) -> Buffer {
+    let body = body_rect(app, w, h);
+    let theme = app.theme.clone();
+    let home = app.screen_state.home_screen.as_mut().unwrap();
+    let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+    t.draw(|f| home.draw(f, body, &theme)).unwrap();
     t.backend().buffer().clone()
 }
 
@@ -368,7 +391,10 @@ async fn quick_actions_k_back_up_keeps_selection_drawn() {
                 total,
                 "80x{h} sel={sel}:\n{text}"
             );
-            press(&mut app, KeyCode::Char('k'), 80, h).await;
+            app.screen_state.home_screen.as_mut().unwrap().handle_input(
+                &Event::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
+                InputMode::Normal,
+            );
         }
     }
 }

@@ -458,7 +458,6 @@ Implements the What's new card of `§02 Home: Mission Control` (`whatsNew()` in 
 
 Rules: the Throughput and Change mix cards of the design are not drawn yet (no measured throughput source); the network chart stays off Home, and palette `network` still shows a toast (its numbers were synthetic). Tests: `snapshot_tests/home_insight.rs`.
 
-
 ### Wizard frame and stepper (`widgets/wizard_frame.rs`, `ds/stepper.rs`, #1274)
 
 Implements the shared wizard frame of `docs/design-system/index.html` §02.2 (Create issue) and §02.3 (Create milestone), reused by §02.11 Adapt and the team wizards: `stepper()` and `field()` with errors on the bottom border. Decision: `docs/design-system/decisions.md` (2026-11-21, Shared wizard frame).
@@ -471,6 +470,22 @@ Implements the shared wizard frame of `docs/design-system/index.html` §02.2 (Cr
 | `wizard_frame::field_block(label, focused, error, theme)` | A form field's block: `theme.styled_block` (Plain / Thick on focus); an error turns the border `accent_error` and puts ` ✗ message ` on the bottom border |
 
 Rules: `WizardFrame::draw` (3-row `Step i/n: label` header, footer error + hints) stays as the compatibility path until each wizard migrates (#1281–#1284); new wizard code uses `draw_stepped`. The CrumbBar stays the shell row drawn by `ui::draw`, so the frame shows its state on the stepper row. The new types are re-exported from `widgets` next to the old ones. Tests: `ds/stepper.rs`, `widgets/wizard_frame_tests.rs` (`stepper_{wide,collapsed}`, `wizard_frame_checklist_wide_only`, `wizard_field_error_border`, full-screen `wizard_frame_compact_80x24` and `wizard_frame_wide_checklist`).
+
+### Dashboard cockpit (`screens/dashboard/`, #1280)
+
+Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.html` (its work list, session detail and PR detail drawings). `TuiMode::Dashboard` draws it; `TuiMode::Overview` is an alias: `ui::draw` turns it into `TuiMode::Dashboard` before it draws (`route_overview_alias`), so every route to the old grid lands here. Decision: `docs/design-system/decisions.md` (2026-11-21, Dashboard cockpit).
+
+| Item | For |
+|---|---|
+| `WorkList::rebuild(sessions, open_prs, pending)` / `WorkKey` / `Group` | One list, three groups: Sessions (pool order; `FailedGates` and `Errored` stay here), PR pipeline (open PRs under CI polling by number, then the restored `PendingPr`s), Finished · this run (`Completed`, `Killed`). The selection is a `WorkKey`, not an index; it falls back to the first row when its key is gone. Headers are not stops for `j k ↑ ↓` |
+| `pipeline_stage(status)` | `(current, failed)` step of `run ─ gates ─ push ─ PR ─ CI`; the detail draws it with `ds::stepper::stepper_line` (a failed step is `✗` + `accent_error`; Compact gets `Step n/N`) |
+| `ScreenState::dashboard` (`screens::dashboard::Dashboard`) | Rows, selection, the armed `⏎` of a pending PR row (`ArmedEnter` + `armed_for`), and a test clock |
+| `dashboard::dispatch::dispatch_input(app, event)` | Taken before `HomeScreen`, whose letters (`QUICK_ACTIONS`, `n`, `R`) still answer the rest. `j k ↑ ↓` move; `⏎` opens a session's Detail, an open PR's PR list, or arms a pending PR (second `⏎` within `ARM_WINDOW` runs `App::trigger_manual_pr_retry`); `X` opens the TypedConfirm kill (`App::open_kill_confirm`, live sessions only); `l` the session log. Any other key disarms; `Esc` while armed only disarms |
+| `pr_lock_reason(pending)` | A `PermanentlyFailed` row is `Blocked` (Enter inert, the bar says why). A signed-out gh does not lock: the retry is the gh call that turns `gh_auth_ok` back on; the detail says to run `gh auth login` |
+| `dashboard::draw::draw(f, area, &view, &mut dash, bp, theme, nerd_font)` | View strip (`o Ops` drawn; `c t` open the Cost and Token screens; `g` muted until the Deps view), then Work list + detail: Wide 66 / Regular 58 columns beside it, Compact stacked. Rows reuse `status_chip_for_mode`, `money`, `ellipsize_line`; overflow shows `↓ n more` on the bottom border. The Activity pane under it stays the shell's |
+| `pending_chip(status, theme, nerd_font)` / `ci_chip(checks, ..)` | PR rows: `◐ needs retry`, `○ auto-retry`, `↻ retrying`, `✗ stopped` (chip icons, so ASCII mode works); open PRs `◆ CI running`, `↯ CI failing`, `✓ CI passed` |
+
+Rules: kill is `X` + TypedConfirm, `k` is "up" here. A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
 ---
 

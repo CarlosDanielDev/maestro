@@ -45,7 +45,7 @@ fn assert_expired_line(t: &Terminal<TestBackend>) {
     assert!(text.contains("⊘ gh auth expired"), "header word:\n{text}");
     assert!(text.contains("PR create paused"), "what is locked:\n{text}");
     assert!(
-        text.contains("gh auth login, then Shift+P on Overview"),
+        text.contains("gh auth login, then ⏎ ⏎ on Dashboard"),
         "the fix:\n{text}"
     );
 }

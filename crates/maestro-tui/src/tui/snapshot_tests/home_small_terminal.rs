@@ -102,15 +102,10 @@ fn home_screen_80x24_keeps_labels_and_a_log_row() {
     t.draw(|f| ui::draw(f, &mut app)).unwrap();
 
     let output = format!("{}", t.backend());
+    // #1280: the Dashboard is the Work list now; its empty state is whole.
     assert!(
-        output.contains("Browse Issues") || output.contains('…'),
-        "Quick Actions labels must be whole or end in `…`:\n{output}"
-    );
-    assert!(
-        !["│", "┃", "║"]
-            .iter()
-            .any(|b| output.contains(&format!("Browse Is{b}"))),
-        "label clipped mid-word without `…`:\n{output}"
+        output.contains("Nothing running · start work from 1 Home"),
+        "the empty Work list says what to do:\n{output}"
     );
     assert!(
         output.contains(LOG_MESSAGE),

@@ -264,5 +264,6 @@ fn footer_hints_from_registry_snapshot() {
 
 #[test]
 fn footer_hints_none_for_unregistered_screen() {
-    assert!(footer_hints(TuiMode::Dashboard).is_none());
+    // #1280 registered Dashboard; the Issue browser still is not.
+    assert!(footer_hints(TuiMode::IssueBrowser).is_none());
 }
