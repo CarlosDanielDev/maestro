@@ -101,14 +101,26 @@ pub fn draw_token_dashboard_with_quota_and_badges(
     area: Rect,
     theme: &Theme,
 ) {
+    // Totals and cache hit are the Tokens view's KPI tiles (#1289).
+    let _ = total_cost;
+    let rest = draw_rollup_top(f, sessions, quota_snapshots, badges, area, theme);
+    draw_session_tokens(f, sessions, rest, theme);
+}
+
+/// Per-Provider Usage across the top of `area`; returns the rows below it.
+pub(super) fn draw_rollup_top(
+    f: &mut Frame,
+    sessions: &[&Session],
+    quota_snapshots: &dyn ProviderQuotaSnapshots,
+    badges: &[String],
+    area: Rect,
+    theme: &Theme,
+) -> Rect {
     let rows = build_provider_rows(sessions, quota_snapshots, provider_context_window);
     // header + N rows + 2 border lines. Minimum 4 lines so the empty-state
     // placeholder is visible inside the styled_block.
     let row_lines = u16::try_from(rows.len()).unwrap_or(u16::MAX);
     let rollup_height = row_lines.saturating_add(3).max(4);
-
-    // Totals and cache hit are the Tokens view's KPI tiles (#1289).
-    let _ = total_cost;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -116,9 +128,8 @@ pub fn draw_token_dashboard_with_quota_and_badges(
             Constraint::Min(5), // per-session breakdown
         ])
         .split(area);
-
     draw_provider_rollup(f, &rows, badges, chunks[0], theme);
-    draw_session_tokens(f, sessions, chunks[1], theme);
+    chunks[1]
 }
 
 fn draw_provider_rollup(

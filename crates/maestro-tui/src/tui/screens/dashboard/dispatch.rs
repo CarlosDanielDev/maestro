@@ -60,6 +60,11 @@ pub fn sync(app: &mut App) {
     if let Some(id) = reveal {
         dash.list.select(WorkKey::Session(id));
     }
+    // #1289: Cost and Tokens list no PR rows, so their selection never
+    // rests on one (a hidden armed ⏎ ⏎ would write to GitHub).
+    if dash.view != View::Ops {
+        dash.list.keep_on_session();
+    }
     mirror_selection(app);
 }
 
@@ -127,8 +132,11 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {
 }
 
 fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<ScreenAction> {
+    let usage = app.screen_state.dashboard.view != View::Ops;
     let list = &mut app.screen_state.dashboard.list;
     match key.code {
+        KeyCode::Char('j') | KeyCode::Down if usage => list.move_session(true),
+        KeyCode::Char('k') | KeyCode::Up if usage => list.move_session(false),
         KeyCode::Char('j') | KeyCode::Down => list.move_down(),
         KeyCode::Char('k') | KeyCode::Up => list.move_up(),
         KeyCode::Char('X') => {
@@ -152,8 +160,8 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
         // #1289: the views share the selection; Esc leaves a Usage view
         // for Ops before it leaves the Dashboard.
         KeyCode::Char('o') => app.screen_state.dashboard.view = View::Ops,
-        KeyCode::Char('c') => app.screen_state.dashboard.view = View::Cost,
-        KeyCode::Char('t') => app.screen_state.dashboard.view = View::Tokens,
+        KeyCode::Char('c') => show_usage(app, View::Cost),
+        KeyCode::Char('t') => show_usage(app, View::Tokens),
         KeyCode::Esc if app.screen_state.dashboard.view != View::Ops => {
             app.screen_state.dashboard.view = View::Ops;
         }
@@ -162,8 +170,16 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
     Some(ScreenAction::None)
 }
 
+/// Cost or Tokens, with the selection moved off a PR row (#1289).
+fn show_usage(app: &mut App, view: View) {
+    let dash = &mut app.screen_state.dashboard;
+    dash.view = view;
+    dash.list.keep_on_session();
+}
+
 /// `⏎`: a session opens its Detail, an open PR the PR list, a pending PR
-/// arms and then (second `⏎` within `ARM_WINDOW`) queues the create.
+/// arms and then (second `⏎` within `ARM_WINDOW`) queues the create. In
+/// Cost and Tokens `sync` (run first) keeps the selection off PR rows.
 fn enter(app: &mut App) -> ScreenAction {
     let selected = app.screen_state.dashboard.list.selected;
     match selected {

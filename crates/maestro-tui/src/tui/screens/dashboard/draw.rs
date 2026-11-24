@@ -10,8 +10,8 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use super::rows::{Group, WorkKey};
-use super::usage::View;
 use super::{Dashboard, DashboardView, session_cost, session_title};
+use super::{cost, tokens::view as tokens_view, usage::View};
 use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::provider::types::{CheckConclusion, CheckRun, CheckStatus};
 use crate::session::types::Session;
@@ -49,8 +49,8 @@ pub fn draw(
     let [strip, main] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     draw_view_strip(f, strip, view, dash.view, bp, theme);
     match dash.view {
-        View::Cost => return super::cost::draw(f, main, view, dash, bp, theme, nerd_font),
-        View::Tokens => return super::tokens::view::draw(f, main, view, bp, theme, nerd_font),
+        View::Cost => return cost::draw(f, main, view, dash, bp, theme, nerd_font),
+        View::Tokens => return tokens_view::draw(f, main, view, dash, bp, theme, nerd_font),
         View::Ops => {}
     }
     let (list, detail) = match bp {

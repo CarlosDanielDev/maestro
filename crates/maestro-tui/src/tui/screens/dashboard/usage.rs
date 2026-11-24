@@ -20,7 +20,7 @@ use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::bar_row::key_style;
 use crate::tui::ds::breakpoint::Breakpoint;
 use crate::tui::ds::gauge::{bar, gauge_level};
-use crate::tui::ds::kpi_tile::{KPI_TILE_HEIGHT, KpiTile, kpi_tile_for_mode};
+use crate::tui::ds::kpi_tile::{KPI_TILE_HEIGHT, KpiState, KpiTile, kpi_tile_for_mode};
 use crate::tui::ds::money::money;
 use crate::tui::ds::panel::{Focus, panel};
 use crate::tui::theme::Theme;
@@ -53,6 +53,15 @@ pub fn resolve(mode: TuiMode, dash: &mut Dashboard) -> TuiMode {
         }
         None => mode,
     }
+}
+
+/// Where `App::navigate_to(mode)` lands: an alias opens its view, the
+/// Dashboard opens on Ops. Going back (nav stack) keeps the last view.
+pub fn navigate_target(mode: TuiMode, dash: &mut Dashboard) -> TuiMode {
+    if mode == TuiMode::Dashboard {
+        dash.view = View::Ops;
+    }
+    resolve(mode, dash)
 }
 
 /// Turn an alias mode set straight on `tui_mode` into the Dashboard view.
@@ -184,6 +193,16 @@ pub fn time_to_cap(left_usd: f64, per_hour: f64) -> String {
     }
 }
 
+/// A KPI tile with a value and one context line (no delta, no sparkline).
+pub fn ready<'a>(value: &'a str, context: &'a str) -> KpiState<'a> {
+    KpiState::Ready {
+        value,
+        delta: None,
+        spark: &[],
+        context,
+    }
+}
+
 /// Draw up to `bp`'s tile count (Wide 4, Regular 3, Compact 2) in a row.
 pub fn draw_kpis(
     f: &mut Frame,
@@ -212,9 +231,7 @@ pub fn kpi_split(area: Rect) -> (Rect, Rect) {
     (kpis, body)
 }
 
-/// Rows the Budget panel needs with its border: spent, gauge, header,
-/// three thresholds, the cap note and the unpriced note (two lines and the
-/// border without a `[budget]`).
+/// Rows the Budget panel needs with its border (see `draw_budget`).
 pub fn budget_height(view: &DashboardView<'_>) -> u16 {
     match view.usage.budget {
         None => 4,

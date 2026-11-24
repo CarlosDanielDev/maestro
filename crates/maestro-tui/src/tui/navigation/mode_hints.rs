@@ -177,7 +177,8 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::Dashboard => (
+        // #1289: Cost and Tokens are Dashboard views (aliases).
+        TuiMode::Dashboard | TuiMode::CostDashboard | TuiMode::TokenDashboard => (
             "Dashboard",
             FKeyVis::DashboardLike,
             &[
@@ -314,38 +315,6 @@ pub fn mode_keymap(
                 InlineHint {
                     key: "Up/Down",
                     action: "Scroll",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::CostDashboard => (
-            "Cost Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::TokenDashboard => (
-            "Token Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
                     priority: 1,
                 },
             ],

@@ -68,6 +68,7 @@ mod token_dashboard_provider_rollup;
 mod turboquant_dashboard;
 mod typed_confirm;
 mod usage;
+mod usage_keys;
 mod usage_money;
 
 use chrono::{TimeZone, Utc};

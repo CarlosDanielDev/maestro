@@ -63,7 +63,7 @@ pub(super) fn empty_app() -> App {
 }
 
 /// Three live sessions (one on an unpriced model), one finished.
-fn usage_app() -> App {
+pub(super) fn usage_app() -> App {
     let mut app = empty_app();
     let mut unpriced = session(
         414,
@@ -107,17 +107,17 @@ fn usage_app() -> App {
     app
 }
 
-async fn press(app: &mut App, c: char) {
+pub(super) async fn press(app: &mut App, c: char) {
     handle_key(app, KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)).await;
 }
 
-fn draw(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
+pub(super) fn draw(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
     t.draw(|f| ui::draw(f, app)).unwrap();
     t
 }
 
-fn text(t: &Terminal<TestBackend>) -> String {
+pub(super) fn text(t: &Terminal<TestBackend>) -> String {
     let buf = t.backend().buffer();
     (0..buf.area.height)
         .map(|y| {
@@ -129,7 +129,7 @@ fn text(t: &Terminal<TestBackend>) -> String {
         .join("\n")
 }
 
-fn view(app: &App) -> View {
+pub(super) fn view(app: &App) -> View {
     app.screen_state.dashboard.view
 }
 
@@ -157,6 +157,11 @@ async fn usage_views_keep_selection() {
     let out = text(&draw(&mut app, 120, 36));
     assert_eq!(app.screen_state.dashboard.list.selected, picked);
     assert!(out.contains("Tokens by session"), "{out}");
+    let marked = out.lines().find(|l| l.contains('▌')).unwrap_or_default();
+    assert!(
+        marked.contains("#409"),
+        "Tokens marks the kept session: {out}"
+    );
 
     // `j` moves the same selection in a Usage view.
     press(&mut app, 'j').await;

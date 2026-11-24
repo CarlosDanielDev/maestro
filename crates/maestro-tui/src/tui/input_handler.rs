@@ -1429,9 +1429,8 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
-                app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
-                app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
-                app::TuiMode::TokenDashboard => app::TuiMode::Overview,
+                // #1289: Cost and Tokens are Dashboard views, not screens.
+                app::TuiMode::DependencyGraph => app::TuiMode::Overview,
                 _ => app::TuiMode::Overview,
             };
         }

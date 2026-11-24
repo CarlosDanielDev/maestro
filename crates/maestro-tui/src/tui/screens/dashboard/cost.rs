@@ -47,7 +47,17 @@ pub fn draw(
     let rows = session_rows(view, dash);
     let per_session = view.usage.budget.as_ref().map(|b| b.per_session_usd);
     let spent = facts.spent;
-    let tail = |s: &Session, w: usize| spend_tail(s, w, spent, per_session, nerd_font);
+    let now = view.now;
+    let tail = |s: &Session, w: usize| {
+        let mut t = spend_tail(s, w, spent, per_session, nerd_font);
+        if w >= TIME_FROM {
+            t.push_str(&format!(
+                "{:>TIME_W$}",
+                crate::tui::app::mission::elapsed(s, now)
+            ));
+        }
+        t
+    };
     let head = spend_head(list.width.saturating_sub(2) as usize);
     draw_session_table(
         f,
@@ -67,6 +77,9 @@ const MODEL_W: usize = 11;
 const SHARE_W: usize = 7;
 const COST_W: usize = 8;
 const CAP_W: usize = 11;
+/// Elapsed per session (the old Cost screen's column) from 100 columns.
+const TIME_FROM: usize = 100;
+const TIME_W: usize = 8;
 
 fn spend_head(width: usize) -> String {
     let mut head = " ".to_string();
@@ -78,6 +91,9 @@ fn spend_head(width: usize) -> String {
     }
     head.push_str(&format!("{:>COST_W$}", "COST"));
     head.push_str(&format!("{:>CAP_W$}", "OF CAP"));
+    if width >= TIME_FROM {
+        head.push_str(&format!("{:>TIME_W$}", "TIME"));
+    }
     head
 }
 
@@ -125,6 +141,7 @@ struct TileTexts {
     rate: Option<String>,
     to_cap: Result<String, &'static str>,
     sessions: String,
+    sessions_ctx: String,
 }
 
 fn tile_texts(view: &DashboardView<'_>, facts: &SpendFacts) -> TileTexts {
@@ -155,16 +172,30 @@ fn tile_texts(view: &DashboardView<'_>, facts: &SpendFacts) -> TileTexts {
         rate: facts.per_hour.map(|r| format!("{}/h", money(Some(r)))),
         to_cap,
         sessions: format!("{live} live · {} done", view.sessions.len() - live),
+        sessions_ctx: sessions_context(view, facts),
     }
 }
 
+/// `2 running · 1 failed · avg $1.60` (the old Cost screen's counts and
+/// average; the average is over priced sessions).
+fn sessions_context(view: &DashboardView<'_>, facts: &SpendFacts) -> String {
+    use crate::session::types::SessionStatus::{Errored, FailedGates, Running};
+    let count = |f: &dyn Fn(&Session) -> bool| view.sessions.iter().filter(|s| f(s)).count();
+    let running = count(&|s| s.status == Running);
+    let failed = count(&|s| matches!(s.status, Errored | FailedGates));
+    let priced = view.sessions.len() - facts.unpriced;
+    let mut ctx = format!("{running} running · {failed} failed");
+    if priced > 0 {
+        ctx.push_str(&format!(
+            " · avg {}",
+            money(Some(facts.spent / priced as f64))
+        ));
+    }
+    ctx
+}
+
 fn tiles(t: &TileTexts) -> [KpiTile<'_>; 4] {
-    let ready = |value, context| KpiState::Ready {
-        value,
-        delta: None,
-        spark: &[],
-        context,
-    };
+    let ready = usage::ready;
     [
         KpiTile {
             title: "Spent",
@@ -189,7 +220,7 @@ fn tiles(t: &TileTexts) -> [KpiTile<'_>; 4] {
         },
         KpiTile {
             title: "Sessions",
-            state: ready(&t.sessions, usage::SCOPE_WORD),
+            state: ready(&t.sessions, &t.sessions_ctx),
         },
     ]
 }
