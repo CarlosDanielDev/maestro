@@ -91,6 +91,28 @@ impl WorkList {
     }
 
     fn step(&mut self, down: bool) {
+        self.step_where(down, |k| !k.is_header());
+    }
+
+    /// `move_down` / `move_up` over session rows only: the Cost and Tokens
+    /// views list no PR rows, so their keys never land on one (#1289).
+    pub fn move_session(&mut self, down: bool) {
+        self.step_where(down, |k| matches!(k, WorkKey::Session(_)));
+    }
+
+    /// Move a PR-row selection to the first session row, or to nothing
+    /// when there is no session (a Usage view shows no PR rows).
+    pub fn keep_on_session(&mut self) {
+        if self.selected_session().is_none() {
+            self.selected = self
+                .rows
+                .iter()
+                .copied()
+                .find(|k| matches!(k, WorkKey::Session(_)));
+        }
+    }
+
+    fn step_where(&mut self, down: bool, stop: impl Fn(&WorkKey) -> bool) {
         let Some(at) = self
             .selected
             .and_then(|k| self.rows.iter().position(|r| *r == k))
@@ -98,9 +120,9 @@ impl WorkList {
             return;
         };
         let next = if down {
-            self.rows[at + 1..].iter().find(|k| !k.is_header())
+            self.rows[at + 1..].iter().find(|k| stop(k))
         } else {
-            self.rows[..at].iter().rev().find(|k| !k.is_header())
+            self.rows[..at].iter().rev().find(|k| stop(k))
         };
         if let Some(k) = next {
             self.selected = Some(*k);

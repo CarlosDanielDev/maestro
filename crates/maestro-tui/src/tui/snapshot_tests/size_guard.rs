@@ -43,7 +43,6 @@ fn all_modes() -> Vec<TuiMode> {
         TuiMode::ConfirmKill(id),
         TuiMode::ConfirmExit,
         TuiMode::SessionSummary,
-        TuiMode::TurboquantDashboard,
         TuiMode::AdaptFollowUp,
         TuiMode::Prd,
         TuiMode::Roadmap,
@@ -90,7 +89,6 @@ fn all_modes() -> Vec<TuiMode> {
             | TuiMode::ConfirmKill(_)
             | TuiMode::ConfirmExit
             | TuiMode::SessionSummary
-            | TuiMode::TurboquantDashboard
             | TuiMode::AdaptFollowUp
             | TuiMode::Prd
             | TuiMode::Roadmap

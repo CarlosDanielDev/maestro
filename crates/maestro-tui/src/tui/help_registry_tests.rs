@@ -166,15 +166,18 @@ async fn help_dashboard_80x24() {
     let text = rows.join("\n");
     assert!(has_row(&first_page, "S", "Settings"), "S on page 1\n{text}");
     for (key, name) in [
-        ("c", "Cost"),
-        ("t", "Token Report"),
-        // #1265: Dashboard's own `Q` and `M`, no longer eaten by globals.
-        ("Q", "TurboQuant Savings"),
+        // #1289: `o c t` switch the Dashboard views.
+        ("o", "Ops view"),
+        ("c", "Cost view"),
+        ("t", "Tokens view"),
+        // #1265: Dashboard's own `M`, no longer eaten by globals.
         ("M", "Review Milestone"),
         ("u", "upgrade"),
     ] {
         assert!(has_row(&rows, key, name), "no {key} {name} row\n{text}");
     }
+    // #1289: TurboQuant is a panel of Tokens; its `Q` launcher is gone.
+    assert!(!text.contains("TurboQuant Savings"), "{text}");
 }
 
 /// The help groups of `mode` with its screen's own groups, as `ui.rs`
