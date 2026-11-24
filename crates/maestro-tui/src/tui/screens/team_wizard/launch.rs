@@ -8,7 +8,7 @@ use crate::orchestration::dag::IssueState;
 use crate::orchestration::preflight::preflight_sync;
 use crate::orchestration::scheduler::Scheduler;
 use crate::orchestration::types::TeamInput;
-use crate::tui::widgets::preset_card::prompt_estimate;
+use crate::tui::widgets::preset_card::prompt_estimate; // one estimate with the card (#1286)
 use crossterm::event::{KeyCode, KeyModifiers};
 
 const INPUT_KINDS: &[LaunchInputKind] = &[
@@ -336,7 +336,6 @@ impl TeamWizardScreen {
             Ok(scheduler) => Some(plan_from_scheduler(
                 &scheduler,
                 original_count,
-                // One estimate for the card and the plan (#1286).
                 prompt_estimate(&team).0 * plan_issue_count(&scheduler) as f64,
             )),
             Err(e) => {
