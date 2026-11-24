@@ -63,3 +63,17 @@ pub fn make_issue_meta(
         blocked_by: blocked_by.to_vec(),
     }
 }
+
+/// #1286: an app on Compose › Review & save, the name field focused (a text
+/// surface for `input_handler_text_input_tests`; keys reach the canonical
+/// `Input` through `widgets::input::feed`).
+pub fn compose_name_app() -> crate::tui::app::App {
+    use super::{ComposeStep, TeamWizardMode, TeamWizardScreen};
+    let mut app = crate::tui::make_test_app("text-input-keys");
+    app.tui_mode = crate::tui::app::TuiMode::TeamWizard;
+    let mut screen = TeamWizardScreen::new(Default::default());
+    screen.switch_mode(TeamWizardMode::Compose);
+    screen.set_compose_step_for_test(ComposeStep::Save);
+    app.screen_state.team_wizard_screen = Some(screen);
+    app
+}

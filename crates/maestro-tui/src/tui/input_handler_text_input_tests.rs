@@ -12,7 +12,7 @@ use crate::tui::screens::prd::{EditTarget, PrdScreen};
 use crate::tui::screens::roadmap::{FilterField, RoadmapScreen};
 use crate::tui::screens::{
     InteractionScreen, IssueBrowserScreen, IssueWizardScreen, MilestoneWizardScreen,
-    PromptInputScreen,
+    PromptInputScreen, team_wizard::test_helpers::compose_name_app,
 };
 use crate::updater::{ReleaseInfo, UpgradeState};
 
@@ -169,19 +169,6 @@ fn on_bypass_warning() -> App {
 }
 
 /// #1255: the ⌃K palette's query field, opened over Overview.
-/// #1286: the Compose Review & save name (canonical `Input`, fed through
-/// `widgets::input::feed`).
-fn on_team_compose_name() -> App {
-    use crate::tui::screens::TeamWizardScreen;
-    use crate::tui::screens::team_wizard::{ComposeStep, TeamWizardMode};
-    let mut app = base_app(TuiMode::TeamWizard);
-    let mut screen = TeamWizardScreen::new(Default::default());
-    screen.switch_mode(TeamWizardMode::Compose);
-    screen.set_compose_step_for_test(ComposeStep::Save);
-    app.screen_state.team_wizard_screen = Some(screen);
-    app
-}
-
 fn on_palette() -> App {
     let mut app = base_app(TuiMode::Overview);
     super::open_palette(&mut app);
@@ -311,7 +298,7 @@ fn text_surfaces() -> [Surface; 16] {
         ("kill confirm", on_kill_confirm),
         ("bypass warning", on_bypass_warning),
         ("command palette", on_palette),
-        ("team compose name", on_team_compose_name),
+        ("team compose name", compose_name_app),
     ]
 }
 
