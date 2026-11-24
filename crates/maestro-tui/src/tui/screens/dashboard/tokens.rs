@@ -1,6 +1,11 @@
+//! Dashboard › Tokens (§02.14, #1289): why it costs what it costs. KPI
+//! row (tokens, cache hit, TurboQuant, spent), Per-Provider Usage and
+//! Tokens by session, and the TurboQuant panel. Was the `TokenDashboard`
+//! screen (`token_dashboard.rs`); TurboQuant is a tile and a panel here.
+
 use crate::budget::quota_snapshot::{ProviderQuotaSnapshots, QuotaBucket, QuotaRow};
-use crate::budget::sanitize::sanitize_cost;
-use crate::session::types::{Session, TokenUsage};
+use crate::session::types::Session;
+use crate::tui::ds::money::money;
 use crate::tui::theme::Theme;
 use crate::util::formatting::format_tokens;
 use ratatui::{
@@ -12,6 +17,7 @@ use ratatui::{
 };
 
 pub mod provider_rollup;
+pub mod view;
 
 use provider_rollup::{ProviderRow, build_provider_rows, provider_context_window};
 
@@ -19,7 +25,7 @@ use provider_rollup::{ProviderRow, build_provider_rows, provider_context_window}
 /// when no `App.minimax_quota` is wired. Production now picks between this
 /// and `MinimaxQuotaSnapshots` at the App layer (#769). Tests inject their
 /// own fake via `draw_token_dashboard_with_quota`.
-struct NoQuotaSnapshots;
+pub(super) struct NoQuotaSnapshots;
 
 impl ProviderQuotaSnapshots for NoQuotaSnapshots {
     fn quota_for(&self, _provider_id: &str) -> Option<QuotaRow> {
@@ -95,24 +101,35 @@ pub fn draw_token_dashboard_with_quota_and_badges(
     area: Rect,
     theme: &Theme,
 ) {
+    // Totals and cache hit are the Tokens view's KPI tiles (#1289).
+    let _ = total_cost;
+    let rest = draw_rollup_top(f, sessions, quota_snapshots, badges, area, theme);
+    draw_session_tokens(f, sessions, rest, theme);
+}
+
+/// Per-Provider Usage across the top of `area`; returns the rows below it.
+pub(super) fn draw_rollup_top(
+    f: &mut Frame,
+    sessions: &[&Session],
+    quota_snapshots: &dyn ProviderQuotaSnapshots,
+    badges: &[String],
+    area: Rect,
+    theme: &Theme,
+) -> Rect {
     let rows = build_provider_rows(sessions, quota_snapshots, provider_context_window);
     // header + N rows + 2 border lines. Minimum 4 lines so the empty-state
     // placeholder is visible inside the styled_block.
     let row_lines = u16::try_from(rows.len()).unwrap_or(u16::MAX);
     let rollup_height = row_lines.saturating_add(3).max(4);
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(rollup_height),
-            Constraint::Length(5), // aggregate stats condensed to 3 content lines
-            Constraint::Min(5),    // per-session breakdown
+            Constraint::Min(5), // per-session breakdown
         ])
         .split(area);
-
     draw_provider_rollup(f, &rows, badges, chunks[0], theme);
-    draw_aggregate_stats(f, sessions, total_cost, chunks[1], theme);
-    draw_session_tokens(f, sessions, chunks[2], theme);
+    chunks[1]
 }
 
 fn draw_provider_rollup(
@@ -164,7 +181,7 @@ fn draw_provider_rollup(
 }
 
 fn row_line(row: &ProviderRow, narrow: bool, theme: &Theme) -> Line<'static> {
-    let cost_text = format!("${:.2}", row.total_cost_usd);
+    let cost_text = money(Some(row.total_cost_usd));
     let ctx_text = format_context_cell(row.context_used, row.context_window, narrow);
     let quota_text = format_quota_cell(row.quota, narrow);
     let quota_style = match row.quota.map(|q| q.status) {
@@ -233,78 +250,13 @@ fn with_thousands(n: u64) -> String {
     out.chars().rev().collect()
 }
 
-fn draw_aggregate_stats(
-    f: &mut Frame,
-    sessions: &[&Session],
-    _total_cost: f64,
-    area: Rect,
-    theme: &Theme,
-) {
-    let mut aggregate = TokenUsage::default();
-    for s in sessions {
-        aggregate.accumulate(&s.token_usage);
-    }
-
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(" Input: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(aggregate.input_tokens),
-                Style::default()
-                    .fg(theme.accent_info)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  Output: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(aggregate.output_tokens),
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  Cache R: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(aggregate.cache_read_tokens),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::styled("  Cache W: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(aggregate.cache_creation_tokens),
-                Style::default().fg(theme.accent_warning),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(" Total: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(aggregate.total_tokens()),
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  Cache Hit: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format!("{:.1}%", aggregate.cache_hit_ratio() * 100.0),
-                Style::default().fg(if aggregate.cache_hit_ratio() > 0.5 {
-                    theme.accent_success
-                } else {
-                    theme.accent_warning
-                }),
-            ),
-            Span::styled(
-                format!("  Sessions: {}", sessions.len()),
-                Style::default().fg(theme.text_secondary),
-            ),
-        ]),
-    ];
-
-    let block = theme
-        .styled_block("Aggregate Token Usage", false)
-        .border_style(Style::default().fg(theme.accent_info));
-
-    let paragraph = Paragraph::new(lines).block(block);
-    f.render_widget(paragraph, area);
-}
-
 fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &Theme) {
+    if sessions.is_empty() {
+        let block = theme.styled_block("Tokens by session", false);
+        let empty = Paragraph::new(super::usage::empty_lines(theme)).block(block);
+        f.render_widget(empty, area);
+        return;
+    }
     let mut sorted: Vec<&Session> = sessions.to_vec();
     sorted.sort_by(|a, b| {
         b.token_usage
@@ -315,7 +267,7 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
     let header = Line::from(vec![Span::styled(
         format!(
             " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}",
-            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT"
+            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/MTok"
         ),
         Style::default()
             .fg(theme.text_secondary)
@@ -337,7 +289,9 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
             .chars()
             .take(18)
             .collect();
-        let cost_per_k = s.token_usage.cost_per_kilo_token(sanitize_cost(s.cost_usd));
+        // Per million tokens, the price table's unit; `$?` when unpriced.
+        let per_mtok =
+            super::session_cost(s).map(|c| s.token_usage.cost_per_kilo_token(c.max(0.0)) * 1000.0);
 
         lines.push(Line::from(vec![
             Span::styled(
@@ -368,13 +322,13 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
                 Style::default().fg(theme.accent_warning),
             ),
             Span::styled(
-                format!("  ${:.3}", cost_per_k),
+                format!("  {:>8}", money(per_mtok)),
                 Style::default().fg(theme.accent_warning),
             ),
         ]));
     }
 
-    let block = theme.styled_block("Per-Session Token Breakdown", false);
+    let block = theme.styled_block("Tokens by session", false);
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);

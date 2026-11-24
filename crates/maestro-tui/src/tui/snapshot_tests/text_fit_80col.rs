@@ -8,7 +8,6 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use super::log_drawer::{draw, log_app};
 use super::make_gh_issue;
-use crate::budget::BudgetEnforcer;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::marquee::MarqueeState;
@@ -59,13 +58,13 @@ fn app(mode: TuiMode) -> App {
 #[test]
 fn cost_budget_label_never_prints_negative_zero() {
     for (w, h) in SIZES {
-        let mut app = app(TuiMode::CostDashboard);
-        app.budget_enforcer = Some(BudgetEnforcer::new(5.0, 50.0, 80));
+        let mut app = budget_app();
         // What `sync_state` stores with no sessions: an empty f64 sum.
         app.state.update_total_cost();
         app.total_cost = app.state.total_cost_usd;
         let out = rows(&draw(&mut app, w, h)).join("\n");
-        assert!(out.contains("$0.00 / $50.00 (0%)"), "{w}x{h}:\n{out}");
+        // #1289: Dashboard › Cost's Budget panel.
+        assert!(out.contains("Spent $0.00 of $50.00"), "{w}x{h}:\n{out}");
         assert!(
             !out.contains("-0"),
             "{w}x{h} prints a negative zero:\n{out}"
@@ -75,11 +74,22 @@ fn cost_budget_label_never_prints_negative_zero() {
 
 #[test]
 fn cost_budget_label_snaps_a_negative_zero_from_any_caller() {
-    let mut app = app(TuiMode::CostDashboard);
-    app.budget_enforcer = Some(BudgetEnforcer::new(5.0, 50.0, 80));
+    let mut app = budget_app();
     app.total_cost = -0.0;
     let out = rows(&draw(&mut app, 80, 24)).join("\n");
-    assert!(out.contains("$0.00 / $50.00 (0%)"), "{out}");
+    assert!(out.contains("Spent $0.00 of $50.00"), "{out}");
+    assert!(out.contains(" 0%"), "{out}");
+    assert!(!out.contains("-0"), "{out}");
+}
+
+/// Dashboard › Cost with the `[budget]` the Budget panel reads (#1289).
+fn budget_app() -> App {
+    let mut app = app(TuiMode::CostDashboard);
+    let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+    app
 }
 
 fn prd_app() -> App {
@@ -183,10 +193,14 @@ fn no_row_is_cut_mid_word_at_80_columns() {
         );
 
         let mut cost = app(TuiMode::CostDashboard);
+        cost.pool.enqueue(super::make_session(
+            crate::session::types::SessionStatus::NeedsReview,
+            Some(1399),
+        ));
         let cost = rows(&draw(&mut cost, w, h));
-        let header = row_with(&cost, "Title");
-        assert!(header.contains("Status"), "{ctx} cost header: {header:?}");
-        assert!(header.contains("Elapsed"), "{ctx} cost header: {header:?}");
+        // #1289: Spend by session's header, whole at every width.
+        let header = row_with(&cost, "COST");
+        assert!(header.contains("OF CAP"), "{ctx} cost header: {header:?}");
 
         let stats = rows(&draw(&mut stats_app(), w, h));
         let spend = row_with(&stats, "Spend");

@@ -4,10 +4,13 @@
 //! `TuiMode::Overview` is an alias that draws this screen
 //! (`ui::route_overview_alias`). Keys: `dispatch`; layout: `draw`.
 
+pub mod cost;
 pub mod detail;
 pub mod dispatch;
 pub mod draw;
 pub mod rows;
+pub mod tokens;
+pub mod usage;
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -27,6 +30,10 @@ pub struct Dashboard {
     pub armed_for: Option<u64>,
     /// Tests inject the clock; the app uses `Instant::now`.
     pub clock: Option<Instant>,
+    /// Ops, Cost or Tokens (#1289); the selection is shared by all three.
+    pub view: usage::View,
+    /// Tests pin the wall clock (scope line, rate); the app uses `Utc::now`.
+    pub wall: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Dashboard {
@@ -57,6 +64,8 @@ pub struct DashboardView<'a> {
     pub ci: &'a HashMap<u64, Vec<CheckRun>>,
     pub gh_auth_ok: bool,
     pub now: chrono::DateTime<chrono::Utc>,
+    /// Spend, budget and scope for the Cost and Tokens views (#1289).
+    pub usage: usage::Usage,
 }
 
 impl DashboardView<'_> {
@@ -90,7 +99,7 @@ fn session_title(s: &Session) -> String {
 }
 
 /// `None` (`$?`) for an unpriced model, the `Session::cost_display` rule.
-fn session_cost(s: &Session) -> Option<f64> {
+pub(crate) fn session_cost(s: &Session) -> Option<f64> {
     (!(s.cost_unknown && s.cost_usd <= 0.0)).then_some(s.cost_usd)
 }
 

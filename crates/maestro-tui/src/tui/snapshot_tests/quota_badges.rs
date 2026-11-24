@@ -1,8 +1,8 @@
 use super::*;
 use crate::agent_provider::quota::badge;
 use crate::agent_provider::quota::types::{ProviderWindows, QuotaWindow};
+use crate::tui::screens::dashboard::tokens::draw_token_dashboard_with_badges;
 use crate::tui::theme::Theme;
-use crate::tui::token_dashboard::draw_token_dashboard_with_badges;
 use chrono::{Duration, TimeZone, Utc};
 use insta::assert_snapshot;
 use ratatui::Terminal;

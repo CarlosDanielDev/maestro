@@ -957,8 +957,8 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
             app.push_toast(toast, std::time::Instant::now());
             KeyAction::Consumed
         }
-        Some(Run::Command(PaletteCommand::TurboquantDashboard)) => {
-            app.navigate_to(app::TuiMode::TurboquantDashboard);
+        Some(Run::Command(PaletteCommand::Turboquant)) => {
+            app.navigate_to(app::TuiMode::TokenDashboard);
             KeyAction::Consumed
         }
         Some(Run::Command(PaletteCommand::CompleteModal)) => {
@@ -1429,10 +1429,8 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
-                app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
-                app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
-                app::TuiMode::TokenDashboard => app::TuiMode::TurboquantDashboard,
-                app::TuiMode::TurboquantDashboard => app::TuiMode::Overview,
+                // #1289: Cost and Tokens are Dashboard views, not screens.
+                app::TuiMode::DependencyGraph => app::TuiMode::Overview,
                 _ => app::TuiMode::Overview,
             };
         }
@@ -2027,8 +2025,10 @@ mod tests {
     ) -> Option<TuiMode> {
         use crate::tui::navigation::keymap::FKeyAction;
         match action {
-            FKeyAction::OpenCostDashboard => Some(TuiMode::CostDashboard),
-            FKeyAction::OpenTokenDashboard => Some(TuiMode::TokenDashboard),
+            // #1289: F4 / F5 open the Cost / Tokens views of the Dashboard
+            // (`turboquant_mode_redirects_to_tokens` checks the view).
+            FKeyAction::OpenCostDashboard => Some(TuiMode::Dashboard),
+            FKeyAction::OpenTokenDashboard => Some(TuiMode::Dashboard),
             FKeyAction::OpenDependencyGraph => Some(TuiMode::DependencyGraph),
             FKeyAction::OpenSummary => Some(TuiMode::SessionSummary),
             _ => None,
@@ -2071,18 +2071,19 @@ mod tests {
     }
 
     // navigate_to must be idempotent and cycle-collapsing. Pressing F5
-    // repeatedly while already on TokenDashboard used to grow the
+    // repeatedly while already on one screen used to grow the
     // breadcrumb trail by one entry per keystroke; navigating A → B → A
     // used to produce [A, B] on the stack instead of just [A].
 
     #[test]
     fn navigate_to_same_mode_is_a_noop() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::TokenDashboard;
-        app.navigate_to(TuiMode::TokenDashboard);
-        app.navigate_to(TuiMode::TokenDashboard);
-        app.navigate_to(TuiMode::TokenDashboard);
-        assert_eq!(app.tui_mode, TuiMode::TokenDashboard);
+        // #1289: TokenDashboard is a Dashboard view now; PrReview is a screen.
+        app.tui_mode = TuiMode::PrReview;
+        app.navigate_to(TuiMode::PrReview);
+        app.navigate_to(TuiMode::PrReview);
+        app.navigate_to(TuiMode::PrReview);
+        assert_eq!(app.tui_mode, TuiMode::PrReview);
         assert_eq!(app.nav_stack.depth(), 0);
     }
 
@@ -2090,7 +2091,7 @@ mod tests {
     fn navigate_to_truncates_to_existing_ancestor_instead_of_pushing() {
         let mut app = make_app();
         app.tui_mode = TuiMode::Dashboard;
-        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::PrReview);
         app.navigate_to(TuiMode::Dashboard);
         assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert_eq!(app.nav_stack.depth(), 0);
@@ -2102,10 +2103,10 @@ mod tests {
         app.tui_mode = TuiMode::Dashboard;
         app.navigate_to(TuiMode::DependencyGraph);
         app.navigate_to(TuiMode::DependencyGraph);
-        app.navigate_to(TuiMode::TokenDashboard);
-        app.navigate_to(TuiMode::TokenDashboard);
-        app.navigate_to(TuiMode::TokenDashboard);
-        assert_eq!(app.tui_mode, TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::PrReview);
+        app.navigate_to(TuiMode::PrReview);
+        app.navigate_to(TuiMode::PrReview);
+        assert_eq!(app.tui_mode, TuiMode::PrReview);
         assert_eq!(
             app.nav_stack.breadcrumbs(),
             &[TuiMode::Dashboard, TuiMode::DependencyGraph]
