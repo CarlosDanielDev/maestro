@@ -220,6 +220,7 @@ impl App {
                 s.status == SessionStatus::Completed
                     && s.is_hollow_completion
                     && !s.hollow_dismissed
+                    && !self.screen_state.hollow_later.contains(&s.id)
                     && !retryable_ids.contains(&s.id)
                     && !RetryPolicy::is_consultation_satisfied(s)
                     // #1244: the queue screen owns a queue item's decision.
@@ -232,12 +233,19 @@ impl App {
                 .as_ref()
                 .map(|p| p.effective_max(hollow_session))
                 .unwrap_or(0);
+            // #1287: the dialog shows the four checks and what Retry costs.
+            let evidence =
+                crate::tui::screens::hollow_retry::HollowEvidence::from_session(hollow_session);
+            let retry_cost = crate::tui::widgets::decision_card::Cost::retry(
+                &crate::tui::budget_prespawn::launch_budget(self),
+            );
             self.screen_state.hollow_retry_screen =
                 Some(crate::tui::screens::HollowRetryScreen::new(
                     hollow_session.id,
                     label,
-                    hollow_session.retry_count,
-                    max,
+                    (hollow_session.retry_count, max),
+                    evidence,
+                    retry_cost,
                 ));
             // #895: route through navigate_to so the prior mode (Overview /
             // Detail / Dashboard) is pushed onto the nav-stack. Without this
@@ -459,6 +467,10 @@ impl App {
             }
         } else if let Some(ref mut exec) = self.queue_executor {
             exec.mark_failure();
+            // #1287: a stopped run asks nothing; it is finished.
+            if exec.is_finished() {
+                self.open_completion_summary();
+            }
             // The queue screen owns this decision; the hollow modal must
             // not reopen for the session once a retry clears the record.
             if let Some(session) = self.pool.get_session_mut(session_id) {
@@ -491,6 +503,10 @@ impl App {
             && exec.running_session_id().is_none()
         {
             exec.mark_failure();
+            // #1287: a stopped run asks nothing; it is finished.
+            if exec.is_finished() {
+                self.open_completion_summary();
+            }
         }
     }
 

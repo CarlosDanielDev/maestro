@@ -5,6 +5,7 @@ pub mod armed_bar;
 mod braille_spinner;
 pub mod bypass_indicator;
 mod ci_monitor;
+pub mod decision_card;
 mod dropdown;
 mod empty_state;
 pub mod input;

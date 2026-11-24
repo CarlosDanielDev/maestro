@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/screens/run_loop/tests.rs
+expression: snapshot(&app)
+---
+" Queue · 3 run one at a time · [?] needs you   Esc back · keeps running         "
+"┌─────────────────────────[ Run order · 0 of 3 done ]──────────────────────────┐"
+"│  [?] needs you #964 Migrate surface 964                                 $0.00│"
+"│  ( ) next      #965 Migrate surface 965                                      │"
+"│  ( ) next      #969 Migrate surface 969                                      │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Decision ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃  needs you  #964 failed · Migrate surface 964                                ┃"
+"┃ WHAT HAPPENED                                                                ┃"
+"┃   session   hollow: finished without doing any work                          ┃"
+"┃   cost      $0.00                                                            ┃"
+"┃ CHOOSE                                                                       ┃"
+"┃ ▸ ● Skip #964                                                          $0.00 ┃"
+"┃       it stays open, nothing is marked done; the queue goes on               ┃"
+"┃   ○ Retry #964                                  est ≥ $0.50 · stops at $5.00 ┃"
+"┃       a working run is a paid run · worst case $10.00 → $15.00               ┃"
+"┃  ⏎  Skip #964    Esc  decide later   ↑↓ pick · v evidence                    ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+" 0 running · 2 not started · spent $0.00 · worst case $10.00 (approved $15.00)  "
+" h  hold queue  start nothing new, running ones finish    S  stop queue…        "

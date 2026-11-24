@@ -127,15 +127,16 @@ fn hollow_completion_is_not_success() {
 
     app.tui_mode = TuiMode::QueueExecution;
     let screen = draw(&mut app);
+    // #1287: the run loop's decision card replaced the overlay.
     assert!(
-        screen.contains("#5 failed — choose action"),
+        screen.contains("#5 failed") && screen.contains("hollow"),
         "queue screen must show the hollow item as failed:\n{screen}"
     );
     assert!(
-        screen.contains("Retry"),
+        screen.contains("Retry #5"),
         "retry decision missing:\n{screen}"
     );
-    assert!(!screen.contains("Running #6"), "queue advanced:\n{screen}");
+    assert!(!screen.contains("running #6"), "queue advanced:\n{screen}");
 }
 
 #[test]
@@ -290,7 +291,7 @@ async fn manual_hollow_session_on_past_queue_issue_opens_hollow_modal() {
     assert!(app.screen_state.hollow_retry_screen.is_some());
     let screen = draw(&mut app);
     assert!(
-        screen.contains("Hollow Completion Detected"),
+        screen.contains("finished without doing any work"),
         "hollow modal not drawn:\n{screen}"
     );
 }
@@ -349,7 +350,7 @@ fn failed_fetch_of_running_item_offers_decision() {
     app.tui_mode = TuiMode::QueueExecution;
     let screen = draw(&mut app);
     assert!(
-        screen.contains("#5 failed — choose action") && screen.contains("Abort"),
-        "fetch failure must reach the r/s/a decision:\n{screen}"
+        screen.contains("#5 failed") && screen.contains("no session started"),
+        "fetch failure must reach the decision card:\n{screen}"
     );
 }

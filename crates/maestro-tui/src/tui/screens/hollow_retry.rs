@@ -1,58 +1,146 @@
+//! The hollow-run dialog (#1287, design §02.22 "Hollow evidence"): a
+//! decision card over the screen you are on, shown when a hollow completion
+//! is past its auto-retry limit. It lists the four checks behind "hollow"
+//! (`Session::detect_hollow_completion`), the attempts, and two choices:
+//! Skip (default, `$0.00`, the only choice that dismisses the dialog for
+//! good) and Retry (a paid run). `Esc` decides later; `v` shows the log.
+
 use super::{Screen, ScreenAction};
+use crate::session::types::Session;
 use crate::tui::app::TuiMode;
+use crate::tui::ds::money::money;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Clear, Paragraph, Wrap},
+use crate::tui::widgets::decision_card::{
+    Cost, DecisionAction, DecisionCard, DecisionOption, Section,
 };
+use crossterm::event::{Event, KeyEvent, KeyEventKind};
+use ratatui::{Frame, layout::Rect};
 use uuid::Uuid;
+
+/// The four checks of `detect_hollow_completion`, with their values.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HollowEvidence {
+    pub cost_usd: f64,
+    pub files_touched: usize,
+    pub tool_calls: bool,
+    pub elapsed_secs: Option<i64>,
+}
+
+impl HollowEvidence {
+    pub fn from_session(s: &Session) -> Self {
+        Self {
+            cost_usd: s.cost_usd,
+            files_touched: s.files_touched.len(),
+            tool_calls: s.has_tool_calls(),
+            elapsed_secs: s.elapsed().map(|d| d.num_seconds()),
+        }
+    }
+}
 
 /// Screen shown when a hollow completion exceeds auto-retry limits.
 pub struct HollowRetryScreen {
     pub session_id: Uuid,
-    pub session_label: String,
-    pub retry_count: u32,
-    pub max_retries: u32,
+    card: DecisionCard,
 }
 
 impl HollowRetryScreen {
+    /// `retries` is `(used, max)`; `retry_cost` is what Retry costs
+    /// (`Cost::retry(&budget_prespawn::launch_budget(app))`).
     pub fn new(
         session_id: Uuid,
         session_label: String,
-        retry_count: u32,
-        max_retries: u32,
+        retries: (u32, u32),
+        evidence: HollowEvidence,
+        retry_cost: Cost,
     ) -> Self {
-        Self {
-            session_id,
-            session_label,
-            retry_count,
-            max_retries,
-        }
+        let card = card(&session_label, retries, &evidence, retry_cost);
+        Self { session_id, card }
+    }
+}
+
+fn card(
+    label: &str,
+    (used, max): (u32, u32),
+    e: &HollowEvidence,
+    retry_cost: Cost,
+) -> DecisionCard {
+    let limit = Session::HOLLOW_DURATION_THRESHOLD_SECS;
+    let ran = e.elapsed_secs.map_or("unknown".to_string(), |s| {
+        format!("{s} s (under {limit} s)")
+    });
+    let files = match e.files_touched {
+        0 => "none touched".to_string(),
+        n => format!("{n} touched"),
+    };
+    let past = if used >= max {
+        " · past the retry limit"
+    } else {
+        ""
+    };
+    DecisionCard {
+        title: format!("{label} finished without doing any work"),
+        tag: "hollow".into(),
+        sections: vec![
+            Section {
+                title: "WHY HOLLOW".into(),
+                rows: vec![
+                    ("cost".into(), money(Some(e.cost_usd))),
+                    ("files".into(), files),
+                    (
+                        "tool calls".into(),
+                        if e.tool_calls { "some" } else { "none" }.into(),
+                    ),
+                    ("ran".into(), ran),
+                ],
+            },
+            Section {
+                title: "ATTEMPTS".into(),
+                rows: vec![(
+                    "retries".into(),
+                    format!("{used} of {max} auto-retries used"),
+                )],
+            },
+        ],
+        options: vec![
+            DecisionOption {
+                label: "Skip".into(),
+                note: "the issue stays open, nothing is marked done".into(),
+                cost: Cost::Free,
+            },
+            DecisionOption {
+                label: "Retry".into(),
+                note: format!("a working run is a paid run{past}"),
+                cost: retry_cost,
+            },
+        ],
+        selected: 0,
+        later: true,
+        evidence: true,
     }
 }
 
 impl KeymapProvider for HollowRetryScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
-            title: "Hollow Retry",
+            title: "Hollow run",
             bindings: vec![
                 KeyBinding {
-                    key: "r",
-                    description: "Retry session",
+                    key: "↑↓",
+                    description: "Pick Skip or Retry",
                 },
                 KeyBinding {
-                    key: "s/Esc",
-                    description: "Skip",
+                    key: "Enter",
+                    description: "Confirm the picked option",
                 },
                 KeyBinding {
                     key: "v",
                     description: "View logs",
+                },
+                KeyBinding {
+                    key: "Esc",
+                    description: "Decide later",
                 },
             ],
         }]
@@ -61,123 +149,33 @@ impl KeymapProvider for HollowRetryScreen {
 
 impl Screen for HollowRetryScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
-        if let Event::Key(KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            match code {
-                KeyCode::Char('r') => {
-                    return ScreenAction::RetryHollow(self.session_id);
-                }
-                KeyCode::Char('s') | KeyCode::Esc => {
-                    return ScreenAction::Pop;
-                }
-                KeyCode::Char('v') => {
-                    return ScreenAction::Push(TuiMode::Detail(self.session_id));
-                }
-                _ => {}
-            }
+        let Event::Key(
+            key @ KeyEvent {
+                kind: KeyEventKind::Press,
+                ..
+            },
+        ) = event
+        else {
+            return ScreenAction::None;
+        };
+        match self.card.handle_key(key) {
+            DecisionAction::Confirm(0) => ScreenAction::SkipHollow(self.session_id),
+            DecisionAction::Confirm(_) => ScreenAction::RetryHollow(self.session_id),
+            DecisionAction::Evidence => ScreenAction::Push(TuiMode::Detail(self.session_id)),
+            DecisionAction::Later => ScreenAction::Pop,
+            DecisionAction::Pick(_) | DecisionAction::None => ScreenAction::None,
         }
-        ScreenAction::None
     }
 
     fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
-        vec![("r", "Retry"), ("s", "Skip"), ("v", "View Logs")]
+        vec![("↑↓", "Pick"), ("Enter", "Confirm"), ("v", "View Logs")]
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        // Center a box in the area
-        let popup_width = 50.min(area.width.saturating_sub(4));
-        let popup_height = 10.min(area.height.saturating_sub(4));
-        let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-        let popup_area = Rect::new(x, y, popup_width, popup_height);
-
-        f.render_widget(Clear, popup_area);
-
-        let block = theme
-            .styled_block("Hollow Completion Detected", false)
-            .border_style(
-                Style::default()
-                    .fg(theme.accent_warning)
-                    .add_modifier(Modifier::BOLD),
-            );
-
-        let inner = block.inner(popup_area);
-        f.render_widget(block, popup_area);
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2), // info
-                Constraint::Min(3),    // message
-            ])
-            .split(inner);
-
-        let info = Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled("Session: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(
-                    &self.session_label,
-                    Style::default()
-                        .fg(theme.text_primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Retries: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(
-                    format!("{}/{}", self.retry_count, self.max_retries),
-                    Style::default().fg(theme.accent_error),
-                ),
-            ]),
-        ]);
-        f.render_widget(info, chunks[0]);
-
-        let message =
-            Paragraph::new("The session completed without performing any observable work.")
-                .style(Style::default().fg(theme.accent_warning))
-                .wrap(Wrap { trim: true });
-        f.render_widget(message, chunks[1]);
+        self.card.draw_dialog(f, area, theme);
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tui::screens::test_helpers::key_event;
-
-    #[test]
-    fn r_key_returns_retry_hollow_action() {
-        let id = Uuid::new_v4();
-        let mut screen = HollowRetryScreen::new(id, "S-test".into(), 1, 1);
-        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::RetryHollow(id));
-    }
-
-    #[test]
-    fn s_key_returns_pop() {
-        let id = Uuid::new_v4();
-        let mut screen = HollowRetryScreen::new(id, "S-test".into(), 1, 1);
-        let action = screen.handle_input(&key_event(KeyCode::Char('s')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Pop);
-    }
-
-    #[test]
-    fn esc_returns_pop() {
-        let id = Uuid::new_v4();
-        let mut screen = HollowRetryScreen::new(id, "S-test".into(), 1, 1);
-        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Pop);
-    }
-
-    #[test]
-    fn v_key_returns_push_detail() {
-        let id = Uuid::new_v4();
-        let mut screen = HollowRetryScreen::new(id, "S-test".into(), 1, 1);
-        let action = screen.handle_input(&key_event(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Push(TuiMode::Detail(id)));
-    }
-}
+#[path = "hollow_retry_tests.rs"]
+mod tests;

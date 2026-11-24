@@ -168,6 +168,17 @@ fn on_bypass_warning() -> App {
     app
 }
 
+/// #1287: the run loop's "Stop the run?" typed confirm.
+fn on_run_loop_stop() -> App {
+    let mut app = base_app(TuiMode::QueueExecution);
+    app.screen_state.run_loop.stop = Some(crate::tui::screens::run_loop::StopDialog::new(
+        1,
+        2,
+        Some(5.0),
+    ));
+    app
+}
+
 /// #1255: the ⌃K palette's query field, opened over Overview.
 fn on_palette() -> App {
     let mut app = base_app(TuiMode::Overview);
@@ -277,7 +288,7 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 16] {
+fn text_surfaces() -> [Surface; 17] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
@@ -297,6 +308,7 @@ fn text_surfaces() -> [Surface; 16] {
         ("help overlay search", on_help_search),
         ("kill confirm", on_kill_confirm),
         ("bypass warning", on_bypass_warning),
+        ("run loop stop dialog", on_run_loop_stop),
         ("command palette", on_palette),
         ("team compose name", compose_name_app),
     ]

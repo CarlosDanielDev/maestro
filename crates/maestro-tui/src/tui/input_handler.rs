@@ -229,9 +229,12 @@ fn handle_help_overlay(app: &mut App, key: &KeyEvent) -> bool {
 /// Handle mode-specific keys that preempt screen dispatch.
 async fn handle_mode_keys(app: &mut App, key: &KeyEvent) -> Option<KeyAction> {
     match app.tui_mode {
-        app::TuiMode::QueueExecution => Some(handle_queue_execution(app, key)),
+        // #1287: the run loop takes every key.
+        app::TuiMode::QueueExecution | app::TuiMode::ContinuousPause => {
+            screens::run_loop::input::handle(app, key).await;
+            Some(KeyAction::Consumed)
+        }
         app::TuiMode::CompletionSummary => Some(handle_completion_summary(app, key)),
-        app::TuiMode::ContinuousPause => Some(handle_continuous_pause(app, key)),
         _ => None,
     }
 }
@@ -355,45 +358,6 @@ async fn handle_budget_prespawn(
         _ => return KeyAction::Consumed,
     };
     app.resolve_budget_prespawn(chord, session_id).await;
-    KeyAction::Consumed
-}
-
-fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
-    use crate::work::executor::{ExecutorPhase, FailureAction};
-    match (key.code, key.modifiers) {
-        (KeyCode::Esc, _) => {
-            app.navigate_back_or_dashboard();
-        }
-        (KeyCode::Char('r'), _) => {
-            if let Some(ref mut exec) = app.queue_executor
-                && matches!(exec.phase(), ExecutorPhase::AwaitingDecision { .. })
-            {
-                exec.apply_decision(FailureAction::Retry);
-                app.advance_queue_and_launch();
-            }
-        }
-        (KeyCode::Char('s'), _) => {
-            if let Some(ref mut exec) = app.queue_executor
-                && matches!(exec.phase(), ExecutorPhase::AwaitingDecision { .. })
-            {
-                exec.apply_decision(FailureAction::Skip);
-                if exec.is_finished() {
-                    app.open_completion_summary();
-                } else {
-                    app.advance_queue_and_launch();
-                }
-            }
-        }
-        (KeyCode::Char('a'), _) => {
-            if let Some(ref mut exec) = app.queue_executor
-                && matches!(exec.phase(), ExecutorPhase::AwaitingDecision { .. })
-            {
-                exec.apply_decision(FailureAction::Abort);
-                app.open_completion_summary();
-            }
-        }
-        _ => {}
-    }
     KeyAction::Consumed
 }
 
@@ -680,42 +644,6 @@ fn handle_completion_fix(app: &mut App) {
             app.tui_mode = app::TuiMode::Overview;
         }
     }
-}
-
-fn handle_continuous_pause(app: &mut App, key: &KeyEvent) -> KeyAction {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('s'), _) => {
-            if let Some(ref mut cont) = app.continuous_mode {
-                let skipped = cont.current_failure().map(|f| f.issue_number);
-                cont.on_skip();
-                if let Some(num) = skipped {
-                    app.activity_log.push_simple(
-                        "CONTINUOUS".into(),
-                        format!("Skipped #{}, advancing...", num),
-                        LogLevel::Warn,
-                    );
-                }
-            }
-            app.tui_mode = app::TuiMode::Overview;
-        }
-        (KeyCode::Char('r'), _) => {
-            if let Some(ref mut cont) = app.continuous_mode
-                && let Some(issue_number) = cont.on_retry()
-            {
-                if let Some(ref mut service) = app.work_assignment_service {
-                    service.inner_mut().mark_pending_undo_cascade(issue_number);
-                }
-                app.activity_log.push_simple(
-                    "CONTINUOUS".into(),
-                    format!("Retrying #{}...", issue_number),
-                    LogLevel::Info,
-                );
-            }
-            app.tui_mode = app::TuiMode::Overview;
-        }
-        _ => {}
-    }
-    KeyAction::Consumed
 }
 
 fn handle_session_summary(app: &mut App, key: &KeyEvent) {
@@ -1248,6 +1176,8 @@ fn is_text_input_mode(app: &App) -> bool {
         app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings => true,
         // #1261: typed confirms (issue number, `CONFIRM`).
         app::TuiMode::ConfirmKill(_) | app::TuiMode::BypassWarning => true,
+        // #1287: the run loop's "Stop the run?" typed confirm.
+        app::TuiMode::QueueExecution => state.run_loop.stop.is_some(),
         app::TuiMode::Prd => state.prd_screen.as_ref().is_some_and(|s| s.edit.is_some()),
         app::TuiMode::Roadmap => {
             (state.roadmap_screen.as_ref()).is_some_and(|s| s.editing_filter.is_some())

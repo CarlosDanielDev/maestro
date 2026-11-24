@@ -264,8 +264,9 @@ impl App {
     pub fn advance_queue_and_launch(&mut self) -> bool {
         let issue_num = {
             let exec = match self.queue_executor.as_mut() {
-                Some(e) => e,
-                None => return false,
+                // #1287: a held queue starts nothing new.
+                Some(e) if !e.is_held() => e,
+                _ => return false,
             };
             match exec.advance() {
                 Ok(Some(item)) => item.issue_number,

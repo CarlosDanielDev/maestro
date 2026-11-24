@@ -811,7 +811,7 @@ impl Session {
     }
 
     /// Threshold in seconds below which a zero-cost, zero-file session is suspicious.
-    const HOLLOW_DURATION_THRESHOLD_SECS: i64 = 30;
+    pub const HOLLOW_DURATION_THRESHOLD_SECS: i64 = 30;
 
     /// Check whether this session shows signs of a hollow completion —
     /// completed without spending money, touching files, or using tools.

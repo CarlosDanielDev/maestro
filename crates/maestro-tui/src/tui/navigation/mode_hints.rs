@@ -479,40 +479,36 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        // #1287: the run loop. `h` / `S` and the card keys are drawn in
+        // its Run bar and card, only while they work.
         TuiMode::QueueExecution => (
             "Queue Execution",
             FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "r",
-                    action: "Retry",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "s",
-                    action: "Skip",
-                    priority: 2,
-                },
-            ],
+            &[InlineHint {
+                key: "Esc",
+                action: "Back · keeps running",
+                priority: 0,
+            }],
         ),
+        // #1287: the hollow decision card (Enter confirms the pick).
         TuiMode::HollowRetry => (
             "Hollow Retry",
             FKeyVis::Minimal,
             &[
                 InlineHint {
-                    key: "Enter",
-                    action: "Retry",
+                    key: "↑↓",
+                    action: "Pick",
                     priority: 0,
                 },
                 InlineHint {
-                    key: "Esc",
-                    action: "Cancel",
+                    key: "Enter",
+                    action: "Confirm",
                     priority: 1,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Later",
+                    priority: 2,
                 },
             ],
         ),
@@ -521,13 +517,13 @@ pub fn mode_keymap(
             FKeyVis::Minimal,
             &[
                 InlineHint {
-                    key: "r",
-                    action: "Retry",
+                    key: "↑↓",
+                    action: "Pick",
                     priority: 0,
                 },
                 InlineHint {
-                    key: "s",
-                    action: "Skip",
+                    key: "Enter",
+                    action: "Confirm",
                     priority: 1,
                 },
             ],
