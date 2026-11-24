@@ -489,14 +489,14 @@ Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.h
 Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
 
-### Usage views: Cost and Tokens (`screens/dashboard/{usage,cost}.rs`, `tokens/view.rs`, #1289)
+### Usage views: Cost and Tokens (`screens/dashboard/usage.rs`, `screens/dashboard/cost.rs`, `screens/dashboard/tokens/view.rs`, #1289)
 
 Implements `§02.14 Usage: cost, tokens and TurboQuant` of `docs/design-system/index.html` (Reimagined: view strip, KPI row, Spend by session, Budget, TurboQuant savings; Implementation). Decision: `docs/design-system/decisions.md` (2026-11-24, Usage views). This section supersedes the cockpit row above that says `c t` open the old screens.
 
 | Item | For |
 |---|---|
 | `usage::View::{Ops, Cost, Tokens}` in `Dashboard::view` | The Dashboard body. `o c t` switch it (`dispatch`, registry block, hidden from the footer because the view strip shows them); `Esc` in Cost / Tokens goes back to Ops first. The Work list selection (`WorkList::selected`) is shared, so `j k ⏎ X l` act on the same session in every view |
-| `usage::alias_view(mode)` / `usage::route_alias(app)` | `TuiMode::CostDashboard` → Cost, `TokenDashboard` → Tokens: `App::navigate_to` and `ui::draw` turn them into `TuiMode::Dashboard` + the view, so F4 / F5 and every old route land on the view. `TuiMode::TurboquantDashboard` is removed; the ⌃K `TurboQuant (Dashboard › Tokens)` entry opens Tokens |
+| `usage::alias_view(mode)` / `usage::route_alias(app)` | `TuiMode::CostDashboard` → Cost, `TokenDashboard` → Tokens: `App::navigate_to` and `ui::draw` turn them into `TuiMode::Dashboard` + the view, so F4 / F5 and every old route land on the view. The TurboQuant mode is removed; the ⌃K `TurboQuant (Dashboard › Tokens)` entry opens Tokens |
 | `usage::Usage` (in `DashboardView::usage`) | What the views read, filled by `dispatch::split` from state and config only: `total_cost`, `[budget]`, `start_time` (scope line `this run · since 10:00 UTC`), TurboQuant on/bits, quota badges and source. `Dashboard::wall` pins the clock in tests |
 | `usage::budget_thresholds(&BudgetConfig)` | The Budget panel's "What happens" list (alert = `total × alert_threshold_pct`, per-session cap, total cap), worded after `App::check_budget`. Never literals |
 | `usage::draw_budget` / `budget_height` | Spent of cap on a `ds::gauge::bar` (0.6 / 0.8 / 1.0), the three thresholds (`← now` once crossed), the cap note and the unpriced count. No `[budget]` says no cap applies |
@@ -626,8 +626,8 @@ Help (`?`) is built from the registry (#1398, `navigation/registry_help.rs`):
 | `keymap::mode_help_groups(mode)` | What `mode_keymap` appends after the Global group: the screen block, the tab rows on a tab screen, and `keymap::overview_keybindings()` (F-keys, `1-9` session jump, `t / F5` …) on Overview only |
 | `help::shown_groups(groups)` | What Help draws: a Global row is left out when the screen's own rows name one of its keys (the screen takes it first: `Tab` cycles the view on Overview) |
 
-A Help description is the registry `label`; only `Quit` and
-`TurboquantDashboard` add a short detail (`registry_help::detail`). Home's
+A Help description is the registry `label`; only `Quit`, `Palette` and
+`RunAll` add a short detail (`registry_help::detail`). Home's
 action rows come from `home::mission::actions()`, Dashboard's from
 `QUICK_ACTIONS`. `help_lists_every_registry_binding_for_mode` fails when a
 registry key has no Help row; `help_never_gives_one_key_two_actions` fails
