@@ -57,19 +57,12 @@ impl App {
                     .map(|(r, _)| r.message.clone())
                     .collect();
 
-                let failed_gate_results: Vec<crate::session::types::GateResultEntry> = out
-                    .gate_results
-                    .iter()
-                    .filter(|(r, _)| !r.passed)
-                    .map(|(r, _)| crate::session::types::GateResultEntry {
-                        gate: r.gate.clone(),
-                        passed: r.passed,
-                        message: r.message.clone(),
-                    })
-                    .collect();
+                // Every gate, pass or fail: the Gates rail lists them all (#1291).
+                let gate_results: Vec<crate::session::types::GateResultEntry> =
+                    out.gate_results.iter().map(|(r, _)| r.into()).collect();
 
                 if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
-                    managed.session.gate_results = failed_gate_results;
+                    managed.session.gate_results = gate_results;
                     // Persist the retained worktree path on the session so
                     // the post-failure recovery modal (issue #560) can
                     // surface it for [s] / [g] / [r] without piping it
