@@ -7,7 +7,7 @@
 //! from a base that has its blockers merged, so it is planned again with `R`
 //! once wave 1 lands (the live run loop is its own issue).
 
-use super::milestone_plan::IssueReadiness;
+use super::milestone_plan::{IssueReadiness, is_other_repo};
 use super::milestone_rows::{readiness_chip, row_line};
 use super::{ScreenAction, sanitize_for_terminal};
 use crate::tui::app::{self, App};
@@ -308,6 +308,10 @@ impl RunQueue {
 /// The right-hand reason of a deferred row.
 fn hold_note(holds: &[Hold], nerd: bool) -> String {
     match holds.first() {
+        Some(Hold::BlockedOutside { by, .. }) if is_other_repo(*by) => format!(
+            "{} an issue in another repo",
+            get_for_mode(IconId::XCircle, nerd)
+        ),
         Some(Hold::BlockedOutside {
             by,
             milestone: Some(m),

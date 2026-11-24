@@ -108,7 +108,9 @@ pub fn summary(
         match plan.readiness(i.number) {
             IssueReadiness::Ready => counts[0] += 1,
             IssueReadiness::Waits(_) => counts[1] += 1,
-            IssueReadiness::BlockedOutside { .. } | IssueReadiness::Unknown => counts[2] += 1,
+            IssueReadiness::BlockedOutside { .. }
+            | IssueReadiness::OtherRepo
+            | IssueReadiness::Unknown => counts[2] += 1,
             IssueReadiness::Claimed => counts[3] += 1,
         }
     }
@@ -146,7 +148,9 @@ pub fn issue_row(
         IssueReadiness::Ready => theme.accent_success,
         IssueReadiness::Waits(_) => theme.text_secondary,
         IssueReadiness::Claimed => theme.accent_info,
-        IssueReadiness::BlockedOutside { .. } | IssueReadiness::Unknown => theme.accent_warning,
+        IssueReadiness::BlockedOutside { .. }
+        | IssueReadiness::OtherRepo
+        | IssueReadiness::Unknown => theme.accent_warning,
     };
     let pick = |s: Style| {
         if focused {
@@ -185,6 +189,7 @@ pub fn issue_row(
             milestone: Some(m),
         } => format!("{arrow} #{by} m{m}"),
         IssueReadiness::BlockedOutside { by, .. } => format!("{arrow} #{by} not fetched"),
+        IssueReadiness::OtherRepo => format!("{arrow} other repo"),
         _ => String::new(),
     };
     let right = vec![Span::styled(
@@ -250,6 +255,7 @@ pub fn readiness_chip(r: IssueReadiness, nerd: bool) -> String {
         IssueReadiness::Waits(_) => (IconId::Hourglass, "waits"),
         IssueReadiness::BlockedOutside { .. } => (IconId::XCircle, "blocked"),
         IssueReadiness::Claimed => (IconId::ChipNeedsReview, "claimed"),
+        IssueReadiness::OtherRepo => (IconId::XCircle, "blocked"),
         IssueReadiness::Unknown => (IconId::Warning, "no data"),
     };
     format!("{} {word}", get_for_mode(icon, nerd))

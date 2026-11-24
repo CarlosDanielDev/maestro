@@ -157,10 +157,9 @@ impl MilestoneScreen {
     }
 
     fn replan(&mut self) {
-        let known: Vec<&Issue> = (self.milestones.iter())
-            .flat_map(|m| m.issues.iter())
-            .chain(self.blockers.iter())
-            .collect();
+        // Fresh lists last: a later entry wins in `plan_milestone`.
+        let listed = self.milestones.iter().flat_map(|m| m.issues.iter());
+        let known: Vec<&Issue> = self.blockers.iter().chain(listed).collect();
         self.plans = (self.milestones.iter())
             .map(|m| {
                 if let Some(e) = self.failed.get(&m.number) {

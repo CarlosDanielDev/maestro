@@ -2,7 +2,7 @@
 //! fetched issues, the START count, and each issue's readiness chip. The
 //! planner itself is `work::run_plan`; nothing here orders issues.
 
-use crate::orchestration::dag::{IssueMeta, IssueState, parse_blocked_by};
+use crate::orchestration::dag::{IssueMeta, IssueState};
 use crate::provider::RepoProvider;
 use crate::provider::types::{Issue, MaestroLabel};
 use crate::work::conflicts::files_to_modify_from_body;
@@ -22,8 +22,59 @@ pub enum IssueReadiness {
     BlockedOutside { by: u64, milestone: Option<u64> },
     /// A live session or the `maestro:in-progress` label already claims it.
     Claimed,
+    /// Blocked by an issue of another repository (`owner/repo#5`); this
+    /// repository's `#5` is never read in its place.
+    OtherRepo,
     /// No data to plan it.
     Unknown,
+}
+
+/// Blocker ids from here up stand for another repository's issue: one per
+/// blocked issue (`OTHER_REPO_MIN + issue`), never in any fetch, so
+/// `run_plan` holds the issue as blocked outside.
+const OTHER_REPO_MIN: u64 = u64::MAX / 2;
+
+/// True for the id [`plan_milestone`] gives a cross-repository blocker.
+pub fn is_other_repo(by: u64) -> bool {
+    by >= OTHER_REPO_MIN
+}
+
+/// The `## Blocked By` refs of `body`: this repository's numbers, and
+/// whether any ref names another repository. "None" means no blockers, as
+/// `dag::parse_blocked_by` reads it.
+fn blocked_by_refs(body: &str) -> (Vec<u64>, bool) {
+    let mut lines = body.lines().skip_while(|l| {
+        let t = l.trim();
+        !(t.starts_with("##") && t[2..].trim().eq_ignore_ascii_case("blocked by"))
+    });
+    if lines.next().is_none() {
+        return (Vec::new(), false);
+    }
+    let section: Vec<&str> = lines.take_while(|l| !l.starts_with("## ")).collect();
+    let section = section.join("\n");
+    if section.to_lowercase().contains("none") {
+        return (Vec::new(), false);
+    }
+    let mut local = Vec::new();
+    let mut other = false;
+    for (i, _) in section.match_indices('#') {
+        let digits: String = (section[i + 1..].chars())
+            .take_while(char::is_ascii_digit)
+            .collect();
+        let Ok(n) = digits.parse::<u64>() else {
+            continue;
+        };
+        // `owner/repo#5`: the word before `#` holds a `/`.
+        let word: String = (section[..i].chars().rev())
+            .take_while(|c| c.is_alphanumeric() || matches!(c, '/' | '.' | '-' | '_'))
+            .collect();
+        if word.contains('/') {
+            other = true;
+        } else {
+            local.push(n);
+        }
+    }
+    (local, other)
 }
 
 /// One milestone's plan plus what the rows need to explain it.
@@ -38,6 +89,14 @@ pub struct MilestonePlan {
 
 impl MilestonePlan {
     pub fn readiness(&self, n: u64) -> IssueReadiness {
+        if let Some((_, holds)) = self.plan.deferred.iter().find(|(d, _)| *d == n)
+            && holds
+                .iter()
+                .any(|h| matches!(h, Hold::BlockedOutside { by, .. } if is_other_repo(*by)))
+            && !holds.contains(&Hold::Claimed)
+        {
+            return IssueReadiness::OtherRepo;
+        }
         if let Some((_, holds)) = self.plan.deferred.iter().find(|(d, _)| *d == n) {
             return hold_readiness(holds);
         }
@@ -84,6 +143,10 @@ fn is_open(issue: &Issue) -> bool {
 }
 
 fn meta(issue: &Issue) -> IssueMeta {
+    let (mut blocked_by, other) = blocked_by_refs(&issue.body);
+    if other {
+        blocked_by.push(OTHER_REPO_MIN + issue.number);
+    }
     IssueMeta {
         number: issue.number,
         state: if is_open(issue) {
@@ -92,13 +155,15 @@ fn meta(issue: &Issue) -> IssueMeta {
             IssueState::Closed
         },
         milestone: issue.milestone,
-        blocked_by: parse_blocked_by(&issue.body),
+        blocked_by,
     }
 }
 
 /// Plan a run of the open `issues` (one milestone). `known` is every other
-/// fetched issue; `claimed` adds live sessions to the `maestro:in-progress`
-/// label.
+/// fetched issue, in order: a later entry wins, so pass the looked-up
+/// blockers first and the fresh milestone lists last. `issues` win over
+/// all of `known`. `claimed` adds live sessions to the
+/// `maestro:in-progress` label.
 ///
 /// A blocker that neither the fetch nor [`resolve_blockers`] returned has
 /// no meta, so `run_plan` holds its issue as blocked outside: its state is
@@ -142,13 +207,14 @@ pub fn plan_milestone<'a>(
     })
 }
 
-/// Blockers the milestone fetch did not return. The fetch lists open
-/// issues only, so this is where every merged blocker ends up.
+/// This repository's blockers the milestone fetch did not return. The fetch
+/// lists open issues only, so this is where every merged blocker ends up.
+/// A cross-repository ref is never looked up here.
 pub fn unfetched_blockers<'a>(fetched: impl IntoIterator<Item = &'a Issue> + Clone) -> Vec<u64> {
     let have: HashSet<u64> = fetched.clone().into_iter().map(|i| i.number).collect();
     let mut out: Vec<u64> = (fetched.into_iter())
         .filter(|i| is_open(i))
-        .flat_map(|i| parse_blocked_by(&i.body))
+        .flat_map(|i| blocked_by_refs(&i.body).0)
         .filter(|n| !have.contains(n))
         .collect();
     out.sort_unstable();
@@ -179,6 +245,31 @@ pub async fn resolve_blockers(
         .await;
     let found = results.into_iter().filter_map(Result::ok).collect();
     (found, skipped.to_vec())
+}
+
+/// The milestone fetch (#1269): every open milestone with its open issues
+/// (a failed list keeps its error), then one lookup per blocker the lists
+/// did not return, on every fetch. Nothing is read from the cache, so a
+/// reopened blocker is seen as open.
+pub async fn fetch_milestones(
+    client: &dyn RepoProvider,
+) -> anyhow::Result<crate::tui::app::MilestoneFetch> {
+    let milestones = client.list_milestones("open").await?;
+    let lists: Vec<_> = (milestones.iter())
+        .map(|ms| client.list_issues_by_milestone(&ms.title))
+        .collect();
+    let results = futures::future::join_all(lists).await;
+    let milestones: Vec<_> = (milestones.into_iter().zip(results))
+        .map(|(ms, r)| (ms, r.map_err(|e| e.to_string())))
+        .collect();
+    let listed = milestones.iter().flat_map(|(_, r)| r.iter().flatten());
+    let missing = unfetched_blockers(listed);
+    let (blockers, skipped) = resolve_blockers(client, &missing).await;
+    Ok(crate::tui::app::MilestoneFetch {
+        milestones,
+        blockers,
+        skipped,
+    })
 }
 
 #[cfg(test)]

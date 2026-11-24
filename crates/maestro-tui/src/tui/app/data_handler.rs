@@ -207,7 +207,8 @@ impl App {
                     .milestones
                     .iter()
                     .flat_map(|(_, r)| r.iter().flatten());
-                for issue in listed.chain(entries.blockers.iter()) {
+                // Fresh lists last, so they win over a looked-up blocker.
+                for issue in entries.blockers.iter().chain(listed) {
                     self.state.issue_cache.insert(issue.number, issue.clone());
                 }
                 let live = crate::tui::screens::run_queue::live_claims(self);

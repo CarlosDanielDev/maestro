@@ -223,3 +223,30 @@ async fn lookups_past_the_cap_are_skipped_and_stay_held() {
         }
     );
 }
+
+// ---- #1269 judge round 3: cross-repository refs ----
+
+#[test]
+fn cross_repo_ref_is_held_and_never_read_as_a_local_number() {
+    let mut local_five = issue(5, "");
+    local_five.state = "closed".into();
+    let issues = vec![issue(30, "## Blocked By\n\n- other/repo#5\n")];
+    assert!(
+        unfetched_blockers(&issues).is_empty(),
+        "#5 is not looked up"
+    );
+    let p = plan_milestone(&issues, &[local_five], &HashSet::new(), 5.0).unwrap();
+    assert_eq!(p.readiness(30), IssueReadiness::OtherRepo);
+    assert_eq!(p.start_count(), 0);
+}
+
+#[test]
+fn blocked_by_refs_splits_local_and_other_repo() {
+    let body = "## Blocked By\n\n- #10 first\n- owner/r.s#5\n\n## Next\n- #99\n";
+    assert_eq!(blocked_by_refs(body), (vec![10], true));
+    assert_eq!(
+        blocked_by_refs("## Blocked By\n\n- None\n"),
+        (vec![], false)
+    );
+    assert_eq!(blocked_by_refs("no section #4"), (vec![], false));
+}
