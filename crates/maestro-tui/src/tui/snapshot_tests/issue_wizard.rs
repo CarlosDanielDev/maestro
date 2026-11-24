@@ -29,14 +29,37 @@ fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
     out
 }
 
+/// #1282: the five-step stepper, the Type row between Title and Overview,
+/// and the Draft checklist column (Wide is 150 columns and up).
 #[test]
-fn issue_wizard_type_select_uses_wizard_frame() -> Result<(), Box<dyn std::error::Error>> {
+fn issue_wizard_basics_wide() -> Result<(), Box<dyn std::error::Error>> {
     let mut screen = IssueWizardScreen::new();
-    screen.set_step_for_tests(IssueWizardStep::TypeSelect);
+    screen.paste_text_into_focused("Add a gauge widget");
 
-    let terminal = draw_issue_wizard(&mut screen, TERM_WIDTH, TERM_HEIGHT)?;
+    let terminal = draw_issue_wizard(&mut screen, 168, 30)?;
+    let text = buffer_text(terminal.backend().buffer());
+    let stepper = text.lines().next().unwrap_or_default();
+    assert!(
+        stepper.contains("● Basics ─ ○ Details ─ ○ Blocked by ─ ○ AI review ─ ○ Preview"),
+        "five steps:\n{text}"
+    );
+    assert!(!text.contains("Context"), "{text}");
+    assert!(text.contains("Draft"), "checklist column:\n{text}");
+    assert!(text.contains("No [TODO] placeholders"), "{text}");
+    assert!(text.contains("● Feature"), "type row:\n{text}");
 
     assert_snapshot!(terminal.backend());
+    Ok(())
+}
+
+/// Below 100 columns the stepper collapses and the checklist is one strip.
+#[test]
+fn issue_wizard_basics_compact_80x24() -> Result<(), Box<dyn std::error::Error>> {
+    let mut screen = IssueWizardScreen::new();
+    let terminal = draw_issue_wizard(&mut screen, 80, 24)?;
+    let text = buffer_text(terminal.backend().buffer());
+    assert!(text.contains("Step 1/5 · Basics"), "{text}");
+    assert!(text.contains("Draft 1/5 ready"), "ready strip:\n{text}");
     Ok(())
 }
 

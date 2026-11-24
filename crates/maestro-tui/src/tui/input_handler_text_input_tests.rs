@@ -284,7 +284,7 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 /// A text-input surface: its name and how to open it.
 type Surface = (&'static str, fn() -> App);
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 18] {
+fn text_surfaces() -> [Surface; 19] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
@@ -308,6 +308,7 @@ fn text_surfaces() -> [Surface; 18] {
         ("command palette", on_palette),
         ("team compose name", teams::compose_name_app),
         ("team launch find issue", teams::launch_find_app),
+        ("issue wizard blocked-by filter", on_issue_wizard_dep_filter),
     ]
 }
 
@@ -406,4 +407,17 @@ async fn ctrl_k_never_opens_palette_on_any_text_input_surface() {
         handle_key(&mut app, ctrl_k).await;
         assert!(app.palette.is_none(), "{name}: ⌃K opened the palette");
     }
+}
+
+/// #1282: the issue wizard's Blocked-by filter (`/`).
+fn on_issue_wizard_dep_filter() -> App {
+    use crate::tui::screens::issue_wizard::IssueWizardStep;
+    let mut app = base_app(TuiMode::IssueWizard);
+    let mut wizard = IssueWizardScreen::new();
+    wizard.set_step_for_tests(IssueWizardStep::Dependencies);
+    wizard.begin_dependency_fetch();
+    wizard.apply_dep_issues(Vec::new());
+    wizard.open_dep_filter();
+    app.screen_state.issue_wizard_screen = Some(wizard);
+    app
 }

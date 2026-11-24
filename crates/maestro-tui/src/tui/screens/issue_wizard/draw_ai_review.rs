@@ -3,7 +3,8 @@
 //! Kept in its own file so `draw.rs` stays under the 400-LOC guardrail.
 
 use super::IssueWizardScreen;
-use super::draw_diff::build_diff_lines;
+use super::draw_diff::section_diff_lines;
+use super::{Decision, FieldId, IssueCreationPayload, lint};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::BrailleSpinner;
 use ratatui::{
@@ -68,15 +69,17 @@ impl IssueWizardScreen {
         }
 
         if let Some(candidate) = self.improve_candidate() {
-            let block = theme.styled_block(
-                "AI Review - Proposed changes  (a: accept, d: discard, r: retry, j/k: scroll)",
-                false,
-            );
+            let block = theme.styled_block("AI review · proposed changes, per section", false);
             let inner = block.inner(area);
             f.render_widget(block, area);
-            let lines = build_diff_lines(self.payload(), candidate);
-            let para = Paragraph::new(lines).scroll((self.diff_scroll(), 0));
-            f.render_widget(para, inner);
+            let mut lines: Vec<Line> = self.section_list_lines(candidate, theme);
+            lines.push(Line::from(""));
+            lines.extend(section_diff_lines(
+                self.payload(),
+                candidate,
+                self.section_focus(),
+            ));
+            f.render_widget(Paragraph::new(lines), inner);
             return;
         }
 
@@ -140,5 +143,49 @@ impl IssueWizardScreen {
             ))],
         };
         f.render_widget(Paragraph::new(body), inner);
+    }
+
+    /// One row per changed section: focus marker, decision and how many
+    /// `[TODO:` the proposal has there, so placeholders show before `a`.
+    fn section_list_lines(
+        &self,
+        candidate: &IssueCreationPayload,
+        theme: &Theme,
+    ) -> Vec<Line<'static>> {
+        self.changed_sections()
+            .into_iter()
+            .map(|i| {
+                let field = FieldId::ALL[i];
+                let focused = i == self.section_focus();
+                let (glyph, word, color) = match self.decisions()[i] {
+                    Decision::Accepted => ("✓", "accepted", theme.accent_success),
+                    Decision::KeptMine => ("✗", "kept mine", theme.text_secondary),
+                    Decision::Pending => ("○", "undecided · keeps mine", theme.text_muted),
+                };
+                let label_style = if focused {
+                    Style::default()
+                        .fg(theme.text_primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme.text_primary)
+                };
+                let mut spans = vec![
+                    Span::raw(if focused { " ▸ " } else { "   " }),
+                    Span::styled(format!("{glyph} "), Style::default().fg(color)),
+                    Span::styled(field.label(), label_style),
+                    Span::styled(format!("  {word}"), Style::default().fg(color)),
+                ];
+                let todos = lint::count(field.payload_ref(candidate));
+                if todos > 0 {
+                    spans.push(Span::styled(
+                        format!("  ! {todos} [TODO:"),
+                        Style::default()
+                            .fg(theme.accent_warning)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                Line::from(spans)
+            })
+            .collect()
     }
 }

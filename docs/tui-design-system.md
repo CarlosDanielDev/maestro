@@ -596,6 +596,22 @@ Implements `docs/design-system/index.html` §02.20 (Agent graph → Deps files l
 
 Rules: `TuiMode::AgentGraph` is an alias (like `CostDashboard`): `usage::resolve` (in `screens/dashboard/alias.rs`) maps it to Dashboard › Deps › files; `navigate_to` still redirects it when the flag is off. Deps takes every key it gets (nothing reaches the launcher letters); `X` acts only on a drawn agent row. Its footer is `deps::footer` (only the keys of the drawn lens and column). Every colour is a `Theme` token: `screens_use_theme_colors_only` scans `agent_graph/` too. Tests: `screens/dashboard/deps_tests.rs`, `agent_graph/model_tests.rs`, `app/conflict_toast_tests.rs`, `snapshot_tests/files_lens.rs`.
 
+### Issue wizard (`screens/issue_wizard/`, #1282)
+
+Implements `docs/design-system/index.html` §02.2 Create issue (Reimagined; Screen components: Type control, Blocked-by picker, Create gate; Poka-yoke; Implementation). First wizard on `WizardFrame::draw_stepped`. Decision: `docs/design-system/decisions.md` (2026-11-24, Issue wizard in five steps).
+
+| Item | For |
+|---|---|
+| `IssueWizardStep::STEPPER` · `stepper_index()` | The five steps `Basics · Details · Blocked by · AI review · Preview`. `Creating`, `Complete`, `Failed` stay states and sit on Preview's stepper slot. Context and TypeSelect are gone; the issue type is the stepper's state slot |
+| Type row (`type_focused`) | One NORMAL-mode stop between Title and Overview on Basics (Tab order Title → Type → Overview): `← f` Feature, `→ b` Bug, and a line on what Bug adds |
+| `validation_errors() -> Vec<(FieldId, Cow<str>)>` · `touched` · `checklist_rows()` | Every error at once: `field_block` borders (touched fields only), the `Draft` checklist (`ds::checklist`, future-step fields `○`), the stepper `✗`, and `try_advance` (⏎ focuses the first invalid field). Required: Title (`util::validate_title`), Overview, Expected Behavior, Acceptance Criteria (`*` on their labels) |
+| `issue_wizard::lint::placeholders(&payload)` | The create gate's lint over the 8 text fields (`[TODO:`); also the checklist row `No [TODO] placeholders` |
+| Create gate (`gate.rs`, `draw_gate.rs`) | `ds::armed::ArmedEnter` + `widgets::armed_bar`: Blocked while a placeholder is left (⏎ jumps to it), else ⏎ arms and ⏎ within 3 s calls `begin_create`. Esc or any other key disarms; `r` on Failed goes back to the gate (no one-key retry). Clock injected (`set_clock_for_test`) |
+| Blocked-by filter (`deps.rs`, `draw_deps.rs`) | `/` types into a `TextAreaField` (INSERT, via `widgets::input::feed`) that narrows `dep_visible()` by `#number`, title or label; `dep_checked` is never touched, and the `Selected n` chips list every checked issue, filtered out or not. Esc in the filter clears the text, never the selection |
+| `Decision` · `improve_sections.rs` | AI improve per section (`FieldId::ALL` order): `j k` section, `a` accept, `d` keep mine, ⏎ merges only `Accepted` (undecided keeps your text), each row flags the proposal's `[TODO:` count. Only the 8 text fields merge, so `parse_improve_response`'s trusted seats never move |
+
+Rules: Preview's body is `ds::md_block` (TODO chips). The footer is `Screen::footer_hints` per focused element. Tests: `screens/issue_wizard/flow_tests.rs` (`issue_create_blocked_by_placeholder`, `issue_create_armed`, `blocked_by_filter_keeps_selection`, `ai_review_per_section_accept`), `snapshot_tests/issue_wizard.rs` (`issue_wizard_basics_wide`, `issue_wizard_basics_compact_80x24`).
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract

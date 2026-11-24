@@ -216,6 +216,53 @@ pub(super) fn blocks() -> Vec<Binding> {
         )
         .hidden(),
     );
+    // #1282: the issue wizard (`screens::issue_wizard`). ⏎ ⏎ on Preview is
+    // the only GitHub write (armed, blocked while a `[TODO:` is left). `/`
+    // is the Global filter (the Blocked-by picker); Tab and Esc are Global.
+    // Letters act only outside a text field (INSERT types them).
+    let issue = Scope::Screen(TuiMode::IssueWizard);
+    v.extend([
+        s(
+            issue,
+            Chord::key(KeyCode::Enter),
+            A::Expand,
+            "next · ⏎ ⏎ creates on Preview",
+        ),
+        s(issue, ch('f'), A::Expand, "Feature (Type row)"),
+        s(issue, ch('b'), A::Expand, "Bug (Type row)"),
+        s(
+            issue,
+            Chord::key(KeyCode::Left),
+            A::Expand,
+            "Feature (Type row)",
+        )
+        .hidden(),
+        s(
+            issue,
+            Chord::key(KeyCode::Right),
+            A::Expand,
+            "Bug (Type row)",
+        )
+        .hidden(),
+        s(issue, ch(' '), A::Expand, "toggle blocker"),
+        s(
+            issue,
+            ch('j'),
+            A::ScrollDown,
+            "move · next section (AI diff)",
+        ),
+        s(
+            issue,
+            ch('k'),
+            A::ScrollUp,
+            "move · previous section (AI diff)",
+        ),
+        s(issue, Chord::key(KeyCode::Down), A::ScrollDown, "move").hidden(),
+        s(issue, Chord::key(KeyCode::Up), A::ScrollUp, "move").hidden(),
+        s(issue, ch('a'), A::Expand, "accept section (AI diff)"),
+        s(issue, ch('d'), A::Expand, "keep mine (AI diff)"),
+        s(issue, ch('i'), A::Expand, "improve with AI"),
+    ]);
     v
 }
 
