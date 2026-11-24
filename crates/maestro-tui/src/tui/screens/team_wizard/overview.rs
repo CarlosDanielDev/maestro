@@ -123,7 +123,12 @@ impl TeamWizardScreen {
         lines
     }
 
-    fn preset_row(&self, team: &ResolvedTeam, selected: bool, theme: &Theme) -> Line<'static> {
+    pub(super) fn preset_row(
+        &self,
+        team: &ResolvedTeam,
+        selected: bool,
+        theme: &Theme,
+    ) -> Line<'static> {
         let (state, note) = readiness(team, &self.preflight);
         let marker = if selected { " > " } else { "   " };
         let name_style = if selected {

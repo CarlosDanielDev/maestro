@@ -2,7 +2,7 @@
 //! banner names the wave that stopped the run. Both tests draw the wizard.
 
 use super::test_helpers::{make_health_check, make_issue_meta, make_test_team};
-use super::types::{LaunchInputKind, LaunchStep, TeamWizardMode};
+use super::types::{LaunchInputKind, LaunchPhase, TeamWizardMode};
 use super::{Screen, TeamWizardScreen};
 use crate::orchestration::dag::IssueState;
 use crate::orchestration::scheduler::Scheduler;
@@ -71,7 +71,7 @@ fn executing_screen() -> TeamWizardScreen {
     s.set_launch_manual_issues_for_test(vec![10, 11, 12]);
     s.apply_issue_metas(metas());
     s.build_plan_preview_for_test();
-    s.set_launch_step_for_test(LaunchStep::Executing);
+    s.set_launch_phase_for_test(LaunchPhase::Executing);
     s
 }
 
@@ -117,8 +117,9 @@ async fn esc_on_executing_cancels_the_run_and_starts_no_later_wave() {
     ));
     settle().await;
     assert_eq!(*launcher.spawned.lock().unwrap(), vec![10]);
+    // #1290: the shell footer draws the screen's hints.
     assert!(
-        drawn(&mut s).contains("[Esc] cancel run"),
+        s.footer_hints().contains(&("Esc", "cancel run")),
         "footer must offer the way out"
     );
 
@@ -130,7 +131,7 @@ async fn esc_on_executing_cancels_the_run_and_starts_no_later_wave() {
     // What `TuiDataEvent::TeamLaunchResult` does in data_handler.
     s.apply_launch_result(outcome.into_apply_result());
 
-    assert_eq!(s.launch_step(), LaunchStep::LaunchFailed);
+    assert_eq!(s.launch_phase(), LaunchPhase::Failed);
     let screen = drawn(&mut s);
     assert!(
         screen.contains("cancelled by user while waiting on wave 1"),

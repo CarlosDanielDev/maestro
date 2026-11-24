@@ -2,14 +2,16 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/team_wizard.rs
 expression: t.backend()
 ---
-"┌────────────────────────────[ Step 7/8: Launched ]────────────────────────────┐"
-"│                                                                              │"
-"└──────────────────────────────────────────────────────────────────────────────┘"
+" Step 3/3 · Plan & launch   ✓✓●                                                 "
+" Preflight 0/4 ready   ✗ Team   ✗ Input                                         "
 "┌─────────────────────────────────[ Launched ]─────────────────────────────────┐"
 "│                                                                              │"
-"│                             Team run dispatched.                             │"
+"│   Team run dispatched. Spawned is not finished: follow it on the Dashboard.  │"
 "│                                                                              │"
-"│                            Press Enter to return.                            │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
@@ -24,5 +26,3 @@ expression: t.backend()
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-"                                 [Enter] return                                 "
-"                                                                                "

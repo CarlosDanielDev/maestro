@@ -4,7 +4,9 @@
 
 use super::TeamWizardScreen;
 use super::test_helpers::make_test_team;
-use super::types::{ComposeStep, ComposeTier, SEEDED_HEALTH_MESSAGE, TeamWizardMode};
+use super::types::{
+    ComposeStep, ComposeTier, LaunchPhase, LaunchStep, SEEDED_HEALTH_MESSAGE, TeamWizardMode,
+};
 use crate::agent_provider::types::{AgentHealthCheck, AgentProviderId};
 use crate::orchestration::team::SourceTier;
 use crate::orchestration::types::{Primitive, TeamRole};
@@ -186,6 +188,23 @@ fn footer_keys_are_declared_in_the_registry() {
     s.switch_mode(TeamWizardMode::Compose);
     for step in ComposeStep::ALL {
         s.set_compose_step_for_test(*step);
+        keys.extend(s.footer_hints());
+    }
+    // #1290: every Launch step and phase, the find field included.
+    s.switch_mode(TeamWizardMode::Launch);
+    for step in LaunchStep::ALL {
+        s.set_launch_step_for_test(*step);
+        keys.extend(s.footer_hints());
+    }
+    s.set_launch_manual_issue_input_for_test("");
+    keys.extend(s.footer_hints());
+    for phase in [
+        LaunchPhase::Dialog,
+        LaunchPhase::Executing,
+        LaunchPhase::Launched,
+        LaunchPhase::Failed,
+    ] {
+        s.set_launch_phase_for_test(phase);
         keys.extend(s.footer_hints());
     }
     for (key, _) in keys {

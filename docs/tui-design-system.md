@@ -552,6 +552,20 @@ Implements `docs/design-system/index.html` §02.16 (Teams: entry, Compose, Manag
 
 Rules: the Teams Home is the overview (presets by tier, readiness, the selected card); `c` / `l` / `m` start the flows. Compose uses `WizardFrame::draw_stepped` with four steps (`ComposeStep::ALL`) and a Draft checklist; its keys come from `Screen::footer_hints`. Review & save shows the exact path and TOML (`compose_preview`, keys sorted, written byte for byte); when that file is already on disk (`compose_target_exists`) the name border and the bar say `replaces <path>`; the write refuses when the file appeared, changed or vanished since it armed (`write_if_unchanged`) above an `ArmedBar` named for the file (`ArmedBar::to("disk")`; the default place is GitHub): ⏎ arms, ⏎ within `ARM_WINDOW` writes, Esc or an edit disarms. Saved / Failed live on `ComposePayload::save`, not as steps. The name is the canonical `Input` and reports `InputMode::Insert`, so letters never reach global keys. The keys are a `TeamWizard` block in `registry_screens.rs` (`j` / `k`, `c` / `l` / `m`, `Enter`).
 
+### Teams Launch (`screens/team_wizard/` `draw_launch.rs`, `launch_plan.rs`, `launch_cost.rs`, #1290)
+
+Implements `docs/design-system/index.html` §02.17 (Teams: Launch). Decision: `docs/design-system/decisions.md` (2026-11-24, Teams Launch).
+
+| Item | For |
+|---|---|
+| `LaunchStep::{Team, Input, Plan}` + `LaunchPhase::{Editing, Dialog, Executing, Launched, Failed}` | Three steps on `WizardFrame::draw_stepped` with a Preflight checklist (Team, Input, Pre-flight, Something will run). The dialog, the run and its result are phases, never steps |
+| `build_plan_preview` (`launch_plan.rs`) | The Scheduler only expands the picked issues with their open same-milestone blockers; `work::run_plan` plans that set: `PlanPreview.levels` are its waves, `deferred` its holds, `worst_case_usd` its bound. Only the waves dispatch (`launch_dispatch`), so a held issue never runs |
+| `launch_cost::cost_lines(&plan, &budget, theme)` / `Cost::of` | The cost line: `worst case ▓▓░ $15.00 (3 × $5.00 cap) · $38.00 left now` (the launch dialog's words and gauge), `! … over the budget left` when it is, `worst case unknown` with no per-session cap, and `estimate not available` (no run history). The prompt-token figure is never drawn on Launch |
+| `TeamWizardScreen::set_launch_budget(LaunchBudget)` | Fed each frame from `budget_prespawn::launch_budget`, the launch dialog's source |
+| `issue_input` (canonical `Input::single_line`) | Input › Find issue: `#n` or `n`, open matches by number prefix (`autocomplete_candidates`), `↑↓` + `Enter` pick, `⌃V` pastes. Reports `InputMode::Insert`; walked in `input_handler_text_input_tests` |
+
+Rules: Plan `Enter` only opens the dialog; one `Enter` there launches. Nothing opens it while pre-flight fails or every issue is held (`Nothing will run · every issue is held back`). Errors show on the step's border after a refused `Enter`, never on entry (`LaunchPayload::error`). Idea inbox is drawn `⊘` and cannot be chosen. Keys come from `Screen::footer_hints` (`draw_launch::footer_hints`); `r` (re-plan a failed launch) is in the `TeamWizard` registry block. This supersedes the #1286 note that Launch's plan uses `prompt_estimate`.
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract

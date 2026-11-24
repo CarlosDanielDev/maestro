@@ -12,6 +12,7 @@ use crate::orchestration::types::{Primitive, TeamRole};
 use crate::session::team_runner::CancellationToken;
 use crate::state::types::IssueNumber;
 use crate::tui::ds::armed::ArmedEnter;
+use crate::work::run_plan::Hold;
 use std::collections::HashMap;
 
 /// Top-level mode of the wizard. `Home` shows the mode picker (`c` / `l` /
@@ -80,41 +81,24 @@ impl ComposeStep {
     }
 }
 
+/// Launch steps (#1290, §02.17): Team · Input · Plan & launch. The launch
+/// dialog, the run and its result are `LaunchPhase`s, not steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LaunchStep {
     #[default]
-    TeamPicker,
-    InputPicker,
-    IssuePicker,
-    PlanPreview,
-    Confirm,
-    Executing,
-    LaunchSuccess,
-    LaunchFailed,
+    Team,
+    Input,
+    Plan,
 }
 
 impl LaunchStep {
-    pub const ALL: &'static [Self] = &[
-        Self::TeamPicker,
-        Self::InputPicker,
-        Self::IssuePicker,
-        Self::PlanPreview,
-        Self::Confirm,
-        Self::Executing,
-        Self::LaunchSuccess,
-        Self::LaunchFailed,
-    ];
+    pub const ALL: &'static [Self] = &[Self::Team, Self::Input, Self::Plan];
 
     pub const fn label(&self) -> &'static str {
         match self {
-            Self::TeamPicker => "Team",
-            Self::InputPicker => "Input",
-            Self::IssuePicker => "Issue Number",
-            Self::PlanPreview => "Plan",
-            Self::Confirm => "Confirm",
-            Self::Executing => "Executing",
-            Self::LaunchSuccess => "Launched",
-            Self::LaunchFailed => "Launch Failed",
+            Self::Team => "Team",
+            Self::Input => "Input",
+            Self::Plan => "Plan & launch",
         }
     }
 
@@ -145,8 +129,20 @@ impl LaunchStep {
     }
 
     pub fn is_first(&self) -> bool {
-        matches!(self, Self::TeamPicker)
+        matches!(self, Self::Team)
     }
+}
+
+/// Where a launch stands (#1290). `Editing` walks the three steps; `Dialog`
+/// states sessions, worst case and worktrees before anything spends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LaunchPhase {
+    #[default]
+    Editing,
+    Dialog,
+    Executing,
+    Launched,
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -285,7 +281,6 @@ pub struct LaunchPayload {
     pub selected_team: Option<String>,
     pub input_kind: LaunchInputKind,
     pub manual_issue_title: String,
-    pub manual_issue_input: String,
     pub manual_issues: Vec<u64>,
     pub primary_milestone: Option<u64>,
     pub plan: Option<PlanPreview>,
@@ -293,10 +288,14 @@ pub struct LaunchPayload {
     pub max_parallel: usize,
     pub team_focus: usize,
     pub input_focus: usize,
-    /// IssuePicker autocomplete focus index into `autocomplete_candidates()`.
-    /// Reset to `None` on every buffer mutation; advanced by `Up`/`Down`;
-    /// consumed by `Tab` (#876).
+    /// Input step: the find-issue field has focus (Insert mode).
+    pub finding: bool,
+    /// Focused match in `autocomplete_candidates()`. Reset on every edit;
+    /// moved by `Up`/`Down`; `Enter` picks it (#876, #1290).
     pub autocomplete_focus: Option<usize>,
+    /// Shown after an `Enter` the current step refused; cleared on the
+    /// next key. Never shown on entry (§02.17 finding 9).
+    pub error: Option<&'static str>,
     /// Wave (0-based) the running team launch is on (#1246).
     pub running_wave: Option<usize>,
     /// Cancels the running team launch; Esc on Executing fires it (#1246).
@@ -313,15 +312,19 @@ impl LaunchPayload {
     }
 }
 
+/// The Plan step's view of `work::run_plan` (#1290): `levels` are its
+/// waves, `deferred` the issues it holds back, `worst_case_usd` its exact
+/// bound (issues in waves × per-session cap).
 #[derive(Debug, Clone)]
 pub struct PlanPreview {
     pub team_name: String,
     pub primitive: Primitive,
     pub levels: Vec<Vec<u64>>,
+    pub deferred: Vec<(u64, Vec<Hold>)>,
     pub auto_added: Vec<u64>,
     pub original_count: usize,
     pub final_count: usize,
-    pub estimated_cost_usd: f64,
+    pub worst_case_usd: f64,
     pub max_parallel: usize,
 }
 
@@ -344,7 +347,6 @@ pub enum PreflightBlock {
     MissingRoleBinding { role: TeamRole },
     AgentUnhealthy { agent_id: String, message: String },
     MissingClaudeInMinAgents,
-    OpenExternalDep { issue: u64, ext_dep: u64 },
 }
 
 impl PreflightBlock {
@@ -358,9 +360,6 @@ impl PreflightBlock {
             }
             Self::MissingClaudeInMinAgents => {
                 "claude must be in min_agents (L2 orchestrator)".to_string()
-            }
-            Self::OpenExternalDep { issue, ext_dep } => {
-                format!("Issue #{issue} blocked by open external #{ext_dep}")
             }
         }
     }
@@ -499,47 +498,33 @@ mod tests {
     // ── LaunchStep ───────────────────────────────────────────────────────
 
     #[test]
-    fn launch_step_total_is_eight() {
-        assert_eq!(LaunchStep::total(), 8);
+    fn launch_step_total_is_three() {
+        assert_eq!(LaunchStep::total(), 3);
     }
 
     #[test]
-    fn launch_step_team_picker_is_first() {
-        assert!(LaunchStep::TeamPicker.is_first());
+    fn launch_step_team_is_first() {
+        assert!(LaunchStep::Team.is_first());
     }
 
     #[test]
-    fn launch_step_team_picker_next_is_input_picker() {
-        assert_eq!(LaunchStep::TeamPicker.next(), Some(LaunchStep::InputPicker));
+    fn launch_step_team_next_is_input() {
+        assert_eq!(LaunchStep::Team.next(), Some(LaunchStep::Input));
     }
 
     #[test]
-    fn launch_step_input_picker_next_is_issue_picker() {
-        assert_eq!(
-            LaunchStep::InputPicker.next(),
-            Some(LaunchStep::IssuePicker)
-        );
+    fn launch_step_input_next_is_plan() {
+        assert_eq!(LaunchStep::Input.next(), Some(LaunchStep::Plan));
     }
 
     #[test]
-    fn launch_step_issue_picker_next_is_plan_preview() {
-        assert_eq!(
-            LaunchStep::IssuePicker.next(),
-            Some(LaunchStep::PlanPreview)
-        );
+    fn launch_step_input_previous_is_team() {
+        assert_eq!(LaunchStep::Input.previous(), Some(LaunchStep::Team));
     }
 
     #[test]
-    fn launch_step_issue_picker_previous_is_input_picker() {
-        assert_eq!(
-            LaunchStep::IssuePicker.previous(),
-            Some(LaunchStep::InputPicker)
-        );
-    }
-
-    #[test]
-    fn launch_step_launch_failed_next_is_none() {
-        assert_eq!(LaunchStep::LaunchFailed.next(), None);
+    fn launch_step_plan_next_is_none() {
+        assert_eq!(LaunchStep::Plan.next(), None);
     }
 
     #[test]
