@@ -16,6 +16,7 @@ mod detail;
 mod files_lens;
 mod fullscreen;
 mod gh_auth_expired;
+mod guards;
 mod home_insight;
 mod home_mission;
 mod home_small_terminal;

@@ -94,20 +94,42 @@ async fn ctrl_b_after_config_bypass_off_requires_typed_confirm() {
     }
 }
 
+/// #1276: a typed CONFIRM is not a pass for the rest of the run. Every
+/// ⌃B that turns bypass on opens the warning again; turning it off stays
+/// one key.
 #[tokio::test]
-async fn ctrl_b_after_typed_confirm_toggles_without_warning() {
-    let mut app = config_bypass_app();
-    ctrl_b(&mut app).await;
-    ctrl_b(&mut app).await;
-    type_confirm(&mut app).await;
-    assert!(app.bypass_active, "setup: CONFIRM accepted the warning");
+async fn bypass_warning_always_on_tui() {
+    for (w, h) in [(80, 24), (80, 27)] {
+        let mut app = config_bypass_app();
+        ctrl_b(&mut app).await;
+        ctrl_b(&mut app).await;
+        type_confirm(&mut app).await;
+        assert!(app.bypass_active, "setup: CONFIRM turned bypass on");
 
-    ctrl_b(&mut app).await;
-    assert!(!app.bypass_active);
-    ctrl_b(&mut app).await;
-    assert!(app.bypass_active, "acknowledged this session: no warning");
-    assert_ne!(app.tui_mode, TuiMode::BypassWarning);
-    assert!(!drawn_at(&mut app, 80, 24).contains(WARNING_MARK));
+        ctrl_b(&mut app).await;
+        assert!(!app.bypass_active, "off is one key at {w}x{h}");
+        assert_ne!(app.tui_mode, TuiMode::BypassWarning);
+
+        ctrl_b(&mut app).await;
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::BypassWarning,
+            "on asks again after a confirm at {w}x{h}"
+        );
+        assert!(!app.bypass_active, "bypass stays off before CONFIRM");
+        let out = drawn_at(&mut app, w, h);
+        assert!(
+            out.contains(WARNING_MARK),
+            "warning drawn at {w}x{h}:\n{out}"
+        );
+        assert!(
+            out.contains("bypassPermissions"),
+            "the warning names the permission-prompt flag at {w}x{h}:\n{out}"
+        );
+
+        type_confirm(&mut app).await;
+        assert!(app.bypass_active, "CONFIRM turns it on again at {w}x{h}");
+    }
 }
 
 /// #1395: the chip must match the mode sessions really get, which is

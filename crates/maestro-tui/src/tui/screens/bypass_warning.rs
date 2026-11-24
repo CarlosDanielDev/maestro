@@ -1,13 +1,9 @@
-//! First-time danger-warning modal for bypass mode (#328).
+//! Danger warning for bypass mode (#328).
 //!
-//! The user must type `CONFIRM`, then press `⏎`, to enable bypass mode the
-//! first time they activate it in a session. `Esc` cancels (#1261).
+//! The user must type `CONFIRM`, then press `⏎`, every time they turn bypass
+//! mode on from the TUI (#1276). `Esc` cancels (#1261).
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
-// Reason: Phase 1 foundation for #328. The screen is routed from `app.rs`
-// when the user first activates bypass in Phase 2; tests exercise the
-// CONFIRM-typing state machine today.
-#![allow(dead_code)]
 
 use crossterm::event::KeyEvent;
 
@@ -25,17 +21,29 @@ pub struct BypassWarningState {
 }
 
 impl BypassWarningState {
-    /// The `⌃B` warning: bypass for THIS session only.
+    /// The `⌃B` warning with no session started or queued.
     pub fn new() -> Self {
+        Self::tui(0, 0)
+    }
+
+    /// The `⌃B` warning (§02.24): what bypass turns off (both effects, by
+    /// flag), what stays, and when it turns off. `running` sessions keep
+    /// their mode; `queued` ones are spawned with the pool's mode.
+    pub fn tui(running: usize, queued: usize) -> Self {
         let row = |label: &str, text: &str| (label.to_string(), text.to_string());
         Self::with_text(
             "DANGER: enable bypass mode?",
             vec![
-                row("", "Bypass auto-accepts EVERY review concern."),
-                row("", ""),
-                row("does", "edits files, commits and pushes, no asking"),
-                row("scope", "THIS session only"),
-                row("trust", "use only when you trust the reviewer fully"),
+                row("", "What it turns off"),
+                row("asks", "Claude's permission prompts (bypassPermissions)"),
+                row("review", "your review step: every concern is auto-accepted"),
+                row("", "What stays"),
+                row("live", &format!("{} keep their mode", sessions(running))),
+                row("queue", &format!("{} will get bypass", sessions(queued))),
+                row("file", "maestro.toml is not written (Settings writes it)"),
+                row("trust", "workspace trust still applies"),
+                row("", "Turns off when"),
+                row("off", "you press Ctrl+B, or a PR review cycle ends"),
             ],
         )
     }
@@ -46,6 +54,15 @@ impl BypassWarningState {
         Self {
             confirm: TypedConfirm::new(title, CONFIRM_PHRASE, "enable", consequences),
         }
+    }
+}
+
+/// `1 session` / `2 sessions`.
+fn sessions(n: usize) -> String {
+    if n == 1 {
+        "1 session".to_string()
+    } else {
+        format!("{n} sessions")
     }
 }
 
@@ -130,6 +147,28 @@ mod tests {
             handle_key(&mut state, key(KeyCode::Enter)),
             BypassWarningOutcome::Confirmed
         );
+    }
+
+    /// #1276: the dialog names both effects and counts the sessions.
+    #[test]
+    fn tui_text_names_both_effects_and_counts() {
+        let state = BypassWarningState::tui(2, 1);
+        let mut t =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("terminal");
+        let theme = crate::tui::theme::Theme::dark();
+        t.draw(|f| state.confirm.render(f, f.area(), &theme))
+            .expect("draw");
+        let text = format!("{}", t.backend());
+        for want in [
+            "bypassPermissions",
+            "auto-accepted",
+            "2 sessions keep their mode",
+            "1 session will get bypass",
+            "maestro.toml is not written",
+            "Turns off when",
+        ] {
+            assert!(text.contains(want), "missing {want:?} in:\n{text}");
+        }
     }
 
     #[test]

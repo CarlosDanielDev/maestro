@@ -1,117 +1,106 @@
-use crate::tui::budget_prespawn::{draw_budget_prespawn, modal_rect};
+use crate::tui::budget_prespawn::{GateView, draw, modal_rect};
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-#[test]
-fn budget_prespawn_modal_warn_shows_projected_and_limit() {
+/// The Usage "What happens" words for the cap.
+const CAP_WHAT: &str = "all agents pause";
+
+fn view(spent: f64, blocked: bool) -> GateView {
+    GateView {
+        session: "#415".into(),
+        spent,
+        next: 5.0,
+        per_session: 10.0,
+        cap: 50.0,
+        blocked,
+    }
+}
+
+fn render(v: &GateView) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     let theme = Theme::dark();
-
     terminal
-        .draw(|f| {
-            let area = modal_rect(f.area());
-            draw_budget_prespawn(f, 42.0, 50.0, area, &theme);
-        })
+        .draw(|f| draw(f, v, CAP_WHAT, modal_rect(f.area()), &theme))
         .unwrap();
+    terminal
+}
 
+/// Warn: the session, every SPEND row, the worst case that passes the cap
+/// and the cap effect.
+#[test]
+fn budget_prespawn_modal_warn_shows_projected_and_limit() {
+    let terminal = render(&view(37.0, false));
     let output = format!("{}", terminal.backend());
-    assert!(
-        output.contains("$42.00") && output.contains("$50.00"),
-        "modal must render projected and limit values; output:\n{}",
-        output
-    );
+    for want in [
+        "WARN",
+        "#415 would use 84% of the budget",
+        "$37.00 of $50.00",
+        "$13.00 left",
+        "$5.00 est. for the next turn",
+        "$42.00",
+        "$47.00",
+        "under the cap",
+        "all agents pause; new spawns wait",
+        "S spawn now",
+    ] {
+        assert!(output.contains(want), "missing {want:?}:\n{output}");
+    }
     assert_snapshot!(terminal.backend());
 }
 
 #[test]
 fn budget_prespawn_modal_block_shows_projected_and_limit() {
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    let theme = Theme::dark();
-
-    terminal
-        .draw(|f| {
-            let area = modal_rect(f.area());
-            draw_budget_prespawn(f, 52.0, 50.0, area, &theme);
-        })
-        .unwrap();
-
+    let terminal = render(&view(46.0, true));
     let output = format!("{}", terminal.backend());
-    assert!(
-        output.contains("$52.00") && output.contains("$50.00"),
-        "modal must render projected and limit values; output:\n{}",
-        output
-    );
+    for want in [
+        "BLOCK",
+        "#415 would pass the budget cap",
+        "$46.00 of $50.00",
+        "$51.00",
+        "$56.00",
+        "! passes the cap",
+        "S spawn (locked: over the cap)",
+    ] {
+        assert!(output.contains(want), "missing {want:?}:\n{output}");
+    }
     assert_snapshot!(terminal.backend());
 }
 
+/// The frame is `ds::panel` (no `branding_bg` surface): Double (danger)
+/// on Block, Rounded (overlay) on Warn.
 #[test]
 fn budget_prespawn_modal_no_branding_bg() {
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    let theme = Theme::dark();
-
-    terminal
-        .draw(|f| {
-            let area = modal_rect(f.area());
-            draw_budget_prespawn(f, 42.0, 50.0, area, &theme);
-        })
-        .unwrap();
-
-    let output = format!("{}", terminal.backend());
-    let branding_bg = theme.branding_bg;
-    // Color::Rgb(r,g,b) formats as "Rgb(r,g,b)" in Debug. We can't match
-    // ANSI escape directly (TestBackend renders chars not codes). Instead,
-    // verify the modal text was rendered (we have content) — the visual
-    // regression below catches branding_bg if implementer ever swaps in.
-    assert!(
-        !output.is_empty(),
-        "modal must render content (sanity); theme.branding_bg = {:?}",
-        branding_bg
-    );
-    // The styled_block wrapper is the official border. If a future PR
-    // replaces it with `theme.branding_bg`-backed surface, the
-    // snapshot_tests/budget_prespawn.rs snapshots (TC-8.1, TC-8.2) will
-    // diff visibly — that's the real guard. This test exists to document
-    // the intent.
+    for (blocked, corner) in [(true, "╔"), (false, "╭")] {
+        let t = render(&view(40.0, blocked));
+        let area = modal_rect(t.backend().buffer().area);
+        let cell = &t.backend().buffer()[(area.x, area.y)];
+        assert_eq!(cell.symbol(), corner, "blocked={blocked}");
+        assert_ne!(cell.bg, Theme::dark().branding_bg, "blocked={blocked}");
+    }
 }
 
+/// The gate's keys are drawn in the dialog: `S` (locked on Block), `b`
+/// and `n`; the old `[y]es [n]o [s]kip` row is gone.
 #[test]
 fn budget_prespawn_modal_chord_hints_exact_text() {
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    let theme = Theme::dark();
-
-    terminal
-        .draw(|f| {
-            let area = modal_rect(f.area());
-            draw_budget_prespawn(f, 42.0, 50.0, area, &theme);
-        })
-        .unwrap();
-
-    let output = format!("{}", terminal.backend());
-    // The TestBackend renders spans concatenated by row. We check each
-    // chord hint substring individually; the exact spacing between them
-    // is not load-bearing for the AC.
-    assert!(
-        output.contains("[y]es"),
-        "modal footer must contain '[y]es'; output:\n{}",
-        output
-    );
-    assert!(
-        output.contains("[n]o"),
-        "modal footer must contain '[n]o'; output:\n{}",
-        output
-    );
-    assert!(
-        output.contains("[s]kip"),
-        "modal footer must contain '[s]kip'; output:\n{}",
-        output
-    );
+    for blocked in [false, true] {
+        let output = format!("{}", render(&view(40.0, blocked)).backend());
+        assert!(
+            output.contains("b raise cap") && output.contains("n drop"),
+            "{output}"
+        );
+        assert!(
+            !output.contains("[y]es") && !output.contains("[s]kip"),
+            "{output}"
+        );
+    }
 }
 
 /// A full app parked in the gate for one queued session, `total_cost`
 /// already spent against a $1 cap.
-fn gated_app(total_cost: f64) -> crate::tui::app::App {
+pub(super) fn gated_app(total_cost: f64) -> crate::tui::app::App {
     use crate::session::types::Session;
     use crate::tui::app::TuiMode;
     let session = Session::new(
@@ -139,28 +128,25 @@ fn footer(t: &Terminal<TestBackend>) -> String {
     (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
 }
 
-/// #1382: on Block `y` / `s` do nothing (#1243), so the footer offers only
-/// the keys that act.
+/// #1382: on Block `S` does nothing (#1243), so the footer offers only
+/// the keys that act: `b` and `n`.
 #[test]
 fn budget_prespawn_block_footer_hints() {
     let mut app = gated_app(1.2);
     let t = super::log_drawer::draw(&mut app, 80, 24);
     let row = footer(&t);
-    assert!(row.contains("Cancel"), "n Cancel is offered: {row}");
     assert!(
-        !row.contains("Proceed") && !row.contains("Skip-once"),
-        "Block must not offer y / s: {row}"
+        row.contains("raise cap") && row.contains("drop"),
+        "b and n are offered: {row}"
     );
+    assert!(!row.contains("spawn"), "Block must not offer S: {row}");
     assert_snapshot!(t.backend());
 }
 
-/// Under the cap (Warn) `y` and `s` still act, so they stay.
+/// Under the cap (Warn) `S` acts, so the footer offers it.
 #[test]
 fn budget_prespawn_warn_footer_keeps_proceed() {
     let mut app = gated_app(0.2);
     let row = footer(&super::log_drawer::draw(&mut app, 80, 24));
-    assert!(
-        row.contains("Proceed") && row.contains("Skip-once"),
-        "{row}"
-    );
+    assert!(row.contains("S") && row.contains("spawn"), "{row}");
 }

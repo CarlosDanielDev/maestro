@@ -73,11 +73,13 @@ impl App {
         enforcer.check_pre_spawn(self.total_cost, projected)
     }
 
-    /// Resolve the pre-spawn modal in response to a single-letter chord
-    /// (#776/#850). `y`/`s` mark the session as gate-bypass for the next
-    /// spawn attempt and resume from `BudgetPreSpawn`; `n` removes the
-    /// parked session from the pool. Other chords are ignored. On Block
-    /// (#1243) `y`/`s` are ignored too: only `n` leaves the modal.
+    /// Resolve the pre-spawn modal in response to a chord from
+    /// [`crate::tui::budget_prespawn::chord`] (#776/#850, #1276). `S` marks
+    /// the session as gate-bypass for the next spawn attempt and spawns it;
+    /// on Block (#1243) `S` does nothing. `b` opens Settings › Budget with
+    /// the gate under it, so `Esc` comes back to the gate with the new
+    /// cap. `n` removes the parked session from the pool. Other chords are
+    /// ignored.
     pub async fn resolve_budget_prespawn(&mut self, chord: char, session_id: uuid::Uuid) {
         use crate::tui::app::types::TuiMode;
         let blocked = self.pool.get_session(session_id).is_some_and(|session| {
@@ -87,8 +89,18 @@ impl App {
             )
         });
         match chord {
-            'y' | 's' if blocked => {}
-            'y' | 's' => {
+            'S' if blocked => {}
+            'b' => {
+                use crate::tui::screens::{ScreenAction, settings::SettingsTab};
+                crate::tui::screen_dispatch::handle_screen_action(
+                    self,
+                    ScreenAction::Push(TuiMode::Settings),
+                );
+                if let Some(screen) = self.screen_state.settings_screen.as_mut() {
+                    screen.jump_to_tab(SettingsTab::Budget);
+                }
+            }
+            'S' => {
                 self.budget_skip_once.insert(session_id);
                 self.tui_mode = TuiMode::Overview;
                 self.note_spawn_bypass(session_id);

@@ -1,5 +1,4 @@
 use super::ReleaseNotesScreen;
-use crate::changelog;
 use crate::tui::markdown::render_markdown;
 use crate::tui::theme::Theme;
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};
@@ -15,10 +14,15 @@ pub fn draw_release_notes(
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
 
-    if screen.cached_content.is_none() {
-        let content = render_markdown(changelog::changelog_raw(), theme, inner.width);
+    // Re-wrap on resize (§02.24 audit #10): the cache holds one width.
+    if screen.cached_content.is_none() || screen.cached_width != inner.width {
+        let content = render_markdown(screen.source, theme, inner.width);
         screen.total_lines = content.lines.len() as u16;
         screen.cached_content = Some(content);
+        screen.cached_width = inner.width;
+        screen.scroll_offset = screen
+            .scroll_offset
+            .min(screen.total_lines.saturating_sub(1));
     }
 
     let paragraph = if let Some(ref content) = screen.cached_content {

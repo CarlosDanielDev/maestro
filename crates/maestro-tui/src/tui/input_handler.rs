@@ -340,14 +340,10 @@ async fn handle_budget_prespawn(
     key: &KeyEvent,
     session_id: uuid::Uuid,
 ) -> KeyAction {
-    use crossterm::event::KeyCode;
-    let chord = match key.code {
-        KeyCode::Char('y') | KeyCode::Char('Y') => 'y',
-        KeyCode::Char('n') | KeyCode::Char('N') => 'n',
-        KeyCode::Char('s') | KeyCode::Char('S') => 's',
-        // Modal MUST consume reserved Dashboard chords without dispatching.
-        // Anything else stays in the modal — no fall-through to outer chords.
-        _ => return KeyAction::Consumed,
+    // #1276: `S` spawn, `b` raise cap, `n` drop. The modal consumes every
+    // other key: no fall-through to outer chords.
+    let Some(chord) = crate::tui::budget_prespawn::chord(key) else {
+        return KeyAction::Consumed;
     };
     app.resolve_budget_prespawn(chord, session_id).await;
     KeyAction::Consumed
@@ -971,6 +967,11 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         // #1280: the Agent graph was Overview's `g`; Esc comes back.
         Some(Run::Command(PaletteCommand::AgentGraph)) => {
             app.navigate_to(app::TuiMode::AgentGraph);
+            KeyAction::Consumed
+        }
+        // #1276: Code health (TuiMode::Sanitize) with a background scan.
+        Some(Run::Command(PaletteCommand::CodeHealth)) => {
+            app.open_code_health();
             KeyAction::Consumed
         }
         Some(Run::Command(PaletteCommand::PrPipeline)) => {

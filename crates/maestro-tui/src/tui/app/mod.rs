@@ -9,6 +9,7 @@ mod ci_error_review;
 mod ci_polling;
 mod claim_conflicts;
 pub(crate) mod clipboard_action;
+mod code_health;
 mod completion_apply;
 mod completion_git;
 mod completion_job;

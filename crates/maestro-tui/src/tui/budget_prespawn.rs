@@ -1,151 +1,246 @@
-//! Pre-spawn budget gate modal (#776/#850).
+//! Pre-spawn budget gate modal (#776/#850, §02.24 #1276).
 //!
-//! Renders an overlay modal when `BudgetEnforcer::check_pre_spawn` returns
-//! `Warn` or `Block`. The orchestrator (input_handler.rs) reads the user's
-//! single-letter chord (`y`/`n`/`s`) and acts accordingly.
-//!
-//! Hard rules (per architect blueprint §6):
-//! - MUST use `theme.styled_block` for the border, NOT `theme.branding_bg`.
-//! - Footer chord hints are exactly `[y]es [n]o [s]kip` — verbatim — on Warn;
-//!   on Block only `[n]o` (#1243: `y`/`s` cannot spawn past the cap).
-//! - Single-letter chords only; `Tab`/`BackTab`/`Up`/`Down`/`Enter`/`Esc`/`Ctrl+s`
-//!   are reserved for outer Dashboard chord set and MUST NOT dismiss the modal.
+//! Opens when `BudgetEnforcer::check_pre_spawn` returns `Warn` or `Block`.
+//! It names the session, states the money (SPEND rows: spent, next turn,
+//! after, worst case, left) and what happens at the cap, with a
+//! `BLOCK` / `WARN` chip. Keys ([`chord`]): `S` spawns (Warn only: locked
+//! on Block), `b` raises the cap in Settings › Budget, `n` drops the
+//! session from the queue. Every other key stays in the modal.
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
 
+use crate::tui::ds::gauge::{bar, gauge_level};
+use crate::tui::ds::money::money;
+use crate::tui::ds::panel::{Focus, panel};
 use crate::tui::theme::Theme;
 
-/// Render the pre-spawn budget gate modal at `area`. The caller (ui.rs)
-/// is responsible for picking a centered sub-rect for the overlay.
-///
-/// `projected_total` is the sum of current global cost + projected next-turn
-/// cost. `limit` is the configured `[budget].total_usd`. The modal renders
-/// both side-by-side so the user understands the impending threshold.
-pub fn draw_budget_prespawn(
+/// The gate's keys: `S` spawn, `b` raise cap, `n` drop. Spawning spends
+/// money, so it is uppercase only; `y` / `s` (the old twins) are gone.
+pub fn chord(key: &KeyEvent) -> Option<char> {
+    match key.code {
+        KeyCode::Char('S') => Some('S'),
+        KeyCode::Char('b') => Some('b'),
+        KeyCode::Char('n') => Some('n'),
+        _ => None,
+    }
+}
+
+/// What the gate states, from the same enforcer and projector as
+/// [`crate::tui::app::App::pre_spawn_decision`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct GateView {
+    /// `#415` or `S-1a2b3c4d`.
+    pub session: String,
+    pub spent: f64,
+    /// The projected next turn (`DefaultBudgetProjector`).
+    pub next: f64,
+    /// `[budget].per_session_usd`: what one session may spend.
+    pub per_session: f64,
+    /// `[budget].total_usd`.
+    pub cap: f64,
+    /// The gate's own `Block`: `S` does nothing.
+    pub blocked: bool,
+}
+
+impl GateView {
+    pub fn after(&self) -> f64 {
+        self.spent + self.next
+    }
+
+    pub fn worst(&self) -> f64 {
+        self.spent + self.per_session
+    }
+
+    pub fn left(&self) -> f64 {
+        (self.cap - self.spent).max(0.0)
+    }
+}
+
+/// The gate for the parked session `session_id`.
+pub fn gate_view(app: &crate::tui::app::App, session_id: uuid::Uuid) -> GateView {
+    let session = app.pool.get_session(session_id);
+    let next = session
+        .zip(app.budget_projector.as_ref())
+        .map(|(s, p)| p.projected_turn_cost(s))
+        .unwrap_or(0.0);
+    let blocked = session.is_some_and(|s| {
+        matches!(
+            app.pre_spawn_decision(s),
+            crate::budget::PreSpawnDecision::Block { .. }
+        )
+    });
+    // The enforcer the gate decides with, so the rows match its Block.
+    let enforcer = app.budget_enforcer.as_ref();
+    GateView {
+        session: session
+            .map(crate::tui::app::helpers::session_label)
+            .unwrap_or_else(|| "this session".to_string()),
+        spent: app.total_cost,
+        next,
+        per_session: enforcer.map_or(0.0, |e| e.per_session_limit()),
+        cap: enforcer.map_or(0.0, |e| e.total_limit()),
+        blocked,
+    }
+}
+
+/// Draw the gate for `session_id` centred in `area` (ui.rs, also over the
+/// SizeGuard).
+pub fn draw_gate(
     f: &mut Frame,
-    projected_total: f64,
-    limit: f64,
+    app: &crate::tui::app::App,
+    session_id: uuid::Uuid,
     area: Rect,
     theme: &Theme,
 ) {
-    let block = theme.styled_block("Budget Alert", false);
+    let cap_what = app
+        .config
+        .as_ref()
+        .map(|c| crate::tui::screens::dashboard::usage::budget_thresholds(&c.budget)[2].what)
+        .unwrap_or("all agents pause");
+    draw(
+        f,
+        &gate_view(app, session_id),
+        cap_what,
+        modal_rect(area),
+        theme,
+    );
+}
 
-    f.render_widget(Clear, area);
-
-    let inner_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // intro
-            Constraint::Length(1), // projected total
-            Constraint::Length(1), // limit
-            Constraint::Length(1), // chord footer
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let exceeds = projected_total >= limit;
-    let intro = if exceeds {
-        Line::from(Span::styled(
-            "Pre-spawn cost exceeds the configured budget.",
-            Style::default()
-                .fg(theme.gauge_high)
-                .add_modifier(Modifier::BOLD),
-        ))
+/// Draw `view` in `area`. `cap_what` is the Usage "What happens" line for
+/// the cap, word for word.
+pub fn draw(f: &mut Frame, view: &GateView, cap_what: &str, area: Rect, theme: &Theme) {
+    let (focus, chip, chip_color) = if view.blocked {
+        (Focus::Danger, " BLOCK ", theme.accent_error)
     } else {
-        Line::from(Span::styled(
-            "Pre-spawn cost crosses the budget alert threshold.",
-            Style::default()
-                .fg(theme.gauge_medium)
-                .add_modifier(Modifier::BOLD),
-        ))
+        (Focus::Overlay, " WARN ", theme.accent_warning)
     };
+    let block = panel("Budget gate", focus, theme);
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let inner = Rect::new(
+        inner.x + 1,
+        inner.y,
+        inner.width.saturating_sub(2),
+        inner.height,
+    );
 
-    let projected_line = Line::from(vec![
+    let muted = Style::default().fg(theme.text_muted);
+    let text = Style::default().fg(theme.text_primary);
+    let bold = text.add_modifier(Modifier::BOLD);
+    let label = |s: &str| Span::styled(format!("{s:<8}"), muted);
+    let outcome = if view.blocked {
+        "would pass the budget cap".to_string()
+    } else if view.cap > 0.0 {
+        format!(
+            "would use {:.0}% of the budget",
+            view.after() / view.cap * 100.0
+        )
+    } else {
+        "crosses the budget alert".to_string()
+    };
+    let ratio = if view.cap > 0.0 {
+        view.spent / view.cap
+    } else {
+        0.0
+    };
+    let level = gauge_level(ratio).style(theme);
+    let (filled, empty) = bar(ratio, 12, crate::icon_mode::use_nerd_font());
+    let worst_note = if view.cap > 0.0 && view.worst() >= view.cap {
         Span::styled(
-            "  Projected total: ",
-            Style::default().fg(theme.text_secondary),
-        ),
-        Span::styled(
-            format!("${:.2}", projected_total),
+            "  ! passes the cap",
             Style::default()
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
-        ),
-    ]);
-    let limit_line = Line::from(vec![
-        Span::styled(
-            "  Limit:           ",
-            Style::default().fg(theme.text_secondary),
-        ),
-        Span::styled(
-            format!("${:.2}", limit),
-            Style::default().fg(theme.text_primary),
-        ),
-    ]);
-    // On Block `y`/`s` do nothing (#1243), so the footer offers only `n`.
-    // `limit > 0` mirrors `check_pre_spawn`: no cap never blocks.
-    let blocked = limit > 0.0 && exceeds;
-    let footer = if blocked {
-        Line::from(vec![
-            Span::styled(
-                "  [n]o ",
-                Style::default()
-                    .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "over the cap, cannot spawn",
-                Style::default().fg(theme.text_secondary),
-            ),
-        ])
+        )
     } else {
+        Span::styled("  under the cap", muted)
+    };
+    let spawn = if view.blocked {
+        Span::styled("S spawn (locked: over the cap)", muted)
+    } else {
+        Span::styled("S spawn now", bold)
+    };
+    let key = |k: &str| {
+        Span::styled(
+            k.to_string(),
+            Style::default()
+                .fg(theme.keybind_key)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+    let lines = vec![
         Line::from(vec![
             Span::styled(
-                "  [y]es ",
+                chip,
                 Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(chip_color)
+                    .add_modifier(Modifier::REVERSED | Modifier::BOLD),
             ),
+            Span::styled(format!(" {} ", view.session), bold),
+            Span::styled(outcome, text),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled("SPEND", bold)),
+        Line::from(vec![
+            label("spent"),
+            Span::styled(filled, level),
+            Span::styled(empty, Style::default().fg(theme.gauge_background)),
             Span::styled(
-                "[n]o ",
-                Style::default()
-                    .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD),
+                format!(" {} of {}", money(Some(view.spent)), money(Some(view.cap))),
+                text,
             ),
+            Span::styled(format!(" · {} left", money(Some(view.left()))), muted),
+        ]),
+        Line::from(vec![
+            label("next"),
+            Span::styled(money(Some(view.next)), text),
+            Span::styled(" est. for the next turn", muted),
+        ]),
+        Line::from(vec![
+            label("after"),
+            Span::styled(money(Some(view.after())), text),
+        ]),
+        Line::from(vec![
+            label("worst"),
+            Span::styled(money(Some(view.worst())), text),
             Span::styled(
-                "[s]kip",
-                Style::default()
-                    .fg(theme.accent_info)
-                    .add_modifier(Modifier::BOLD),
+                format!(" = spent + one {} session", money(Some(view.per_session))),
+                muted,
             ),
-        ])
-    };
-
-    let intro_p = Paragraph::new(intro).alignment(Alignment::Left);
-    let projected_p = Paragraph::new(projected_line).alignment(Alignment::Left);
-    let limit_p = Paragraph::new(limit_line).alignment(Alignment::Left);
-    let footer_p = Paragraph::new(footer).alignment(Alignment::Left);
-
-    f.render_widget(block, area);
-    f.render_widget(intro_p, inner_layout[0]);
-    f.render_widget(projected_p, inner_layout[1]);
-    f.render_widget(limit_p, inner_layout[2]);
-    f.render_widget(footer_p, inner_layout[3]);
+            worst_note,
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            label("at cap"),
+            Span::styled(format!("{cap_what}; new spawns wait"), text),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            spawn,
+            Span::raw("   "),
+            key("b"),
+            Span::styled(" raise cap", text),
+            Span::raw("   "),
+            key("n"),
+            Span::styled(" drop", text),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Pick a centered sub-rect for the modal. 50×8 fits the 5 visible lines
-/// (intro + 1 + projected + limit + 1 + footer) + 1 line of breathing room
-/// inside the styled_block. Falls back to the full `area` if too narrow.
+/// Pick a centered sub-rect for the modal: 66×13 holds the 11 rows of
+/// [`draw`] inside the border. Shrinks to `area` when it is smaller.
 pub fn modal_rect(area: Rect) -> Rect {
-    let width = 50.min(area.width);
-    let height = 8.min(area.height);
+    let width = 66.min(area.width);
+    let height = 13.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect {
