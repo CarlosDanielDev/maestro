@@ -1,20 +1,19 @@
 use crate::session::types::Session;
 use crate::state::progress::ProgressTracker;
-use crate::tui::agent_badge::agent_label;
 use crate::tui::markdown::render_markdown;
+use crate::tui::screens::session::output::OutputScroll;
 use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
 
-/// Draw a full-screen view for a single agent session. `scroll` is how
-/// many output rows the view sits above the tail (0 = follow the tail); it
-/// is clamped here to what the output holds (#1240).
+/// Draw the Output view of one session (#1288: the session screen draws
+/// the header). `scroll` follows the tail until the user scrolls up (#1240).
 pub fn draw_fullscreen(
     f: &mut Frame,
     session: &Session,
@@ -22,70 +21,18 @@ pub fn draw_fullscreen(
     area: Rect,
     theme: &Theme,
     spinner_tick: usize,
-    scroll: &mut u16,
+    scroll: &mut OutputScroll,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // session header
-            Constraint::Min(10),   // output
+            Constraint::Min(3),    // output
             Constraint::Length(3), // footer with stats
         ])
         .split(area);
 
-    draw_session_header(f, session, chunks[0], theme);
-    draw_session_output(f, session, chunks[1], theme, scroll);
-    draw_session_footer(f, session, progress_tracker, chunks[2], theme, spinner_tick);
-}
-
-fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
-    let title = match session.issue_number {
-        Some(n) => {
-            let issue_title = session.issue_title.as_deref().unwrap_or("untitled");
-            format!("#{} — {}", n, issue_title)
-        }
-        None => format!("Session {}", &session.id.to_string()[..8]),
-    };
-
-    let status_color = theme.status_color(session.status);
-
-    let header = Line::from(vec![
-        Span::styled(
-            format!(" {} {} ", session.status.symbol(), session.status.label()),
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(status_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            &title,
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("model: {}", session.model),
-            Style::default().fg(theme.text_secondary),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("mode: {}", session.mode),
-            Style::default().fg(theme.text_secondary),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("agent: {}", agent_label(session.agent_id.as_deref())),
-            Style::default().fg(theme.agent_color(session.agent_id.as_deref())),
-        ),
-    ]);
-
-    let block = theme
-        .styled_block_plain(false)
-        .border_style(Style::default().fg(status_color));
-
-    f.render_widget(Paragraph::new(header).block(block), area);
+    draw_session_output(f, session, chunks[0], theme, scroll);
+    draw_session_footer(f, session, progress_tracker, chunks[1], theme, spinner_tick);
 }
 
 fn draw_session_output(
@@ -93,7 +40,7 @@ fn draw_session_output(
     session: &Session,
     area: Rect,
     theme: &Theme,
-    scroll: &mut u16,
+    scroll: &mut OutputScroll,
 ) {
     let inner_width = area.width.saturating_sub(2);
     let md_text = if session.last_message.is_empty() {
@@ -105,11 +52,18 @@ fn draw_session_output(
     let line_count = md_text.lines.len() as u16;
     let inner_height = area.height.saturating_sub(2);
     let tail = line_count.saturating_sub(inner_height);
-    *scroll = (*scroll).min(tail);
-    let scroll_offset = tail - *scroll;
+    let scroll_offset = scroll.offset(tail);
+    let title = if scroll.follow {
+        "Agent Output · following".to_string()
+    } else {
+        format!(
+            "Agent Output · {} rows below · End follows",
+            tail - scroll_offset
+        )
+    };
 
     let paragraph = Paragraph::new(md_text)
-        .block(theme.styled_block("Agent Output", false))
+        .block(theme.styled_block(&title, false))
         .wrap(Wrap { trim: false })
         .scroll((scroll_offset, 0));
 

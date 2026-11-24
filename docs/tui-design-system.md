@@ -488,6 +488,22 @@ Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.h
 
 Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
+### Session screen (`screens/session/`, #1288)
+
+Implements `§02.13 Status: session views` of `docs/design-system/index.html` (screen, header, sub-view strip, switcher). Decision: `docs/design-system/decisions.md` (2026-11-24, Session screen).
+
+| Item | For |
+|---|---|
+| `TuiMode::Session { id, view: SessionView }` | One screen for one session. `SessionView::{Detail, Output, Log, Gates, Events}` (strip order in `SessionView::ALL`, key lookup `SessionView::for_key`). The old modes are `const fn` constructors (`TuiMode::Detail(id)`, `Fullscreen` → Output, `LogViewer` → Log, `GateOutputViewer` → Gates, `CallLog` → Events), so `navigate_to` callers and the nav stack keep working; patterns match `TuiMode::Session { view: SessionView::X, .. }` |
+| `screens::session::draw(f, app, id, view, area, theme, tick)` | Header (3 rows), strip (1 row), then the view body: `detail::draw_detail_with_claims`, `fullscreen::draw_fullscreen`, `log_viewer::draw_log_viewer`, `gate_output_viewer::draw_gate_output_viewer`, `call_log::draw::draw_call_log`. A session gone from the pool says so (`Esc back`); Log still reads the file |
+| `screens::session::header(s, now, frame_width, width, theme, nerd_font)` | The Dashboard detail pane's first lines, word for word: status chip · model · elapsed · cost · retry, the title, `PIPELINE` + `ds::stepper` (`pipeline_stage`). `session_header_matches_dashboard_pane` draws both and fails on drift |
+| `screens::session::strip(view, session, theme)` | `ds::sub_tabs` with `d f l v e`; Gates badge `✗` when a gate failed, Events badge = call count |
+| `screens::session::open_view(app, id, view)` | Strip key: switch the view in place (no nav push, so `Esc` goes back to the opener) and reset that view's scroll |
+| `screens::session::output::OutputScroll` | Output follows the tail; any scroll up stops it (the view stays on its row while output lands), `End` (or scrolling back to the tail) follows again. The border says `following` or `n rows below · End follows` |
+| `session_switcher::SessionSwitcher { selected: Option<Uuid>, filter_text }` | `w`: typing filters at once (issue #, title, prompt, status), `Backspace` deletes, `↑ ↓` move; rows ranked by urgency (failed, needs review, PR / CI / conflict fix, running, done). The selection is an id: kept while it matches, none while it is filtered out |
+
+Rules: every session view takes every key (`input_handler::handle_session`); nothing falls through to the Overview keys, whose targets are a list position. Detail: `X` kills the session on screen (TypedConfirm), `w` switcher. Events: `End` follows (was `f`, now the Output key). Gates: `Esc` returns to the completion summary when one is open, else back. Registry: each view is its own `Scope::Screen` (`Scope::encloses` compares the view), the strip keys are hidden `Action::OpenView` bindings (the strip shows them). Tests: `screens/session/tests.rs`, `session_switcher_tests.rs`, `app/types.rs` `legacy_session_modes_map_to_views`.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
@@ -592,8 +608,8 @@ or the key falls through to `handle_overview_keys`, whose `k` / `p` / `r` /
 `g` panels, `Esc` back) do so. Their blocks are `.hidden()`, so the footer
 stays the `mode_keymap` list with the Global `Esc Back` in it, and the ⌃K
 palette lists only Global entries there. Fullscreen scroll is
-`ScreenState::fullscreen_scroll`: rows above the tail, 0 follows the tail,
-clamped at draw time, reset when Fullscreen opens.
+`ScreenState::output_scroll` (`OutputScroll`, #1288): it follows the tail
+until a scroll up, `End` follows again; reset when Output opens.
 
 Help (`?`) is built from the registry (#1398, `navigation/registry_help.rs`):
 

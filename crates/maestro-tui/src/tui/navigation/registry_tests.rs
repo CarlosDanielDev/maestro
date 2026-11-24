@@ -237,7 +237,11 @@ fn footer_hints_from_registry() {
         let hints = footer_hints(mode).expect("registered screen");
         let want: Vec<(&str, &str)> = registry()
             .iter()
-            .filter(|b| b.footer && matches!(b.scope, Scope::Screen(m) if std::mem::discriminant(&m) == std::mem::discriminant(&mode)))
+            .filter(|b| {
+                b.footer
+                    && matches!(b.scope, Scope::Screen(_))
+                    && Scope::Screen(mode).encloses(b.scope)
+            })
             .map(|b| (b.chord.label(), b.label))
             .collect();
         assert!(!want.is_empty(), "{mode:?} has no footer bindings");
@@ -266,4 +270,24 @@ fn footer_hints_from_registry_snapshot() {
 fn footer_hints_none_for_unregistered_screen() {
     // #1280 registered Dashboard; the Issue browser still is not.
     assert!(footer_hints(TuiMode::IssueBrowser).is_none());
+}
+
+/// #1288: the five session views share one `TuiMode` variant but are
+/// separate screens, so Detail's `X` kill never lands in Output's block.
+#[test]
+fn session_views_are_separate_scopes() {
+    let nil = uuid::Uuid::nil();
+    let output = Scope::Screen(TuiMode::Fullscreen(nil));
+    assert!(output.encloses(Scope::Screen(TuiMode::Fullscreen(uuid::Uuid::new_v4()))));
+    assert!(!output.encloses(Scope::Screen(TuiMode::Detail(nil))));
+    let kill_in_output = registry()
+        .iter()
+        .any(|b| b.action == Action::Kill && b.scope != Scope::Global && output.encloses(b.scope));
+    assert!(!kill_in_output, "Output has no kill key");
+    assert!(
+        registry()
+            .iter()
+            .any(|b| b.action == Action::Kill && Scope::Screen(TuiMode::Detail(nil)) == b.scope),
+        "Detail declares X"
+    );
 }

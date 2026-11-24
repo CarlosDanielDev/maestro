@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/screens/session/tests.rs
+expression: out
+---
+" MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Detail                                                        Esc back  ? help "
+" ● running   claude-opus-4-5 · — · $0.00 · retry 0                              "
+" auth-refactor                                                                  "
+" PIPELINE  Step 1/5 · run   ●○○○○   next gates                                  "
+"  d Detail   f Output   l Log   v Gates   e Events                              "
+"┌──────────────────────────────[ Session Detail ]──────────────────────────────┐"
+"│ #412  auth-refactor                                                          │"
+"│ RUNNING   Phase: UNKNOWN  $0.00  0 tools  —  Retries: 0  Agent: claude       │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌───────────────────────────────[ Activity Log ]───────────────────────────────┐"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌────────────────────────────────[ Files (0) ]─────────────────────────────────┐"
+"│No files touched yet                                                          │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Esc Back   w Switch   X Kill                                           ⌃Q quit "

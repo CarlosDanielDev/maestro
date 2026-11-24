@@ -58,6 +58,10 @@ impl App {
     }
 
     pub(crate) fn focused_session_for_copy(&self) -> Option<&Session> {
+        // #1288: the session screen copies the session it shows.
+        if let super::TuiMode::Session { id, .. } = self.tui_mode {
+            return self.pool.get_session(id);
+        }
         self.pool.session_at_index(self.panel_view.selected_index())
     }
 

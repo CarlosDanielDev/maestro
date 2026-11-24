@@ -5,7 +5,7 @@
 use crossterm::event::KeyCode;
 
 use super::{Action as A, Binding, Chord, Danger, Scope};
-use crate::tui::app::TuiMode;
+use crate::tui::app::{SessionView, TuiMode};
 
 pub(super) fn blocks() -> Vec<Binding> {
     let ch = |c| Chord::key(KeyCode::Char(c));
@@ -50,6 +50,25 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(full, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
         s(full, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
     ]);
+    // #1288: the session screen. The strip draws `d f l v e` on every
+    // view, so they stay out of the footer. `X` kills the session on
+    // screen; `End` follows the tail again.
+    for (view, _, _) in SessionView::ALL {
+        let scope = Scope::Screen(TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view,
+        });
+        v.extend(
+            SessionView::ALL
+                .iter()
+                .map(|&(_, key, label)| s(scope, ch(key), A::OpenView, label).hidden()),
+        );
+    }
+    let detail = Scope::Screen(TuiMode::Detail(uuid::Uuid::nil()));
+    v.push(Binding::new(ch('X'), detail, A::Kill, Danger::Destructive, "kill").hidden());
+    v.push(s(full, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
+    let events = Scope::Screen(TuiMode::CallLog(uuid::Uuid::nil()));
+    v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     let graph = Scope::Screen(TuiMode::AgentGraph);
     v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
     // #1265: `r` reloads here as on every other screen; run-all is `R` and

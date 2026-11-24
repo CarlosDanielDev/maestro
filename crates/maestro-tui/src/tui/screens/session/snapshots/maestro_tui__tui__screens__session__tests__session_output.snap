@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/screens/session/tests.rs
+expression: out
+---
+" MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Fullscreen                                                    Esc back  ? help "
+" ● running   claude-opus-4-5 · — · $0.00 · retry 0                              "
+" auth-refactor                                                                  "
+" PIPELINE  Step 1/5 · run   ●○○○○   next gates                                  "
+"  d Detail   f Output   l Log   v Gates   e Events                              "
+"┌─────────────────────────[ Agent Output · following ]─────────────────────────┐"
+"│• row 29                                                                      │"
+"│• row 30                                                                      │"
+"│• row 31                                                                      │"
+"│• row 32                                                                      │"
+"│• row 33                                                                      │"
+"│• row 34                                                                      │"
+"│• row 35                                                                      │"
+"│• row 36                                                                      │"
+"│• row 37                                                                      │"
+"│• row 38                                                                      │"
+"│• row 39                                                                      │"
+"│• row 40                                                                      │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│ Cost: $0.00   Elapsed: —   Files: 0   Phase: —   Activity: -     [Esc] back  │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Esc Back   j/k Scroll   End Follow                                     ⌃Q quit "

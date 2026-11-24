@@ -30,6 +30,7 @@ pub mod release_notes;
 pub mod roadmap;
 pub mod roadmap_dispatch;
 pub mod sanitize;
+pub mod session;
 pub mod settings;
 pub mod team_wizard;
 pub mod wizard_fields;

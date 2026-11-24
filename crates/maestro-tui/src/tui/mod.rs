@@ -341,7 +341,11 @@ async fn event_loop(
 
         // Live-tail: when the call-log pane is open with follow mode on,
         // snap the cursor to the newest entry that just landed (#886).
-        if let app::TuiMode::CallLog(id) = app.tui_mode {
+        if let app::TuiMode::Session {
+            id,
+            view: app::SessionView::Events,
+        } = app.tui_mode
+        {
             let total = app
                 .pool
                 .get_session(id)

@@ -9,10 +9,8 @@ use crate::tui::agent_graph;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
-use crate::tui::detail;
 use crate::tui::ds::toast::{Severity, Toast};
 use crate::tui::ds::{size_guard, status_bar};
-use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::keymap::{self, KeyBindingGroup, ModeKeyMap};
@@ -287,28 +285,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 spinner_tick,
             );
         }
-        TuiMode::Detail(id) => {
-            if let Some(session) = app.pool.get_session(id) {
-                detail::draw_detail_with_claims(
-                    f,
-                    session,
-                    &app.progress_tracker,
-                    Some(&app.pool.file_claims),
-                    chunks[1],
-                    &theme,
-                );
-            } else {
-                let sessions = app.pool.all_sessions();
-                app.panel_view.draw_with_claims(
-                    f,
-                    &sessions,
-                    Some(&app.pool.file_claims),
-                    chunks[1],
-                    &theme,
-                    spinner_tick,
-                );
-            }
-        }
         TuiMode::DependencyGraph => {
             dep_graph::draw_dep_graph(
                 f,
@@ -343,23 +319,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                     spinner_tick,
                 );
-            }
-        }
-        TuiMode::Fullscreen(id) => {
-            if let Some(session) = app.pool.get_session(id) {
-                fullscreen::draw_fullscreen(
-                    f,
-                    session,
-                    &app.progress_tracker,
-                    chunks[1],
-                    &theme,
-                    spinner_tick,
-                    &mut app.screen_state.fullscreen_scroll,
-                );
-            } else {
-                let sessions = app.pool.all_sessions();
-                app.panel_view
-                    .draw(f, &sessions, chunks[1], &theme, spinner_tick);
             }
         }
         TuiMode::CostDashboard => {
@@ -564,52 +523,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &theme);
             }
         }
-        TuiMode::LogViewer(id) => {
-            crate::tui::log_viewer::draw_log_viewer(
-                f,
-                &mut app.log_viewer_cache,
-                &app.session_logger,
-                id,
-                app.log_viewer_scroll,
-                chunks[1],
-                &theme,
-            );
-        }
-        TuiMode::CallLog(id) => {
-            if let Some(session) = app.pool.get_session(id) {
-                crate::tui::call_log::draw::draw_call_log(
-                    f,
-                    session,
-                    &app.call_log_state,
-                    chunks[1],
-                    &theme,
-                );
-            } else {
-                let sessions = app.pool.all_sessions();
-                app.panel_view.draw_with_claims(
-                    f,
-                    &sessions,
-                    Some(&app.pool.file_claims),
-                    chunks[1],
-                    &theme,
-                    spinner_tick,
-                );
-            }
-        }
-        TuiMode::GateOutputViewer(id) => {
-            // Look up the session in the pool (covers both active and
-            // finished — FailedGates is terminal so the session lives
-            // in `finished` after the pipeline finalizes it).
-            let session_clone = app.pool.get_session(id).cloned();
-            if let Some(session) = session_clone {
-                crate::tui::screens::gate_output_viewer::draw_gate_output_viewer(
-                    f,
-                    &session,
-                    app.log_viewer_scroll,
-                    chunks[1],
-                    &theme,
-                );
-            }
+        TuiMode::Session { id, view } => {
+            crate::tui::screens::session::draw(f, app, id, view, chunks[1], &theme, spinner_tick);
         }
         TuiMode::ConfirmKill(_) => {
             // #1280: kill starts on the Dashboard, so it stays under the

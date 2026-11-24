@@ -60,10 +60,9 @@ fn all_modes() -> Vec<TuiMode> {
     for mode in &modes {
         match mode {
             TuiMode::Overview
-            | TuiMode::Detail(_)
+            | TuiMode::Session { .. }
             | TuiMode::DependencyGraph
             | TuiMode::AgentGraph
-            | TuiMode::Fullscreen(_)
             | TuiMode::CostDashboard
             | TuiMode::Dashboard
             | TuiMode::Landing
@@ -86,7 +85,6 @@ fn all_modes() -> Vec<TuiMode> {
             | TuiMode::IssueWizard
             | TuiMode::MilestoneWizard
             | TuiMode::ProjectStats
-            | TuiMode::LogViewer(_)
             | TuiMode::ConfirmKill(_)
             | TuiMode::ConfirmExit
             | TuiMode::SessionSummary
@@ -96,11 +94,9 @@ fn all_modes() -> Vec<TuiMode> {
             | TuiMode::Roadmap
             | TuiMode::BypassWarning
             | TuiMode::MilestoneHealth
-            | TuiMode::GateOutputViewer(_)
             | TuiMode::CiErrorReview
             | TuiMode::TeamWizard
             | TuiMode::BudgetPreSpawn { .. }
-            | TuiMode::CallLog(_)
             | TuiMode::AdoptPicker
             | TuiMode::FleetBoard => {}
         }

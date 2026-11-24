@@ -131,9 +131,10 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
         };
         app.tui_mode = mode;
         let before = app.pool.all_sessions().len();
-        // `d` and Enter are Overview keys too: they prove the fall-through
+        // `S` and Enter are Overview keys too: they prove the fall-through
         // is closed even where `p` / `r` have no visible effect in a test.
-        for code in ['p', 'k', 'r', 'D', 'd']
+        // (#1288: `d` is the session strip's Detail key now.)
+        for code in ['p', 'k', 'r', 'D', 'S']
             .map(KeyCode::Char)
             .into_iter()
             .chain([KeyCode::Enter])
@@ -148,7 +149,7 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
             before,
             "{mode:?}: D dismissed"
         );
-        assert!(!app.show_activity_log, "{mode:?}: d toggled the log");
+        assert!(!app.show_activity_log, "{mode:?}: the activity log toggled");
         let actions = actions_on(registry(), mode);
         assert!(
             actions.iter().all(|b| b.action != Action::Kill),
