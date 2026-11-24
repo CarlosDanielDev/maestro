@@ -80,6 +80,16 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(milestones, ch('R'), A::RunAll, "plan run")
             .exception("uppercase keeps the plan off the `r` reload reflex"),
     ]);
+    // #1292: the conflict toast's keys, Global but only while it is the
+    // visible toast on a tab screen (`App::conflict_toast_key`). Pausing is
+    // undone with ⌃Z, so it is Safe. Hidden: the palette would list them
+    // where they do nothing; Help still shows them.
+    for (c, action, label) in [
+        ('p', A::PauseOther, "pause the other agent (conflict toast)"),
+        ('o', A::ShowFile, "show the conflict file (conflict toast)"),
+    ] {
+        v.push(Binding::new(Chord::ctrl(c), Scope::Global, action, Danger::Safe, label).hidden());
+    }
     // #1280: the Dashboard cockpit (`screens::dashboard::dispatch`). Its
     // launcher letters are `HomeScreen` keys; Help lists them from
     // `QUICK_ACTIONS`. `⏎` on a pending PR row arms, a second `⏎` writes.
