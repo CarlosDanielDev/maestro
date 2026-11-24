@@ -71,8 +71,6 @@ pub(super) fn blocks() -> Vec<Binding> {
     v.push(s(full, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     let events = Scope::Screen(TuiMode::CallLog(uuid::Uuid::nil()));
     v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
-    let graph = Scope::Screen(TuiMode::AgentGraph);
-    v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
     // #1265: `r` reloads here as on every other screen. #1269: `R` only
     // opens the Run queue (the plan); spawning needs ⏎ in its launch dialog.
     // The footer stays `MilestoneScreen::footer_hints`.
@@ -108,6 +106,23 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(dash, ch('o'), A::Expand, "Ops view").hidden(),
         s(dash, ch('c'), A::Expand, "Cost view").hidden(),
         s(dash, ch('t'), A::Expand, "Tokens view").hidden(),
+        // #1292: `g` opens Deps, `g` again switches issues ⇄ files. The
+        // lens keys (`← →` columns) are drawn in its own footer.
+        s(dash, ch('g'), A::Expand, "Deps view · lens").hidden(),
+        s(
+            dash,
+            Chord::key(KeyCode::Left),
+            A::Expand,
+            "Deps: agents column",
+        )
+        .hidden(),
+        s(
+            dash,
+            Chord::key(KeyCode::Right),
+            A::Expand,
+            "Deps: files column",
+        )
+        .hidden(),
     ]);
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
@@ -154,8 +169,8 @@ pub(super) fn blocks() -> Vec<Binding> {
 /// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
 /// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
 /// `PrPipeline` (#1280) opens the Dashboard on its first pending PR row,
-/// where ⏎ ⏎ retries; it writes nothing itself. `AgentGraph` (#1280) was
-/// Overview's `g`.
+/// where ⏎ ⏎ retries; it writes nothing itself. The old `agent graph`
+/// entry is gone (#1292): the graph is Dashboard › Deps (`g`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
@@ -164,7 +179,6 @@ pub enum PaletteCommand {
     CompleteModal,
     ReviewConcerns,
     PrPipeline,
-    AgentGraph,
 }
 
 /// The key that runs a palette command outside the palette, and the one
@@ -189,5 +203,4 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
         PaletteCommand::PrPipeline,
         None,
     ),
-    ("agent graph", PaletteCommand::AgentGraph, None),
 ];

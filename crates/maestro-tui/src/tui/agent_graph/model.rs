@@ -1,197 +1,160 @@
-//! Data model for the agent-graph view. See `docs/adr/001-agent-graph-viz.md`.
-
-#![allow(dead_code)]
-
-use std::path::{Path, PathBuf};
+//! Data of the Files lens of Dashboard Deps (§02.20 of
+//! `docs/design-system/index.html`, #1292): one row per agent, one per
+//! repo-relative file, an `Edit` or `Read` edge per (agent, file).
+//!
+//! Edits come from the file claims (Write/Edit tool calls, already keyed
+//! repo-relative by `claim_conflicts`) and the recorded conflicts; reads
+//! are the rest of `Session::files_touched`. Each session writes inside
+//! its own worktree, so raw paths are never compared (#1156).
 
 use uuid::Uuid;
 
-use crate::orchestration::types::Primitive;
-use crate::session::types::{Session, SessionStatus};
-use crate::state::types::TeamRun;
+use crate::session::types::Session;
+use crate::state::file_claims::{FileClaimManager, repo_relative_key};
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum NodeId {
-    Agent(Uuid),
-    File(PathBuf),
-    /// Team-run container. Wraps member agents visually.
-    Team(Uuid),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EdgeKind {
+    Edit,
+    Read,
 }
 
-#[derive(Clone)]
-pub(crate) enum NodeKind {
-    Agent {
-        status: SessionStatus,
-    },
-    File,
-    /// Team-run container. Renders as a labeled rectangle around its
-    /// members; member agents render as their own `Agent` nodes inside.
-    Team {
-        primitive: Primitive,
-        member_count: usize,
-    },
+/// One file of the lens, keyed by its repo-relative path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FileRow {
+    pub(crate) path: String,
+    /// Agents that edited it, in agent order.
+    pub(crate) editors: Vec<Uuid>,
+    /// Agents that only read it.
+    pub(crate) readers: Vec<Uuid>,
+    /// The session that holds the claim, when one does.
+    pub(crate) holder: Option<Uuid>,
+    /// A conflict on this file was recorded (`conflict_history`).
+    pub(crate) conflict: bool,
 }
 
-#[derive(Clone)]
-pub(crate) struct GraphNode {
-    pub(crate) id: NodeId,
-    pub(crate) kind: NodeKind,
-    pub(crate) label: String,
+impl FileRow {
+    /// Two or more agents edit this file.
+    pub(crate) fn contested(&self) -> bool {
+        self.editors.len() >= 2
+    }
+
+    pub(crate) fn edge(&self, agent: Uuid) -> Option<EdgeKind> {
+        if self.editors.contains(&agent) {
+            Some(EdgeKind::Edit)
+        } else if self.readers.contains(&agent) {
+            Some(EdgeKind::Read)
+        } else {
+            None
+        }
+    }
 }
 
-#[derive(Clone)]
-pub(crate) struct GraphEdge {
-    pub(crate) from: NodeId,
-    pub(crate) to: NodeId,
+/// Agents (session order) and files: CONTESTED first, then EDITED, then
+/// READ ONLY; inside a section by the mean row of their agents
+/// (barycenter), so edges stay short, then by path.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FilesGraph {
+    pub(crate) agents: Vec<Uuid>,
+    pub(crate) files: Vec<FileRow>,
 }
 
-/// Build a bipartite graph of agents and the files they touch.
-///
-/// One `GraphNode::Agent` per session. One `GraphNode::File` per unique path
-/// across all `Session::files_touched`. One edge per (agent, file) pair the
-/// agent has touched.
-pub(crate) fn build_graph(sessions: &[&Session]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
-    let mut nodes: Vec<GraphNode> = Vec::with_capacity(sessions.len() * 2);
-    let mut edges: Vec<GraphEdge> = Vec::new();
+impl FilesGraph {
+    pub(crate) fn contested(&self) -> usize {
+        self.files.iter().filter(|f| f.contested()).count()
+    }
 
-    for &s in sessions {
-        let agent_id = NodeId::Agent(s.id);
-        nodes.push(GraphNode {
-            id: agent_id.clone(),
-            kind: NodeKind::Agent { status: s.status },
-            label: agent_label(s),
-        });
+    pub(crate) fn edited(&self) -> usize {
+        self.files.iter().filter(|f| !f.editors.is_empty()).count()
+    }
 
-        for raw in &s.files_touched {
-            let path = PathBuf::from(raw);
-            let file_id = NodeId::File(path.clone());
-            if !nodes.iter().any(|n| n.id == file_id) {
-                nodes.push(GraphNode {
-                    id: file_id.clone(),
-                    kind: NodeKind::File,
-                    label: file_label(&path),
+    /// Files `agent` edits.
+    pub(crate) fn edits_of(&self, agent: Uuid) -> usize {
+        self.files
+            .iter()
+            .filter(|f| f.editors.contains(&agent))
+            .count()
+    }
+}
+
+/// Build the lens from the pool's sessions and its file claims.
+pub(crate) fn build_graph(sessions: &[&Session], claims: &FileClaimManager) -> FilesGraph {
+    let agents: Vec<Uuid> = sessions.iter().map(|s| s.id).collect();
+    let mut files: Vec<FileRow> = Vec::new();
+    let mut touch = |path: &str, agent: Uuid, kind: EdgeKind| {
+        let at = match files.iter().position(|f| f.path == path) {
+            Some(at) => at,
+            None => {
+                files.push(FileRow {
+                    path: path.to_string(),
+                    editors: Vec::new(),
+                    readers: Vec::new(),
+                    holder: claims.owner_of(path),
+                    conflict: false,
                 });
+                files.len() - 1
             }
-            edges.push(GraphEdge {
-                from: agent_id.clone(),
-                to: file_id,
-            });
+        };
+        let row = &mut files[at];
+        match kind {
+            EdgeKind::Edit if !row.editors.contains(&agent) => {
+                row.readers.retain(|r| *r != agent);
+                row.editors.push(agent);
+            }
+            EdgeKind::Read if row.edge(agent).is_none() => row.readers.push(agent),
+            _ => {}
+        }
+    };
+    for s in sessions {
+        for path in claims.files_for_session(s.id) {
+            touch(path, s.id, EdgeKind::Edit);
         }
     }
-
-    (nodes, edges)
-}
-
-/// Build a graph that includes team-run containers in addition to the
-/// per-session agent / file nodes. Each `TeamRun` becomes a single
-/// `NodeKind::Team` node; member agents remain as their own `NodeKind::Agent`
-/// nodes (rendered inside the container by the renderer).
-pub(crate) fn build_graph_with_teams(
-    sessions: &[&Session],
-    runs: &[&TeamRun],
-) -> (Vec<GraphNode>, Vec<GraphEdge>) {
-    let (mut nodes, edges) = build_graph(sessions);
-    for run in runs {
-        let team_id = NodeId::Team(run.id);
-        if !nodes.iter().any(|n| n.id == team_id) {
-            nodes.push(GraphNode {
-                id: team_id,
-                kind: NodeKind::Team {
-                    primitive: Primitive::SinglePass,
-                    member_count: run.state.len(),
-                },
-                label: run.team_name.clone(),
-            });
+    for c in claims.conflict_history() {
+        for agent in [c.owner_session_id, c.offender_session_id] {
+            if agents.contains(&agent) {
+                touch(&c.file_path, agent, EdgeKind::Edit);
+            }
         }
     }
-    (nodes, edges)
-}
-
-fn agent_label(s: &Session) -> String {
-    if let Some(n) = s.issue_number {
-        return format!("#{n}");
+    for s in sessions {
+        for raw in &s.files_touched {
+            touch(
+                &repo_relative_key(raw, s.worktree_path.as_deref()),
+                s.id,
+                EdgeKind::Read,
+            );
+        }
     }
-    let s = s.id.to_string();
-    let head: String = s.chars().take(4).collect();
-    format!("S-{head}")
+    for c in claims.conflict_history() {
+        if let Some(row) = files.iter_mut().find(|f| f.path == c.file_path) {
+            row.conflict = true;
+        }
+    }
+    let bary = |f: &FileRow| {
+        let rows: Vec<usize> = (f.editors.iter().chain(&f.readers))
+            .filter_map(|a| agents.iter().position(|x| x == a))
+            .collect();
+        rows.iter().sum::<usize>() * 1000 / rows.len().max(1)
+    };
+    files.sort_by(|a, b| {
+        let section = |f: &FileRow| match (f.contested(), f.editors.is_empty()) {
+            (true, _) => 0,
+            (false, false) => 1,
+            (false, true) => 2,
+        };
+        (section(a), bary(a), &a.path).cmp(&(section(b), bary(b), &b.path))
+    });
+    FilesGraph { agents, files }
 }
 
-fn file_label(path: &Path) -> String {
-    path.file_name()
-        .and_then(|s| s.to_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| path.display().to_string())
+/// `#412`, or `S-` and the first 4 uuid characters with no issue.
+pub(crate) fn agent_label(s: &Session) -> String {
+    match s.issue_number {
+        Some(n) => format!("#{n}"),
+        None => format!("S-{}", &s.id.to_string()[..4]),
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fake(status: SessionStatus, files: &[&str]) -> Session {
-        let mut s = Session::new(String::new(), String::new(), String::new(), None, None);
-        s.status = status;
-        s.files_touched = files.iter().map(|s| (*s).to_string()).collect();
-        s
-    }
-
-    #[test]
-    fn build_graph_dedupes_files_across_sessions() {
-        let s1 = fake(SessionStatus::Running, &["src/main.rs", "src/config.rs"]);
-        let s2 = fake(SessionStatus::Running, &["src/config.rs", "Cargo.toml"]);
-        let (nodes, edges) = build_graph(&[&s1, &s2]);
-
-        let agent_count = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, NodeKind::Agent { .. }))
-            .count();
-        let file_count = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, NodeKind::File))
-            .count();
-
-        assert_eq!(agent_count, 2);
-        assert_eq!(file_count, 3, "config.rs must be deduped");
-        assert_eq!(edges.len(), 4, "two files per session, no dedup of edges");
-    }
-
-    #[test]
-    fn agent_label_prefers_issue_number() {
-        let mut s = fake(SessionStatus::Running, &[]);
-        s.issue_number = Some(513);
-        assert_eq!(agent_label(&s), "#513");
-    }
-
-    #[test]
-    fn file_label_uses_basename() {
-        assert_eq!(file_label(Path::new("src/tui/ui.rs")), "ui.rs");
-        assert_eq!(file_label(Path::new("Cargo.toml")), "Cargo.toml");
-    }
-
-    #[test]
-    fn node_id_team_distinct_from_agent_with_same_uuid() {
-        let id = uuid::Uuid::nil();
-        let a = NodeId::Agent(id);
-        let t = NodeId::Team(id);
-        assert!(a != t);
-    }
-
-    #[test]
-    fn build_graph_with_teams_adds_team_node_per_run() {
-        use crate::state::types::TeamRun;
-        use chrono::Utc;
-        use std::collections::HashMap;
-        let run = TeamRun {
-            id: uuid::Uuid::from_u128(1),
-            team_name: "default-coder".into(),
-            started_at: Utc::now(),
-            plan: vec![vec![1]],
-            state: HashMap::new(),
-        };
-        let (nodes, _edges) = build_graph_with_teams(&[], &[&run]);
-        let team_count = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, NodeKind::Team { .. }))
-            .count();
-        assert_eq!(team_count, 1);
-    }
-}
+#[path = "model_tests.rs"]
+mod tests;

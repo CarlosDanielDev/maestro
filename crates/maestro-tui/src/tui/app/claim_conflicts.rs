@@ -73,6 +73,9 @@ impl App {
                 .map(|c| c.sessions.conflict.policy)
                 .unwrap_or(ConflictPolicy::Warn);
 
+            // #1292: the visible signal; the log line above stays.
+            self.raise_conflict_toast(path, owner, session_id, policy);
+
             match policy {
                 ConflictPolicy::Warn => {}
                 ConflictPolicy::Pause => {
@@ -146,3 +149,7 @@ impl App {
 #[cfg(test)]
 #[path = "claim_conflicts_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "conflict_toast_tests.rs"]
+mod conflict_toast_tests;

@@ -200,10 +200,13 @@ async fn leaving_the_dashboard_disarms() {
     );
 }
 
-/// B2: the Agent graph (an Overview `g` until now) opens from the ⌃K
-/// palette; with `views.agent_graph_enabled = false` the entry says why.
+/// B2, #1292: the Agent graph is the Files lens of Deps, reached with
+/// `g g` from the Dashboard; the ⌃K entry is gone. With
+/// `views.agent_graph_enabled = false` the second `g` stays on issues.
 #[tokio::test]
-async fn palette_opens_the_agent_graph() {
+async fn files_lens_is_reached_with_g_not_the_palette() {
+    use super::deps::{Lens, lens};
+    use super::usage::View;
     for enabled in [true, false] {
         let (mut app, _) = sessions_app(1);
         let toml = format!(
@@ -221,11 +224,21 @@ async fn palette_opens_the_agent_graph() {
             press(&mut app, KeyCode::Char(c)).await;
         }
         press(&mut app, KeyCode::Enter).await;
-        let want = if enabled {
-            TuiMode::AgentGraph
-        } else {
-            TuiMode::Dashboard
-        };
-        assert_eq!(app.tui_mode, want, "enabled={enabled}");
+        app.palette = None;
+        assert_ne!(
+            app.screen_state.dashboard.view,
+            View::Deps,
+            "palette entry is gone"
+        );
+        press(&mut app, KeyCode::Char('g')).await;
+        press(&mut app, KeyCode::Char('g')).await;
+        let want = if enabled { Lens::Files } else { Lens::Issues };
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        assert_eq!(app.screen_state.dashboard.view, View::Deps);
+        assert_eq!(
+            lens(&app.screen_state.dashboard, enabled),
+            want,
+            "enabled={enabled}"
+        );
     }
 }

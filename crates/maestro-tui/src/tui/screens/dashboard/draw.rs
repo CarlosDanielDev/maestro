@@ -47,10 +47,11 @@ pub fn draw(
 ) {
     dash.armed.tick(dash.now());
     let [strip, main] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
-    draw_view_strip(f, strip, view, dash.view, bp, theme);
+    super::strip::draw_view_strip(f, strip, view, dash, bp, theme);
     match dash.view {
         View::Cost => return cost::draw(f, main, view, dash, bp, theme, nerd_font),
         View::Tokens => return tokens_view::draw(f, main, view, dash, bp, theme, nerd_font),
+        View::Deps => return super::deps::draw(f, main, view, dash, bp, theme, nerd_font),
         View::Ops => {}
     }
     let (list, detail) = match bp {
@@ -77,62 +78,6 @@ pub fn draw(
     if !detail.is_empty() {
         let tall = bp != Breakpoint::Compact;
         super::detail::draw(f, detail, view, dash, tall, theme, nerd_font);
-    }
-}
-
-/// `o Ops · c Cost · t Tokens · g Deps`, the active view highlighted; `g`
-/// is not bound yet so it is muted. Right side: the Ops summary, or the
-/// scope of every Usage number (`this run · since 10:00 UTC`).
-fn draw_view_strip(
-    f: &mut Frame,
-    area: Rect,
-    view: &DashboardView<'_>,
-    active: View,
-    bp: Breakpoint,
-    theme: &Theme,
-) {
-    let sel = focused_selection_style(theme);
-    let muted = Style::new().fg(theme.text_muted);
-    let mut spans = vec![Span::raw(" ")];
-    for (i, (k, label, v)) in [
-        ("o", "Ops", Some(View::Ops)),
-        ("c", "Cost", Some(View::Cost)),
-        ("t", "Tokens", Some(View::Tokens)),
-        ("g", "Deps", None),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        if i > 0 {
-            spans.push(Span::raw("  "));
-        }
-        if v == Some(active) {
-            spans.push(Span::styled(format!(" {k} {label} "), sel));
-            continue;
-        }
-        let key = if v.is_some() { key_style(theme) } else { muted };
-        spans.push(Span::styled(k, key));
-        spans.push(Span::styled(format!(" {label}"), muted));
-    }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
-    if bp == Breakpoint::Compact {
-        return;
-    }
-    let summary = if active == View::Ops {
-        let live = view
-            .sessions
-            .iter()
-            .filter(|s| !s.status.is_terminal())
-            .count();
-        let pipe = view.ci.len() + view.pending.len();
-        format!("{live} live · {pipe} in PR pipeline ")
-    } else {
-        format!("{} ", super::usage::scope_line(&view.usage))
-    };
-    let w = summary.width() as u16;
-    if w < area.width / 2 {
-        let r = Rect::new(area.x + area.width - w, area.y, w, 1);
-        f.render_widget(Paragraph::new(Span::styled(summary, muted)), r);
     }
 }
 

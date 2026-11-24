@@ -16,7 +16,6 @@ use super::rows::{Group, WorkKey};
 use super::{Dashboard, DashboardView, session_cost};
 use crate::config::BudgetConfig;
 use crate::session::types::Session;
-use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::bar_row::key_style;
 use crate::tui::ds::breakpoint::Breakpoint;
 use crate::tui::ds::gauge::{bar, gauge_level};
@@ -32,42 +31,12 @@ pub enum View {
     Ops,
     Cost,
     Tokens,
+    /// `g` (#1292): the issues and files lenses (`deps`).
+    Deps,
 }
 
-/// The view an old Usage mode opens. These modes are aliases now.
-pub fn alias_view(mode: TuiMode) -> Option<View> {
-    match mode {
-        TuiMode::CostDashboard => Some(View::Cost),
-        TuiMode::TokenDashboard => Some(View::Tokens),
-        _ => None,
-    }
-}
-
-/// `mode`, or `TuiMode::Dashboard` with `dash` on its view when `mode` is
-/// an alias. `App::navigate_to` and `route_alias` both go through it.
-pub fn resolve(mode: TuiMode, dash: &mut Dashboard) -> TuiMode {
-    match alias_view(mode) {
-        Some(view) => {
-            dash.view = view;
-            TuiMode::Dashboard
-        }
-        None => mode,
-    }
-}
-
-/// Where `App::navigate_to(mode)` lands: an alias opens its view, the
-/// Dashboard opens on Ops. Going back (nav stack) keeps the last view.
-pub fn navigate_target(mode: TuiMode, dash: &mut Dashboard) -> TuiMode {
-    if mode == TuiMode::Dashboard {
-        dash.view = View::Ops;
-    }
-    resolve(mode, dash)
-}
-
-/// Turn an alias mode set straight on `tui_mode` into the Dashboard view.
-pub fn route_alias(app: &mut App) {
-    app.tui_mode = resolve(app.tui_mode, &mut app.screen_state.dashboard);
-}
+// The alias modes (Cost, Tokens, #1292's Agent graph) route in `alias`.
+pub use super::alias::{alias_view, navigate_target, resolve, route_alias};
 
 /// Width of the right column (Budget, TurboQuant) on Wide and Regular:
 /// the design's 58 and 48.

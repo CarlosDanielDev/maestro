@@ -2,13 +2,17 @@
 //! `docs/design-system/index.html`, #1280): the work list (Sessions · PR
 //! pipeline · Finished) with the selected item's detail beside it.
 //! `TuiMode::Overview` is an alias that draws this screen
-//! (`ui::route_overview_alias`). Keys: `dispatch`; layout: `draw`.
+//! (`ui::route_overview_alias`). Keys: `dispatch`; layout: `draw`; the
+//! Deps view (`g`, #1292): `deps`.
 
+mod alias;
 pub mod cost;
+pub mod deps;
 pub mod detail;
 pub mod dispatch;
 pub mod draw;
 pub mod rows;
+mod strip;
 pub mod tokens;
 pub mod usage;
 
@@ -34,6 +38,8 @@ pub struct Dashboard {
     pub view: usage::View,
     /// Tests pin the wall clock (scope line, rate); the app uses `Utc::now`.
     pub wall: Option<chrono::DateTime<chrono::Utc>>,
+    /// The Deps view's lens and selection (#1292).
+    pub deps: deps::Deps,
 }
 
 impl Dashboard {
@@ -66,6 +72,11 @@ pub struct DashboardView<'a> {
     pub now: chrono::DateTime<chrono::Utc>,
     /// Spend, budget and scope for the Cost and Tokens views (#1289).
     pub usage: usage::Usage,
+    /// Deps (#1292): the files lens data (empty off Deps), whether the
+    /// lens is on (`views.agent_graph_enabled`), and the issue graph.
+    pub(crate) files: crate::tui::agent_graph::model::FilesGraph,
+    pub files_enabled: bool,
+    pub assigner: Option<&'a crate::work::assigner::WorkAssigner>,
 }
 
 impl DashboardView<'_> {

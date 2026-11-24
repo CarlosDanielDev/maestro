@@ -486,7 +486,7 @@ Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.h
 | `dashboard::draw::draw(f, area, &view, &mut dash, bp, theme, nerd_font)` | View strip (`o Ops` drawn; `c t` open the Cost and Token screens; `g` muted until the Deps view), then Work list + detail: Wide 66 / Regular 58 columns beside it, Compact stacked. Rows reuse `status_chip_for_mode`, `money`, `ellipsize_line`; overflow shows `↓ n more` on the bottom border. The Activity pane under it stays the shell's |
 | `pending_chip(status, theme, nerd_font)` / `ci_chip(checks, ..)` | PR rows: `◐ needs retry`, `○ auto-retry`, `↻ retrying`, `✗ stopped` (chip icons, so ASCII mode works); open PRs `◆ CI running`, `↯ CI failing`, `✓ CI passed` |
 
-Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
+Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row); its old `agent graph` entry is gone (#1292: the graph is the Deps files lens, `g g`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
 ### Session screen (`screens/session/`, #1288)
 
@@ -551,6 +551,20 @@ Implements `docs/design-system/index.html` §02.16 (Teams: entry, Compose, Manag
 | `Primitive::dispatched_roles()` (`maestro-core` `orchestration/types.rs`) | The roles a shape's machine really runs. `roles_to_bind(primitive)` = dispatched roles, then any `required_roles()` the launch preflight still checks; Compose binds these and skips Roles when the list is empty |
 
 Rules: the Teams Home is the overview (presets by tier, readiness, the selected card); `c` / `l` / `m` start the flows. Compose uses `WizardFrame::draw_stepped` with four steps (`ComposeStep::ALL`) and a Draft checklist; its keys come from `Screen::footer_hints`. Review & save shows the exact path and TOML (`compose_preview`, keys sorted, written byte for byte); when that file is already on disk (`compose_target_exists`) the name border and the bar say `replaces <path>`; the write refuses when the file appeared, changed or vanished since it armed (`write_if_unchanged`) above an `ArmedBar` named for the file (`ArmedBar::to("disk")`; the default place is GitHub): ⏎ arms, ⏎ within `ARM_WINDOW` writes, Esc or an edit disarms. Saved / Failed live on `ComposePayload::save`, not as steps. The name is the canonical `Input` and reports `InputMode::Insert`, so letters never reach global keys. The keys are a `TeamWizard` block in `registry_screens.rs` (`j` / `k`, `c` / `l` / `m`, `Enter`).
+
+### Deps view and its Files lens (`screens/dashboard/deps.rs`, `agent_graph/`, #1292)
+
+Implements `docs/design-system/index.html` §02.20 (Agent graph → Deps files lens). Decision: `docs/design-system/decisions.md` (2026-11-24, Agent graph as the Deps files lens).
+
+| Item | For |
+|---|---|
+| `usage::View::Deps`, `deps::Lens { Issues, Files }`, `deps::Column` | `g` opens Deps, `g` again switches issues ⇄ files (`deps::press_g`); `Dashboard::deps` keeps the lens, the focused column and the selected file. `deps::lens(dash, enabled)` is the lens drawn: files only while `views.agent_graph_enabled` is on. |
+| `agent_graph::model::build_graph(&sessions, &file_claims) -> FilesGraph` | One row per agent, one per repo-relative file (`repo_relative_key`, worktrees merged); edits from the claims and `conflict_history`, reads from `files_touched`. Files sort CONTESTED (2+ editors) · EDITED · READ ONLY, then by barycenter. |
+| `agent_graph::ladder::draw(..)` | Agents left (Work list chip + `#n` + `✎n`), Braille S-curve edges (selection `border_active`, contested `accent_warning`, rest `text_muted`; reads not drawn), files right (`2✎ ✗ conflict`, path cut in the middle). Compact: no canvas, files list their editors. |
+| `agent_graph::file_card` | The one detail panel: File (holder, editors, readers, conflict) or Agent (status, role, files; the role sprite on Wide, coloured by status). |
+| `agent_graph::conflict_toast` (`App::raise_conflict_toast`, `App::conflict_toast_key`) | A recorded conflict raises a sticky error `ds::toast` (`file · #407 holds it · p pause #409 · ⏎ show file`). While it is the visible toast, `p` pauses the agent without the claim (`App::pause_session`, `⌃Z` resumes) and `⏎` opens Deps › files on the file. Under the `pause` / `kill` policies only `⏎` is offered. |
+
+Rules: `TuiMode::AgentGraph` is an alias (like `CostDashboard`): `usage::resolve` (in `screens/dashboard/alias.rs`) maps it to Dashboard › Deps › files; `navigate_to` still redirects it when the flag is off. Deps takes every key it gets (nothing reaches the launcher letters); `X` acts only on a drawn agent row. Its footer is `deps::footer` (only the keys of the drawn lens and column). Every colour is a `Theme` token: `screens_use_theme_colors_only` scans `agent_graph/` too. Tests: `screens/dashboard/deps_tests.rs`, `agent_graph/model_tests.rs`, `app/conflict_toast_tests.rs`, `snapshot_tests/files_lens.rs`.
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
@@ -650,8 +664,8 @@ The per-screen blocks live in `navigation/registry_screens.rs` (#1240;
 keys of its own must still take every key in `handle_secondary_mode_keys`,
 or the key falls through to `handle_overview_keys`, whose `k` / `p` / `r` /
 `D` act on the hidden Overview selection. Fullscreen (`handle_fullscreen`:
-`j k ↑ ↓` scroll, `Esc` back) and the Agent graph (`handle_agent_graph`:
-`g` panels, `Esc` back) do so. Their blocks are `.hidden()`, so the footer
+`j k ↑ ↓` scroll, `Esc` back) does so; the Agent graph is now the Deps
+files lens, whose keys are `screens::dashboard::deps::handle_key` (#1292). Their blocks are `.hidden()`, so the footer
 stays the `mode_keymap` list with the Global `Esc Back` in it, and the ⌃K
 palette lists only Global entries there. Fullscreen scroll is
 `ScreenState::output_scroll` (`OutputScroll`, #1288): it follows the tail

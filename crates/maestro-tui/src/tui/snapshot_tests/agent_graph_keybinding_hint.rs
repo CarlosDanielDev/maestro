@@ -12,13 +12,6 @@ fn render_overview_hints(agent_graph_enabled: bool) -> Vec<Span<'static>> {
     keybinding_hints_spans(&fitted, false, &theme)
 }
 
-fn render_agent_graph_hints() -> Vec<Span<'static>> {
-    let km = mode_keymap(TuiMode::AgentGraph, None, &[], true);
-    let theme = Theme::dark();
-    let fitted = fit_hints_to_width(km.hints, 120);
-    keybinding_hints_spans(&fitted, false, &theme)
-}
-
 #[test]
 fn overview_hints_with_agent_graph_flag_on_includes_g_entry() {
     let spans = render_overview_hints(true);
@@ -37,21 +30,6 @@ fn overview_hints_with_agent_graph_flag_off_excludes_g_entry() {
     assert!(
         !rendered.contains("[g]"),
         "Overview hints must NOT include [g] when toggle is off; got: {rendered:?}"
-    );
-    assert_debug_snapshot!(spans);
-}
-
-#[test]
-fn agent_graph_mode_hints_include_esc_back_and_g_panels() {
-    let spans = render_agent_graph_hints();
-    let rendered: String = spans.iter().map(|s| s.content.as_ref()).collect();
-    assert!(
-        rendered.contains("[Esc]"),
-        "must include [Esc]; got: {rendered:?}"
-    );
-    assert!(
-        rendered.contains("[g]"),
-        "must include [g]; got: {rendered:?}"
     );
     assert_debug_snapshot!(spans);
 }

@@ -92,6 +92,11 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
+    // #1292: the visible file-conflict toast takes `p` and `Enter`.
+    if !is_text_input_mode(app) && app.conflict_toast_key(&key) {
+        return KeyAction::Consumed;
+    }
+
     if key.code == KeyCode::Char('A') && !is_text_input_mode(app) {
         app.cycle_selected_agent();
         return KeyAction::Consumed;
@@ -252,7 +257,6 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             handle_session_switcher(app, key);
             Some(KeyAction::Consumed)
         }
-        app::TuiMode::AgentGraph => Some(handle_agent_graph(app, key)),
         _ => None,
     }
 }
@@ -323,18 +327,6 @@ fn handle_fullscreen(app: &mut App, key: &KeyEvent) -> KeyAction {
         KeyCode::Char('j') | KeyCode::Down => scroll.down(),
         KeyCode::End => scroll.end(),
         KeyCode::Esc => app.navigate_back_or_dashboard(),
-        _ => {}
-    }
-    KeyAction::Consumed
-}
-
-/// #1240: the Agent graph shows no selection, so it takes every key and
-/// acts only on `g` (back to the panels) and `Esc`, as its registry block
-/// declares.
-fn handle_agent_graph(app: &mut App, key: &KeyEvent) -> KeyAction {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('g'), KeyModifiers::NONE) => app.toggle_agent_graph(),
-        (KeyCode::Esc, _) => app.navigate_back_or_dashboard(),
         _ => {}
     }
     KeyAction::Consumed
@@ -987,12 +979,8 @@ fn open_palette(app: &mut App) {
     use crate::tui::ds::palette::{PaletteState, Run, entries};
     use crate::tui::navigation::registry::{PaletteCommand, registry};
     let review = app.pending_review_report.is_some();
-    let agent_graph = app.is_agent_graph_enabled();
     let list = entries(registry(), app.tui_mode, |run| match run {
         Run::Command(PaletteCommand::ReviewConcerns) if !review => Some("no review pending"),
-        Run::Command(PaletteCommand::AgentGraph) if !agent_graph => {
-            Some("views.agent_graph_enabled is off")
-        }
         _ => None,
     });
     app.palette = Some(PaletteState::new(list));
@@ -1048,11 +1036,6 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         }
         // #1280: the Dashboard with the first pending PR row selected;
         // its ⏎ ⏎ (armed) is the retry, so the palette writes nothing.
-        // #1280: the Agent graph was Overview's `g`; Esc comes back.
-        Some(Run::Command(PaletteCommand::AgentGraph)) => {
-            app.navigate_to(app::TuiMode::AgentGraph);
-            KeyAction::Consumed
-        }
         Some(Run::Command(PaletteCommand::PrPipeline)) => {
             handle_screen_action(app, screens::ScreenAction::Push(app::TuiMode::Dashboard));
             screens::dashboard::dispatch::select_first_pending_pr(app);
@@ -1549,9 +1532,6 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         }
         (KeyCode::Char('d'), _) => {
             app.show_activity_log = !app.show_activity_log;
-        }
-        (KeyCode::Char('g'), KeyModifiers::NONE) if app.is_agent_graph_enabled() => {
-            app.toggle_agent_graph();
         }
         (KeyCode::Char('D'), _) => {
             app.dismiss_all_completed();
@@ -2300,30 +2280,48 @@ mod tests {
         app
     }
 
-    #[tokio::test]
-    async fn g_key_with_flag_on_overview_to_agent_graph() {
-        let mut app = agent_graph_app(true);
-        app.tui_mode = TuiMode::Overview;
-        let _ = handle_key(&mut app, key('g')).await;
-        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+    /// #1292: `g` on the Dashboard opens Deps; `g` again switches the
+    /// issues and files lenses (the old Overview ⇄ Agent graph toggle).
+    fn deps_lens(app: &App) -> crate::tui::screens::dashboard::deps::Lens {
+        crate::tui::screens::dashboard::deps::lens(
+            &app.screen_state.dashboard,
+            app.is_agent_graph_enabled(),
+        )
     }
 
     #[tokio::test]
-    async fn g_key_with_flag_off_is_noop() {
+    async fn g_key_with_flag_on_opens_deps_then_files() {
+        use crate::tui::screens::dashboard::{deps::Lens, usage::View};
+        let mut app = agent_graph_app(true);
+        app.tui_mode = TuiMode::Dashboard;
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.screen_state.dashboard.view, View::Deps);
+        assert_eq!(deps_lens(&app), Lens::Issues);
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(deps_lens(&app), Lens::Files);
+    }
+
+    #[tokio::test]
+    async fn g_key_with_flag_off_never_shows_files() {
+        use crate::tui::screens::dashboard::deps::Lens;
         let mut app = agent_graph_app(false);
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         let _ = handle_key(&mut app, key('g')).await;
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        assert_eq!(deps_lens(&app), Lens::Issues);
     }
 
     #[tokio::test]
-    async fn g_key_round_trips_overview_graph_overview() {
+    async fn g_key_round_trips_issues_files_issues() {
+        use crate::tui::screens::dashboard::deps::Lens;
         let mut app = agent_graph_app(true);
-        app.tui_mode = TuiMode::Overview;
-        let _ = handle_key(&mut app, key('g')).await;
-        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
-        let _ = handle_key(&mut app, key('g')).await;
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        app.tui_mode = TuiMode::Dashboard;
+        for want in [Lens::Issues, Lens::Files, Lens::Issues] {
+            let _ = handle_key(&mut app, key('g')).await;
+            assert_eq!(deps_lens(&app), want);
+        }
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
     }
 
     /// Regression guard: LogViewer also binds `g` (scroll to top). The
@@ -2354,7 +2352,7 @@ mod tests {
     #[tokio::test]
     async fn g_key_does_not_modify_session_pool() {
         let mut app = agent_graph_app(true);
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         let mut s = Session::new(
             "running task".into(),
             "claude-opus-4-5".into(),
@@ -2367,8 +2365,12 @@ mod tests {
         let count_before = app.pool.total_count();
 
         let _ = handle_key(&mut app, key('g')).await;
+        let _ = handle_key(&mut app, key('g')).await;
 
-        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+        assert_eq!(
+            deps_lens(&app),
+            crate::tui::screens::dashboard::deps::Lens::Files
+        );
         assert_eq!(app.pool.total_count(), count_before);
         let sessions = app.pool.all_sessions();
         assert_eq!(sessions[0].status, SessionStatus::Running);

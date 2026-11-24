@@ -816,7 +816,7 @@ apply_to = "both"
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `agent_graph_enabled` | bool | `true` | Show the agent-graph view (concentric bipartite layout) instead of the default panel grid when two or more sessions are active. Set to `false` to revert to the panel layout. |
+| `agent_graph_enabled` | bool | `true` | Turn on the `files` lens of Dashboard › Deps (`g`, then `g` again): agents, the repo-relative files they edit, contested files first. Set to `false` to keep Deps on the `issues` lens. |
 
 ```toml
 [views]

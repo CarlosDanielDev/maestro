@@ -89,19 +89,6 @@ pub fn hidden_hint_keys(mode: TuiMode, home_actions_visible: bool) -> &'static [
     }
 }
 
-const AGENT_GRAPH_HINTS: &[InlineHint] = &[
-    InlineHint {
-        key: "Esc",
-        action: "Back",
-        priority: 0,
-    },
-    InlineHint {
-        key: "g",
-        action: "Panels",
-        priority: 1,
-    },
-];
-
 /// Build the `ModeKeyMap` for a given `TuiMode`.
 ///
 /// `screen_bindings` should come from the active screen's `KeymapProvider::keybindings()`
@@ -179,8 +166,12 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        // #1289: Cost and Tokens are Dashboard views (aliases).
-        TuiMode::Dashboard | TuiMode::CostDashboard | TuiMode::TokenDashboard => (
+        // #1289: Cost and Tokens are Dashboard views (aliases); #1292: so
+        // is the Agent graph (Deps › files).
+        TuiMode::Dashboard
+        | TuiMode::CostDashboard
+        | TuiMode::TokenDashboard
+        | TuiMode::AgentGraph => (
             "Dashboard",
             FKeyVis::DashboardLike,
             &[
@@ -337,7 +328,6 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::AgentGraph => ("Agent Graph", FKeyVis::DashboardLike, AGENT_GRAPH_HINTS),
         TuiMode::CompletionSummary => (
             "Completion Summary",
             FKeyVis::Minimal,

@@ -39,6 +39,7 @@ mod pushup_marker;
 mod quota_refresh;
 mod review;
 mod session_lifecycle;
+mod session_pause;
 mod session_spawners;
 mod settings_actions;
 pub(crate) mod toasts;
@@ -251,6 +252,8 @@ pub struct App {
     pub(crate) copy_toast: Option<crate::tui::app::clipboard_action::CopyToast>,
     /// `ds::toast` queue (#1254): one visible toast, errors wait their turn.
     pub(crate) toasts: crate::tui::ds::toast::ToastQueue<toasts::ToastUndo>,
+    /// The visible file-conflict toast and what its `p` / `⏎` act on (#1292).
+    pub(crate) conflict_prompts: Vec<crate::tui::agent_graph::conflict_toast::ConflictPrompt>,
     /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
     /// tests inject `FakeNotifier` via `with_desktop_notifier`.
     pub(crate) desktop_notifier: std::sync::Arc<dyn DesktopNotifier>,
@@ -457,6 +460,7 @@ impl App {
             shell_launcher: Box::new(crate::tui::shell_launcher::OsShellLauncher),
             copy_toast: None,
             toasts: Default::default(),
+            conflict_prompts: Vec::new(),
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::sync::Arc::new(std::sync::Mutex::new(
                 std::collections::HashSet::new(),
@@ -786,19 +790,6 @@ impl App {
             .as_ref()
             .map(|c| c.views.agent_graph_enabled)
             .unwrap_or(false)
-    }
-
-    /// Bypasses `navigate_to` deliberately so `Esc` does not pop back through
-    /// every toggle press — this is a flat view-switch, not navigation.
-    pub fn toggle_agent_graph(&mut self) {
-        if !self.is_agent_graph_enabled() {
-            return;
-        }
-        self.tui_mode = match self.tui_mode {
-            TuiMode::Overview => TuiMode::AgentGraph,
-            TuiMode::AgentGraph => TuiMode::Overview,
-            _ => return,
-        };
     }
 
     /// Navigate to a new mode, pushing the current mode onto the back-stack.
@@ -1158,10 +1149,17 @@ enabled = true
         let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
         app.tui_mode = TuiMode::Overview;
         app.navigate_to(TuiMode::AgentGraph);
+        // #1292: the Agent graph is the Files lens of Dashboard Deps.
         assert_eq!(
             app.tui_mode,
-            TuiMode::AgentGraph,
-            "navigate_to(AgentGraph) with toggle ON must land on AgentGraph"
+            TuiMode::Dashboard,
+            "navigate_to(AgentGraph) with toggle ON must land on Dashboard Deps"
+        );
+        let dash = &app.screen_state.dashboard;
+        assert_eq!(dash.view, crate::tui::screens::dashboard::usage::View::Deps);
+        assert_eq!(
+            dash.deps.lens,
+            crate::tui::screens::dashboard::deps::Lens::Files
         );
     }
 
@@ -1174,63 +1172,6 @@ enabled = true
             app.tui_mode,
             TuiMode::Overview,
             "navigate_to(AgentGraph) with no config (None) must redirect to Overview"
-        );
-    }
-
-    // -- Issue #528: App::toggle_agent_graph ---------------------------------
-
-    #[test]
-    fn toggle_agent_graph_with_flag_off_is_noop() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = false\n");
-        app.tui_mode = TuiMode::Overview;
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::Overview);
-        assert!(app.nav_stack.is_empty());
-    }
-
-    #[test]
-    fn toggle_agent_graph_with_no_config_is_noop() {
-        let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::Overview);
-    }
-
-    #[test]
-    fn toggle_agent_graph_overview_to_graph_when_enabled() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::Overview;
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
-    }
-
-    #[test]
-    fn toggle_agent_graph_graph_to_overview_when_enabled() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::AgentGraph;
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::Overview);
-    }
-
-    #[test]
-    fn toggle_agent_graph_round_trip_returns_to_overview() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::Overview;
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
-        app.toggle_agent_graph();
-        assert_eq!(app.tui_mode, TuiMode::Overview);
-    }
-
-    #[test]
-    fn toggle_agent_graph_from_unrelated_mode_is_noop() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::Settings;
-        app.toggle_agent_graph();
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::Settings,
-            "toggle must only act on Overview/AgentGraph"
         );
     }
 
@@ -1331,20 +1272,6 @@ enabled = true
             (app.total_cost - 1.23).abs() < f64::EPSILON,
             "App::new must recompute total_cost from sessions when the persisted field is stale; got {}",
             app.total_cost
-        );
-    }
-
-    #[test]
-    fn toggle_agent_graph_does_not_push_nav_stack() {
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::Overview;
-        let depth_before = app.nav_stack.depth();
-        app.toggle_agent_graph();
-        app.toggle_agent_graph();
-        assert_eq!(
-            app.nav_stack.depth(),
-            depth_before,
-            "toggle must not grow nav_stack — Esc should not pop back through toggle history"
         );
     }
 

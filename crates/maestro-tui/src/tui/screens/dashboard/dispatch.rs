@@ -2,7 +2,8 @@
 //! (`HomeScreen`), which still answer every key this module leaves.
 //! `j k ↑ ↓` move, `⏎` opens a session or arms a pending PR, `X` kills
 //! through the typed confirm, `l` opens the log, `D` dismisses finished
-//! sessions, `o c t` switch the Ops, Cost and Tokens views (#1289). Any
+//! sessions, `o c t` switch the Ops, Cost and Tokens views (#1289), `g`
+//! opens Deps (#1292, its keys are `deps::handle_key`). Any
 //! key but `⏎` disarms an armed PR, also keys that never
 //! reach this module (`note_key`); `Esc` then only disarms.
 
@@ -18,6 +19,13 @@ use crate::tui::screens::ScreenAction;
 /// The data the Dashboard reads and its own state, borrowed together.
 pub fn split(app: &mut App) -> (DashboardView<'_>, &mut Dashboard) {
     let usage = usage(app);
+    let files_enabled = app.is_agent_graph_enabled();
+    let files = if files_enabled && app.screen_state.dashboard.view == View::Deps {
+        let sessions = app.pool.all_sessions();
+        crate::tui::agent_graph::model::build_graph(&sessions, &app.pool.file_claims)
+    } else {
+        Default::default()
+    };
     let view = DashboardView {
         sessions: app.pool.all_sessions(),
         pending: &app.pending_prs,
@@ -29,6 +37,9 @@ pub fn split(app: &mut App) -> (DashboardView<'_>, &mut Dashboard) {
             .wall
             .unwrap_or_else(chrono::Utc::now),
         usage,
+        files,
+        files_enabled,
+        assigner: app.work_assignment_service.as_ref().map(|s| s.inner()),
     };
     (view, &mut app.screen_state.dashboard)
 }
@@ -120,6 +131,14 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {
         return None;
     }
     sync(app);
+    // #1292: Deps takes every key it gets.
+    if app.screen_state.dashboard.view == View::Deps {
+        app.screen_state.dashboard.disarm();
+        let graph = split(app).0.files;
+        let action = super::deps::handle_key(app, key, &graph);
+        mirror_selection(app);
+        return Some(action);
+    }
     if key.code == KeyCode::Enter {
         return Some(enter(app));
     }
@@ -162,6 +181,7 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
         KeyCode::Char('o') => app.screen_state.dashboard.view = View::Ops,
         KeyCode::Char('c') => show_usage(app, View::Cost),
         KeyCode::Char('t') => show_usage(app, View::Tokens),
+        KeyCode::Char('g') => super::deps::press_g(app),
         KeyCode::Esc if app.screen_state.dashboard.view != View::Ops => {
             app.screen_state.dashboard.view = View::Ops;
         }
@@ -172,10 +192,14 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
 
 /// The footer in Cost and Tokens: `⏎` only opens a session there (no PR
 /// row to arm), so its hint drops `arm PR` (#1289; `ui::draw_footer`).
-pub fn usage_footer(app: &App, hints: &mut [crate::tui::navigation::keymap::InlineHint]) {
+/// On Deps (#1292) the footer lists only the keys of the drawn lens.
+pub fn usage_footer(app: &App, hints: &mut Vec<crate::tui::navigation::keymap::InlineHint>) {
     let dash = &app.screen_state.dashboard;
     if app.tui_mode != TuiMode::Dashboard || dash.view == View::Ops {
         return;
+    }
+    if dash.view == View::Deps {
+        return super::deps::footer(app, hints);
     }
     for h in hints.iter_mut().filter(|h| h.key == "Enter") {
         h.action = "open";
@@ -183,7 +207,7 @@ pub fn usage_footer(app: &App, hints: &mut [crate::tui::navigation::keymap::Inli
 }
 
 /// Cost or Tokens, with the selection moved off a PR row (#1289).
-fn show_usage(app: &mut App, view: View) {
+pub(super) fn show_usage(app: &mut App, view: View) {
     let dash = &mut app.screen_state.dashboard;
     dash.view = view;
     dash.list.keep_on_session();

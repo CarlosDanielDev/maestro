@@ -173,7 +173,10 @@ fn assert_ratchet(offenders: &[String], allowlist: &[&str], list_name: &str, rul
 
 #[test]
 fn screens_use_theme_colors_only() {
-    let offenders: Vec<String> = non_test_sources("crates/maestro-tui/src/tui/screens")
+    // #1292: the Files lens of Dashboard Deps draws from `agent_graph/`.
+    let mut sources = non_test_sources("crates/maestro-tui/src/tui/screens");
+    sources.extend(non_test_sources("crates/maestro-tui/src/tui/agent_graph"));
+    let offenders: Vec<String> = sources
         .into_iter()
         .filter(|(_, body)| body.matches("Color::").count() > body.matches("Color::Reset").count())
         .map(|(name, _)| name)
@@ -183,6 +186,29 @@ fn screens_use_theme_colors_only() {
         RAW_COLOR_ALLOWLIST,
         "RAW_COLOR_ALLOWLIST",
         "Hardcoded `Color::` in screens — use `&Theme` tokens (docs/tui-design-system.md §1):",
+    );
+}
+
+/// #1292: the ring picture of the Agent graph is gone; the graph is the
+/// Files lens of Dashboard Deps (`g`). Its ⌃K entry went with it. Read
+/// from the source so this guard lives outside `crates/maestro-tui/src/tui`
+/// (the issue's check is `rg 'ConcentricLayout|radial'` over that tree).
+#[test]
+fn palette_has_no_radial_entry() {
+    let path = root().join("crates/maestro-tui/src/tui/navigation/registry_screens.rs");
+    let text = fs::read_to_string(&path).expect("registry_screens.rs");
+    let start = text
+        .find("pub const PALETTE_COMMANDS")
+        .expect("PALETTE_COMMANDS");
+    let block = &text[start..start + text[start..].find("];").expect("end of list")];
+    let lower = block.to_lowercase();
+    assert!(
+        !lower.contains("radial") && !lower.contains("agent graph"),
+        "the palette still offers the old Agent graph:\n{block}"
+    );
+    assert!(
+        !block.contains("AgentGraph"),
+        "PaletteCommand::AgentGraph is back"
     );
 }
 
