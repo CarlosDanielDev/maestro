@@ -12,15 +12,21 @@ fn render_overview_hints(agent_graph_enabled: bool) -> Vec<Span<'static>> {
     keybinding_hints_spans(&fitted, false, &theme)
 }
 
+/// #1292: the Overview `g` toggle is gone (the graph is Dashboard › Deps
+/// › files), so its `[g] Graph` hint is gone with the flag on too.
 #[test]
-fn overview_hints_with_agent_graph_flag_on_includes_g_entry() {
+fn overview_hints_with_agent_graph_flag_on_have_no_g_entry() {
     let spans = render_overview_hints(true);
     let rendered: String = spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(
-        rendered.contains("[g]"),
-        "Overview hints must include [g] when toggle is on; got: {rendered:?}"
+        !rendered.contains("[g]"),
+        "Overview hints must not include [g]; got: {rendered:?}"
     );
-    assert_debug_snapshot!(spans);
+    assert_eq!(
+        spans,
+        render_overview_hints(false),
+        "the flag changes nothing"
+    );
 }
 
 #[test]

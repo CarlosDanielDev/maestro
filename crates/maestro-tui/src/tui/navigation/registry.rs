@@ -161,6 +161,12 @@ pub enum Action {
     Switcher,
     /// Copy the session's last reply (Detail `c`, #1288).
     Copy,
+    /// The visible file-conflict toast: pause the agent without the claim
+    /// (`⌃P`, #1292).
+    PauseOther,
+    /// The visible file-conflict toast: show the file in Deps › files
+    /// (`⌃O`, #1292).
+    ShowFile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,6 +292,26 @@ pub fn registry() -> &'static [Binding] {
             g(ch('A'), A::CycleAgent, Safe, "next agent").exception(SHIFT_GLOBAL),
         ]);
 
+        // #1292: the conflict toast's keys, only while it is the visible
+        // toast on a tab screen (`App::conflict_toast_key`). Pausing is
+        // undone with ⌃Z, so it is Safe. Hidden: the palette would list
+        // them where they do nothing; Help still shows them.
+        v.extend([
+            g(
+                Chord::ctrl('p'),
+                A::PauseOther,
+                Safe,
+                "pause the other agent (conflict toast)",
+            )
+            .hidden(),
+            g(
+                Chord::ctrl('o'),
+                A::ShowFile,
+                Safe,
+                "show the conflict file (conflict toast)",
+            )
+            .hidden(),
+        ]);
         v.extend(screens::blocks());
         v
     });

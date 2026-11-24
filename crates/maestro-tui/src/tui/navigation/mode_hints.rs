@@ -27,11 +27,6 @@ const HINT_OV_FULL: InlineHint = InlineHint {
     action: "Full",
     priority: 3,
 };
-const HINT_OV_GRAPH: InlineHint = InlineHint {
-    key: "g",
-    action: "Graph",
-    priority: 4,
-};
 const HINT_OV_SWITCHER: InlineHint = InlineHint {
     key: "w",
     action: "Switcher",
@@ -52,24 +47,10 @@ const OVERVIEW_HINTS_BASE: &[InlineHint] = &[
     HINT_OV_CYCLE,
 ];
 
-const OVERVIEW_HINTS_WITH_GRAPH: &[InlineHint] = &[
-    HINT_OV_DETAIL,
-    HINT_OV_COPY,
-    HINT_OV_LOG,
-    HINT_OV_FULL,
-    HINT_OV_GRAPH,
-    HINT_OV_SWITCHER,
-    HINT_OV_CYCLE,
-];
-
 /// Overview hints that act on a session; the footer dims them while the
 /// pool is empty, since they would do nothing (#1399).
-const OVERVIEW_SESSION_ONLY_KEYS: &[&str] = &[
-    HINT_OV_DETAIL.key,
-    HINT_OV_COPY.key,
-    HINT_OV_FULL.key,
-    HINT_OV_GRAPH.key,
-];
+const OVERVIEW_SESSION_ONLY_KEYS: &[&str] =
+    &[HINT_OV_DETAIL.key, HINT_OV_COPY.key, HINT_OV_FULL.key];
 
 /// Keys of `mode`'s inline hints that cannot act right now.
 pub fn inactive_hint_keys(mode: TuiMode, has_sessions: bool) -> &'static [&'static str] {
@@ -94,29 +75,20 @@ pub fn hidden_hint_keys(mode: TuiMode, home_actions_visible: bool) -> &'static [
 /// `screen_bindings` should come from the active screen's `KeymapProvider::keybindings()`
 /// (empty slice for modes that don't implement `Screen`).
 ///
-/// `agent_graph_enabled` controls the visibility of the `[g] Graph` entry in
-/// the Overview hint bar (#528). When `false`, the hint is absent so the
-/// keybinding is invisible; when `true`, the entry advertises the toggle.
+/// `_agent_graph_enabled` is unused since #1292: the Overview `[g] Graph`
+/// hint is gone (the graph is Dashboard › Deps › files, `g g`).
 pub fn mode_keymap(
     mode: TuiMode,
     session_status: Option<SessionStatus>,
     screen_bindings: &[KeyBindingGroup],
-    agent_graph_enabled: bool,
+    _agent_graph_enabled: bool,
 ) -> ModeKeyMap {
     let has_session = session_status.is_some();
     let is_terminal = session_status.is_some_and(|s| s.is_terminal());
     let is_running = matches!(session_status, Some(SessionStatus::Running));
 
     let (mode_label, fkey_vis, hints): (&str, FKeyVis, &[InlineHint]) = match mode {
-        TuiMode::Overview => (
-            "Overview",
-            FKeyVis::SessionAware,
-            if agent_graph_enabled {
-                OVERVIEW_HINTS_WITH_GRAPH
-            } else {
-                OVERVIEW_HINTS_BASE
-            },
-        ),
+        TuiMode::Overview => ("Overview", FKeyVis::SessionAware, OVERVIEW_HINTS_BASE),
         TuiMode::Session {
             view: SessionView::Detail,
             ..

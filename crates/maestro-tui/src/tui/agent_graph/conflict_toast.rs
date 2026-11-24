@@ -1,14 +1,16 @@
-//! The file-conflict toast (§02.20 "Conflict toast", #1292). When
-//! `process_file_claim_event` records a conflict it shows the file, who
-//! holds the claim and the policy, as a sticky error `ds::toast`. While
-//! that toast is the visible one, `p` pauses the agent that does NOT
-//! hold the claim (`⌃Z` resumes it) and `⏎` shows the file in Dashboard
-//! › Deps › files. Under the `pause` and `kill` policies maestro already
-//! acted, so the toast offers only `⏎`.
+//! The file-conflict toast (§02.20 "Conflict toast", #1292). The first
+//! time `process_file_claim_event` records a conflict for a (file, agent)
+//! pair it shows the file, who holds the claim and the policy, as a sticky
+//! error `ds::toast`. While that toast is the visible one and a top-level
+//! tab screen is shown (no modal, no text field), `⌃P` pauses the agent
+//! that does NOT hold the claim (`⌃Z` resumes it) and `⌃O` shows the file
+//! in Dashboard › Deps › files. Chords, so no screen key gets a second
+//! action. Under the `pause` and `kill` policies maestro already acted,
+//! so the toast offers only `⌃O`.
 
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use uuid::Uuid;
 
 use super::model::agent_label;
@@ -19,6 +21,8 @@ use crate::tui::screens::dashboard::usage::View;
 
 /// Widest path in the toast, so its keys stay inside the 72-cell toast.
 const PATH_W: usize = 22;
+/// Prompts kept: the visible toast and the errors `ds::toast` queues.
+const MAX_PROMPTS: usize = 6;
 
 /// A raised conflict toast: its text (to match the visible toast) and
 /// what its keys act on.
@@ -26,7 +30,7 @@ const PATH_W: usize = 22;
 pub(crate) struct ConflictPrompt {
     message: String,
     file: String,
-    /// The agent without the claim; `None` when `p` is not offered.
+    /// The agent without the claim; `None` when `⌃P` is not offered.
     pause: Option<Uuid>,
 }
 
@@ -47,14 +51,17 @@ impl App {
     ) {
         let (who, name) = (self.agent_name(holder), self.agent_name(other));
         let keys = match policy {
-            ConflictPolicy::Warn => format!("p pause {name} · ⏎ show file"),
-            ConflictPolicy::Pause => format!("{name} paused (policy) · ⏎ show file"),
-            ConflictPolicy::Kill => format!("{name} killed (policy) · ⏎ show file"),
+            ConflictPolicy::Warn => format!("⌃P pause {name} · ⌃O show file"),
+            ConflictPolicy::Pause => format!("{name} paused (policy) · ⌃O show file"),
+            ConflictPolicy::Kill => format!("{name} killed (policy) · ⌃O show file"),
         };
         let message = format!(
-            "{} · {who} holds it · {keys}",
+            "{} held by {who} · {keys}",
             super::ladder::mid(file, PATH_W)
         );
+        if self.conflict_prompts.len() >= MAX_PROMPTS {
+            self.conflict_prompts.remove(0);
+        }
         self.conflict_prompts.push(ConflictPrompt {
             message: message.clone(),
             file: file.to_string(),
@@ -64,11 +71,21 @@ impl App {
             .push(Toast::new(Severity::Error, message), Instant::now());
     }
 
-    /// `p` / `⏎` on the visible conflict toast. `false` (the key is not
-    /// used) when it is not one of them, no conflict toast is visible, or
-    /// `typing`: a text field has focus (`is_text_input_mode`).
+    /// `Esc` dismissed the toast showing `message`: forget its prompt.
+    pub(crate) fn forget_conflict_prompt(&mut self, message: &str) {
+        self.conflict_prompts.retain(|p| p.message != message);
+    }
+
+    /// `⌃P` / `⌃O` on the visible conflict toast. `false` (the key is not
+    /// used) when it is neither, no conflict toast is visible, the screen
+    /// is not a top-level tab (a modal or another screen owns the keys),
+    /// or `typing`: a text field has focus (`is_text_input_mode`).
     pub(crate) fn conflict_toast_key(&mut self, key: &KeyEvent, typing: bool) -> bool {
-        if typing || !key.modifiers.is_empty() || self.copy_toast.is_some() {
+        let tab_screen = crate::tui::ds::tab_bar::tab_index(self.tui_mode).is_some();
+        if typing || !tab_screen || key.modifiers != KeyModifiers::CONTROL {
+            return false;
+        }
+        if self.copy_toast.is_some() {
             return false;
         }
         let now = Instant::now();
@@ -79,26 +96,24 @@ impl App {
         else {
             return false;
         };
-        let prompt = &self.conflict_prompts[at];
         match key.code {
-            KeyCode::Char('p') if prompt.pause.is_some() => {
-                let Some(id) = prompt.pause else {
+            KeyCode::Char('p') => {
+                let Some(id) = self.conflict_prompts[at].pause else {
                     return false;
                 };
                 self.conflict_prompts.remove(at);
                 let _ = self.toasts.dismiss_error(now);
                 let name = self.agent_name(id);
-                let toast = if self.pause_session(id) {
-                    Toast::undoable(
+                let toast = match self.pause_session(id) {
+                    Ok(()) => Toast::undoable(
                         format!("paused {name}"),
                         Box::new(move |app: &mut App| app.resume_session(id)) as _,
-                    )
-                } else {
-                    Toast::new(Severity::Warn, format!("{name} has no process to pause"))
+                    ),
+                    Err(why) => Toast::new(Severity::Warn, format!("{name} not paused: {why}")),
                 };
                 self.toasts.push(toast, now);
             }
-            KeyCode::Enter => {
+            KeyCode::Char('o') => {
                 let file = self.conflict_prompts.remove(at).file;
                 let _ = self.toasts.dismiss_error(now);
                 self.navigate_to(TuiMode::Dashboard);

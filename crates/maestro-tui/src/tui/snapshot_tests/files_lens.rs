@@ -74,3 +74,17 @@ fn files_lens_regular() {
     assert!(out.contains("src/auth/middleware.rs"));
     assert_snapshot!(out);
 }
+
+/// Compact (80x24, the smallest size past the SizeGuard): no canvas; the
+/// agents, then the files with their editors on each row.
+#[test]
+fn files_lens_compact() {
+    let mut app = lens_app();
+    let out = draw(&mut app, 80, 24);
+    assert!(out.contains("CONTESTED"), "contested section:\n{out}");
+    assert!(
+        out.contains("#407 #409"),
+        "editors on the contested row:\n{out}"
+    );
+    assert_snapshot!(out);
+}

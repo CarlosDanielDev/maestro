@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/files_lens.rs
+expression: out
+---
+" MAESTRO  0.33.1 │ ● 2 run ◐ 0 wait ✗ 1 fail │ $0.00 spent │ TQ:OFF             "
+"  1 Home   2 Dashboard   3 Issues   4 Milestones   5 Roadmap   6 Stats   7 PRD  "
+" o Ops  c Cost  t Tokens   g Deps    lens  issues · files  g switch             "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━[ Files · worktrees merged ]━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃ AGENTS  3                                                                    ┃"
+"┃▌● running #407 auth-refactor                                               ✎2┃"
+"┃ ● running #409 session-expiry                                              ✎2┃"
+"┃ ⊠ gates failed #412 fleet-sort                                             ✎2┃"
+"┃ CONTESTED  1                                                                 ┃"
+"┃ src/auth/middleware.rs                               2✎ ✗ conflict #407 #409 ┃"
+"┃ EDITED  4                                                                    ┃"
+"┃ src/auth/token.rs                                                    1✎ #407 ┃"
+"┃ src/session/expiry.rs                                                1✎ #409 ┃"
+"┃ crates/maestro-tui/src/tui/screens/fleet_board/draw.rs               1✎ #412 ┃"
+"┃ src/fleet/sort.rs                                                    1✎ #412 ┃"
+"┃   + 1 read only                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"┌──────────────────────────────────[ Agent ]───────────────────────────────────┐"
+"│● running  #407 auth-refactor                                                 │"
+"│role IMP · edits 2 files                                                      │"
+"│ src/auth/middleware.rs                                                       │"
+"│ src/auth/token.rs                                                            │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" j/k move   → files   Enter open session   X kill   g issues lens       ⌃Q quit "

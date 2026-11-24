@@ -1,7 +1,7 @@
-//! #1292: a recorded file conflict raises a toast. Its `p` pauses the
-//! agent that does not hold the claim (never the holder) and its `⏎`
-//! shows the file in Dashboard › Deps › files. Drawn at 120x36, through
-//! the real key path.
+//! #1292: a new file conflict raises a toast. Its `⌃P` pauses the agent
+//! that does not hold the claim (never the holder) and its `⌃O` shows the
+//! file in Dashboard › Deps › files. Drawn at 120x36, through the real key
+//! path.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -12,6 +12,7 @@ use crate::session::types::{SessionStatus, StreamEvent};
 use crate::session::worktree::MockWorktreeManager;
 use crate::state::store::StateStore;
 use crate::tui::app::TuiMode;
+use crate::tui::ds::toast::{Severity, Toast};
 use crate::tui::input_handler::handle_key;
 use crate::tui::screens::dashboard::deps::{Column, Lens};
 use crate::tui::screens::dashboard::usage::View;
@@ -71,6 +72,29 @@ async fn press(app: &mut App, code: KeyCode) {
     handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
 }
 
+async fn ctrl(app: &mut App, c: char) {
+    handle_key(app, KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)).await;
+}
+
+/// #407 holds `src/auth.rs`, #409 edits it: one conflict toast.
+fn conflict(app: &mut App) -> (uuid::Uuid, uuid::Uuid) {
+    let holder = running(app, 407);
+    let other = running(app, 409);
+    app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
+    app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
+    (holder, other)
+}
+
+/// A real process for `id`, so `⌃P` can SIGSTOP it. Kill it after.
+fn with_process(app: &mut App, id: uuid::Uuid) -> std::process::Child {
+    let agent = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep");
+    app.pool.get_active_mut(id).unwrap().session.pid = Some(agent.id());
+    agent
+}
+
 fn status(app: &App, id: uuid::Uuid) -> Option<SessionStatus> {
     app.pool.get_session(id).map(|s| s.status)
 }
@@ -79,38 +103,34 @@ fn status(app: &App, id: uuid::Uuid) -> Option<SessionStatus> {
 #[tokio::test]
 async fn conflict_toast_pauses_non_holder() {
     let mut app = make_app();
-    let holder = running(&mut app, 407);
-    let other = running(&mut app, 409);
-    // The non-holder has a real process: `p` sends it SIGSTOP.
-    let mut agent = std::process::Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .expect("sleep");
-    app.pool.get_active_mut(other).unwrap().session.pid = Some(agent.id());
-
-    app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
-    app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
+    let (holder, other) = conflict(&mut app);
+    let mut agent = with_process(&mut app, other);
     let out = draw(&mut app);
     assert!(out.contains("src/auth.rs"), "toast names the file:\n{out}");
-    assert!(out.contains("p pause #409"), "toast offers p:\n{out}");
+    assert!(out.contains("⌃P pause #409"), "toast offers ⌃P:\n{out}");
 
-    press(&mut app, KeyCode::Char('p')).await;
+    ctrl(&mut app, 'p').await;
     let paused = status(&app, other);
+    let out = draw(&mut app);
+    // ⌃Z undoes it: the same agent runs again (SIGCONT).
+    ctrl(&mut app, 'z').await;
+    let resumed = status(&app, other);
     let _ = agent.kill();
     let _ = agent.wait();
     assert_eq!(
         paused,
         Some(SessionStatus::Paused),
-        "p pauses the non-holder"
+        "⌃P pauses the non-holder"
     );
     assert_eq!(
         status(&app, holder),
         Some(SessionStatus::Running),
         "never the holder"
     );
-    assert!(app.conflict_prompts.is_empty(), "p used the toast");
-    assert_eq!(app.tui_mode, TuiMode::Dashboard, "p did not navigate");
-    assert!(draw(&mut app).contains("paused #409"), "⌃Z can undo it");
+    assert!(app.conflict_prompts.is_empty(), "⌃P used the toast");
+    assert_eq!(app.tui_mode, TuiMode::Dashboard, "⌃P did not navigate");
+    assert!(out.contains("paused #409"), "undo toast:\n{out}");
+    assert_eq!(resumed, Some(SessionStatus::Running), "⌃Z resumes it");
 }
 
 #[tokio::test]
@@ -120,8 +140,8 @@ async fn conflict_toast_enter_shows_the_file() {
     let third = running(&mut app, 410);
     app.process_file_claim_event(holder, &edit(407, "src/session.rs"));
     app.process_file_claim_event(third, &edit(410, "src/session.rs"));
-    assert!(draw(&mut app).contains("⏎ show file"));
-    press(&mut app, KeyCode::Enter).await;
+    assert!(draw(&mut app).contains("⌃O show file"));
+    ctrl(&mut app, 'o').await;
     let dash = &app.screen_state.dashboard;
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
     assert_eq!(dash.view, View::Deps);
@@ -135,77 +155,147 @@ async fn conflict_toast_enter_shows_the_file() {
     assert_eq!(
         status(&app, third),
         Some(SessionStatus::Running),
-        "⏎ pauses nothing"
+        "⌃O pauses nothing"
     );
 }
 
-/// The toast keys act only while that toast is visible: once it is gone,
-/// `p` and `⏎` are the screen's keys again.
+/// Once the toast is gone (Esc), its keys and its prompt are gone too.
 #[tokio::test]
 async fn conflict_toast_keys_need_the_visible_toast() {
     let mut app = make_app();
-    let holder = running(&mut app, 407);
-    let other = running(&mut app, 409);
-    app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
-    app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
-    // Esc dismisses the sticky toast.
+    let (_, other) = conflict(&mut app);
     press(&mut app, KeyCode::Esc).await;
-    assert!(!draw(&mut app).contains("p pause #409"));
-    press(&mut app, KeyCode::Char('p')).await;
+    assert!(!draw(&mut app).contains("⌃P pause #409"));
+    assert!(app.conflict_prompts.is_empty(), "Esc forgot the prompt");
+    ctrl(&mut app, 'p').await;
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
 }
 
-/// While a text field has focus, `p` and `⏎` type: the toast keeps them.
+/// With a text field focused the toast never takes a key.
 #[tokio::test]
 async fn conflict_toast_keys_never_steal_typing() {
     let mut app = make_app();
-    let holder = running(&mut app, 407);
-    let other = running(&mut app, 409);
-    app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
-    app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
-    // The session switcher's filter is a text field (#1288).
-    app.screen_state.session_switcher = Some(Default::default());
-    app.tui_mode = TuiMode::SessionSwitcher;
-    assert!(draw(&mut app).contains("p pause #409"), "the toast is up");
-    press(&mut app, KeyCode::Char('p')).await;
-    let typed = app
-        .screen_state
-        .session_switcher
-        .as_ref()
-        .map(|s| s.filter_text.clone());
-    assert_eq!(typed.as_deref(), Some("p"), "p typed into the filter");
+    let (_, other) = conflict(&mut app);
+    let key = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    assert!(
+        !app.conflict_toast_key(&key, true),
+        "typing: the field gets ⌃O"
+    );
+    assert_eq!(app.conflict_prompts.len(), 1);
+    assert_ne!(app.screen_state.dashboard.view, View::Deps);
+    assert!(
+        app.conflict_toast_key(&key, false),
+        "not typing: ⌃O shows the file"
+    );
+    assert_eq!(status(&app, other), Some(SessionStatus::Running));
+}
+
+/// A modal owns its keys: under the budget pre-spawn modal the toast's
+/// chords do nothing and Enter is the modal's.
+#[tokio::test]
+async fn conflict_toast_keys_never_act_under_a_modal() {
+    let mut app = make_app();
+    let (_, other) = conflict(&mut app);
+    let parked = uuid::Uuid::new_v4();
+    app.tui_mode = TuiMode::BudgetPreSpawn { session_id: parked };
+    for c in ['p', 'o'] {
+        ctrl(&mut app, c).await;
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::BudgetPreSpawn { session_id: parked },
+            "⌃{c}"
+        );
+    }
     press(&mut app, KeyCode::Enter).await;
     assert_ne!(
-        (app.tui_mode, app.screen_state.dashboard.view),
-        (TuiMode::Dashboard, View::Deps),
-        "Enter did not show the file"
+        app.screen_state.dashboard.view,
+        View::Deps,
+        "Enter is the modal's"
     );
-    assert_eq!(app.conflict_prompts.len(), 1, "the toast kept its keys");
+    assert_eq!(app.conflict_prompts.len(), 1, "the toast kept its prompt");
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
 }
 
 /// A conflict toast queued behind another error toast has no keys yet:
-/// `p` never acts on a toast you cannot see.
+/// `⌃P` never acts on a toast you cannot see.
 #[tokio::test]
 async fn conflict_toast_queued_behind_another_toast_has_no_keys() {
-    use crate::tui::ds::toast::{Severity, Toast};
     let mut app = make_app();
-    let holder = running(&mut app, 407);
-    let other = running(&mut app, 409);
     app.push_toast(
         Toast::new(Severity::Error, "gh pr create failed"),
         std::time::Instant::now(),
     );
-    app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
-    app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
+    let _ = conflict(&mut app);
     assert!(
-        !draw(&mut app).contains("p pause #409"),
+        !draw(&mut app).contains("⌃P pause #409"),
         "queued, not shown"
     );
-    press(&mut app, KeyCode::Char('p')).await;
+    ctrl(&mut app, 'p').await;
     assert_eq!(
         app.conflict_prompts.len(),
         1,
-        "p did not use the hidden toast"
+        "⌃P did not use the hidden toast"
+    );
+}
+
+/// The toast is for a NEW conflict: more edits of the same file by the
+/// same agent only log, and never push an unseen error out of the queue.
+#[tokio::test]
+async fn conflict_toast_once_per_file_and_agent() {
+    let mut app = make_app();
+    app.push_toast(
+        Toast::new(Severity::Error, "gh pr create failed"),
+        std::time::Instant::now(),
+    );
+    let (_, other) = conflict(&mut app);
+    for _ in 0..10 {
+        app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
+    }
+    assert_eq!(app.conflict_prompts.len(), 1, "one prompt");
+    assert!(
+        draw(&mut app).contains("gh pr create failed"),
+        "not pushed out"
+    );
+    press(&mut app, KeyCode::Esc).await;
+    assert!(
+        draw(&mut app).contains("⌃P pause #409"),
+        "then the one conflict"
+    );
+    press(&mut app, KeyCode::Esc).await;
+    assert!(!draw(&mut app).contains("⌃P pause"), "and no repeat");
+}
+
+/// A failed SIGSTOP never records Paused, and the toast says why.
+#[cfg(unix)]
+#[tokio::test]
+async fn conflict_toast_failed_pause_says_why() {
+    let mut app = make_app();
+    let (_, other) = conflict(&mut app);
+    // No process has this pid (above every pid_max), so kill(2) fails.
+    app.pool.get_active_mut(other).unwrap().session.pid = Some(2_000_000_000);
+    ctrl(&mut app, 'p').await;
+    assert_eq!(status(&app, other), Some(SessionStatus::Running));
+    let out = draw(&mut app);
+    assert!(
+        out.contains("#409 not paused: SIGSTOP failed"),
+        "toast:\n{out}"
+    );
+}
+
+/// Prompts are bounded: one per toast the queue can hold.
+#[tokio::test]
+async fn conflict_prompts_are_bounded() {
+    let mut app = make_app();
+    let holder = running(&mut app, 407);
+    let other = running(&mut app, 409);
+    for i in 0..12 {
+        let file = format!("src/f{i}.rs");
+        app.process_file_claim_event(holder, &edit(407, &file));
+        app.process_file_claim_event(other, &edit(409, &file));
+    }
+    assert!(
+        app.conflict_prompts.len() <= 6,
+        "{}",
+        app.conflict_prompts.len()
     );
 }

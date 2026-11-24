@@ -92,7 +92,7 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
-    // #1292: the visible file-conflict toast takes `p` and `Enter`.
+    // #1292: the visible file-conflict toast takes ⌃P and ⌃O.
     if app.conflict_toast_key(&key, is_text_input_mode(app)) {
         return KeyAction::Consumed;
     }
