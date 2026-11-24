@@ -193,7 +193,13 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
 /// The footer in Cost and Tokens: `⏎` only opens a session there (no PR
 /// row to arm), so its hint drops `arm PR` (#1289; `ui::draw_footer`).
 /// On Deps (#1292) the footer lists only the keys of the drawn lens.
+/// #1292: the conflict toast's keys go first, on the tab screens.
 pub fn usage_footer(app: &App, hints: &mut Vec<crate::tui::navigation::keymap::InlineHint>) {
+    view_footer(app, hints);
+    crate::tui::agent_graph::conflict_toast::footer(app, hints);
+}
+
+fn view_footer(app: &App, hints: &mut Vec<crate::tui::navigation::keymap::InlineHint>) {
     let dash = &app.screen_state.dashboard;
     if app.tui_mode != TuiMode::Dashboard || dash.view == View::Ops {
         return;

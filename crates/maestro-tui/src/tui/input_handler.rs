@@ -1224,7 +1224,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
 ///
 /// #1377: also the help overlay search, the PRD edit field and the Roadmap
 /// label/assignee filters (their screens never report `Insert`).
-fn is_text_input_mode(app: &App) -> bool {
+pub(crate) fn is_text_input_mode(app: &App) -> bool {
     use crate::tui::navigation::InputMode;
     if app.palette.is_some() {
         return true;

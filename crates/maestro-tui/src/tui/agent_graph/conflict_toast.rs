@@ -1,16 +1,20 @@
 //! The file-conflict toast (§02.20 "Conflict toast", #1292). The first
 //! time `process_file_claim_event` records a conflict for a (file, agent)
 //! pair it shows the file, who holds the claim and the policy, as a sticky
-//! error `ds::toast`. While that toast is the visible one and a top-level
-//! tab screen is shown (no modal, no text field), `⌃P` pauses the agent
-//! that does NOT hold the claim (`⌃Z` resumes it) and `⌃O` shows the file
-//! in Dashboard › Deps › files. Chords, so no screen key gets a second
-//! action. Under the `pause` and `kill` policies maestro already acted,
-//! so the toast offers only `⌃O`.
+//! error `ds::toast`. While that toast is the visible one on a top-level
+//! tab screen (no modal, no text field), `⌃P` pauses the agent that does
+//! NOT hold the claim (`⌃Z` resumes it) and `⌃O` shows the file in
+//! Dashboard › Deps › files. The keys are scoped to the tab screens and
+//! shown in their footer only there ([`footer`]); the toast text names no
+//! key, because it is drawn on every screen (`⌃P` is Interaction's pushup).
+//! Under the `pause` and `kill` policies maestro already acted, so only
+//! `⌃O` is offered.
 
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::tui::navigation::keymap::InlineHint;
 use uuid::Uuid;
 
 use super::model::agent_label;
@@ -51,9 +55,9 @@ impl App {
     ) {
         let (who, name) = (self.agent_name(holder), self.agent_name(other));
         let keys = match policy {
-            ConflictPolicy::Warn => format!("⌃P pause {name} · ⌃O show file"),
-            ConflictPolicy::Pause => format!("{name} paused (policy) · ⌃O show file"),
-            ConflictPolicy::Kill => format!("{name} killed (policy) · ⌃O show file"),
+            ConflictPolicy::Warn => format!("{name} edits it too"),
+            ConflictPolicy::Pause => format!("{name} paused (policy)"),
+            ConflictPolicy::Kill => format!("{name} killed (policy)"),
         };
         let message = format!(
             "{} held by {who} · {keys}",
@@ -71,6 +75,18 @@ impl App {
             .push(Toast::new(Severity::Error, message), Instant::now());
     }
 
+    /// The prompt whose keys act now: its toast is the visible one, the
+    /// screen is a top-level tab (no modal or other screen owns the keys)
+    /// and no text field has focus (`typing`).
+    fn acting_conflict_prompt(&self, typing: bool, now: Instant) -> Option<usize> {
+        let tab_screen = crate::tui::ds::tab_bar::tab_index(self.tui_mode).is_some();
+        if typing || !tab_screen || self.copy_toast.is_some() {
+            return None;
+        }
+        let visible = self.toasts.visible(now)?;
+        (self.conflict_prompts.iter()).position(|p| p.message == visible.message)
+    }
+
     /// `Esc` dismissed the toast showing `message`: forget its prompt.
     pub(crate) fn forget_conflict_prompt(&mut self, message: &str) {
         self.conflict_prompts.retain(|p| p.message != message);
@@ -81,19 +97,11 @@ impl App {
     /// is not a top-level tab (a modal or another screen owns the keys),
     /// or `typing`: a text field has focus (`is_text_input_mode`).
     pub(crate) fn conflict_toast_key(&mut self, key: &KeyEvent, typing: bool) -> bool {
-        let tab_screen = crate::tui::ds::tab_bar::tab_index(self.tui_mode).is_some();
-        if typing || !tab_screen || key.modifiers != KeyModifiers::CONTROL {
-            return false;
-        }
-        if self.copy_toast.is_some() {
+        if key.modifiers != KeyModifiers::CONTROL {
             return false;
         }
         let now = Instant::now();
-        let Some(visible) = self.toasts.visible(now) else {
-            return false;
-        };
-        let Some(at) = (self.conflict_prompts.iter()).position(|p| p.message == visible.message)
-        else {
+        let Some(at) = self.acting_conflict_prompt(typing, now) else {
             return false;
         };
         match key.code {
@@ -125,4 +133,23 @@ impl App {
         }
         true
     }
+}
+
+/// The toast's keys, first in the footer, only where they act now.
+pub(crate) fn footer(app: &App, hints: &mut Vec<InlineHint>) {
+    let typing = crate::tui::input_handler::is_text_input_mode(app);
+    let Some(at) = app.acting_conflict_prompt(typing, Instant::now()) else {
+        return;
+    };
+    let mut keys = Vec::new();
+    if app.conflict_prompts[at].pause.is_some() {
+        keys.push(("⌃P", "pause other agent"));
+    }
+    keys.push(("⌃O", "show conflict file"));
+    let keys = keys.into_iter().map(|(key, action)| InlineHint {
+        key,
+        action,
+        priority: 0,
+    });
+    hints.splice(0..0, keys);
 }

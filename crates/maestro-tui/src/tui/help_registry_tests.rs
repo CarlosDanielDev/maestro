@@ -196,14 +196,18 @@ fn shown_for(mode: TuiMode) -> Vec<KeyBindingGroup> {
         )
         .keybindings(),
         TuiMode::MilestoneView => MilestoneScreen::new(vec![]).keybindings(),
+        TuiMode::Interaction => {
+            crate::tui::screens::interaction::InteractionScreen::new().keybindings()
+        }
         _ => vec![],
     };
     shown_groups(&mode_keymap(mode, None, &screen, false).help_groups)
 }
 
 /// The single keys a Help row names: `t / F5` → `t`, `F5`; `j/Down` →
-/// `j`, `Down`. `Shift+Up/Down` and `/` stay whole.
-fn key_tokens(key: &str) -> Vec<&str> {
+/// `j`, `Down`. `Shift+Up/Down` and `/` stay whole. #1292: `Ctrl+P` and
+/// `⌃P` are one key, so both spell `⌃P`.
+fn key_tokens(key: &str) -> Vec<String> {
     key.split(" / ")
         .flat_map(|k| {
             if k.len() > 1 && !k.contains('+') && k.contains('/') {
@@ -211,6 +215,10 @@ fn key_tokens(key: &str) -> Vec<&str> {
             } else {
                 vec![k]
             }
+        })
+        .map(|k| match k.strip_prefix("Ctrl+") {
+            Some(rest) => format!("⌃{}", rest.to_uppercase()),
+            None => k.to_string(),
         })
         .collect()
 }
@@ -264,10 +272,17 @@ fn help_never_gives_one_key_two_actions() {
         TuiMode::Fullscreen(nil),
         TuiMode::AgentGraph,
         TuiMode::MilestoneView,
+        // #1292: ⌃P is Interaction's pushup; the conflict toast must not
+        // name it there.
+        TuiMode::Interaction,
+        TuiMode::Session {
+            id: nil,
+            view: crate::tui::app::SessionView::Detail,
+        },
     ];
     for mode in modes {
         let groups = shown_for(mode);
-        let mut seen: Vec<(&str, &str)> = Vec::new();
+        let mut seen: Vec<(String, &str)> = Vec::new();
         for b in groups.iter().flat_map(|g| &g.bindings) {
             for k in key_tokens(b.key) {
                 if let Some((_, d)) = seen.iter().find(|(s, _)| *s == k) {

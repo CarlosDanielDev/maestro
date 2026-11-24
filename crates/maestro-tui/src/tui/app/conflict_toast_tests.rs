@@ -107,7 +107,14 @@ async fn conflict_toast_pauses_non_holder() {
     let mut agent = with_process(&mut app, other);
     let out = draw(&mut app);
     assert!(out.contains("src/auth.rs"), "toast names the file:\n{out}");
-    assert!(out.contains("⌃P pause #409"), "toast offers ⌃P:\n{out}");
+    assert!(
+        out.contains("#409 edits it too"),
+        "toast names the agent:\n{out}"
+    );
+    assert!(
+        out.contains("⌃P pause other agent"),
+        "the footer offers ⌃P:\n{out}"
+    );
 
     ctrl(&mut app, 'p').await;
     let paused = status(&app, other);
@@ -140,7 +147,7 @@ async fn conflict_toast_enter_shows_the_file() {
     let third = running(&mut app, 410);
     app.process_file_claim_event(holder, &edit(407, "src/session.rs"));
     app.process_file_claim_event(third, &edit(410, "src/session.rs"));
-    assert!(draw(&mut app).contains("⌃O show file"));
+    assert!(draw(&mut app).contains("⌃O show conflict file"));
     ctrl(&mut app, 'o').await;
     let dash = &app.screen_state.dashboard;
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
@@ -165,7 +172,7 @@ async fn conflict_toast_keys_need_the_visible_toast() {
     let mut app = make_app();
     let (_, other) = conflict(&mut app);
     press(&mut app, KeyCode::Esc).await;
-    assert!(!draw(&mut app).contains("⌃P pause #409"));
+    assert!(!draw(&mut app).contains("⌃P pause other agent"));
     assert!(app.conflict_prompts.is_empty(), "Esc forgot the prompt");
     ctrl(&mut app, 'p').await;
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
@@ -190,29 +197,53 @@ async fn conflict_toast_keys_never_steal_typing() {
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
 }
 
-/// A modal owns its keys: under the budget pre-spawn modal the toast's
-/// chords do nothing and Enter is the modal's.
+/// A modal owns its keys: under the budget pre-spawn modal the toast is
+/// drawn but its chords do nothing and Enter stays the modal's; the modal
+/// answers its own `n`.
 #[tokio::test]
 async fn conflict_toast_keys_never_act_under_a_modal() {
     let mut app = make_app();
     let (_, other) = conflict(&mut app);
-    let parked = uuid::Uuid::new_v4();
-    app.tui_mode = TuiMode::BudgetPreSpawn { session_id: parked };
+    let parked = running(&mut app, 411);
+    let modal = TuiMode::BudgetPreSpawn { session_id: parked };
+    app.tui_mode = modal;
+    let out = draw(&mut app);
+    assert!(out.contains("#409 edits it too"), "the toast is up:\n{out}");
+    assert!(
+        !out.contains("⌃P pause other agent"),
+        "no toast keys here:\n{out}"
+    );
     for c in ['p', 'o'] {
         ctrl(&mut app, c).await;
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::BudgetPreSpawn { session_id: parked },
-            "⌃{c}"
-        );
+        assert_eq!(app.tui_mode, modal, "⌃{c}");
     }
     press(&mut app, KeyCode::Enter).await;
-    assert_ne!(
-        app.screen_state.dashboard.view,
-        View::Deps,
-        "Enter is the modal's"
-    );
+    assert_eq!(app.tui_mode, modal, "Enter stays in the modal");
     assert_eq!(app.conflict_prompts.len(), 1, "the toast kept its prompt");
+    assert_eq!(status(&app, other), Some(SessionStatus::Running));
+    press(&mut app, KeyCode::Char('n')).await;
+    assert_ne!(app.tui_mode, modal, "the modal answered its own key");
+}
+
+/// The keys are shown and act only where they are scoped (the tab
+/// screens): on a session screen the toast names no key and `⌃P` is not
+/// the toast's.
+#[tokio::test]
+async fn conflict_toast_keys_only_on_tab_screens() {
+    let mut app = make_app();
+    let (holder, other) = conflict(&mut app);
+    app.tui_mode = TuiMode::Session {
+        id: holder,
+        view: crate::tui::app::SessionView::Detail,
+    };
+    let out = draw(&mut app);
+    assert!(out.contains("#409 edits it too"), "the toast is up:\n{out}");
+    assert!(!out.contains("⌃P"), "no ⌃P hint off a tab:\n{out}");
+    let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+    assert!(
+        !app.conflict_toast_key(&key, false),
+        "⌃P is not the toast's here"
+    );
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
 }
 
@@ -227,7 +258,7 @@ async fn conflict_toast_queued_behind_another_toast_has_no_keys() {
     );
     let _ = conflict(&mut app);
     assert!(
-        !draw(&mut app).contains("⌃P pause #409"),
+        !draw(&mut app).contains("⌃P pause other agent"),
         "queued, not shown"
     );
     ctrl(&mut app, 'p').await;
@@ -258,11 +289,11 @@ async fn conflict_toast_once_per_file_and_agent() {
     );
     press(&mut app, KeyCode::Esc).await;
     assert!(
-        draw(&mut app).contains("⌃P pause #409"),
+        draw(&mut app).contains("⌃P pause other agent"),
         "then the one conflict"
     );
     press(&mut app, KeyCode::Esc).await;
-    assert!(!draw(&mut app).contains("⌃P pause"), "and no repeat");
+    assert!(!draw(&mut app).contains("edits it too"), "and no repeat");
 }
 
 /// A failed SIGSTOP never records Paused, and the toast says why.
