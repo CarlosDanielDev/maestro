@@ -133,9 +133,15 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
         let before = app.pool.all_sessions().len();
         // `d` and Enter are Overview keys too: they prove the fall-through
         // is closed even where `p` / `r` have no visible effect in a test.
-        for code in ['p', 'k', 'r', 'D', 'd']
-            .map(KeyCode::Char)
-            .into_iter()
+        // #1288: on Output `d` is the strip's Detail key, checked below.
+        let keys: &[char] = if graph {
+            &['p', 'k', 'r', 'D', 'd']
+        } else {
+            &['p', 'k', 'r', 'D']
+        };
+        for code in keys
+            .iter()
+            .map(|&c| KeyCode::Char(c))
             .chain([KeyCode::Enter])
         {
             press(&mut app, code).await;
@@ -149,6 +155,12 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
             "{mode:?}: D dismissed"
         );
         assert!(!app.show_activity_log, "{mode:?}: d toggled the log");
+        if !graph {
+            press(&mut app, KeyCode::Char('d')).await;
+            assert_eq!(app.tui_mode, TuiMode::Detail(b), "d opens Detail");
+            assert!(!app.show_activity_log, "d toggled the log");
+            app.tui_mode = mode;
+        }
         let actions = actions_on(registry(), mode);
         assert!(
             actions.iter().all(|b| b.action != Action::Kill),

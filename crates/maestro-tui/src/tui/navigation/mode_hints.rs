@@ -1,5 +1,5 @@
 use crate::session::types::SessionStatus;
-use crate::tui::app::TuiMode;
+use crate::tui::app::{SessionView, TuiMode};
 
 use super::keymap::{
     FKeyAction, FKeyRelevance, InlineHint, KeyBindingGroup, ModeKeyMap, global_keybindings,
@@ -130,8 +130,12 @@ pub fn mode_keymap(
                 OVERVIEW_HINTS_BASE
             },
         ),
-        TuiMode::Detail(_) => (
+        TuiMode::Session {
+            view: SessionView::Detail,
+            ..
+        } => (
             "Detail",
+            // The view keys are on the strip (#1288).
             FKeyVis::SessionAware,
             &[
                 InlineHint {
@@ -140,28 +144,21 @@ pub fn mode_keymap(
                     priority: 0,
                 },
                 InlineHint {
-                    key: "f",
-                    action: "Full",
+                    key: "w",
+                    action: "Switch",
                     priority: 1,
-                },
-                InlineHint {
-                    key: "L",
-                    action: "Call Log",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "l",
-                    action: "Logs",
-                    priority: 3,
                 },
                 InlineHint {
                     key: "X",
                     action: "Kill",
-                    priority: 4,
+                    priority: 2,
                 },
             ],
         ),
-        TuiMode::Fullscreen(_) => (
+        TuiMode::Session {
+            view: SessionView::Output,
+            ..
+        } => (
             "Fullscreen",
             FKeyVis::Minimal,
             &[
@@ -174,6 +171,11 @@ pub fn mode_keymap(
                     key: "j/k",
                     action: "Scroll",
                     priority: 1,
+                },
+                InlineHint {
+                    key: "End",
+                    action: "Follow",
+                    priority: 2,
                 },
             ],
         ),
@@ -377,7 +379,10 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::CallLog(_) => (
+        TuiMode::Session {
+            view: SessionView::Events,
+            ..
+        } => (
             "Call Log",
             FKeyVis::Minimal,
             &[
@@ -403,7 +408,10 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::LogViewer(_) => (
+        TuiMode::Session {
+            view: SessionView::Log,
+            ..
+        } => (
             "Log Viewer",
             FKeyVis::Minimal,
             &[], // hints: `registry::footer_hints`
@@ -618,7 +626,10 @@ pub fn mode_keymap(
         TuiMode::Roadmap => ("Roadmap", FKeyVis::Minimal, &[]),
         TuiMode::BypassWarning => ("Bypass Warning", FKeyVis::Minimal, &[]),
         TuiMode::MilestoneHealth => ("Milestone Health", FKeyVis::Minimal, &[]),
-        TuiMode::GateOutputViewer(_) => (
+        TuiMode::Session {
+            view: SessionView::Gates,
+            ..
+        } => (
             "Gate Output",
             FKeyVis::Minimal,
             &[

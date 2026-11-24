@@ -14,13 +14,11 @@ use crate::tui::screens::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiMode {
     Overview,
-    Detail(uuid::Uuid),
     DependencyGraph,
     /// Bipartite agent/file graph view (#525/#526/#527). Only reachable
     /// when `views.agent_graph_enabled == true`. The dispatcher in
     /// `tui::ui::draw` is the single source of truth for the toggle.
     AgentGraph,
-    Fullscreen(uuid::Uuid),
     CostDashboard,
     Dashboard,
     /// Persistent landing menu shown at startup.
@@ -53,7 +51,6 @@ pub enum TuiMode {
     MilestoneWizard,
     /// Read-only stats dashboard. Built in #292.
     ProjectStats,
-    LogViewer(uuid::Uuid),
     ConfirmKill(uuid::Uuid),
     ConfirmExit,
     SessionSummary,
@@ -71,9 +68,6 @@ pub enum TuiMode {
     BypassWarning,
     /// Milestone health-check wizard: DOR + dep-graph review (#500).
     MilestoneHealth,
-    /// Paged view of a `FailedGates` session's full gate stderr (#560).
-    /// Reached via `[v]` on the failed-gates recovery modal.
-    GateOutputViewer(uuid::Uuid),
     /// CI Error Review popup — manual entry point that previews the failed
     /// check log and the planned local gate before launching a fix
     /// session (#695).
@@ -93,10 +87,14 @@ pub enum TuiMode {
     BudgetPreSpawn {
         session_id: uuid::Uuid,
     },
-    /// Per-agent call-log viewer (#868). Reached from `Detail(id)` via the
-    /// `L` chord. Renders the session's persisted stream events with an
-    /// optional expanded payload pane.
-    CallLog(uuid::Uuid),
+    /// One session screen (#1288, §02.13): a header copied from the
+    /// Dashboard detail pane, the `d f l v e` strip and the `view` body.
+    /// Every view acts on `id`, never on a list position. The old
+    /// per-view modes are now the constructors below.
+    Session {
+        id: uuid::Uuid,
+        view: SessionView,
+    },
     /// Global picker for external Claude Code sessions (#1054). Reached from
     /// the Landing menu; adopting a row creates an adopted session in the
     /// pool and routes to the Interaction screen.
@@ -106,15 +104,83 @@ pub enum TuiMode {
     FleetBoard,
 }
 
+/// The sub-views of [`TuiMode::Session`], in strip order (#1288).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SessionView {
+    Detail,
+    /// The agent output (was `Fullscreen`).
+    Output,
+    /// The session log file (was `LogViewer`).
+    Log,
+    /// Gate output (was `GateOutputViewer`).
+    Gates,
+    /// The call log (was `CallLog`).
+    Events,
+}
+
+impl SessionView {
+    /// Strip order with each view's key and label.
+    pub const ALL: [(SessionView, char, &'static str); 5] = [
+        (SessionView::Detail, 'd', "Detail"),
+        (SessionView::Output, 'f', "Output"),
+        (SessionView::Log, 'l', "Log"),
+        (SessionView::Gates, 'v', "Gates"),
+        (SessionView::Events, 'e', "Events"),
+    ];
+
+    /// The view a strip key opens.
+    pub fn for_key(c: char) -> Option<SessionView> {
+        Self::ALL
+            .iter()
+            .find(|(_, k, _)| *k == c)
+            .map(|(v, _, _)| *v)
+    }
+}
+
+/// #1288: the five old session modes stay as constructors for one release,
+/// so `navigate_to` callers and the nav stack keep working. The cleanup
+/// chore removes them.
+#[allow(non_snake_case)]
+impl TuiMode {
+    pub const fn Detail(id: uuid::Uuid) -> Self {
+        Self::Session {
+            id,
+            view: SessionView::Detail,
+        }
+    }
+    pub const fn Fullscreen(id: uuid::Uuid) -> Self {
+        Self::Session {
+            id,
+            view: SessionView::Output,
+        }
+    }
+    pub const fn LogViewer(id: uuid::Uuid) -> Self {
+        Self::Session {
+            id,
+            view: SessionView::Log,
+        }
+    }
+    pub const fn GateOutputViewer(id: uuid::Uuid) -> Self {
+        Self::Session {
+            id,
+            view: SessionView::Gates,
+        }
+    }
+    pub const fn CallLog(id: uuid::Uuid) -> Self {
+        Self::Session {
+            id,
+            view: SessionView::Events,
+        }
+    }
+}
+
 impl TuiMode {
     /// Human-readable label for breadcrumb rendering.
     pub fn breadcrumb_label(&self) -> &'static str {
         match self {
             Self::Overview => "Overview",
-            Self::Detail(_) => "Detail",
             Self::DependencyGraph => "Dependencies",
             Self::AgentGraph => "Agent Graph",
-            Self::Fullscreen(_) => "Fullscreen",
             Self::CostDashboard => "Cost",
             Self::Dashboard => "Dashboard",
             Self::Landing => "Welcome",
@@ -137,7 +203,6 @@ impl TuiMode {
             Self::IssueWizard => "New issue",
             Self::MilestoneWizard => "New milestone",
             Self::ProjectStats => "Project Stats",
-            Self::LogViewer(_) => "Logs",
             Self::ConfirmKill(_) => "Confirm Kill",
             Self::ConfirmExit => "Confirm Exit",
             Self::SessionSummary => "Sessions",
@@ -146,11 +211,16 @@ impl TuiMode {
             Self::Roadmap => "Roadmap",
             Self::BypassWarning => "Bypass Warning",
             Self::MilestoneHealth => "Milestone Health",
-            Self::GateOutputViewer(_) => "Gate Output",
             Self::CiErrorReview => "CI Error Review",
             Self::TeamWizard => "Teams",
             Self::BudgetPreSpawn { .. } => "Budget Alert",
-            Self::CallLog(_) => "Call Log",
+            Self::Session { view, .. } => match view {
+                SessionView::Detail => "Detail",
+                SessionView::Output => "Fullscreen",
+                SessionView::Log => "Logs",
+                SessionView::Gates => "Gate Output",
+                SessionView::Events => "Call Log",
+            },
             Self::AdoptPicker => "Adopt",
             Self::FleetBoard => "Fleet",
         }
@@ -258,9 +328,9 @@ pub struct ScreenState {
     pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
     /// The open kill dialog and the session it kills (#1261).
     pub kill_confirm: Option<(uuid::Uuid, crate::tui::ds::confirm::TypedConfirm)>,
-    /// Fullscreen output rows scrolled up from the tail; 0 follows the
-    /// tail (#1240). Clamped at draw time.
-    pub fullscreen_scroll: u16,
+    /// Where the session Output view sits; it follows the tail until the
+    /// user scrolls up (#1240, #1288).
+    pub output_scroll: crate::tui::screens::session::output::OutputScroll,
     /// The hold on the open Confirm Exit while agents run (#1260).
     pub exit_hold: Option<crate::tui::ds::confirm::HoldToConfirm>,
     /// One-time hints about the quit keys (#1260).
@@ -873,6 +943,31 @@ mod tests {
         let result = data.first_failed_gates_session();
         assert!(result.is_some());
         assert_eq!(result.unwrap().session_id, uuid::Uuid::from_u128(2));
+    }
+
+    /// #1288: each old session mode is now `Session` with the matching
+    /// view, and pushes and pops through the nav stack unchanged.
+    #[test]
+    fn legacy_session_modes_map_to_views() {
+        let id = uuid::Uuid::new_v4();
+        let table = [
+            (TuiMode::Detail(id), SessionView::Detail),
+            (TuiMode::Fullscreen(id), SessionView::Output),
+            (TuiMode::LogViewer(id), SessionView::Log),
+            (TuiMode::GateOutputViewer(id), SessionView::Gates),
+            (TuiMode::CallLog(id), SessionView::Events),
+        ];
+        let mut stack = NavigationStack::default();
+        for (legacy, view) in table {
+            assert_eq!(legacy, TuiMode::Session { id, view }, "{view:?}");
+            stack.push(legacy);
+            assert_eq!(stack.pop(), Some(TuiMode::Session { id, view }));
+        }
+        let keys: String = SessionView::ALL.iter().map(|(_, k, _)| *k).collect();
+        assert_eq!(keys, "dflve", "strip order");
+        for (view, key, _) in SessionView::ALL {
+            assert_eq!(SessionView::for_key(key), Some(view));
+        }
     }
 }
 

@@ -7,7 +7,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::keymap::InlineHint;
-use crate::tui::app::TuiMode;
+use crate::tui::app::{SessionView, TuiMode};
 
 /// One key press: a key code and its modifiers. Printable characters are
 /// stored as crossterm reports them, without `SHIFT` (`?`, `G`).
@@ -93,9 +93,16 @@ pub enum Scope {
 
 impl Scope {
     /// True when `inner` is this scope or nested inside it. Screens compare
-    /// by mode variant only, so `LogViewer(id)` matches any id.
+    /// by mode variant only, so `LogViewer(id)` matches any id; session
+    /// views are separate screens (#1288).
     pub fn encloses(self, inner: Scope) -> bool {
-        use std::mem::discriminant as d;
+        fn d(m: &TuiMode) -> (std::mem::Discriminant<TuiMode>, Option<SessionView>) {
+            let view = match m {
+                TuiMode::Session { view, .. } => Some(*view),
+                _ => None,
+            };
+            (std::mem::discriminant(m), view)
+        }
         match (self, inner) {
             (Scope::Global, _) => true,
             (Scope::Screen(a), Scope::Screen(b) | Scope::Panel(b, _)) => d(&a) == d(&b),
@@ -148,6 +155,12 @@ pub enum Action {
     RunAll,
     /// Dismiss the finished sessions (Dashboard `D`, #1280).
     Dismiss,
+    /// Session strip `d f l v e`: open another view of the session (#1288).
+    OpenView,
+    /// Open the session switcher (Detail `w`, #1288).
+    Switcher,
+    /// Copy the session's last reply (Detail `c`, #1288).
+    Copy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

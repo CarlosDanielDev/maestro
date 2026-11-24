@@ -33,6 +33,7 @@ pub mod roadmap;
 pub mod roadmap_dispatch;
 pub mod run_queue;
 pub mod sanitize;
+pub mod session;
 pub mod settings;
 pub mod team_wizard;
 pub mod wizard_fields;
