@@ -64,11 +64,11 @@ impl App {
             .push(Toast::new(Severity::Error, message), Instant::now());
     }
 
-    /// `p` / `⏎` on the visible conflict toast. `false` when the key is
-    /// not one of them or no conflict toast is visible. The caller skips
-    /// it while a text field has focus.
-    pub(crate) fn conflict_toast_key(&mut self, key: &KeyEvent) -> bool {
-        if !key.modifiers.is_empty() || self.copy_toast.is_some() {
+    /// `p` / `⏎` on the visible conflict toast. `false` (the key is not
+    /// used) when it is not one of them, no conflict toast is visible, or
+    /// `typing`: a text field has focus (`is_text_input_mode`).
+    pub(crate) fn conflict_toast_key(&mut self, key: &KeyEvent, typing: bool) -> bool {
+        if typing || !key.modifiers.is_empty() || self.copy_toast.is_some() {
             return false;
         }
         let now = Instant::now();

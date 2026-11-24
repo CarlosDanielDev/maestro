@@ -169,8 +169,8 @@ pub(super) fn blocks() -> Vec<Binding> {
 /// moved off Home (§02). The rest are the retired Shift globals `Q` `M` `C`
 /// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
 /// `PrPipeline` (#1280) opens the Dashboard on its first pending PR row,
-/// where ⏎ ⏎ retries; it writes nothing itself. The old `agent graph`
-/// entry is gone (#1292): the graph is Dashboard › Deps (`g`).
+/// where ⏎ ⏎ retries; it writes nothing itself. `AgentGraph` (#1280) was
+/// Overview's `g`; since #1292 it opens Dashboard › Deps › files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
@@ -179,6 +179,7 @@ pub enum PaletteCommand {
     CompleteModal,
     ReviewConcerns,
     PrPipeline,
+    AgentGraph,
 }
 
 /// The key that runs a palette command outside the palette, and the one
@@ -201,6 +202,11 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
     (
         "retry PR (Dashboard PR pipeline)",
         PaletteCommand::PrPipeline,
+        None,
+    ),
+    (
+        "agent graph (Dashboard › Deps files)",
+        PaletteCommand::AgentGraph,
         None,
     ),
 ];

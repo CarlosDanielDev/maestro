@@ -163,9 +163,23 @@ async fn conflict_toast_keys_never_steal_typing() {
     let other = running(&mut app, 409);
     app.process_file_claim_event(holder, &edit(407, "src/auth.rs"));
     app.process_file_claim_event(other, &edit(409, "src/auth.rs"));
-    app.tui_mode = TuiMode::PromptInput;
+    // The session switcher's filter is a text field (#1288).
+    app.screen_state.session_switcher = Some(Default::default());
+    app.tui_mode = TuiMode::SessionSwitcher;
+    assert!(draw(&mut app).contains("p pause #409"), "the toast is up");
     press(&mut app, KeyCode::Char('p')).await;
+    let typed = app
+        .screen_state
+        .session_switcher
+        .as_ref()
+        .map(|s| s.filter_text.clone());
+    assert_eq!(typed.as_deref(), Some("p"), "p typed into the filter");
     press(&mut app, KeyCode::Enter).await;
+    assert_ne!(
+        (app.tui_mode, app.screen_state.dashboard.view),
+        (TuiMode::Dashboard, View::Deps),
+        "Enter did not show the file"
+    );
     assert_eq!(app.conflict_prompts.len(), 1, "the toast kept its keys");
     assert_eq!(status(&app, other), Some(SessionStatus::Running));
 }

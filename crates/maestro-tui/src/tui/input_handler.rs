@@ -93,7 +93,7 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 
     // #1292: the visible file-conflict toast takes `p` and `Enter`.
-    if !is_text_input_mode(app) && app.conflict_toast_key(&key) {
+    if app.conflict_toast_key(&key, is_text_input_mode(app)) {
         return KeyAction::Consumed;
     }
 
@@ -979,8 +979,12 @@ fn open_palette(app: &mut App) {
     use crate::tui::ds::palette::{PaletteState, Run, entries};
     use crate::tui::navigation::registry::{PaletteCommand, registry};
     let review = app.pending_review_report.is_some();
+    let agent_graph = app.is_agent_graph_enabled();
     let list = entries(registry(), app.tui_mode, |run| match run {
         Run::Command(PaletteCommand::ReviewConcerns) if !review => Some("no review pending"),
+        Run::Command(PaletteCommand::AgentGraph) if !agent_graph => {
+            Some("views.agent_graph_enabled is off")
+        }
         _ => None,
     });
     app.palette = Some(PaletteState::new(list));
@@ -1036,6 +1040,11 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         }
         // #1280: the Dashboard with the first pending PR row selected;
         // its ⏎ ⏎ (armed) is the retry, so the palette writes nothing.
+        // #1280: the Agent graph was Overview's `g`; Esc comes back.
+        Some(Run::Command(PaletteCommand::AgentGraph)) => {
+            app.navigate_to(app::TuiMode::AgentGraph);
+            KeyAction::Consumed
+        }
         Some(Run::Command(PaletteCommand::PrPipeline)) => {
             handle_screen_action(app, screens::ScreenAction::Push(app::TuiMode::Dashboard));
             screens::dashboard::dispatch::select_first_pending_pr(app);

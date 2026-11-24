@@ -190,9 +190,10 @@ fn screens_use_theme_colors_only() {
 }
 
 /// #1292: the ring picture of the Agent graph is gone; the graph is the
-/// Files lens of Dashboard Deps (`g`). Its ⌃K entry went with it. Read
-/// from the source so this guard lives outside `crates/maestro-tui/src/tui`
-/// (the issue's check is `rg 'ConcentricLayout|radial'` over that tree).
+/// Files lens of Dashboard Deps (`g`), and the ⌃K `agent graph` entry
+/// opens it there. No entry names the old picture. Read from the source
+/// so this guard lives outside `crates/maestro-tui/src/tui` (the issue's
+/// check is `rg 'ConcentricLayout|radial'` over that tree).
 #[test]
 fn palette_has_no_radial_entry() {
     let path = root().join("crates/maestro-tui/src/tui/navigation/registry_screens.rs");
@@ -203,12 +204,12 @@ fn palette_has_no_radial_entry() {
     let block = &text[start..start + text[start..].find("];").expect("end of list")];
     let lower = block.to_lowercase();
     assert!(
-        !lower.contains("radial") && !lower.contains("agent graph"),
-        "the palette still offers the old Agent graph:\n{block}"
+        !lower.contains("radial"),
+        "the palette still offers the old picture:\n{block}"
     );
     assert!(
-        !block.contains("AgentGraph"),
-        "PaletteCommand::AgentGraph is back"
+        lower.contains("\"agent graph (dashboard › deps files)\""),
+        "the agent graph entry names its new place:\n{block}"
     );
 }
 

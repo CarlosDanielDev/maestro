@@ -200,11 +200,12 @@ async fn leaving_the_dashboard_disarms() {
     );
 }
 
-/// B2, #1292: the Agent graph is the Files lens of Deps, reached with
-/// `g g` from the Dashboard; the ⌃K entry is gone. With
-/// `views.agent_graph_enabled = false` the second `g` stays on issues.
+/// B2, #1292: the Agent graph is the Files lens of Deps. The ⌃K entry
+/// opens it; so does `g g` from the Dashboard. With
+/// `views.agent_graph_enabled = false` the entry says why and the second
+/// `g` stays on issues.
 #[tokio::test]
-async fn files_lens_is_reached_with_g_not_the_palette() {
+async fn palette_opens_the_agent_graph() {
     use super::deps::{Lens, lens};
     use super::usage::View;
     for enabled in [true, false] {
@@ -225,13 +226,20 @@ async fn files_lens_is_reached_with_g_not_the_palette() {
         }
         press(&mut app, KeyCode::Enter).await;
         app.palette = None;
-        assert_ne!(
-            app.screen_state.dashboard.view,
-            View::Deps,
-            "palette entry is gone"
-        );
+        let dash = &app.screen_state.dashboard;
+        assert_eq!(app.tui_mode, TuiMode::Dashboard, "enabled={enabled}");
+        if enabled {
+            assert_eq!((dash.view, lens(dash, true)), (View::Deps, Lens::Files));
+        } else {
+            assert_ne!(dash.view, View::Deps, "a disabled entry runs nothing");
+        }
+        // From Ops, `g` reopens Deps on its last lens (files after the
+        // palette; issues when the flag is off).
+        press(&mut app, KeyCode::Char('o')).await;
         press(&mut app, KeyCode::Char('g')).await;
-        press(&mut app, KeyCode::Char('g')).await;
+        if !enabled {
+            press(&mut app, KeyCode::Char('g')).await;
+        }
         let want = if enabled { Lens::Files } else { Lens::Issues };
         assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert_eq!(app.screen_state.dashboard.view, View::Deps);
