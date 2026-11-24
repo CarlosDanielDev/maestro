@@ -174,7 +174,7 @@ fn draw_empty_state(f: &mut Frame<'_>, area: Rect, theme: &Theme) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "Press [Esc] to return to Detail.",
+            "Press [Esc] to go back.",
             Style::default().fg(theme.text_secondary),
         )),
     ];

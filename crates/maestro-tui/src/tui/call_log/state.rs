@@ -11,7 +11,7 @@ pub struct CallLogState {
     pub list_scroll: u16,
     pub payload_scroll: u16,
     /// Live-tail mode: when on, the cursor auto-advances to the newest entry
-    /// as the log grows. Toggled with `[f]`; disabled by any manual move (#886).
+    /// as the log grows. Turned on with `[End]` (#1288); off on any manual move (#886).
     pub follow_tail: bool,
     /// Entry count observed on the previous render tick, used to detect growth
     /// so follow-tail only snaps when new entries actually landed (#886).

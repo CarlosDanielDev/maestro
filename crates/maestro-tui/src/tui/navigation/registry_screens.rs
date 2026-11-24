@@ -66,6 +66,8 @@ pub(super) fn blocks() -> Vec<Binding> {
     }
     let detail = Scope::Screen(TuiMode::Detail(uuid::Uuid::nil()));
     v.push(Binding::new(ch('X'), detail, A::Kill, Danger::Destructive, "kill").hidden());
+    v.push(s(detail, ch('w'), A::Switcher, "switch session").hidden());
+    v.push(s(detail, ch('c'), A::Copy, "copy reply").hidden());
     v.push(s(full, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     let events = Scope::Screen(TuiMode::CallLog(uuid::Uuid::nil()));
     v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());

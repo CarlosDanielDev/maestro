@@ -223,3 +223,47 @@ async fn session_view_snapshots() {
         insta::assert_snapshot!(name, out);
     }
 }
+
+/// Judge round (#1440): F3 and F10 on the session screen act on the
+/// session it shows, never the Dashboard's marked row. Entries: the
+/// switcher, the completion summary's `l` / `v` (Log / Gates, then `d`),
+/// and hollow retry's `Push(Detail(id))`.
+#[tokio::test]
+async fn fkeys_on_the_session_screen_act_on_the_shown_session() {
+    for entry in ["switcher", "log", "gates", "hollow-retry"] {
+        let a = session(0x411, 411, "quota-router");
+        let b = session(0x412, 412, "auth-refactor");
+        let (a_id, b_id) = (a.id, b.id);
+        let mut app = app_with(vec![a, b]);
+        app.tui_mode = TuiMode::Dashboard;
+        draw(&mut app, 120, 36);
+        assert_eq!(app.focused_session_id(), Some(a_id), "{entry}: A is marked");
+
+        match entry {
+            "switcher" => {
+                press(&mut app, KeyCode::Char('w')).await;
+                type_text(&mut app, "412").await;
+                press(&mut app, KeyCode::Enter).await;
+            }
+            "log" => {
+                app.navigate_to(TuiMode::LogViewer(b_id));
+                press(&mut app, KeyCode::Char('d')).await;
+            }
+            "gates" => {
+                app.tui_mode = TuiMode::GateOutputViewer(b_id);
+                press(&mut app, KeyCode::Char('d')).await;
+            }
+            _ => app.navigate_to(TuiMode::Detail(b_id)),
+        }
+        assert_eq!(app.tui_mode, TuiMode::Detail(b_id), "{entry}");
+        draw(&mut app, 120, 36);
+
+        press(&mut app, KeyCode::F(10)).await;
+        assert_eq!(app.tui_mode, TuiMode::ConfirmKill(b_id), "{entry}: F10");
+        press(&mut app, KeyCode::Esc).await;
+        app.tui_mode = TuiMode::Detail(b_id);
+        draw(&mut app, 120, 36);
+        press(&mut app, KeyCode::F(3)).await;
+        assert_eq!(app.tui_mode, TuiMode::Fullscreen(b_id), "{entry}: F3");
+    }
+}

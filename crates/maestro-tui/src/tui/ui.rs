@@ -227,9 +227,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
 
+    // #1288: on the session screen, the F-keys' state is the shown session's.
     let selected_status = app
-        .pool
-        .session_at_index(app.panel_view.selected_index())
+        .focused_session_id()
+        .and_then(|id| app.pool.get_session(id))
         .map(|s| s.status);
     let agent_graph_enabled = app.is_agent_graph_enabled();
     let cache_key = (app.tui_mode, selected_status, agent_graph_enabled);

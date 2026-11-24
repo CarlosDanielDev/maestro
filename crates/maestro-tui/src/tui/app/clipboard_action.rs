@@ -58,11 +58,18 @@ impl App {
     }
 
     pub(crate) fn focused_session_for_copy(&self) -> Option<&Session> {
-        // #1288: the session screen copies the session it shows.
+        self.focused_session_id()
+            .and_then(|id| self.pool.get_session(id))
+    }
+
+    /// The session copy, F3 and F10 act on: on the session screen the one it
+    /// shows (#1288), elsewhere the panel selection.
+    pub(crate) fn focused_session_id(&self) -> Option<uuid::Uuid> {
         if let super::TuiMode::Session { id, .. } = self.tui_mode {
-            return self.pool.get_session(id);
+            return Some(id);
         }
-        self.pool.session_at_index(self.panel_view.selected_index())
+        self.pool
+            .session_id_at_index(self.panel_view.selected_index())
     }
 
     /// Try to copy the focused session's `last_message` (ANSI-stripped) to

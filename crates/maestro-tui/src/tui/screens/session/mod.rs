@@ -136,6 +136,7 @@ pub fn draw(
             f,
             session,
             app.log_viewer_scroll,
+            app.completion_summary.is_some(),
             body,
             theme,
         ),

@@ -156,6 +156,10 @@ pub enum Action {
     Dismiss,
     /// Session strip `d f l v e`: open another view of the session (#1288).
     OpenView,
+    /// Open the session switcher (Detail `w`, #1288).
+    Switcher,
+    /// Copy the session's last reply (Detail `c`, #1288).
+    Copy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

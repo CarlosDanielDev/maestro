@@ -764,14 +764,15 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
 
 /// Gate-output viewer key dispatch (issue #560 → `[v]`).
 ///
-/// Mirrors the log-viewer scroll keys but `[Esc]` and `[q]` return to
-/// the failed-gates completion modal (still rendered underneath) rather
-/// than navigating to the dashboard.
+/// Mirrors the log-viewer scroll keys, but `[Esc]` returns to the
+/// failed-gates completion modal (still rendered underneath) when one is
+/// open, rather than navigating to the dashboard.
 fn handle_gate_output_viewer(app: &mut App, key: &KeyEvent) -> KeyAction {
     match (key.code, key.modifiers) {
         // #1288: Gates is also a session tab; with no summary to return
         // to, Esc goes back like the other views.
-        (KeyCode::Esc, _) | (KeyCode::Char('q'), _) if app.completion_summary.is_some() => {
+        // `q` never gets here: `handle_key` takes it as quit first.
+        (KeyCode::Esc, _) if app.completion_summary.is_some() => {
             app.tui_mode = app::TuiMode::CompletionSummary;
         }
         (KeyCode::Esc, _) => app.navigate_back_or_dashboard(),
@@ -1195,8 +1196,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
         }
         FKeyAction::OpenSummary => app.open_session_summary(),
         FKeyAction::OpenFullscreenSelected => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
+            if let Some(id) = app.focused_session_id() {
                 app.screen_state.output_scroll = Default::default();
                 app.navigate_to(app::TuiMode::Fullscreen(id));
             }
@@ -1209,8 +1209,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
             app.pause_all();
         }
         FKeyAction::KillSelected => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
+            if let Some(id) = app.focused_session_id()
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {

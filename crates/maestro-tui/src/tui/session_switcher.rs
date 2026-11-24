@@ -155,18 +155,7 @@ impl SessionSwitcher {
 
             let status_symbol =
                 session_switcher_status_symbol(session.status, spinner_tick, use_nerd_font);
-            let label = if let Some(num) = session.issue_number {
-                format!(
-                    "#{} {}",
-                    num,
-                    session
-                        .issue_title
-                        .as_deref()
-                        .unwrap_or(&session.prompt[..session.prompt.len().min(40)])
-                )
-            } else {
-                session.prompt[..session.prompt.len().min(50)].to_string()
-            };
+            let label = row_label(session);
 
             let style = if is_selected {
                 Style::default()
@@ -208,6 +197,19 @@ impl SessionSwitcher {
             Span::raw(" Close"),
         ]);
         f.render_widget(Paragraph::new(footer), chunks[1]);
+    }
+}
+
+/// `#412 title` (or the prompt's first 40 chars), else the prompt's first
+/// 50 chars. Cut on chars, so multi-byte text never splits (#1288).
+fn row_label(session: &Session) -> String {
+    let prompt = |n: usize| session.prompt.chars().take(n).collect::<String>();
+    match session.issue_number {
+        Some(num) => match session.issue_title.as_deref() {
+            Some(title) => format!("#{num} {title}"),
+            None => format!("#{num} {}", prompt(40)),
+        },
+        None => prompt(50),
     }
 }
 

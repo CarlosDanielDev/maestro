@@ -178,3 +178,13 @@ fn terminal_status_symbol_keeps_status_icon() {
         SessionStatus::Completed.symbol().to_string()
     );
 }
+
+#[test]
+fn row_label_cuts_multibyte_prompts_on_char_boundaries() {
+    // 39 ASCII bytes then `é` (2 bytes) straddles byte 40; `日` (3 bytes)
+    // repeated straddles byte 50.
+    let s = make_session(&format!("{}é tail", "a".repeat(39)), Some(7));
+    assert_eq!(row_label(&s), format!("#7 {}é", "a".repeat(39)));
+    let s = make_session(&"日".repeat(30), None);
+    assert_eq!(row_label(&s), "日".repeat(30));
+}
