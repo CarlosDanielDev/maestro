@@ -499,18 +499,10 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
+                        // #1269: the lists, then a lookup per missing blocker.
                         let result = with_provider(provider_config, |client| async move {
-                            let milestones = client.list_milestones("open").await?;
-                            let futures: Vec<_> = milestones
-                                .iter()
-                                .map(|ms| client.list_issues_by_milestone(&ms.title))
-                                .collect();
-                            let results = futures::future::join_all(futures).await;
-                            Ok(milestones
-                                .into_iter()
-                                .zip(results)
-                                .map(|(ms, r)| (ms, r.unwrap_or_default()))
-                                .collect())
+                            crate::tui::screens::milestone_plan::fetch_milestones(client.as_ref())
+                                .await
                         })
                         .await;
                         let _ = tx.send(app::TuiDataEvent::Milestones(result));

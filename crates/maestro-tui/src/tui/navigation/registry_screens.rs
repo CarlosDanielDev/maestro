@@ -73,19 +73,14 @@ pub(super) fn blocks() -> Vec<Binding> {
     v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     let graph = Scope::Screen(TuiMode::AgentGraph);
     v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
-    // #1265: `r` reloads here as on every other screen; run-all is `R` and
-    // keeps its confirm (2+ issues open the queue review first). The footer
-    // stays `MilestoneScreen::footer_hints`.
+    // #1265: `r` reloads here as on every other screen. #1269: `R` only
+    // opens the Run queue (the plan); spawning needs ⏎ in its launch dialog.
+    // The footer stays `MilestoneScreen::footer_hints`.
     let milestones = Scope::Screen(TuiMode::MilestoneView);
     v.extend([
         s(milestones, ch('r'), A::Reload, "reload"),
-        Binding::new(
-            ch('R'),
-            milestones,
-            A::RunAll,
-            Danger::Destructive,
-            "run all",
-        ),
+        s(milestones, ch('R'), A::RunAll, "plan run")
+            .exception("uppercase keeps the plan off the `r` reload reflex"),
     ]);
     // #1280: the Dashboard cockpit (`screens::dashboard::dispatch`). Its
     // launcher letters are `HomeScreen` keys; Help lists them from

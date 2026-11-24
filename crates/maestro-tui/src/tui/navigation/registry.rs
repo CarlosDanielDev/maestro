@@ -150,7 +150,8 @@ pub enum Action {
     TogglePanels,
     /// Fetch the screen's data again (Milestones `r`, #1265).
     Reload,
-    /// Launch every open issue of the milestone (Milestones `R`, #1265).
+    /// Plan a run of the milestone: opens the Run queue (Milestones `R`,
+    /// #1265, #1269). Nothing spawns before its launch dialog.
     RunAll,
     /// Dismiss the finished sessions (Dashboard `D`, #1280).
     Dismiss,

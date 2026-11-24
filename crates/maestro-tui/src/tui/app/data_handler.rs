@@ -181,13 +181,51 @@ impl App {
                 if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
                     && let Some(ref mut screen) = self.screen_state.milestone_health_screen
                 {
-                    let milestones: Vec<_> = entries.iter().map(|(m, _)| m.clone()).collect();
+                    let milestones: Vec<_> = (entries.milestones.iter())
+                        .map(|(m, _)| m.clone())
+                        .collect();
                     if let Some(cmd) = screen.apply_milestones_loaded(Ok(milestones)) {
                         self.pending_commands.push(cmd);
                     }
                 }
+                // #1269: every fetched issue enters the cache, so the Run
+                // queue and the queue review read real bodies (file scope,
+                // Blocked By) instead of "unknown scope".
+                if !entries.skipped.is_empty() {
+                    // #1269: past the lookup cap; their issues stay held.
+                    self.activity_log.push_simple(
+                        "Milestones".into(),
+                        format!(
+                            "{} blocker(s) not looked up (cap {}); their issues stay held as not fetched",
+                            entries.skipped.len(),
+                            crate::tui::screens::milestone_plan::LOOKUP_CAP,
+                        ),
+                        LogLevel::Warn,
+                    );
+                }
+                let listed = entries
+                    .milestones
+                    .iter()
+                    .flat_map(|(_, r)| r.iter().flatten());
+                // Fresh lists last, so they win over a looked-up blocker.
+                for issue in entries.blockers.iter().chain(listed) {
+                    self.state.issue_cache.insert(issue.number, issue.clone());
+                }
+                let live = crate::tui::screens::run_queue::live_claims(self);
                 if let Some(ref mut screen) = self.screen_state.milestone_screen {
-                    screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
+                    let cap = (self.config.as_ref()).map_or(0.0, |c| c.budget.per_session_usd);
+                    let mut failed = std::collections::HashMap::new();
+                    let milestones = (entries.milestones.into_iter())
+                        .map(|(ms, r)| {
+                            let issues = r.unwrap_or_else(|e| {
+                                failed.insert(ms.number, e);
+                                Vec::new()
+                            });
+                            MilestoneEntry::from((ms, issues))
+                        })
+                        .collect();
+                    screen.set_claimed(live);
+                    screen.set_milestones(milestones, entries.blockers, failed, cap);
                     screen.loading = false;
                 }
             }

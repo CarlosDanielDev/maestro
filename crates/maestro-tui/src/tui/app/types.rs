@@ -497,6 +497,18 @@ pub enum TuiCommand {
     },
 }
 
+/// One milestone fetch (#1269).
+#[derive(Debug, Default)]
+pub struct MilestoneFetch {
+    /// Each open milestone with its open issues, or why they did not load.
+    pub milestones: Vec<(Milestone, Result<Vec<Issue>, String>)>,
+    /// Blockers the list did not return (closed ones, other milestones),
+    /// looked up one by one. A failed lookup is not here.
+    pub blockers: Vec<Issue>,
+    /// Blockers past the lookup cap: not looked up, their issues stay held.
+    pub skipped: Vec<u64>,
+}
+
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<Issue>>),
@@ -529,7 +541,9 @@ pub enum TuiDataEvent {
     MilestonePlanCreated(
         Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
     ),
-    Milestones(anyhow::Result<Vec<(Milestone, Vec<Issue>)>>),
+    /// Each open milestone with its open issues, or why they did not load
+    /// (#1269: a failed milestone is not shown as an empty one).
+    Milestones(anyhow::Result<MilestoneFetch>),
     Issue(anyhow::Result<Issue>, Option<String>, Option<String>),
     SuggestionData(anyhow::Result<SuggestionDataPayload>),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),
