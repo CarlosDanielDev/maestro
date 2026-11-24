@@ -91,7 +91,13 @@ async fn usage_view_on_return() {
     draw(&mut app, 120, 36);
     key(&mut app, KeyCode::Enter).await;
     assert!(
-        matches!(app.tui_mode, TuiMode::Detail(_)),
+        matches!(
+            app.tui_mode,
+            TuiMode::Session {
+                view: crate::tui::app::SessionView::Detail,
+                ..
+            }
+        ),
         "{:?}",
         app.tui_mode
     );

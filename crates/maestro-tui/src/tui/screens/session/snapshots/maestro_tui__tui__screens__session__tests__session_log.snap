@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/screens/session/tests.rs
+expression: out
+---
+" MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Logs                                                          Esc back  ? help "
+" ● running   claude-opus-4-5 · — · $0.00 · retry 0                              "
+" auth-refactor                                                                  "
+" PIPELINE  Step 1/5 · run   ●○○○○   next gates                                  "
+"  d Detail   f Output   l Log   v Gates   e Events                              "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━[ Session Log: S-00000000 ]━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃No logs available for this session.                                           ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+" j Down   k Up   g Top   G Bottom                                       ⌃Q quit "

@@ -20,6 +20,7 @@ pub fn draw_gate_output_viewer(
     f: &mut Frame,
     session: &Session,
     scroll: u16,
+    back_to_summary: bool,
     area: Rect,
     theme: &Theme,
 ) {
@@ -104,7 +105,13 @@ pub fn draw_gate_output_viewer(
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
-            "[j/k] scroll   [Esc/q] back to summary",
+            // #1288: `q` never reaches this view (it is the global quit),
+            // and Gates is also a session tab with no summary behind it.
+            if back_to_summary {
+                "[j/k] scroll   [Esc] back to summary"
+            } else {
+                "[j/k] scroll   [Esc] back"
+            },
             Style::default().fg(theme.text_muted),
         ),
     ]));
@@ -132,7 +139,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let theme = Theme::dark();
         terminal
-            .draw(|f| draw_gate_output_viewer(f, session, 0, f.area(), &theme))
+            .draw(|f| draw_gate_output_viewer(f, session, 0, true, f.area(), &theme))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
         let mut s = String::new();

@@ -42,4 +42,4 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom   [f] Follow: ON                                        "
+" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom   [End] Follow: ON                                      "

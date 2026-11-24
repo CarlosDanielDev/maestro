@@ -174,7 +174,7 @@ fn draw_empty_state(f: &mut Frame<'_>, area: Rect, theme: &Theme) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "Press [Esc] to return to Detail.",
+            "Press [Esc] to go back.",
             Style::default().fg(theme.text_secondary),
         )),
     ];
@@ -194,9 +194,9 @@ fn draw_footer(f: &mut Frame<'_>, expanded: bool, follow_tail: bool, area: Rect,
         " [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom "
     };
     let follow = if follow_tail {
-        " [f] Follow: ON "
+        " [End] Follow: ON "
     } else {
-        " [f] Follow: off "
+        " [End] Follow: off "
     };
     let hint = format!("{base} {follow}");
     let para = Paragraph::new(Line::from(Span::styled(

@@ -243,9 +243,7 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             handle_session_summary(app, key);
             Some(KeyAction::Consumed)
         }
-        app::TuiMode::LogViewer(id) => Some(handle_log_viewer(app, key, id).await),
-        app::TuiMode::CallLog(id) => Some(handle_call_log(app, key, id)),
-        app::TuiMode::GateOutputViewer(_) => Some(handle_gate_output_viewer(app, key)),
+        app::TuiMode::Session { id, view } => Some(handle_session(app, key, id, view).await),
         app::TuiMode::ConfirmKill(id) => Some(handle_confirm_kill(app, key, id).await),
         app::TuiMode::BudgetPreSpawn { session_id } => {
             Some(handle_budget_prespawn(app, key, session_id).await)
@@ -254,21 +252,76 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             handle_session_switcher(app, key);
             Some(KeyAction::Consumed)
         }
-        app::TuiMode::Fullscreen(_) => Some(handle_fullscreen(app, key)),
         app::TuiMode::AgentGraph => Some(handle_agent_graph(app, key)),
         _ => None,
     }
 }
 
-/// #1240: Fullscreen takes every key that reaches it. Falling through to
+/// #1288: the session screen takes every key. A strip key (`d f l v e`)
+/// switches the view in place; the rest go to the view, which acts on `id`
+/// (never a list position). Keys match the Session blocks in the registry.
+async fn handle_session(
+    app: &mut App,
+    key: &KeyEvent,
+    id: uuid::Uuid,
+    view: app::SessionView,
+) -> KeyAction {
+    use app::SessionView as V;
+    if key.modifiers.is_empty()
+        && let KeyCode::Char(c) = key.code
+        && let Some(to) = V::for_key(c)
+    {
+        if to != view {
+            screens::session::open_view(app, id, to);
+        }
+        return KeyAction::Consumed;
+    }
+    match view {
+        V::Detail => handle_session_detail(app, key, id),
+        V::Output => handle_fullscreen(app, key),
+        V::Log => handle_log_viewer(app, key, id).await,
+        V::Gates => handle_gate_output_viewer(app, key),
+        V::Events => handle_call_log(app, key, id),
+    }
+}
+
+/// Detail acts on the session on screen: `X` kills it (typed confirm), `c`
+/// copies its last reply, `w` opens the switcher. Nothing falls through to
+/// the Overview keys, whose targets are a list position.
+fn handle_session_detail(app: &mut App, key: &KeyEvent, id: uuid::Uuid) -> KeyAction {
+    match key.code {
+        KeyCode::Char('c')
+            if key.modifiers == KeyModifiers::NONE && app.copy_focused_response_enabled() =>
+        {
+            if let Some((kind, msg)) = app.copy_focused_response().toast() {
+                app.set_copy_toast(kind, msg);
+            }
+        }
+        KeyCode::Char('X')
+            if app
+                .pool
+                .get_session(id)
+                .is_some_and(|s| !s.status.is_terminal()) =>
+        {
+            app.open_kill_confirm(id);
+        }
+        KeyCode::Char('w') => open_session_switcher(app),
+        KeyCode::Esc => app.navigate_back_or_dashboard(),
+        _ => {}
+    }
+    KeyAction::Consumed
+}
+
+/// #1240: Output takes every key that reaches it. Falling through to
 /// `handle_overview_keys` made `k` (advertised as scroll) open the kill
 /// dialog for the hidden grid selection, and `p` / `r` / `D` act on the
-/// whole fleet. Keys must match the Fullscreen block in the registry.
+/// whole fleet. #1288: scrolling up stops following; `End` follows again.
 fn handle_fullscreen(app: &mut App, key: &KeyEvent) -> KeyAction {
-    let scroll = &mut app.screen_state.fullscreen_scroll;
+    let scroll = &mut app.screen_state.output_scroll;
     match key.code {
-        KeyCode::Char('k') | KeyCode::Up => *scroll = scroll.saturating_add(1),
-        KeyCode::Char('j') | KeyCode::Down => *scroll = scroll.saturating_sub(1),
+        KeyCode::Char('k') | KeyCode::Up => scroll.up(),
+        KeyCode::Char('j') | KeyCode::Down => scroll.down(),
+        KeyCode::End => scroll.end(),
         KeyCode::Esc => app.navigate_back_or_dashboard(),
         _ => {}
     }
@@ -711,14 +764,18 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
 
 /// Gate-output viewer key dispatch (issue #560 → `[v]`).
 ///
-/// Mirrors the log-viewer scroll keys but `[Esc]` and `[q]` return to
-/// the failed-gates completion modal (still rendered underneath) rather
-/// than navigating to the dashboard.
+/// Mirrors the log-viewer scroll keys, but `[Esc]` returns to the
+/// failed-gates completion modal (still rendered underneath) when one is
+/// open, rather than navigating to the dashboard.
 fn handle_gate_output_viewer(app: &mut App, key: &KeyEvent) -> KeyAction {
     match (key.code, key.modifiers) {
-        (KeyCode::Esc, _) | (KeyCode::Char('q'), _) => {
+        // #1288: Gates is also a session tab; with no summary to return
+        // to, Esc goes back like the other views.
+        // `q` never gets here: `handle_key` takes it as quit first.
+        (KeyCode::Esc, _) if app.completion_summary.is_some() => {
             app.tui_mode = app::TuiMode::CompletionSummary;
         }
+        (KeyCode::Esc, _) => app.navigate_back_or_dashboard(),
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
             app.log_viewer_scroll = app.log_viewer_scroll.saturating_sub(1);
         }
@@ -751,7 +808,8 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
         (KeyCode::Enter, _) if total > 0 => {
             state.toggle_expand();
         }
-        (KeyCode::Char('f'), _) => {
+        // #1288: `f` opens Output now; End follows the tail, as in Output.
+        (KeyCode::End, _) if !state.follow_tail => {
             state.toggle_follow_tail();
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
@@ -853,25 +911,44 @@ pub(crate) fn switcher_target(session: &crate::session::types::Session) -> Switc
     }
 }
 
+fn open_session_switcher(app: &mut App) {
+    app.screen_state.session_switcher =
+        Some(crate::tui::session_switcher::SessionSwitcher::default());
+    // #895 sibling: sessions live on Overview, not Dashboard. If the
+    // user opened [w] from Dashboard, anchor the Esc-return to
+    // Overview so dismissing the switcher lands on the session list
+    // instead of bouncing back to Dashboard. For any other origin,
+    // preserve the prior mode (Detail, etc.) via the nav-stack.
+    if app.tui_mode == app::TuiMode::Dashboard {
+        app.tui_mode = app::TuiMode::Overview;
+    }
+    app.navigate_to(app::TuiMode::SessionSwitcher);
+}
+
 fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
+    // #1288: typing filters at once; ⌃ chords are not text.
+    if let Some(sw) = &mut app.screen_state.session_switcher {
+        match key.code {
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return sw.push_char(c);
+            }
+            KeyCode::Backspace => return sw.pop_char(),
+            _ => {}
+        }
+    }
     match key.code {
         KeyCode::Esc => {
             app.screen_state.session_switcher = None;
             app.navigate_back_or_dashboard();
         }
-        KeyCode::Up => {
+        KeyCode::Up | KeyCode::Down => {
             if let Some(sw) = &mut app.screen_state.session_switcher {
-                sw.move_up();
-            }
-        }
-        KeyCode::Down => {
-            if let Some(sw) = &mut app.screen_state.session_switcher {
-                let count = {
-                    let sessions = app.pool.all_sessions();
-                    let refs: Vec<&crate::session::types::Session> = sessions;
-                    sw.filtered_sessions(&refs).len()
-                };
-                sw.move_down(count);
+                let sessions = app.pool.all_sessions();
+                if key.code == KeyCode::Up {
+                    sw.move_up(&sessions);
+                } else {
+                    sw.move_down(&sessions);
+                }
             }
         }
         KeyCode::Enter => {
@@ -1119,9 +1196,8 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
         }
         FKeyAction::OpenSummary => app.open_session_summary(),
         FKeyAction::OpenFullscreenSelected => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
-                app.screen_state.fullscreen_scroll = 0;
+            if let Some(id) = app.focused_session_id() {
+                app.screen_state.output_scroll = Default::default();
                 app.navigate_to(app::TuiMode::Fullscreen(id));
             }
         }
@@ -1133,8 +1209,7 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
             app.pause_all();
         }
         FKeyAction::KillSelected => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
+            if let Some(id) = app.focused_session_id()
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
@@ -1415,7 +1490,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('f'), _) => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
-                app.screen_state.fullscreen_scroll = 0;
+                app.screen_state.output_scroll = Default::default();
                 app.navigate_to(app::TuiMode::Fullscreen(id));
             }
         }
@@ -1461,19 +1536,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                 app.navigate_to(app::TuiMode::Detail(id));
             }
         }
-        (KeyCode::Char('w'), _) => {
-            app.screen_state.session_switcher =
-                Some(crate::tui::session_switcher::SessionSwitcher::default());
-            // #895 sibling: sessions live on Overview, not Dashboard. If the
-            // user opened [w] from Dashboard, anchor the Esc-return to
-            // Overview so dismissing the switcher lands on the session list
-            // instead of bouncing back to Dashboard. For any other origin,
-            // preserve the prior mode (Detail, etc.) via the nav-stack.
-            if app.tui_mode == app::TuiMode::Dashboard {
-                app.tui_mode = app::TuiMode::Overview;
-            }
-            app.navigate_to(app::TuiMode::SessionSwitcher);
-        }
+        (KeyCode::Char('w'), _) => open_session_switcher(app),
         // Ctrl+C is short-circuited at the top of handle_key, so reaching
         // this arm always means plain `c`. A disabled `c` falls through to
         // the trailing `_ => {}` and becomes a no-op — the dimmed hint
@@ -1493,24 +1556,12 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('D'), _) => {
             app.dismiss_all_completed();
         }
-        (KeyCode::Char('l'), _) => match app.tui_mode {
-            app::TuiMode::Detail(id) => {
+        // #1288: Detail's `l` / `L` are the session strip's `l` / `e` now.
+        (KeyCode::Char('l'), _) if app.tui_mode == app::TuiMode::Overview => {
+            let selected = app.panel_view.selected_index();
+            if let Some(id) = app.pool.session_id_at_index(selected) {
                 app.log_viewer_scroll = 0;
                 app.navigate_to(app::TuiMode::LogViewer(id));
-            }
-            app::TuiMode::Overview => {
-                let selected = app.panel_view.selected_index();
-                if let Some(id) = app.pool.session_id_at_index(selected) {
-                    app.log_viewer_scroll = 0;
-                    app.navigate_to(app::TuiMode::LogViewer(id));
-                }
-            }
-            _ => {}
-        },
-        (KeyCode::Char('L'), _) => {
-            if let app::TuiMode::Detail(id) = app.tui_mode {
-                app.call_log_state = crate::tui::call_log::state::CallLogState::default();
-                app.navigate_to(app::TuiMode::CallLog(id));
             }
         }
         (KeyCode::Up, KeyModifiers::SHIFT) => {
@@ -2286,7 +2337,13 @@ mod tests {
         app.log_viewer_scroll = 42;
         let _ = handle_key(&mut app, key('g')).await;
         assert!(
-            matches!(app.tui_mode, TuiMode::LogViewer(_)),
+            matches!(
+                app.tui_mode,
+                TuiMode::Session {
+                    view: crate::tui::app::SessionView::Log,
+                    ..
+                }
+            ),
             "g in LogViewer must stay in LogViewer, got {:?}",
             app.tui_mode
         );
@@ -2663,7 +2720,7 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('v'));
 
-        assert!(matches!(app.tui_mode, TuiMode::GateOutputViewer(id) if id == session_id));
+        assert_eq!(app.tui_mode, TuiMode::GateOutputViewer(session_id));
         assert!(
             app.completion_summary.is_some(),
             "[v] must keep the summary populated so [Esc] can return to it"
@@ -2865,7 +2922,7 @@ mod tests {
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
         assert!(
-            matches!(app.tui_mode, TuiMode::Detail(found) if found == id),
+            app.tui_mode == TuiMode::Detail(id),
             "Enter on terminal session must navigate to Detail; got {:?}",
             app.tui_mode
         );
@@ -2891,7 +2948,7 @@ mod tests {
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
         assert!(
-            matches!(app.tui_mode, TuiMode::Detail(found) if found == id),
+            app.tui_mode == TuiMode::Detail(id),
             "Enter on running session must navigate to Detail; got {:?}",
             app.tui_mode
         );
@@ -3103,7 +3160,7 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('l'));
 
-        assert!(matches!(app.tui_mode, TuiMode::LogViewer(id) if id == first_id));
+        assert_eq!(app.tui_mode, TuiMode::LogViewer(first_id));
         assert!(app.completion_summary_dismissed);
         // Post-match auto-clear nulls the summary on any non-scroll key.
         assert!(app.completion_summary.is_none());
@@ -3122,7 +3179,13 @@ mod tests {
         // No sessions = no LogViewer to open; user should stay on the
         // overlay rather than fall through to Overview (the old code
         // routed them off the modal even when [l] was a no-op).
-        assert!(!matches!(app.tui_mode, TuiMode::LogViewer(_)));
+        assert!(!matches!(
+            app.tui_mode,
+            TuiMode::Session {
+                view: crate::tui::app::SessionView::Log,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -3163,24 +3226,25 @@ mod tests {
 
     // --- Issue #886: call-log follow-tail toggle ---
 
+    /// #1288: `f` opens the Output view now; End follows, as in Output.
     #[test]
-    fn call_log_f_key_toggles_follow_tail() {
+    fn call_log_end_key_follows_tail() {
         let mut app = make_app();
         let session = completed_session("x");
         let id = session.id;
         app.pool.enqueue(session);
         app.tui_mode = TuiMode::CallLog(id);
 
-        handle_call_log(&mut app, &key('f'), id);
+        handle_call_log(&mut app, &key_code(KeyCode::End), id);
         assert!(
             app.call_log_state.follow_tail,
-            "[f] must enable follow-tail"
+            "[End] must enable follow-tail"
         );
 
-        handle_call_log(&mut app, &key('f'), id);
+        handle_call_log(&mut app, &key_code(KeyCode::End), id);
         assert!(
-            !app.call_log_state.follow_tail,
-            "[f] again must disable follow-tail"
+            app.call_log_state.follow_tail,
+            "[End] again keeps following"
         );
     }
 
