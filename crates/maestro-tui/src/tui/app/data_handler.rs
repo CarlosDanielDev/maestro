@@ -129,20 +129,15 @@ impl App {
                 // — Vec<Issue> -> HashMap copy) so navigating back into
                 // the wizard always sees the freshest open-issue list.
                 let warmed = if let Some(ref mut screen) = self.screen_state.team_wizard_screen {
+                    // #1290: blockers come from each body's `## Blocked By`,
+                    // read the way Milestones reads them; a blocker this
+                    // fetch did not return stays unknown, so the Launch plan
+                    // holds its issue.
                     let mut metas = std::collections::HashMap::new();
                     for issue in &issues {
-                        let state = match issue.state.to_ascii_lowercase().as_str() {
-                            "open" => crate::orchestration::dag::IssueState::Open,
-                            _ => crate::orchestration::dag::IssueState::Closed,
-                        };
                         metas.insert(
                             issue.number,
-                            crate::orchestration::dag::IssueMeta {
-                                number: issue.number,
-                                state,
-                                milestone: issue.milestone,
-                                blocked_by: Vec::new(),
-                            },
+                            crate::tui::screens::milestone_plan::meta(issue),
                         );
                     }
                     let count = metas.len();

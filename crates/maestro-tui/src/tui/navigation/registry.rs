@@ -161,6 +161,10 @@ pub enum Action {
     Switcher,
     /// Copy the session's last reply (Detail `c`, #1288).
     Copy,
+    /// Hold ↔ resume the queue: nothing new starts (run loop `h`, #1287).
+    Hold,
+    /// Stop the run behind a typed confirm (run loop `S`, #1287).
+    Stop,
     /// Conflict toast (#1292): `⌃P` pauses the agent without the claim,
     /// `⌃O` shows the file in Deps › files.
     PauseOther,

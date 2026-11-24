@@ -1,5 +1,4 @@
 use crate::budget::BudgetEnforcer;
-use crate::continuous::ContinuousModeState;
 use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
 use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
@@ -322,8 +321,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::TeamWizard => {
+            let budget = crate::tui::budget_prespawn::launch_budget(app);
             if let Some(ref mut screen) = app.screen_state.team_wizard_screen {
                 screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
+                screen.set_launch_budget(budget);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -382,21 +383,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
-        TuiMode::QueueExecution => {
-            // Draw overview underneath
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
-            // Draw queue progress overlay
-            if let Some(ref executor) = app.queue_executor {
-                draw_queue_execution_overlay(f, executor, chunks[1], &app.theme);
-            }
+        // #1287: one run loop screen for the queue and continuous mode.
+        TuiMode::QueueExecution | TuiMode::ContinuousPause => {
+            crate::tui::screens::run_loop::draw(f, app, chunks[1], &theme);
         }
         TuiMode::CompletionSummary => {
             // Draw overview underneath as backdrop
@@ -412,20 +401,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             // Draw overlay on top
             if let Some(ref summary) = app.completion_summary {
                 draw_completion_overlay(f, summary, chunks[1], &app.theme);
-            }
-        }
-        TuiMode::ContinuousPause => {
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
-            if let Some(ref cont) = app.continuous_mode {
-                draw_continuous_pause_overlay(f, cont, chunks[1], &app.theme);
             }
         }
         TuiMode::Sanitize => {
@@ -1225,6 +1200,12 @@ fn draw_typed_confirm(f: &mut Frame, app: &App, theme: &crate::tui::theme::Theme
                 state.confirm.render(f, area, theme);
             }
         }
+        // #1287: the run loop's "Stop the run?".
+        TuiMode::QueueExecution => {
+            if let Some(stop) = app.screen_state.run_loop.stop.as_ref() {
+                stop.confirm.render(f, area, theme);
+            }
+        }
         _ => {}
     }
 }
@@ -1541,180 +1522,6 @@ pub(crate) fn draw_completion_overlay(
     let block = theme
         .styled_block(title, false)
         .border_style(Style::default().fg(border));
-
-    let paragraph = Paragraph::new(lines).block(block);
-    f.render_widget(paragraph, overlay_area);
-}
-
-fn draw_queue_execution_overlay(
-    f: &mut Frame,
-    executor: &crate::work::executor::QueueExecutor,
-    area: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    use crate::work::executor::{ExecutorPhase, QueueItemState};
-    use ratatui::widgets::Clear;
-
-    let overlay_area = help::centered_rect(60, 50, area);
-    f.render_widget(Clear, overlay_area);
-
-    let mut lines = Vec::new();
-    lines.push(Line::from(""));
-
-    // Queue progress line
-    let mut progress_spans = vec![Span::raw("  Queue: ")];
-    for item in executor.items() {
-        let (symbol, color) = match item.state {
-            QueueItemState::Succeeded => (icons::get(IconId::CheckCircle), theme.accent_success),
-            QueueItemState::Running => (icons::get(IconId::DotFill), theme.accent_info),
-            QueueItemState::Failed => (icons::get(IconId::XCircle), theme.accent_error),
-            QueueItemState::Skipped => (icons::get(IconId::Circle), theme.accent_warning),
-            QueueItemState::Pending => (icons::get(IconId::Circle), theme.text_muted),
-        };
-        let label = format!("{} #{}", symbol, item.queued.issue_number);
-        progress_spans.push(Span::styled(
-            format!("[{}] ", label),
-            Style::default().fg(color),
-        ));
-    }
-    lines.push(Line::from(progress_spans));
-    lines.push(Line::from(""));
-
-    // Status line
-    let status_text = match executor.phase() {
-        ExecutorPhase::Idle => "Preparing next session...".to_string(),
-        ExecutorPhase::Running { current_index } => {
-            let issue_num = executor.items()[current_index].queued.issue_number;
-            format!(
-                "Running #{} ({}/{})",
-                issue_num,
-                current_index + 1,
-                executor.total_count()
-            )
-        }
-        ExecutorPhase::AwaitingDecision { failed_index } => {
-            let issue_num = executor.items()[failed_index].queued.issue_number;
-            format!("#{} failed — choose action", issue_num)
-        }
-        ExecutorPhase::Finished => format!(
-            "Queue complete: {}/{} done",
-            executor.completed_count(),
-            executor.total_count()
-        ),
-    };
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(status_text, Style::default().fg(theme.accent_info)),
-    ]));
-
-    lines.push(Line::from(""));
-
-    // Keybind bar. Conditional r/s/a are kept hand-rolled; unconditional
-    // Esc/Back comes from mode_hints.rs so the overlay label cannot drift
-    // from the handler or from the top status bar hint.
-    let mut keybind_spans = vec![Span::raw("  ")];
-    if matches!(executor.phase(), ExecutorPhase::AwaitingDecision { .. }) {
-        keybind_spans.extend([
-            Span::styled("[r]", Style::default().fg(theme.keybind_key)),
-            Span::styled(" Retry", Style::default().fg(theme.text_primary)),
-            Span::raw("  "),
-            Span::styled("[s]", Style::default().fg(theme.keybind_key)),
-            Span::styled(" Skip", Style::default().fg(theme.text_primary)),
-            Span::raw("  "),
-            Span::styled("[a]", Style::default().fg(theme.keybind_key)),
-            Span::styled(" Abort", Style::default().fg(theme.text_primary)),
-            Span::raw("  "),
-        ]);
-    }
-    let km = keymap::mode_keymap(TuiMode::QueueExecution, None, &[], false);
-    keybind_spans.extend(keymap::hint_bar_spans(
-        km.hints,
-        theme.keybind_key,
-        theme.text_primary,
-    ));
-    lines.push(Line::from(keybind_spans));
-
-    let title = format!(
-        " Queue: {}/{} ",
-        executor.completed_count(),
-        executor.total_count()
-    );
-    let block = theme
-        .styled_block(&title, false)
-        .border_style(Style::default().fg(theme.accent_info));
-
-    let paragraph = Paragraph::new(lines).block(block);
-    f.render_widget(paragraph, overlay_area);
-}
-
-fn draw_continuous_pause_overlay(
-    f: &mut Frame,
-    state: &ContinuousModeState,
-    area: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    use ratatui::widgets::Clear;
-
-    let overlay_area = help::centered_rect(60, 50, area);
-    f.render_widget(Clear, overlay_area);
-
-    let mut lines = Vec::new();
-    lines.push(Line::from(""));
-
-    if let Some(failure) = state.current_failure() {
-        lines.push(Line::from(vec![
-            Span::raw("  Issue: "),
-            Span::styled(
-                format!("#{}", failure.issue_number),
-                Style::default()
-                    .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-            Span::styled(&failure.issue_title, Style::default().fg(theme.accent_info)),
-        ]));
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::raw("  Error: "),
-            Span::styled(
-                truncate_str(&failure.error_summary, 80),
-                Style::default().fg(theme.accent_error),
-            ),
-        ]));
-    }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::raw("  Progress: "),
-        Span::styled(
-            format!("{} completed", state.completed_count),
-            Style::default().fg(theme.accent_success),
-        ),
-        Span::raw(", "),
-        Span::styled(
-            format!("{} skipped", state.skipped_count),
-            Style::default().fg(theme.accent_warning),
-        ),
-        Span::raw(", "),
-        Span::styled(
-            format!("{} failed", state.failures.len()),
-            Style::default().fg(theme.accent_error),
-        ),
-    ]));
-
-    lines.push(Line::from(""));
-    let km = keymap::mode_keymap(TuiMode::ContinuousPause, None, &[], false);
-    let mut keybind_spans = vec![Span::raw("  ")];
-    keybind_spans.extend(keymap::hint_bar_spans(
-        km.hints,
-        theme.keybind_key,
-        theme.text_primary,
-    ));
-    lines.push(Line::from(keybind_spans));
-
-    let block = theme
-        .styled_block("Session Failed — Continuous Mode", false)
-        .border_style(Style::default().fg(theme.accent_error));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, overlay_area);

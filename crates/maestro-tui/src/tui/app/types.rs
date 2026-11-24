@@ -317,6 +317,12 @@ pub struct ScreenState {
     pub interaction_screen: Option<crate::tui::screens::InteractionScreen>,
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
+    /// Hollow sessions whose decision was left for later (`Esc`, #1287):
+    /// the dialog does not reopen on its own this run, and the session is
+    /// not marked dismissed (only Skip does that).
+    pub hollow_later: std::collections::HashSet<uuid::Uuid>,
+    /// The run loop's picked option and stop dialog (#1287).
+    pub run_loop: crate::tui::screens::run_loop::RunLoopState,
     pub adapt_follow_up_screen: Option<crate::tui::screens::AdaptFollowUpScreen>,
     pub sanitize_screen: Option<crate::tui::screens::sanitize::SanitizeScreen>,
     pub settings_screen: Option<crate::tui::screens::SettingsScreen>,

@@ -13,7 +13,8 @@ use crate::tui::screens::team_wizard::test_helpers::{
     make_health_check as make_health, make_issue_meta as make_meta, make_test_team as make_team,
 };
 use crate::tui::screens::team_wizard::{
-    LaunchInputKind, LaunchStep, ManageStep, TeamLaunchInput, TeamWizardMode, TeamWizardScreen,
+    LaunchInputKind, LaunchPhase, LaunchStep, ManageStep, TeamLaunchInput, TeamWizardMode,
+    TeamWizardScreen,
     types::{ComposeSource, ComposeStep},
 };
 use crate::tui::theme::Theme;
@@ -252,7 +253,7 @@ fn launch_team_picker_120x40() {
 #[test]
 fn launch_input_picker_80x24() {
     let mut s = populated_launch_screen();
-    s.set_launch_step_for_test(LaunchStep::InputPicker);
+    s.set_launch_step_for_test(LaunchStep::Input);
     s.set_launch_team_for_test("default-coder");
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
@@ -261,8 +262,8 @@ fn launch_input_picker_80x24() {
 #[test]
 fn launch_issue_picker_80x24() {
     let mut s = populated_launch_screen();
-    s.set_launch_step_for_test(LaunchStep::IssuePicker);
     s.set_launch_team_for_test("default-coder");
+    s.set_launch_manual_issue_input_for_test("");
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }
@@ -271,7 +272,6 @@ fn launch_issue_picker_80x24() {
 fn launch_issue_picker_autocomplete_80x24() {
     let mut s = populated_launch_screen();
     s.set_launch_team_for_test("default-coder");
-    s.set_launch_step_for_test(LaunchStep::IssuePicker);
     let mut metas = HashMap::new();
     for n in [1u64, 10, 12, 100, 101, 200] {
         metas.insert(n, make_meta(n, IssueState::Open, Some(1), &[]));
@@ -310,7 +310,7 @@ fn launch_plan_preview_green_80x24() {
     metas.insert(42, make_meta(42, IssueState::Open, Some(1), &[]));
     s.apply_issue_metas(metas);
     s.set_launch_input_for_test(LaunchInputKind::Issue, Some(42));
-    s.set_launch_step_for_test(LaunchStep::PlanPreview);
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.build_plan_preview_for_test();
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
@@ -326,7 +326,7 @@ fn launch_plan_preview_blocked_role_80x24() {
     let mut metas = HashMap::new();
     metas.insert(1, make_meta(1, IssueState::Open, Some(1), &[]));
     s.apply_issue_metas(metas);
-    s.set_launch_step_for_test(LaunchStep::PlanPreview);
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.build_plan_preview_for_test();
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
@@ -342,7 +342,7 @@ fn launch_plan_preview_open_external_80x24() {
     metas.insert(1, make_meta(1, IssueState::Open, Some(7), &[2]));
     metas.insert(2, make_meta(2, IssueState::Open, Some(7), &[]));
     s.apply_issue_metas(metas);
-    s.set_launch_step_for_test(LaunchStep::PlanPreview);
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.build_plan_preview_for_test();
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
@@ -352,7 +352,14 @@ fn launch_plan_preview_open_external_80x24() {
 fn launch_confirm_80x24() {
     let mut s = populated_launch_screen();
     s.set_launch_team_for_test("default-coder");
-    s.set_launch_step_for_test(LaunchStep::Confirm);
+    s.set_launch_input_for_test(LaunchInputKind::Issue, Some(42));
+    let mut metas = HashMap::new();
+    metas.insert(42, make_meta(42, IssueState::Open, Some(1), &[]));
+    s.apply_issue_metas(metas);
+    s.set_launch_budget(budget());
+    s.set_launch_step_for_test(LaunchStep::Plan);
+    s.build_plan_preview_for_test();
+    s.set_launch_phase_for_test(LaunchPhase::Dialog);
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }
@@ -360,7 +367,8 @@ fn launch_confirm_80x24() {
 #[test]
 fn launch_executing_80x24() {
     let mut s = populated_launch_screen();
-    s.set_launch_step_for_test(LaunchStep::Executing);
+    s.set_launch_step_for_test(LaunchStep::Plan);
+    s.set_launch_phase_for_test(LaunchPhase::Executing);
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }
@@ -378,8 +386,9 @@ fn team_result_waiting_wave() {
     metas.insert(12, make_meta(12, IssueState::Open, Some(1), &[10]));
     metas.insert(13, make_meta(13, IssueState::Open, Some(1), &[11]));
     s.apply_issue_metas(metas);
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.build_plan_preview_for_test();
-    s.set_launch_step_for_test(LaunchStep::Executing);
+    s.set_launch_phase_for_test(LaunchPhase::Executing);
     s.apply_wave_started(1);
     let t = draw_team_wizard(&mut s, 80, 24);
     let drawn: String = t
@@ -400,6 +409,7 @@ fn team_result_waiting_wave() {
 #[test]
 fn launch_success_80x24() {
     let mut s = populated_launch_screen();
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.apply_launch_result(Ok(()));
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
@@ -408,8 +418,59 @@ fn launch_success_80x24() {
 #[test]
 fn launch_failed_80x24() {
     let mut s = populated_launch_screen();
+    s.set_launch_step_for_test(LaunchStep::Plan);
     s.apply_launch_result(Err("dispatch error".into()));
     let t = draw_team_wizard(&mut s, 80, 24);
+    assert_snapshot!(t.backend());
+}
+
+/// The launch dialog's budget: $5.00 per session, $50.00 total, $12.00 spent.
+fn budget() -> crate::tui::widgets::launch_dialog::LaunchBudget {
+    crate::tui::widgets::launch_dialog::LaunchBudget {
+        per_session_usd: 5.0,
+        total_usd: 50.0,
+        spent: 12.0,
+        ..Default::default()
+    }
+}
+
+/// #1290: three steps, the Plan as `run_plan` waves of lanes with the
+/// auto-added blocker, the held issue under NOT INCLUDED, and the exact
+/// worst case against the budget left. Wide shows the Preflight column.
+#[test]
+fn team_launch_plan_wide() {
+    // Opened from Milestones `t` on milestone 1 with four of its issues.
+    let mut s = TeamWizardScreen::with_entry(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        Some(TeamLaunchInput::Milestone {
+            number: 1,
+            title: "v1".into(),
+            seed_issues: vec![11, 12, 13, 14],
+        }),
+    );
+    s.apply_resolved_teams(
+        populated_launch_screen()
+            .resolved_teams()
+            .values()
+            .cloned()
+            .collect(),
+    );
+    s.apply_health_check(vec![make_health("claude", true)]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_budget(budget());
+    s.set_launch_team_for_test("default-coder");
+    let mut metas = HashMap::new();
+    metas.insert(10, make_meta(10, IssueState::Open, Some(1), &[]));
+    metas.insert(11, make_meta(11, IssueState::Open, Some(1), &[10]));
+    metas.insert(12, make_meta(12, IssueState::Open, Some(1), &[10]));
+    metas.insert(13, make_meta(13, IssueState::Open, Some(1), &[11]));
+    metas.insert(14, make_meta(14, IssueState::Open, Some(1), &[99]));
+    metas.insert(99, make_meta(99, IssueState::Open, Some(2), &[]));
+    s.apply_issue_metas(metas);
+    s.set_launch_step_for_test(LaunchStep::Plan);
+    s.build_plan_preview_for_test();
+    let t = draw_team_wizard(&mut s, 168, 42);
     assert_snapshot!(t.backend());
 }
 
@@ -505,7 +566,7 @@ fn launch_input_picker_with_preselect_at_all_sizes() {
             SourceTier::BuiltIn,
         )]);
         s.set_launch_team_for_test("default-coder");
-        s.set_launch_step_for_test(LaunchStep::InputPicker);
+        s.set_launch_step_for_test(LaunchStep::Input);
         let t = draw_team_wizard(&mut s, *w, *h);
         assert_snapshot!(format!("launch_input_preselect_{w}x{h}"), t.backend());
     }
