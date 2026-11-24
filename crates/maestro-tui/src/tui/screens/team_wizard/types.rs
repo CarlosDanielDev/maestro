@@ -385,6 +385,10 @@ pub fn role_label(role: TeamRole) -> &'static str {
     }
 }
 
+/// The message `screen_dispatch::populate_team_wizard_data` puts on every
+/// agent before a real health check exists. Such an entry is not a check.
+pub const SEEDED_HEALTH_MESSAGE: &str = "seeded (real health check pending)";
+
 #[derive(Debug, Clone, Default)]
 pub struct ManageState {
     pub selected_index: usize,
@@ -406,6 +410,9 @@ pub struct PreflightCache {
 #[derive(Debug, Clone)]
 pub struct AgentHealth {
     pub available: bool,
+    /// False for a seeded entry (`SEEDED_HEALTH_MESSAGE`): no check ran, so
+    /// `available` says nothing yet and nothing may show it as `ok`.
+    pub checked: bool,
     pub version: Option<String>,
     pub message: String,
 }

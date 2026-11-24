@@ -96,22 +96,39 @@ pub(super) fn blocks() -> Vec<Binding> {
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
     // the retry, behind the armed bar.
-    // #1286: Teams overview (`screens::team_wizard`): select a preset,
-    // start a flow; ⏎ advances, and on Review & save ⏎ arms, ⏎ writes.
+    // #1286: Teams (`screens::team_wizard`). One label per key across the
+    // screen: `l` launches on the home and moves the agent on Compose ›
+    // Roles. Tab (tier on Review & save) and Esc are Global keys.
     let teams = Scope::Screen(TuiMode::TeamWizard);
     v.extend([
-        s(teams, ch('j'), A::ScrollDown, "Down"),
-        s(teams, ch('k'), A::ScrollUp, "Up"),
-        s(teams, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
-        s(teams, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
-        s(teams, ch('c'), A::Expand, "compose"),
-        s(teams, ch('l'), A::Expand, "launch"),
-        s(teams, ch('m'), A::Expand, "manage"),
+        s(teams, ch('j'), A::ScrollDown, "move"),
+        s(teams, ch('k'), A::ScrollUp, "move"),
+        s(teams, Chord::key(KeyCode::Down), A::ScrollDown, "move").hidden(),
+        s(teams, Chord::key(KeyCode::Up), A::ScrollUp, "move").hidden(),
+        s(teams, ch('c'), A::Expand, "compose (home)"),
+        s(teams, ch('l'), A::Expand, "launch (home) · agent → (Roles)"),
+        s(teams, ch('m'), A::Expand, "manage (home)"),
+        s(teams, ch('h'), A::Expand, "agent ← (Roles)"),
+        s(
+            teams,
+            Chord::key(KeyCode::Left),
+            A::Expand,
+            "agent ← (Roles)",
+        )
+        .hidden(),
+        s(
+            teams,
+            Chord::key(KeyCode::Right),
+            A::Expand,
+            "agent → (Roles)",
+        )
+        .hidden(),
+        s(teams, ch(' '), A::Expand, "bind agent (Roles)"),
         s(
             teams,
             Chord::key(KeyCode::Enter),
             A::Expand,
-            "next · arm save",
+            "next · ⏎ ⏎ writes on Review & save",
         ),
     ]);
     v

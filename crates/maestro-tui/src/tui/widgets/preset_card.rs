@@ -13,7 +13,10 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::orchestration::cost::{estimate_cost_usd, primary_rate_for_agent};
+use crate::orchestration::cost::{
+    AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER, L2_SYSTEM_PROMPT_TOKENS, RECOVERY_BUDGET,
+    RECOVERY_TOKENS_PER_ROLE, primary_rate_for_agent,
+};
 use crate::orchestration::team::{ResolvedTeam, SourceTier};
 use crate::orchestration::types::{Primitive, TeamRole};
 use crate::tui::ds::checklist::CheckState;
@@ -37,19 +40,21 @@ pub fn tier_word(tier: SourceTier) -> &'static str {
     }
 }
 
-/// Health of one agent: `Some(true)` ok, `Some(false)` down (or absent from
-/// a fetched check: fail-closed), `None` not checked yet.
+/// Health of one agent: `Some(true)` ok, `Some(false)` down (or absent
+/// from a real check: fail-closed), `None` not checked. A seeded entry
+/// (`AgentHealth::checked == false`) is not a check.
 fn agent_health(health: &PreflightCache, agent: &str) -> Option<bool> {
     match health.by_agent.get(agent) {
-        Some(h) => Some(h.available),
-        None if health.fetched => Some(false),
+        Some(h) if h.checked => Some(h.available),
+        Some(_) => None,
+        None if health.by_agent.values().any(|h| h.checked) => Some(false),
         None => None,
     }
 }
 
 /// Can this preset run? `✗ no <role>` when a role it needs is unbound,
-/// `! <agent> down` when a bound agent failed its check, `○ unchecked`
-/// before the health check, else `✓ ready`.
+/// `! <agent> down` when a bound agent failed a real check, `○ health not
+/// checked` while any agent has no real result, else `✓ ready`.
 pub fn readiness(team: &ResolvedTeam, health: &PreflightCache) -> (CheckState, String) {
     let roles = roles_to_bind(team.primitive);
     if let Some(role) = roles.iter().find(|r| !team.bindings.contains_key(r)) {
@@ -70,7 +75,7 @@ pub fn readiness(team: &ResolvedTeam, health: &PreflightCache) -> (CheckState, S
         );
     }
     if agents.iter().any(|a| agent_health(health, a).is_none()) {
-        return (CheckState::Pending, "unchecked".to_string());
+        return (CheckState::Pending, "health not checked".to_string());
     }
     (CheckState::Ok, "ready".to_string())
 }
@@ -175,7 +180,7 @@ fn health_note(state: Option<bool>, theme: &Theme) -> Span<'static> {
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        None => Span::styled("○ unchecked", Style::default().fg(theme.text_muted)),
+        None => Span::styled("? not checked", Style::default().fg(theme.text_muted)),
     }
 }
 
@@ -255,14 +260,35 @@ fn launch_note(team: &ResolvedTeam) -> String {
     format!("TUI launch: 1 session per issue on implementer ({agent}) · other roles not run yet")
 }
 
-/// `prompt tokens only ≈ $0.03/issue`, plus `+ $?` when a bound agent has
-/// no rate. Never a run estimate (ADR in #1286).
+/// The prompt-token estimate per issue and whether a priced agent has no
+/// rate. Same coefficients as `cost.rs`, but over the roles the shape runs
+/// (`dispatched_roles`), not `required_roles`; an unbound role is not priced
+/// (the card already says the launch fails there).
+pub fn prompt_estimate(team: &ResolvedTeam) -> (f64, bool) {
+    let rate = |agent: &str| primary_rate_for_agent(agent);
+    let mut usd = L2_SYSTEM_PROMPT_TOKENS as f64 * rate(L2_AGENT).unwrap_or(0.0);
+    let mut unpriced = false;
+    let roles = team.primitive.dispatched_roles();
+    let per_role = AVG_ROLE_PROMPT_TOKENS
+        + AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER / roles.len().max(1)
+        + RECOVERY_TOKENS_PER_ROLE * RECOVERY_BUDGET;
+    for role in roles {
+        let Some(binding) = team.bindings.get(role) else {
+            continue;
+        };
+        match rate(&binding.agent) {
+            Some(r) => usd += per_role as f64 * r,
+            None => unpriced = true,
+        }
+    }
+    (usd, unpriced)
+}
+
+/// `prompt tokens only ≈ $0.03/issue`, plus `+ $?` when a role the shape
+/// runs is bound to an agent with no rate. Never a run estimate (ADR in
+/// #1286).
 fn cost_line(team: &ResolvedTeam, theme: &Theme) -> Line<'static> {
-    let usd = estimate_cost_usd(team, 1, AVG_ROLE_PROMPT_TOKENS);
-    let unpriced = team
-        .bindings
-        .values()
-        .any(|b| primary_rate_for_agent(&b.agent).is_none());
+    let (usd, unpriced) = prompt_estimate(team);
     let extra = if unpriced { " + $?" } else { "" };
     Line::from(vec![
         Span::styled("est ", Style::default().fg(theme.text_secondary)),
@@ -349,7 +375,7 @@ mod tests {
         assert_eq!(readiness(&ok, &cache), (CheckState::Ok, "ready".into()));
         assert_eq!(
             readiness(&ok, &PreflightCache::default()),
-            (CheckState::Pending, "unchecked".into())
+            (CheckState::Pending, "health not checked".into())
         );
     }
 

@@ -127,8 +127,18 @@ impl TeamWizardScreen {
             editing_existing: false,
             clipboard: Box::new(clipboard::SystemIssueClipboard),
             name_input: new_name_input(""),
-            user_dir: crate::orchestration::loader::Loader::user_tier_default(),
-            project_root: std::env::current_dir().ok(),
+            // Tests never get the real config dir or cwd: a write without
+            // `set_preset_dirs_for_test` fails instead of touching them.
+            user_dir: if cfg!(test) {
+                None
+            } else {
+                crate::orchestration::loader::Loader::user_tier_default()
+            },
+            project_root: if cfg!(test) {
+                None
+            } else {
+                std::env::current_dir().ok()
+            },
             clock: None,
             home_focus: 0,
         }
@@ -192,6 +202,13 @@ impl TeamWizardScreen {
         &self.preflight
     }
 
+    /// True when the file Review & save would write already exists: the
+    /// real path on disk, not the merged preset list (which can be empty
+    /// after a failed load, or hold another tier's preset of that name).
+    pub fn compose_target_exists(&self) -> bool {
+        self.compose_preview().is_ok_and(|(path, _)| path.exists())
+    }
+
     /// Name of the preset selected on the Home overview.
     pub fn selected_preset(&self) -> Option<&str> {
         overview::ordered_presets(&self.resolved_teams)
@@ -242,6 +259,7 @@ impl TeamWizardScreen {
                 r.provider_id.as_str().to_string(),
                 AgentHealth {
                     available: r.available,
+                    checked: r.message != types::SEEDED_HEALTH_MESSAGE,
                     version: r.version,
                     message: r.message,
                 },
@@ -571,28 +589,22 @@ impl Default for TeamWizardScreen {
 
 impl KeymapProvider for TeamWizardScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        // Home and Compose keys live in the registry TeamWizard block
+        // (#1286); this group lists only the Launch / Manage keys it lacks.
         vec![KeyBindingGroup {
             title: "Team Wizard",
             bindings: vec![
                 KeyBinding {
-                    key: "c / l / m",
-                    description: "Compose / Launch / Manage (from Home)",
-                },
-                KeyBinding {
-                    key: "Enter",
-                    description: "Next step / Confirm",
-                },
-                KeyBinding {
-                    key: "Esc",
-                    description: "Previous step (or back to Home)",
-                },
-                KeyBinding {
-                    key: "↑/↓",
-                    description: "Navigate items",
+                    key: "e / d",
+                    description: "Edit / delete a preset (Manage)",
                 },
                 KeyBinding {
                     key: "y / n",
                     description: "Confirm / cancel delete (Manage)",
+                },
+                KeyBinding {
+                    key: "r",
+                    description: "Retry after a failed launch or delete",
                 },
             ],
         }]
@@ -691,3 +703,7 @@ mod cancel_tests;
 #[cfg(test)]
 #[path = "compose_tests.rs"]
 mod compose_tests;
+
+#[cfg(test)]
+#[path = "review_tests.rs"]
+mod review_tests;

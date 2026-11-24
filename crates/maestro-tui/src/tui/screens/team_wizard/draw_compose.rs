@@ -188,7 +188,14 @@ impl TeamWizardScreen {
         }
         f.render_widget(Paragraph::new(role_lines), left);
 
-        let mut agent_lines = vec![Line::from(Span::styled("Healthy agents", bold))];
+        // Seeded entries are not a check: say so instead of "healthy".
+        let checked = self.preflight.by_agent.values().any(|h| h.checked);
+        let heading = if checked {
+            "Healthy agents"
+        } else {
+            "Agents · health not checked"
+        };
+        let mut agent_lines = vec![Line::from(Span::styled(heading, bold))];
         if agents.is_empty() {
             agent_lines.push(Line::from(Span::styled(
                 "No agents reported healthy.",
@@ -212,15 +219,17 @@ impl TeamWizardScreen {
         .areas(area);
 
         let error = self.validate_save_name();
-        let clash = self.resolved_teams.get(self.compose.name.trim());
         let typing = *self.compose_save_state() != ArmedState::Done;
+        let preview = self.compose_preview();
+        // The file the write targets, checked on disk (#1286 judge): an
+        // existing one is named, and the armed ⏎ ⏎ is its confirm.
+        let replaces = typing && self.compose_target_exists();
         let mut block = field_block("Name", typing, error, theme);
-        if let (None, Some(team)) = (error, clash) {
+        if let (None, true, Ok((path, _))) = (error, replaces, &preview) {
             block = block.title_bottom(Line::from(Span::styled(
                 format!(
-                    " ! replaces the {} preset {} ",
-                    crate::tui::widgets::preset_card::tier_word(team.source_tier),
-                    sanitize_for_terminal(&team.name)
+                    " ! replaces {} ",
+                    sanitize_for_terminal(&path.to_string_lossy())
                 ),
                 Style::default()
                     .fg(theme.accent_warning)
@@ -244,7 +253,6 @@ impl TeamWizardScreen {
             tier_area,
         );
 
-        let preview = self.compose_preview();
         let (title, body) = match &preview {
             Ok((path, text)) => (
                 format!(
@@ -279,7 +287,8 @@ impl TeamWizardScreen {
         };
         let what = match &preview {
             Ok((path, _)) => format!(
-                "writes {}",
+                "{} {}",
+                if replaces { "replaces" } else { "writes" },
                 path.file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default()
