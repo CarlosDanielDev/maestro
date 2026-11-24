@@ -25,6 +25,19 @@ impl Primitive {
         }
     }
 
+    /// Which `TeamRole`s this primitive's machine actually dispatches
+    /// (`primitives/*.rs`). It can differ from `required_roles()`, which
+    /// validation and cost still read (#1286).
+    pub fn dispatched_roles(self) -> &'static [TeamRole] {
+        match self {
+            Self::Pipeline | Self::FanOut => {
+                &[TeamRole::Implementer, TeamRole::Reviewer, TeamRole::Docs]
+            }
+            Self::SinglePass => &[TeamRole::Reviewer],
+            Self::VerdictOnly => &[TeamRole::Triager],
+        }
+    }
+
     /// Canonical kebab-case label, identical to the serde tag.
     pub const fn label(self) -> &'static str {
         match self {
@@ -108,6 +121,20 @@ mod tests {
         assert!(roles.contains(&TeamRole::Implementer));
         assert!(roles.contains(&TeamRole::Reviewer));
         assert!(roles.contains(&TeamRole::Docs));
+    }
+
+    #[test]
+    fn dispatched_roles_match_what_each_machine_runs() {
+        use TeamRole::*;
+        let cases: [(Primitive, &[TeamRole]); 4] = [
+            (Primitive::Pipeline, &[Implementer, Reviewer, Docs]),
+            (Primitive::FanOut, &[Implementer, Reviewer, Docs]),
+            (Primitive::SinglePass, &[Reviewer]),
+            (Primitive::VerdictOnly, &[Triager]),
+        ];
+        for (primitive, roles) in cases {
+            assert_eq!(primitive.dispatched_roles(), roles, "{primitive:?}");
+        }
     }
 
     #[test]

@@ -327,7 +327,7 @@ fn save_success_enter_returns_to_manage_when_editing() {
     s.switch_mode(TeamWizardMode::Manage);
     s.handle_input(&key_event(KeyCode::Char('e')), InputMode::Normal);
     assert!(s.is_editing_existing());
-    s.set_compose_step_for_test(ComposeStep::SaveSuccess);
+    s.set_compose_save_result_for_test(Ok(()));
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.mode(), TeamWizardMode::Manage);
@@ -339,7 +339,7 @@ fn save_success_enter_returns_to_manage_when_editing() {
 fn save_success_enter_pops_when_creating_new() {
     let mut s = fresh();
     s.switch_mode(TeamWizardMode::Compose);
-    s.set_compose_step_for_test(ComposeStep::SaveSuccess);
+    s.set_compose_save_result_for_test(Ok(()));
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
     assert_eq!(action, ScreenAction::Pop);
 }
@@ -452,22 +452,27 @@ fn launch_confirm_advances_to_confirm_when_preflight_ok() {
 // ── apply_save_result / apply_launch_result / apply_delete_result ───────
 
 #[test]
-fn apply_save_result_ok_transitions_to_save_success() {
+fn save_result_ok_marks_the_write_bar_done() {
     let mut s = fresh();
     s.switch_mode(TeamWizardMode::Compose);
-    s.compose_step = ComposeStep::Save;
-    s.apply_save_result(Ok(()));
-    assert_eq!(s.compose_step(), ComposeStep::SaveSuccess);
+    s.set_compose_save_result_for_test(Ok(()));
+    assert_eq!(s.compose_step(), ComposeStep::Save);
+    assert_eq!(
+        *s.compose_save_state(),
+        crate::tui::ds::armed::ArmedState::Done
+    );
 }
 
 #[test]
-fn apply_save_result_err_transitions_to_save_failed() {
+fn save_result_err_marks_the_write_bar_failed_with_the_reason() {
     let mut s = fresh();
     s.switch_mode(TeamWizardMode::Compose);
-    s.compose_step = ComposeStep::Save;
-    s.apply_save_result(Err("disk full".into()));
-    assert_eq!(s.compose_step(), ComposeStep::SaveFailed);
-    assert_eq!(s.failure_reason(), Some("disk full"));
+    s.set_compose_save_result_for_test(Err("disk full".into()));
+    assert_eq!(s.compose_step(), ComposeStep::Save);
+    assert_eq!(
+        *s.compose_save_state(),
+        crate::tui::ds::armed::ArmedState::Failed("disk full".into())
+    );
 }
 
 #[test]

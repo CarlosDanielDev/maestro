@@ -26,6 +26,8 @@ pub struct ArmedBar<'a> {
     armed: &'a ArmedEnter,
     description: &'a str,
     now: Instant,
+    /// Where the write lands, for the title and the working/done lines.
+    place: &'a str,
 }
 
 impl<'a> ArmedBar<'a> {
@@ -34,7 +36,15 @@ impl<'a> ArmedBar<'a> {
             armed,
             description,
             now,
+            place: "GitHub",
         }
+    }
+
+    /// Name where the write lands when it is not GitHub (`disk` for a
+    /// file the screen writes).
+    pub fn to(mut self, place: &'a str) -> Self {
+        self.place = place;
+        self
     }
 
     pub fn render(self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -70,13 +80,13 @@ impl<'a> ArmedBar<'a> {
                 IconId::Sync,
                 "WORKING",
                 theme.accent_info,
-                "writing to GitHub…".to_string(),
+                format!("writing to {}…", self.place),
             ),
             ArmedState::Done => (
                 IconId::CheckCircle,
                 "DONE",
                 theme.accent_success,
-                "written to GitHub".to_string(),
+                format!("written to {}", self.place),
             ),
             ArmedState::Failed(fix) => (
                 IconId::XCircle,
@@ -86,8 +96,9 @@ impl<'a> ArmedBar<'a> {
             ),
         };
 
+        let title = format!("Write to {}", self.place);
         let block = theme
-            .styled_block("Write to GitHub", false)
+            .styled_block(&title, false)
             .border_style(Style::default().fg(color));
         let bold = Style::default().fg(color).add_modifier(Modifier::BOLD);
         let lines = vec![

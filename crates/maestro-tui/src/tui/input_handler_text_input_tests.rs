@@ -12,7 +12,7 @@ use crate::tui::screens::prd::{EditTarget, PrdScreen};
 use crate::tui::screens::roadmap::{FilterField, RoadmapScreen};
 use crate::tui::screens::{
     InteractionScreen, IssueBrowserScreen, IssueWizardScreen, MilestoneWizardScreen,
-    PromptInputScreen,
+    PromptInputScreen, team_wizard::test_helpers::compose_name_app,
 };
 use crate::updater::{ReleaseInfo, UpgradeState};
 
@@ -277,7 +277,7 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 15] {
+fn text_surfaces() -> [Surface; 16] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
@@ -298,6 +298,7 @@ fn text_surfaces() -> [Surface; 15] {
         ("kill confirm", on_kill_confirm),
         ("bypass warning", on_bypass_warning),
         ("command palette", on_palette),
+        ("team compose name", compose_name_app),
     ]
 }
 

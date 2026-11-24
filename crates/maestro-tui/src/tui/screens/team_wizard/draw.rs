@@ -1,10 +1,7 @@
 //! Rendering for the Team Wizard. Top-level dispatcher routes by mode and
 //! delegates to per-flow draw helpers.
 
-use super::compose::PRIMITIVE_LIST;
-use super::types::{
-    ComposeStep, ComposeTier, LaunchInputKind, LaunchStep, ManageStep, PreflightSummary, role_label,
-};
+use super::types::{LaunchInputKind, LaunchStep, ManageStep, PreflightSummary};
 use super::{TeamLaunchInput, TeamWizardMode, TeamWizardScreen};
 use crate::orchestration::types::Primitive;
 use crate::tui::screens::sanitize_for_terminal;
@@ -12,7 +9,7 @@ use crate::tui::theme::Theme;
 use crate::tui::widgets::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -21,236 +18,14 @@ use ratatui::{
 impl TeamWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         match self.mode() {
-            TeamWizardMode::Home => self.draw_home(f, area, theme),
+            TeamWizardMode::Home => self.draw_overview(f, area, theme),
             TeamWizardMode::Compose => self.draw_compose(f, area, theme),
             TeamWizardMode::Launch => self.draw_launch(f, area, theme),
             TeamWizardMode::Manage => self.draw_manage(f, area, theme),
         }
     }
 
-    fn draw_home(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        // Home is pre-step — skip the wizard chrome ("Step 0/0") and use a
-        // tight centered card so the picker doesn't feel empty on wide
-        // viewports.
-        let block = theme.styled_block("Team Wizard", false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let body_height: u16 = 9;
-        let body_area = if inner.height > body_height {
-            let pad = (inner.height - body_height) / 2;
-            Rect {
-                x: inner.x,
-                y: inner.y + pad,
-                width: inner.width,
-                height: body_height,
-            }
-        } else {
-            inner
-        };
-
-        let lines = vec![
-            Line::from(Span::styled(
-                "Pick a flow",
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            home_entry_line(theme, "c", "Compose", "Build or extend a team preset"),
-            home_entry_line(theme, "l", "Launch", "Run a team on issues / a milestone"),
-            home_entry_line(theme, "m", "Manage", "Edit or delete user-tier presets"),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[Esc] back",
-                Style::default()
-                    .fg(theme.text_secondary)
-                    .add_modifier(Modifier::DIM),
-            )),
-        ];
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            body_area,
-        );
-    }
-
-    fn draw_compose(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let step = self.compose_step();
-        WizardFrame::draw(
-            f,
-            area,
-            theme,
-            WizardFrameHeader {
-                step_index: step.index(),
-                step_total: ComposeStep::total(),
-                step_label: step.label(),
-            },
-            WizardFrameFooter {
-                validation_error: self.validation_error(),
-                hints: Some(compose_footer_hint(step)),
-            },
-            |f, body_area| match step {
-                ComposeStep::Source => self.draw_compose_source(f, body_area, theme),
-                ComposeStep::Primitive => self.draw_compose_primitive(f, body_area, theme),
-                ComposeStep::Roles => self.draw_compose_roles(f, body_area, theme),
-                ComposeStep::Save => self.draw_compose_save(f, body_area, theme),
-                ComposeStep::SaveSuccess => self.draw_terminal_state(
-                    f,
-                    body_area,
-                    theme,
-                    "Saved",
-                    &sanitize_for_terminal(self.compose.name.as_str()),
-                    theme.accent_success,
-                ),
-                ComposeStep::SaveFailed => self.draw_terminal_state(
-                    f,
-                    body_area,
-                    theme,
-                    "Save Failed",
-                    &sanitize_for_terminal(self.failure_reason().unwrap_or("unknown error")),
-                    theme.accent_error,
-                ),
-            },
-        );
-    }
-
-    fn draw_compose_source(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let opts = self.compose_source_options();
-        let mut lines = vec![
-            Line::from(Span::styled(
-                "Start blank or extend an existing preset.",
-                Style::default().fg(theme.text_secondary),
-            )),
-            Line::from(""),
-        ];
-        for (i, opt) in opts.iter().enumerate() {
-            let label = match opt {
-                super::compose::ComposeSourceOption::Blank => "Blank".to_string(),
-                super::compose::ComposeSourceOption::Extends(name) => {
-                    format!("Extends: {}", sanitize_for_terminal(name))
-                }
-            };
-            lines.push(focused_line(theme, &label, i == self.compose.source_focus));
-        }
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Source", false)),
-            area,
-        );
-    }
-
-    fn draw_compose_primitive(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let mut lines = vec![Line::from(Span::styled(
-            "Choose the primitive that matches the team's shape.",
-            Style::default().fg(theme.text_secondary),
-        ))];
-        for (i, p) in PRIMITIVE_LIST.iter().enumerate() {
-            let required = p.required_roles();
-            let role_summary = if required.is_empty() {
-                "no required roles".to_string()
-            } else {
-                required
-                    .iter()
-                    .map(|r| role_label(*r))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            let label = format!("{}: {}", primitive_label(*p), role_summary);
-            lines.push(focused_line(
-                theme,
-                &label,
-                i == self.compose.primitive_focus,
-            ));
-        }
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Primitive", false)),
-            area,
-        );
-    }
-
-    fn draw_compose_roles(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let primitive = self.compose.primitive.unwrap_or(Primitive::SinglePass);
-        let roles = primitive.required_roles();
-        let agents = self.healthy_agents();
-        let block = theme.styled_block("Roles", false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(inner);
-
-        let mut role_lines = vec![Line::from(Span::styled(
-            "Roles to bind",
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ))];
-        if roles.is_empty() {
-            role_lines.push(Line::from(Span::styled(
-                "No required roles for this primitive.",
-                Style::default().fg(theme.text_secondary),
-            )));
-        }
-        for (i, role) in roles.iter().enumerate() {
-            let bound = self
-                .compose
-                .bindings
-                .get(role)
-                .map(|s| format!(" → {s}"))
-                .unwrap_or_else(|| " (unbound)".to_string());
-            let label = format!("{}{bound}", role_label(*role));
-            role_lines.push(focused_line(theme, &label, i == self.compose.role_focus));
-        }
-        f.render_widget(Paragraph::new(role_lines), columns[0]);
-
-        let mut agent_lines = vec![Line::from(Span::styled(
-            "Healthy agents",
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ))];
-        if agents.is_empty() {
-            agent_lines.push(Line::from(Span::styled(
-                "No agents reported healthy.",
-                Style::default().fg(theme.accent_warning),
-            )));
-        }
-        for (i, a) in agents.iter().enumerate() {
-            agent_lines.push(focused_line(theme, a, i == self.compose.agent_focus));
-        }
-        f.render_widget(Paragraph::new(agent_lines), columns[1]);
-    }
-
-    fn draw_compose_save(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let tier = match self.compose.tier {
-            ComposeTier::User => "user",
-            ComposeTier::Project => "project",
-        };
-        let lines = vec![
-            Line::from(Span::styled(
-                "Name (alphanumeric + hyphen, no leading dot, no slashes)",
-                Style::default().fg(theme.text_secondary),
-            )),
-            Line::from(Span::styled(
-                format!("> {}", sanitize_for_terminal(&self.compose.name)),
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("Tier: {tier}    [Tab] toggle    [Enter] save"),
-                Style::default().fg(theme.text_secondary),
-            )),
-        ];
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Save", false)),
-            area,
-        );
-    }
-
-    fn draw_terminal_state(
+    pub(super) fn draw_terminal_state(
         &self,
         f: &mut Frame,
         area: Rect,
@@ -663,7 +438,7 @@ impl TeamWizardScreen {
     }
 }
 
-fn focused_line(theme: &Theme, label: &str, selected: bool) -> Line<'static> {
+pub(super) fn focused_line(theme: &Theme, label: &str, selected: bool) -> Line<'static> {
     let prefix = if selected { ">" } else { " " };
     let style = if selected {
         Style::default()
@@ -674,40 +449,6 @@ fn focused_line(theme: &Theme, label: &str, selected: bool) -> Line<'static> {
         Style::default().fg(theme.text_primary)
     };
     Line::from(Span::styled(format!(" {prefix} {label}"), style))
-}
-
-fn home_entry_line(theme: &Theme, key: &str, label: &str, description: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(
-            format!("[{}] ", key),
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("{label}: "),
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            description.to_string(),
-            Style::default().fg(theme.text_secondary),
-        ),
-    ])
-}
-
-fn compose_footer_hint(step: ComposeStep) -> &'static str {
-    match step {
-        ComposeStep::Source => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
-        ComposeStep::Primitive => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
-        ComposeStep::Roles => {
-            "[↑/↓ j/k] role   [←/→ h/l] agent   [Space] bind   [Enter] next   [Esc] back"
-        }
-        ComposeStep::Save => "[Tab] tier   [Enter] save   [Esc] back",
-        ComposeStep::SaveSuccess => "[Enter] return",
-        ComposeStep::SaveFailed => "[r] retry   [Esc] back",
-    }
 }
 
 fn launch_footer_hint(step: LaunchStep) -> &'static str {
