@@ -107,7 +107,7 @@ fn gh_auth_recovers_after_success() {
 
     app.handle_data_event(TuiDataEvent::Milestones(Err(auth_error())));
     assert!(!app.gh_auth_ok);
-    app.handle_data_event(TuiDataEvent::Milestones(Ok(vec![])));
+    app.handle_data_event(TuiDataEvent::Milestones(Ok(Default::default())));
     assert!(app.gh_auth_ok, "milestone fetches count as gh calls too");
 
     app.handle_data_event(TuiDataEvent::PrReviewSubmitted(Err(auth_error())));

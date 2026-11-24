@@ -1,0 +1,29 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/milestone_run_plan.rs
+assertion_line: 205
+expression: t.backend()
+---
+" 6 open -> 4 run in 2 waves · 1 needs a decision · 1 deferred                   "
+"┏━━━━━━━━━━━━[ Run order · 4 of 6 · v0.33.0 Input Standardization ]━━━━━━━━━━━━┓"
+"┃WAVE 1 · start now                                                            ┃"
+"┃  [x] #964 Migrate the Issue wizard to Input                                  ┃"
+"┃  [x] #965 Spike: input history                                ! scope unknown┃"
+"┃WAVE 2 · after the wave before merges                                         ┃"
+"┃  [ ] #966 Migrate the Settings forms                                         ┃"
+"┃  [ ] #969 Migrate the Roadmap filter                    after #964, same file┃"
+"┃NEEDS A DECISION · already claimed, not launched                              ┃"
+"┃  [?] #967 Migrate the PRD fields                                  [?] claimed┃"
+"┃DEFERRED · stay open on GitHub, not launched                                  ┃"
+"┃  [-] #968 Delete TextAreaField                        [X] #831 (milestone 61)┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+" 4 sessions · 2 waves · worst case $20.00                                       "
+" Enter reviews the launch of wave 1 (2); plan again with R once it merges       "

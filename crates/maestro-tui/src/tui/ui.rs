@@ -401,7 +401,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::MilestoneView => {
+            let live = crate::tui::screens::run_queue::live_claims(app);
             if let Some(ref mut screen) = app.screen_state.milestone_screen {
+                screen.set_claimed(live);
                 screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
@@ -427,7 +429,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::QueueConfirmation => {
+            let budget = crate::tui::budget_prespawn::launch_budget(app);
             if let Some(ref mut screen) = app.screen_state.queue_confirmation_screen {
+                screen.set_launch_budget(budget);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }

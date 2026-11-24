@@ -95,6 +95,22 @@ fn on_issue_launch_dialog() -> App {
     app
 }
 
+/// #1269: the launch dialog over the Milestones Run queue.
+fn on_run_queue_launch_dialog() -> App {
+    use crate::tui::screens::run_queue::RunQueue;
+    let mut app = base_app(TuiMode::QueueConfirmation);
+    let plan = crate::work::run_plan::RunPlan {
+        waves: vec![vec![1]],
+        ..Default::default()
+    };
+    let titles = std::collections::HashMap::from([(1, "Add login flow".to_string())]);
+    let mut run = RunQueue::new("v1".into(), 1, plan, titles);
+    run.open_launch_dialog();
+    app.screen_state.queue_confirmation_screen =
+        Some(crate::tui::screens::QueueConfirmationScreen::from_run(run));
+    app
+}
+
 fn on_issue_wizard_basic_info() -> App {
     use crate::tui::screens::issue_wizard::IssueWizardStep;
     let mut app = base_app(TuiMode::IssueWizard);
@@ -261,13 +277,14 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 14] {
+fn text_surfaces() -> [Surface; 15] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
         ("session switcher", on_session_switcher),
         ("issue browser filter", on_issue_browser_filter),
         ("issue launch dialog", on_issue_launch_dialog),
+        ("run queue launch dialog", on_run_queue_launch_dialog),
         ("issue wizard basic info", on_issue_wizard_basic_info),
         ("milestone wizard", on_milestone_wizard),
         ("prd edit field", on_prd_edit),
@@ -342,6 +359,13 @@ async fn shift_tab_never_types_on_any_text_input_surface() {
                 use crate::tui::widgets::launch_dialog::LaunchFocus;
                 let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
                 let dialog = screen.launch_dialog.as_ref().unwrap();
+                assert_eq!(dialog.focus, LaunchFocus::Mode, "{name}: focus back");
+                assert_eq!(dialog.editor_text(), "ab", "{name}: no tab typed");
+            }
+            "run queue launch dialog" => {
+                use crate::tui::widgets::launch_dialog::LaunchFocus;
+                let screen = app.screen_state.queue_confirmation_screen.as_ref().unwrap();
+                let dialog = screen.launch_dialog().unwrap();
                 assert_eq!(dialog.focus, LaunchFocus::Mode, "{name}: focus back");
                 assert_eq!(dialog.editor_text(), "ab", "{name}: no tab typed");
             }
