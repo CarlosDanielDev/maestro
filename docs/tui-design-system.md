@@ -488,6 +488,20 @@ Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.h
 
 Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
+### Milestones tab and Run queue (`screens/milestone.rs`, `screens/run_queue.rs`, #1269)
+
+Implements `§02.9 Milestones: work a milestone` of `docs/design-system/index.html` (milestone row, issue row with status chip, Run this milestone card, Run queue). Decision: `docs/design-system/decisions.md` (2026-11-24, Milestones run plan).
+
+| Item | For |
+|---|---|
+| `milestone_plan::plan_milestone(issues, known, claimed, per_session_cap_usd)` | The one plan behind the START column, the issue levels, the card and the Run queue: `work::run_plan` over the fetched bodies (`parse_blocked_by`, `files_to_modify_from_body`). Claims are the `maestro:in-progress` label plus `claimed` (live sessions, `run_queue::live_claims`). `fetch_milestones` lists the open milestones, then looks up each blocker the open-only lists did not return (`unfetched_blockers`, `resolve_blockers`; every fetch, no cache reuse); fresh lists win over looked-up copies. A closed blocker is satisfied; a failed lookup stays unknown, and `owner/repo#5` is `OtherRepo`: `run_plan` holds the issue as blocked outside |
+| `MilestonePlan::readiness(n)` / `start_count()` | `IssueReadiness` per open issue (`Ready`, `Waits`, `BlockedOutside`, `Claimed`, `Unknown`); START counts wave 1, what `⏎` in the Run queue launches |
+| `MilestoneScreen::set_milestones(entries, failed, per_session_cap_usd)` / `set_claimed(live)` / `plan_for(n)` | Replaces the list and plans each milestone once per fetch (`data_handler` calls it; the fetch also fills `issue_cache`). A milestone whose issue fetch failed has no plan and shows `issues not loaded (…); r retries`; a cycle shows `not planned:` with its members. `ui.rs` feeds `set_claimed` every frame (plans again only on change), and the Run queue opens on `plan_for`, so START and the Run queue never disagree |
+| `milestone_rows::milestone_row` / `issue_row` / `summary` / `run_card` / `legend` | One row per milestone: name, an `accent_info` bar (`ds::gauge::bar`, dropped below `BAR_MIN_WIDTH` columns), `done/total`, `n ready` (`0 ready` muted). Issue rows: `readiness_chip` (chip icons, ASCII fallback; `row_line` fits a row with a right note), number, title, the blocker on the right (`ellipsize_line`). The card says what `R` would do |
+| `run_queue::RunQueue` in `QueueConfirmationScreen::from_run` | `R` returns `ScreenAction::PlanRun`; `run_queue::open_run_queue` plans and opens it. Summary sentence, `WAVE n` / `NEEDS A DECISION` / `DEFERRED` groups with a reason per row, run bar with the worst case (`ds::money`). `⏎` opens the shared `launch_dialog` on wave 1; its confirm is the only spend step (one issue `LaunchSession`, several `LaunchQueue`, `Ctrl+U` unified). `Esc` goes back, nothing launched |
+| `LaunchDialog::footer_hints()` | The dialog's footer hints, shared by Issues and the Run queue |
+
+Rules: `R` never spawns. Only wave 1 launches from the Run queue: a later wave needs its blockers merged first, so it is planned again with `R`. The Run queue's dialog is a text surface (`desired_input_mode` is `Insert` while it is open). Not built yet: Space include/defer, `+ −` at once, `g` go to blocker, the detail panel, Tab focus Milestones → Issues → Preview, the DoR strip in the preview. Tests: `screens/milestone_plan_tests.rs`, `screens/run_queue_tests.rs`, `snapshot_tests/milestone_run_plan.rs`.
 
 ### Usage views: Cost and Tokens (`screens/dashboard/usage.rs`, `screens/dashboard/cost.rs`, `screens/dashboard/tokens/view.rs`, #1289)
 
@@ -605,7 +619,7 @@ screen moves into the registry one at a time.
 | `Chord::key(code)` / `Chord::ctrl(c)` / `Chord::label()` | The key, and the text a hint shows (`⌃K`, `Enter`, `G`) |
 | `Scope::Global` / `Scope::Screen(mode)` / `Scope::Panel(mode, name)` | Where it applies. Global ⊃ Screen ⊃ Panel (`Scope::encloses`); a screen matches its mode with any payload |
 | `Danger::Safe` / `Danger::Destructive` | Drives the case rules |
-| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `A`), then one block per registered screen (`LogViewer`, `SessionSummary`, Milestones `r` reload / `R` run all; #1265; Dashboard work list, #1280) |
+| `registry()` | Every binding: the §06 Global table, the other keys `handle_global_shortcuts` takes before screens (`⌃L ⌃B ⌃X ⌃C` and Shift `A`), then one block per registered screen (`LogViewer`, `SessionSummary`, Milestones `r` reload / `R` plan run; #1265, #1269; Dashboard work list, #1280) |
 | `check(bindings)` | The rules as `Violation`s: `Duplicate` (same chord twice in one scope), `Shadow` (an inner scope reuses an enclosing scope's chord), `LowercaseDestructive` (destructive on a bare lowercase letter), `UppercaseSafe` (safe on a bare uppercase letter with no `.exception`). Ctrl chords, digits and symbols skip the case rules |
 | `footer_hints(mode)` | The footer hints of a registered screen, in registry order; `mode_keymap` uses them in place of its own list |
 

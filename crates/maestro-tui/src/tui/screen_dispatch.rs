@@ -1560,6 +1560,10 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
             }
         }
+        // #1269: Milestones `R` plans the run; nothing spawns here.
+        ScreenAction::PlanRun { milestone } => {
+            crate::tui::screens::run_queue::open_run_queue(app, milestone);
+        }
         ScreenAction::LaunchQueue(configs) => {
             use crate::work::dependencies::DependencyGraph;
             use crate::work::executor::QueueExecutor;

@@ -24,7 +24,8 @@ fn detail(action: Action) -> Option<String> {
         // #1265: where the retired Shift `Q` went, and where TurboQuant is
         // switched (TURBOQUANT_TOGGLE). One row at 80 columns.
         Action::Palette => Some("TurboQuant; on/off in Settings".into()),
-        Action::RunAll => Some("asks first for 2+ open issues".into()),
+        // #1269: `R` only plans; the Run queue's launch dialog spends.
+        Action::RunAll => Some("opens the Run queue; launches nothing".into()),
         _ => None,
     }
 }

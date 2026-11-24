@@ -303,7 +303,7 @@ impl Screen for IssueBrowserScreen {
 
 /// The launch a confirmed dialog asks for: one session, one unified
 /// session, or one per issue. The mode sets `produce_pr` / `interaction`.
-fn launch_action(dialog: LaunchDialog, custom_prompt: Option<String>) -> ScreenAction {
+pub(crate) fn launch_action(dialog: LaunchDialog, custom_prompt: Option<String>) -> ScreenAction {
     let (produce_pr, interaction) = dialog.mode.flags();
     let unified = dialog.unified_pr;
     let mut issues = dialog.selected_issues;

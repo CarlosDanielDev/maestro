@@ -207,8 +207,9 @@ fn no_row_is_cut_mid_word_at_80_columns() {
         shown_whole_or_ellipsized(spend, "tokens", "tokens 0 in / 0 out");
 
         let ms = rows(&draw(&mut milestone_app(), w, h));
-        let gauge = row_with(&ms, "issues");
-        shown_whole_or_ellipsized(gauge, "24/26", "24/26 issues (92%)");
+        // #1269: one row per milestone; done/total and START never drop.
+        let counts = row_with(&ms, "24/26");
+        assert!(counts.contains("0 ready"), "{ctx} START: {counts:?}");
         let title = row_with(&ms, "v0.38.0");
         shown_whole_or_ellipsized(title, "v0.38.0", "UX Spine Follow-ups");
 

@@ -51,21 +51,7 @@ impl IssueBrowserScreen {
     /// (#1258).
     pub(super) fn footer_hints_impl(&self) -> Vec<(&'static str, &'static str)> {
         match self.launch_dialog.as_ref() {
-            Some(dialog) if dialog.is_multi() => vec![
-                ("Enter", "Launch all"),
-                ("Tab", "Instructions/Mode"),
-                ("↑/↓", "Mode"),
-                ("Ctrl+U", "Unified PR"),
-                ("Shift+Enter", "New line"),
-                ("Esc", "Cancel"),
-            ],
-            Some(_) => vec![
-                ("Enter", "Launch"),
-                ("Tab", "Instructions/Mode"),
-                ("↑/↓", "Mode"),
-                ("Shift+Enter", "New line"),
-                ("Esc", "Cancel"),
-            ],
+            Some(dialog) => dialog.footer_hints(),
             None => vec![
                 ("Tab", "Switch pane"),
                 ("Enter", "Run"),
