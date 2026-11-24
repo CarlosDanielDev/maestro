@@ -33,6 +33,7 @@ mod landing_full_app;
 mod log_drawer;
 mod log_drawer_modals;
 mod milestone;
+mod milestone_run_plan;
 mod milestone_wizard;
 mod no_color;
 mod overview;

@@ -1,7 +1,9 @@
+use super::run_queue::RunQueue;
 use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::launch_dialog::{LaunchBudget, LaunchDialog};
 use crate::work::conflicts::{ConflictReport, IssueWithFiles, predict_conflicts};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -29,6 +31,9 @@ pub struct QueueConfirmationScreen {
     /// kept in lock-step with `entries` so removing an entry drops its config
     /// too. Returned verbatim on confirm — nothing the user chose is lost.
     configs: Vec<SessionConfig>,
+    /// Milestones `R` (#1269): the Run queue over a `RunPlan`. When set, it
+    /// takes every key and draws the screen.
+    run: Option<RunQueue>,
 }
 
 impl QueueConfirmationScreen {
@@ -68,6 +73,7 @@ impl QueueConfirmationScreen {
             selected: 0,
             scroll_offset: 0,
             configs,
+            run: None,
         }
     }
 
@@ -97,6 +103,32 @@ impl QueueConfirmationScreen {
             selected: 0,
             scroll_offset: 0,
             configs: kept,
+            run: None,
+        }
+    }
+
+    /// The Run queue for a milestone's plan (#1269).
+    pub fn from_run(run: RunQueue) -> Self {
+        let mut screen = Self::from_session_configs(Vec::new(), predict_conflicts(&[]));
+        screen.run = Some(run);
+        screen
+    }
+
+    /// The Run queue, when this screen holds one.
+    pub fn run_queue(&self) -> Option<&RunQueue> {
+        self.run.as_ref()
+    }
+
+    /// The open launch dialog of the Run queue.
+    pub fn launch_dialog(&self) -> Option<&LaunchDialog> {
+        self.run.as_ref()?.launch_dialog.as_ref()
+    }
+
+    /// The spend the Run queue's launch dialog states; `ui.rs` feeds it
+    /// every frame.
+    pub fn set_launch_budget(&mut self, budget: LaunchBudget) {
+        if let Some(run) = self.run.as_mut() {
+            run.set_launch_budget(budget);
         }
     }
 
@@ -267,6 +299,9 @@ impl QueueConfirmationScreen {
 
 impl Screen for QueueConfirmationScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Some(run) = self.run.as_mut() {
+            return run.handle_input(event);
+        }
         if let Event::Key(KeyEvent {
             code,
             kind: KeyEventKind::Press,
@@ -310,10 +345,17 @@ impl Screen for QueueConfirmationScreen {
     }
 
     fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        if let Some(run) = self.run.as_ref() {
+            return run.footer_hints();
+        }
         vec![("Enter", "Confirm"), ("d", "Remove"), ("Esc", "Cancel")]
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        if let Some(run) = self.run.as_ref() {
+            run.draw(f, area, theme, crate::tui::icons::use_nerd_font());
+            return;
+        }
         let has_warnings = !self.conflict_report.is_safe;
         let conflict_height = if has_warnings { 8 } else { 3 };
 
@@ -327,12 +369,31 @@ impl Screen for QueueConfirmationScreen {
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {
+        // The launch dialog's instructions are a text field.
+        if self.launch_dialog().is_some() {
+            return Some(InputMode::Insert);
+        }
         Some(InputMode::Normal)
     }
 }
 
 impl KeymapProvider for QueueConfirmationScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        if self.run.is_some() {
+            return vec![KeyBindingGroup {
+                title: "Run queue",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Review launch (opens the launch dialog)",
+                    },
+                    KeyBinding {
+                        key: "Esc",
+                        description: "Back to Milestones, nothing launched",
+                    },
+                ],
+            }];
+        }
         vec![
             KeyBindingGroup {
                 title: "Navigation",

@@ -19,6 +19,8 @@ pub mod issue_wizard;
 pub mod landing;
 pub mod milestone;
 pub mod milestone_health;
+pub mod milestone_plan;
+pub mod milestone_rows;
 pub mod milestone_wizard;
 pub mod pr_review;
 pub mod prd;
@@ -29,6 +31,7 @@ pub mod queue_confirmation;
 pub mod release_notes;
 pub mod roadmap;
 pub mod roadmap_dispatch;
+pub mod run_queue;
 pub mod sanitize;
 pub mod settings;
 pub mod team_wizard;
@@ -142,6 +145,9 @@ pub enum ScreenAction {
         input: crate::orchestration::types::TeamInput,
         max_parallel: usize,
     },
+    /// Plan a run of this milestone and open the Run queue (#1269).
+    /// Nothing spawns: the Run queue's launch dialog is the only spend step.
+    PlanRun { milestone: u64 },
     /// Launch a sequential queue execution from confirmed queue.
     LaunchQueue(Vec<SessionConfig>),
     /// Launch a conflict-fix session for a PR with merge conflicts.

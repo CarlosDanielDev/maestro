@@ -1,13 +1,15 @@
-use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
+use super::milestone_plan::{IssueReadiness, MilestonePlan, plan_milestone};
+use super::milestone_rows as rows;
+use super::{Screen, ScreenAction, sanitize_for_terminal};
 use crate::provider::types::{Issue, Milestone};
 use crate::tui::app::TuiMode;
 use crate::tui::ds::fit::ellipsize_line;
+use crate::tui::ds::md_block::md_block;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
-use crate::tui::panels::compact_gauge_bar_counts;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::{BrailleSpinner, focused_selection_style};
+use crate::tui::widgets::BrailleSpinner;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
@@ -16,7 +18,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -79,6 +80,9 @@ impl MilestoneTab {
 
 pub struct MilestoneScreen {
     pub(crate) milestones: Vec<MilestoneEntry>,
+    /// One plan per milestone (#1269), computed once per fetch. `None` when
+    /// the milestone's graph has a cycle.
+    plans: Vec<Option<MilestonePlan>>,
     pub(crate) selected: usize,
     scroll_offset: usize,
     pub(crate) loading: bool,
@@ -95,8 +99,9 @@ pub struct MilestoneScreen {
 
 impl MilestoneScreen {
     pub fn new(milestones: Vec<MilestoneEntry>) -> Self {
-        Self {
-            milestones,
+        let mut screen = Self {
+            milestones: Vec::new(),
+            plans: Vec::new(),
             selected: 0,
             scroll_offset: 0,
             loading: false,
@@ -105,7 +110,34 @@ impl MilestoneScreen {
             focused_issue: 0,
             spinner_tick: 0,
             reload_requested: false,
-        }
+        };
+        screen.set_milestones(milestones, 0.0);
+        screen
+    }
+
+    /// Replace the milestones and plan each one (#1269). Blockers are looked
+    /// up across every milestone; `per_session_cap_usd` prices the worst case.
+    pub fn set_milestones(&mut self, milestones: Vec<MilestoneEntry>, per_session_cap_usd: f64) {
+        let known: Vec<&Issue> = milestones.iter().flat_map(|m| m.issues.iter()).collect();
+        let none = std::collections::HashSet::new();
+        self.plans = milestones
+            .iter()
+            .map(|m| {
+                plan_milestone(&m.issues, known.iter().copied(), &none, per_session_cap_usd).ok()
+            })
+            .collect();
+        self.milestones = milestones;
+        self.selected = self.selected.min(self.milestones.len().saturating_sub(1));
+    }
+
+    /// START of milestone `i`: open issues with no open blocker and no
+    /// claim. `None` when its plan failed.
+    pub fn start_count(&self, i: usize) -> Option<usize> {
+        self.plans.get(i)?.as_ref().map(MilestonePlan::start_count)
+    }
+
+    fn selected_plan(&self) -> Option<&MilestonePlan> {
+        self.plans.get(self.selected)?.as_ref()
     }
 
     /// True once after `r` asked for a reload (#1265).
@@ -127,21 +159,54 @@ impl MilestoneScreen {
         self.active_tab = tab;
     }
 
-    /// Issues for the selected milestone, sorted ascending by the count of
-    /// `#NNN` references inside their `## Blocked By` section. Issues with
-    /// no parsed dependencies sort first (Level 0). Ties break on issue
-    /// number ascending.
+    /// Issues of the selected milestone in plan order (#1269): each wave of
+    /// `work::run_plan`, then the held issues, then the closed ones. Without
+    /// a plan (cycle), by issue number.
     pub fn sorted_issues(&self) -> Vec<&Issue> {
         let Some(entry) = self.milestones.get(self.selected) else {
             return Vec::new();
         };
-        let mut with_levels: Vec<(usize, &Issue)> = entry
-            .issues
+        let Some(plan) = self.selected_plan() else {
+            let mut all: Vec<&Issue> = entry.issues.iter().collect();
+            all.sort_by_key(|i| i.number);
+            return all;
+        };
+        let by_number = |n: &u64| entry.issues.iter().find(|i| i.number == *n);
+        let mut out: Vec<&Issue> = plan
+            .plan
+            .waves
             .iter()
-            .map(|i| (count_blocked_by(&i.body), i))
+            .flatten()
+            .filter_map(by_number)
             .collect();
-        with_levels.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.number.cmp(&b.1.number)));
-        with_levels.into_iter().map(|(_, i)| i).collect()
+        out.extend(plan.plan.deferred.iter().filter_map(|(n, _)| by_number(n)));
+        let mut closed: Vec<&Issue> = (entry.issues.iter())
+            .filter(|i| plan.readiness(i.number) == IssueReadiness::Closed)
+            .collect();
+        closed.sort_by_key(|i| i.number);
+        out.extend(closed);
+        out
+    }
+
+    /// The plan level of each sorted issue: wave index, `waves.len()` for
+    /// held, one more for closed. Same order as [`Self::sorted_issues`].
+    fn sorted_levels(&self) -> Vec<(usize, &Issue)> {
+        let Some(plan) = self.selected_plan() else {
+            return self.sorted_issues().into_iter().map(|i| (0, i)).collect();
+        };
+        let waves = plan.plan.waves.len();
+        self.sorted_issues()
+            .into_iter()
+            .map(|i| {
+                let level = match plan.readiness(i.number) {
+                    IssueReadiness::Closed => waves + 1,
+                    _ => (plan.plan.waves.iter())
+                        .position(|w| w.contains(&i.number))
+                        .unwrap_or(waves),
+                };
+                (level, i)
+            })
+            .collect()
     }
 
     fn focused_issue_clamped(&self) -> usize {
@@ -153,7 +218,8 @@ impl MilestoneScreen {
         }
     }
 
-    fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+    /// Draw with the icon mode passed in (tests pin it).
+    pub(crate) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
         // #325 compact layout: left = milestone list, right = tabbed
         // (issue list / preview). Key hints live in the footer (#1258).
         let body = Layout::default()
@@ -161,19 +227,19 @@ impl MilestoneScreen {
             .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(area);
 
-        self.draw_milestone_list(f, body[0], theme);
-        self.draw_right_pane(f, body[1], theme);
+        self.draw_milestone_list(f, body[0], theme, nerd);
+        self.draw_right_pane(f, body[1], theme, nerd);
     }
 
-    fn draw_right_pane(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn draw_right_pane(&self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(area);
         self.draw_tab_bar(f, chunks[0], theme);
         match self.active_tab {
-            MilestoneTab::IssueList => self.draw_tab_issue_list(f, chunks[1], theme),
-            MilestoneTab::IssuePreview => self.draw_tab_issue_preview(f, chunks[1], theme),
+            MilestoneTab::IssueList => self.draw_tab_issue_list(f, chunks[1], theme, nerd),
+            MilestoneTab::IssuePreview => self.draw_tab_issue_preview(f, chunks[1], theme, nerd),
         }
     }
 
@@ -196,13 +262,17 @@ impl MilestoneScreen {
         f.render_widget(Paragraph::new(line), area);
     }
 
-    fn draw_tab_issue_list(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Issues", false);
+    fn draw_tab_issue_list(&self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
+        let title = self
+            .milestones
+            .get(self.selected)
+            .map_or_else(|| "Issues".to_string(), |e| sanitize_for_terminal(&e.title));
+        let block = theme.styled_block(&title, false);
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let issues = self.sorted_issues();
-        if issues.is_empty() {
+        let levels = self.sorted_levels();
+        if levels.is_empty() {
             let msg = if let Some(entry) = self.milestones.get(self.selected) {
                 format!("  {} — no issues loaded", entry.title)
             } else {
@@ -214,56 +284,61 @@ impl MilestoneScreen {
             );
             return;
         }
+        let Some(plan) = self.selected_plan() else {
+            f.render_widget(
+                Paragraph::new("  ! dependency cycle in Blocked By: fix it in Milestone review")
+                    .style(Style::default().fg(theme.accent_warning)),
+                inner,
+            );
+            return;
+        };
 
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(inner);
+        let width = chunks[0].width as usize;
+        let issues: Vec<&Issue> = levels.iter().map(|(_, i)| *i).collect();
         let focused = self.focused_issue_clamped();
-        let lines: Vec<Line> = issues
-            .iter()
-            .take(inner.height as usize)
-            .enumerate()
-            .map(|(i, issue)| {
-                let is_focused = i == focused;
-                let (symbol, symbol_color) = if issue.state == "closed" {
-                    (icons::get(IconId::IssueClosed), theme.accent_success)
-                } else {
-                    (icons::get(IconId::IssueOpened), theme.accent_warning)
+        let mut lines = vec![rows::summary(plan, &issues, theme, nerd)];
+        let mut focused_line = 0;
+        let mut level = usize::MAX;
+        let waves = plan.plan.waves.len();
+        for (i, (l, issue)) in levels.iter().enumerate() {
+            if *l != level {
+                level = *l;
+                let label = match level {
+                    l if l < waves => format!(" LEVEL {l}"),
+                    l if l == waves => " HELD".to_string(),
+                    _ => " CLOSED".to_string(),
                 };
-                let cursor = if is_focused { ">" } else { " " };
-                let row_style = if is_focused {
-                    focused_selection_style(theme)
-                } else {
-                    Style::default().fg(theme.text_secondary)
-                };
-                let issue_style = if is_focused {
-                    focused_selection_style(theme)
-                } else {
+                lines.push(Line::from(Span::styled(
+                    label,
                     Style::default()
-                        .fg(theme.accent_identifier)
-                        .add_modifier(Modifier::BOLD)
-                };
-                let symbol_style = if is_focused {
-                    focused_selection_style(theme)
-                } else {
-                    Style::default().fg(symbol_color)
-                };
-                let prefix = format!("{} {} #{} ", cursor, symbol, issue.number);
-                let title_width = inner.width.saturating_sub(prefix.width() as u16) as usize;
-                let mut title = sanitize_for_terminal(&issue.title);
-                let current_width = UnicodeWidthStr::width(title.as_str());
-                if is_focused && current_width < title_width {
-                    title.push_str(&" ".repeat(title_width - current_width));
-                }
-                Line::from(vec![
-                    Span::styled(format!("{} ", cursor), row_style),
-                    Span::styled(format!("{} ", symbol), symbol_style),
-                    Span::styled(format!("#{} ", issue.number), issue_style),
-                    Span::styled(title, row_style),
-                ])
-            })
+                        .fg(theme.text_secondary)
+                        .add_modifier(Modifier::BOLD),
+                )));
+            }
+            if i == focused {
+                focused_line = lines.len();
+            }
+            let r = plan.readiness(issue.number);
+            lines.push(rows::issue_row(issue, r, width, i == focused, theme, nerd));
+        }
+        let height = chunks[0].height as usize;
+        let skip = (focused_line + 1).saturating_sub(height);
+        let lines: Vec<Line> = (lines.into_iter().skip(skip).take(height))
+            .map(|l| ellipsize_line(l, width))
             .collect();
-        f.render_widget(Paragraph::new(lines), inner);
+        f.render_widget(Paragraph::new(lines), chunks[0]);
+        let card: Vec<Line> = rows::run_card(plan, theme)
+            .into_iter()
+            .map(|l| ellipsize_line(l, width))
+            .collect();
+        f.render_widget(Paragraph::new(card), chunks[1]);
     }
 
-    fn draw_tab_issue_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn draw_tab_issue_preview(&self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
         let block = theme.styled_block("Preview", false);
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -292,15 +367,45 @@ impl MilestoneScreen {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
         ]));
+        lines.push(self.facts_line(issue, theme, nerd));
         lines.push(Line::from(""));
-        for raw in issue
-            .body
-            .lines()
-            .take(inner.height.saturating_sub(2) as usize)
-        {
-            lines.push(Line::from(sanitize_for_terminal(raw)));
+        let body = md_block(&sanitize_for_terminal(&issue.body), theme, inner.width);
+        lines.extend(body.lines);
+        f.render_widget(
+            Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }),
+            inner,
+        );
+    }
+
+    /// `○ ready · level 0 · blocked by #10, #11 · 3 files`.
+    fn facts_line(&self, issue: &Issue, theme: &Theme, nerd: bool) -> Line<'static> {
+        let mut facts = Vec::new();
+        if let Some(plan) = self.selected_plan() {
+            facts.push(rows::readiness_chip(plan.readiness(issue.number), nerd));
+            if let Some(l) = plan
+                .plan
+                .waves
+                .iter()
+                .position(|w| w.contains(&issue.number))
+            {
+                facts.push(format!("level {l}"));
+            }
         }
-        f.render_widget(Paragraph::new(lines), inner);
+        let by = crate::orchestration::dag::parse_blocked_by(&issue.body);
+        if !by.is_empty() {
+            let refs: Vec<String> = by.iter().map(|n| format!("#{n}")).collect();
+            facts.push(format!("blocked by {}", refs.join(", ")));
+        }
+        facts.push(
+            match crate::work::conflicts::files_to_modify_from_body(&issue.body) {
+                Some(files) => format!("{} files", files.len()),
+                None => "! no files listed".to_string(),
+            },
+        );
+        Line::from(Span::styled(
+            facts.join(" · "),
+            Style::default().fg(theme.text_secondary),
+        ))
     }
 
     #[allow(dead_code)]
@@ -335,33 +440,24 @@ impl MilestoneScreen {
         }
     }
 
-    fn handle_run_all(&self) -> ScreenAction {
-        if let Some(entry) = self.milestones.get(self.selected) {
-            if entry.issues.is_empty() {
-                return ScreenAction::None;
+    /// `R` (#1269): open the Run queue for the selected milestone. It never
+    /// spawns; the Run queue's launch dialog is the only spend step.
+    fn handle_plan_run(&self) -> ScreenAction {
+        match self.milestones.get(self.selected) {
+            Some(entry) if entry.issues.iter().any(|i| i.state == "open") => {
+                ScreenAction::PlanRun {
+                    milestone: entry.number,
+                }
             }
-            let configs: Vec<SessionConfig> = entry
-                .issues
-                .iter()
-                .filter(|i| i.state == "open")
-                .map(|i| SessionConfig {
-                    issue_number: Some(i.number),
-                    title: i.title.clone(),
-                    custom_prompt: None,
-                    agent_id: None,
-                    ..SessionConfig::default()
-                })
-                .collect();
-            if configs.is_empty() {
-                return ScreenAction::None;
-            }
-            return ScreenAction::LaunchSessions(configs);
+            _ => ScreenAction::None,
         }
-        ScreenAction::None
     }
 
-    fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let title = format!("{} Milestones", icons::get(IconId::Milestone));
+    fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme, nerd: bool) {
+        let title = format!(
+            "{} Milestones",
+            icons::get_for_mode(IconId::Milestone, nerd)
+        );
         let block = theme
             .styled_block(&title, false)
             .border_style(Style::default().fg(theme.border_active));
@@ -390,111 +486,21 @@ impl MilestoneScreen {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let visible_slots = (inner.height as usize) / 3;
+        // One row per milestone (#1269); the last row is the legend.
+        let visible_slots = (inner.height as usize).saturating_sub(1);
         self.last_visible_slots = visible_slots.max(1);
-        let milestones_to_show: Vec<(usize, &MilestoneEntry)> = self
-            .milestones
-            .iter()
-            .enumerate()
+        let width = inner.width as usize;
+        let mut lines: Vec<Line> = (self.milestones.iter().enumerate())
             .skip(self.scroll_offset)
             .take(visible_slots)
+            .map(|(idx, entry)| {
+                let ready = self.start_count(idx);
+                rows::milestone_row(entry, ready, width, idx == self.selected, theme, nerd)
+            })
             .collect();
-
-        for (display_idx, (idx, entry)) in milestones_to_show.iter().enumerate() {
-            let y = inner.y + (display_idx * 3) as u16;
-            if y + 2 >= inner.y + inner.height {
-                break;
-            }
-
-            let is_selected = *idx == self.selected;
-            let cursor = if is_selected {
-                format!("{} ", icons::get(IconId::ChevronRight))
-            } else {
-                "  ".to_string()
-            };
-
-            let title_style = if is_selected {
-                focused_selection_style(theme)
-            } else {
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD)
-            };
-
-            let prefix = format!("{}{} ", cursor, icons::get(IconId::Milestone));
-            let title_width = inner.width.saturating_sub(prefix.width() as u16) as usize;
-            let mut title = sanitize_for_terminal(&entry.title);
-            let current_width = UnicodeWidthStr::width(title.as_str());
-            if is_selected && current_width < title_width {
-                title.push_str(&" ".repeat(title_width - current_width));
-            }
-
-            let title_line = Line::from(vec![
-                Span::styled(cursor, title_style),
-                Span::styled(format!("{} ", icons::get(IconId::Milestone)), title_style),
-                Span::styled(title, title_style),
-            ]);
-            let title_area = Rect::new(inner.x, y, inner.width, 1);
-            f.render_widget(
-                Paragraph::new(ellipsize_line(title_line, inner.width as usize)),
-                title_area,
-            );
-
-            let ratio = entry.progress_ratio();
-            let pct = ratio * 100.0;
-            let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
-            let label = format!(
-                "] {}/{} issues ({:.0}%)",
-                entry.closed_issues,
-                entry.total_issues(),
-                pct
-            );
-            // The bar takes what the `[` and the label leave, so the label
-            // is never cut (#1399).
-            let bar_width = (gauge_area.width as usize).saturating_sub(1 + label.width());
-            let (filled, empty) = compact_gauge_bar_counts(pct, bar_width);
-            let gauge_color = theme.milestone_gauge_color(pct);
-            let gauge_line = Line::from(vec![
-                Span::styled("[", Style::default().fg(gauge_color)),
-                Span::styled(
-                    icons::get(IconId::GaugeFilled).repeat(filled),
-                    Style::default().fg(gauge_color),
-                ),
-                Span::styled(
-                    icons::get(IconId::GaugeEmpty).repeat(empty),
-                    Style::default().fg(theme.gauge_background),
-                ),
-                Span::styled(label, Style::default().fg(gauge_color)),
-            ]);
-            f.render_widget(
-                Paragraph::new(ellipsize_line(gauge_line, gauge_area.width as usize)),
-                gauge_area,
-            );
-
-            let status_line = Line::from(vec![
-                Span::styled(
-                    format!("  {} ", icons::get(IconId::IssueClosed)),
-                    Style::default().fg(theme.accent_success),
-                ),
-                Span::styled(
-                    entry.closed_issues.to_string(),
-                    Style::default()
-                        .fg(theme.accent_success)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("    "),
-                Span::styled(
-                    format!("{} ", icons::get(IconId::IssueOpened)),
-                    Style::default().fg(theme.accent_warning),
-                ),
-                Span::styled(
-                    entry.open_issues.to_string(),
-                    Style::default().fg(theme.accent_warning),
-                ),
-            ]);
-            let status_area = Rect::new(inner.x, y + 2, inner.width, 1);
-            f.render_widget(Paragraph::new(status_line), status_area);
-        }
+        lines.resize(visible_slots, Line::from(""));
+        lines.push(rows::legend(theme, width));
+        f.render_widget(Paragraph::new(lines), inner);
     }
 }
 
@@ -765,7 +771,7 @@ impl Screen for MilestoneScreen {
                     self.reload_requested = true;
                 }
                 KeyCode::Char('R') => {
-                    return self.handle_run_all();
+                    return self.handle_plan_run();
                 }
                 KeyCode::Char('c') => {
                     return self.handle_create_issue();
@@ -797,7 +803,7 @@ impl Screen for MilestoneScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        self.draw_impl(f, area, theme);
+        self.draw_impl(f, area, theme, icons::use_nerd_font());
     }
 
     fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
@@ -805,7 +811,7 @@ impl Screen for MilestoneScreen {
             ("Enter", "View Issues"),
             ("Tab", "Switch Tab"),
             ("r", "Reload"),
-            ("R", "Run All"),
+            ("R", "Plan run"),
             ("Esc", "Back"),
         ]
     }
@@ -1133,16 +1139,12 @@ mod tests {
     }
 
     #[test]
-    fn milestone_screen_key_shift_r_on_milestone_returns_launch_sessions_for_all_open_issues() {
+    fn milestone_screen_key_shift_r_on_milestone_plans_the_run() {
+        // #1269: `R` plans the run (Run queue); it never spawns directly.
         let issues = vec![make_issue(10), make_issue(11)];
         let mut screen = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
         let action = screen.handle_input(&key_event(KeyCode::Char('R')), InputMode::Normal);
-        match action {
-            ScreenAction::LaunchSessions(configs) => {
-                assert_eq!(configs.len(), 2);
-            }
-            other => panic!("Expected LaunchSessions, got {:?}", other),
-        }
+        assert_eq!(action, ScreenAction::PlanRun { milestone: 1 });
     }
 
     #[test]

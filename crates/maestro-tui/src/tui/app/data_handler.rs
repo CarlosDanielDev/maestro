@@ -186,8 +186,18 @@ impl App {
                         self.pending_commands.push(cmd);
                     }
                 }
+                // #1269: every fetched issue enters the cache, so the Run
+                // queue and the queue review read real bodies (file scope,
+                // Blocked By) instead of "unknown scope".
+                for issue in entries.iter().flat_map(|(_, issues)| issues) {
+                    self.state.issue_cache.insert(issue.number, issue.clone());
+                }
                 if let Some(ref mut screen) = self.screen_state.milestone_screen {
-                    screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
+                    let cap = (self.config.as_ref()).map_or(0.0, |c| c.budget.per_session_usd);
+                    screen.set_milestones(
+                        entries.into_iter().map(MilestoneEntry::from).collect(),
+                        cap,
+                    );
                     screen.loading = false;
                 }
             }

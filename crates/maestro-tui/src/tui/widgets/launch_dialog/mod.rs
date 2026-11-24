@@ -173,6 +173,28 @@ impl LaunchDialog {
         self.editor.text()
     }
 
+    /// The footer hints while the dialog is open (Issues, Run queue).
+    pub fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        if self.is_multi() {
+            vec![
+                ("Enter", "Launch all"),
+                ("Tab", "Instructions/Mode"),
+                ("↑/↓", "Mode"),
+                ("Ctrl+U", "Unified PR"),
+                ("Shift+Enter", "New line"),
+                ("Esc", "Cancel"),
+            ]
+        } else {
+            vec![
+                ("Enter", "Launch"),
+                ("Tab", "Instructions/Mode"),
+                ("↑/↓", "Mode"),
+                ("Shift+Enter", "New line"),
+                ("Esc", "Cancel"),
+            ]
+        }
+    }
+
     pub fn is_multi(&self) -> bool {
         self.selected_issues.len() > 1
     }

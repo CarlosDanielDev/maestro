@@ -296,7 +296,8 @@ fn help_never_gives_one_key_two_actions() {
 }
 
 /// #1265: the ⌃K row says where the retired globals went and where
-/// TurboQuant is switched on and off; Milestones `R` says when it asks.
+/// TurboQuant is switched on and off; Milestones `R` says it only plans
+/// (#1269).
 #[test]
 fn help_rows_say_what_is_true() {
     let km = mode_keymap(TuiMode::MilestoneView, None, &[], false);
@@ -309,5 +310,5 @@ fn help_rows_say_what_is_true() {
     };
     assert!(row("⌃K").contains("TurboQuant"), "{}", row("⌃K"));
     assert!(row("⌃K").contains("on/off in Settings"), "{}", row("⌃K"));
-    assert!(row("R").contains("asks first for 2+"), "{}", row("R"));
+    assert!(row("R").contains("launches nothing"), "{}", row("R"));
 }
