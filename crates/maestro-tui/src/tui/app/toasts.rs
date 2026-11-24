@@ -33,7 +33,13 @@ impl App {
 
     /// `Esc`: dismiss the visible sticky error toast. `false` when none.
     pub(crate) fn toast_esc(&mut self, now: Instant) -> bool {
-        self.copy_toast.is_none() && self.toasts.dismiss_error(now)
+        let shown = (self.toasts.visible(now)).map(|v| v.message.to_string());
+        let dismissed = self.copy_toast.is_none() && self.toasts.dismiss_error(now);
+        // #1292: a dismissed conflict toast's keys go with it.
+        if let (true, Some(message)) = (dismissed, shown) {
+            self.forget_conflict_prompt(&message);
+        }
+        dismissed
     }
 }
 

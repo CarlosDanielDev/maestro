@@ -1,4 +1,5 @@
-//! Per-role color, abbreviation, and 6×6 sprite for agent-graph nodes.
+//! Per-role color, abbreviation, and 6×6 sprite (the Files lens detail
+//! card on Wide, #1292; the colour and chip glyph in the activity log).
 //!
 //! See `docs/adr/002-agent-personalities.md` for the design rationale
 //! (§ Sprite Design Language, § Role Taxonomy, § ASCII Fallback).

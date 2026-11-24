@@ -71,8 +71,6 @@ pub(super) fn blocks() -> Vec<Binding> {
     v.push(s(full, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     let events = Scope::Screen(TuiMode::CallLog(uuid::Uuid::nil()));
     v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
-    let graph = Scope::Screen(TuiMode::AgentGraph);
-    v.push(s(graph, ch('g'), A::TogglePanels, "Panels").hidden());
     // #1265: `r` reloads here as on every other screen. #1269: `R` only
     // opens the Run queue (the plan); spawning needs ⏎ in its launch dialog.
     // The footer stays `MilestoneScreen::footer_hints`.
@@ -82,6 +80,19 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(milestones, ch('R'), A::RunAll, "plan run")
             .exception("uppercase keeps the plan off the `r` reload reflex"),
     ]);
+    // #1292: the conflict toast's keys, on the seven tab screens (where
+    // `App::conflict_toast_key` acts, only while the toast is visible).
+    // Pausing is undone with ⌃Z, so it is Safe. Hidden: the palette would
+    // list them where they do nothing; Help and the footer show them.
+    for (_, _, tab) in crate::tui::ds::tab_bar::TABS {
+        for (c, action, label) in [
+            ('p', A::PauseOther, "pause the other agent (conflict toast)"),
+            ('o', A::ShowFile, "show the conflict file (conflict toast)"),
+        ] {
+            let scope = Scope::Screen(tab);
+            v.push(Binding::new(Chord::ctrl(c), scope, action, Danger::Safe, label).hidden());
+        }
+    }
     // #1280: the Dashboard cockpit (`screens::dashboard::dispatch`). Its
     // launcher letters are `HomeScreen` keys; Help lists them from
     // `QUICK_ACTIONS`. `⏎` on a pending PR row arms, a second `⏎` writes.
@@ -108,6 +119,23 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(dash, ch('o'), A::Expand, "Ops view").hidden(),
         s(dash, ch('c'), A::Expand, "Cost view").hidden(),
         s(dash, ch('t'), A::Expand, "Tokens view").hidden(),
+        // #1292: `g` opens Deps, `g` again switches issues ⇄ files. The
+        // lens keys (`← →` columns) are drawn in its own footer.
+        s(dash, ch('g'), A::Expand, "Deps view · lens").hidden(),
+        s(
+            dash,
+            Chord::key(KeyCode::Left),
+            A::Expand,
+            "Deps: agents column",
+        )
+        .hidden(),
+        s(
+            dash,
+            Chord::key(KeyCode::Right),
+            A::Expand,
+            "Deps: files column",
+        )
+        .hidden(),
     ]);
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
@@ -196,7 +224,7 @@ pub(super) fn blocks() -> Vec<Binding> {
 /// `P` (#1265); `CompleteModal` opens Settings (Theme › `modal_on_complete`).
 /// `PrPipeline` (#1280) opens the Dashboard on its first pending PR row,
 /// where ⏎ ⏎ retries; it writes nothing itself. `AgentGraph` (#1280) was
-/// Overview's `g`.
+/// Overview's `g`; since #1292 it opens Dashboard › Deps › files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
@@ -230,5 +258,9 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
         PaletteCommand::PrPipeline,
         None,
     ),
-    ("agent graph", PaletteCommand::AgentGraph, None),
+    (
+        "agent graph (Deps › files)",
+        PaletteCommand::AgentGraph,
+        None,
+    ),
 ];

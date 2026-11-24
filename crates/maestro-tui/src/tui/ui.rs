@@ -4,7 +4,6 @@ use crate::mascot::animator::SystemClock;
 use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
 use crate::tui::activity_log::LogLevel;
-use crate::tui::agent_graph;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::dep_graph;
 use crate::tui::ds::toast::{Severity, Toast};
@@ -294,36 +293,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &app.theme,
             );
         }
-        TuiMode::AgentGraph => {
-            // Canonical render-time gate; see TuiMode::AgentGraph docs.
-            let sessions = app.pool.all_sessions();
-            if app.is_agent_graph_enabled() {
-                let (nodes, edges) = agent_graph::model::build_graph(&sessions);
-                agent_graph::render::draw_agent_graph(
-                    f,
-                    chunks[1],
-                    &nodes,
-                    &edges,
-                    agent_graph::render::GraphRenderOptions {
-                        use_nerd_font: crate::icon_mode::use_nerd_font(),
-                        tick: spinner_tick,
-                        sessions: &sessions,
-                        theme: &theme,
-                    },
-                );
-            } else {
-                app.panel_view.draw_with_claims(
-                    f,
-                    &sessions,
-                    Some(&app.pool.file_claims),
-                    chunks[1],
-                    &theme,
-                    spinner_tick,
-                );
-            }
-        }
-        // `route_overview_alias` turned the Usage aliases into Dashboard.
-        TuiMode::Dashboard | TuiMode::CostDashboard | TuiMode::TokenDashboard => {
+        // `route_overview_alias` turned the Usage aliases (and #1292's
+        // Agent graph) into Dashboard.
+        TuiMode::Dashboard
+        | TuiMode::CostDashboard
+        | TuiMode::TokenDashboard
+        | TuiMode::AgentGraph => {
             draw_dashboard(f, app, chunks[1], &theme);
         }
         TuiMode::Landing => draw_home(f, app, chunks[1], &theme),

@@ -358,19 +358,20 @@ impl ManagedSession {
         Ok(())
     }
 
-    /// Send SIGSTOP to pause.
+    /// Send SIGSTOP to pause. `Err` when the signal was not delivered
+    /// (e.g. ESRCH: the child already exited), so a caller that cares
+    /// (#1292, the conflict toast's `p`) never records a Paused session
+    /// whose process still runs. Older callers ignore the result.
     #[cfg(unix)]
     pub fn pause(&self) -> Result<()> {
         if let Some(pid) = self.session.pid {
             // SAFETY: libc::kill is an FFI call; the pid comes from a session
             // we spawned (stored in self.session.pid). Passing SIGSTOP is
-            // side-effect-only and cannot cause UB in this process. Return
-            // value is intentionally ignored — a kill error (e.g. ESRCH for a
-            // child that already exited) is handled by the caller via the
-            // subsequent state transition, not by unwinding here.
+            // side-effect-only and cannot cause UB in this process.
             #[allow(unsafe_code)]
-            unsafe {
-                libc::kill(pid as i32, libc::SIGSTOP);
+            let rc = unsafe { libc::kill(pid as i32, libc::SIGSTOP) };
+            if rc != 0 {
+                anyhow::bail!("SIGSTOP failed: {}", std::io::Error::last_os_error());
             }
         }
         Ok(())

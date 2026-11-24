@@ -1,8 +1,5 @@
 mod activity_log_dispatch;
-mod agent_graph;
-mod agent_graph_dispatcher;
 mod agent_graph_keybinding_hint;
-mod agent_personalities;
 mod budget_banner;
 mod budget_prespawn;
 mod call_log;
@@ -16,6 +13,7 @@ mod dashboard;
 mod dashboard_cockpit;
 mod dep_graph;
 mod detail;
+mod files_lens;
 mod fullscreen;
 mod gh_auth_expired;
 mod home_insight;

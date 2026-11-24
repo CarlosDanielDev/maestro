@@ -39,6 +39,10 @@ impl App {
         let path = key.as_str();
         let result = self.pool.file_claims.claim(path, session_id);
         if let ClaimResult::Conflict { owner } = result {
+            // #1292: the toast is for a NEW conflict; later edits of the
+            // same file by the same agent only log.
+            let first = !(self.pool.file_claims.conflict_history().iter())
+                .any(|c| c.file_path == path && c.offender_session_id == session_id);
             let label = format!("S-{}", &session_id.to_string()[..8]);
             let owner_short = &owner.to_string()[..8];
 
@@ -72,6 +76,11 @@ impl App {
                 .as_ref()
                 .map(|c| c.sessions.conflict.policy)
                 .unwrap_or(ConflictPolicy::Warn);
+
+            // #1292: the visible signal; the log line above stays.
+            if first {
+                self.raise_conflict_toast(path, owner, session_id, policy);
+            }
 
             match policy {
                 ConflictPolicy::Warn => {}
@@ -146,3 +155,7 @@ impl App {
 #[cfg(test)]
 #[path = "claim_conflicts_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "conflict_toast_tests.rs"]
+mod conflict_toast_tests;

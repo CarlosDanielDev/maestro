@@ -120,53 +120,42 @@ async fn fullscreen_k_scrolls() {
     }
 }
 
+/// #1292: the Agent graph half of this guard moved to the Files lens of
+/// Dashboard Deps (`screens/dashboard/deps_tests.rs`,
+/// `deps_files_lens_keys_do_not_fall_through`).
 #[tokio::test]
 async fn fullscreen_and_graph_keys_do_not_fall_through() {
-    for graph in [false, true] {
-        let (mut app, b) = app_on_202();
-        let mode = if graph {
-            TuiMode::AgentGraph
-        } else {
-            TuiMode::Fullscreen(b)
-        };
-        app.tui_mode = mode;
-        let before = app.pool.all_sessions().len();
-        // `d` and Enter are Overview keys too: they prove the fall-through
-        // is closed even where `p` / `r` have no visible effect in a test.
-        // #1288: on Output `d` is the strip's Detail key, checked below.
-        let keys: &[char] = if graph {
-            &['p', 'k', 'r', 'D', 'd']
-        } else {
-            &['p', 'k', 'r', 'D']
-        };
-        for code in keys
-            .iter()
-            .map(|&c| KeyCode::Char(c))
-            .chain([KeyCode::Enter])
-        {
-            press(&mut app, code).await;
-            assert_eq!(app.tui_mode, mode, "{code:?} left {mode:?}");
-            let out = draw(&mut app, 80, 24);
-            assert!(!out.contains("Type 101"), "{code:?}: kill dialog:\n{out}");
-        }
-        assert_eq!(
-            app.pool.all_sessions().len(),
-            before,
-            "{mode:?}: D dismissed"
-        );
-        assert!(!app.show_activity_log, "{mode:?}: d toggled the log");
-        if !graph {
-            press(&mut app, KeyCode::Char('d')).await;
-            assert_eq!(app.tui_mode, TuiMode::Detail(b), "d opens Detail");
-            assert!(!app.show_activity_log, "d toggled the log");
-            app.tui_mode = mode;
-        }
-        let actions = actions_on(registry(), mode);
-        assert!(
-            actions.iter().all(|b| b.action != Action::Kill),
-            "{mode:?}: the palette offers kill"
-        );
+    let (mut app, b) = app_on_202();
+    let mode = TuiMode::Fullscreen(b);
+    app.tui_mode = mode;
+    let before = app.pool.all_sessions().len();
+    // Enter is an Overview key too: it proves the fall-through is closed
+    // even where `p` / `r` have no visible effect in a test.
+    // #1288: on Output `d` is the strip's Detail key, checked below.
+    for code in ['p', 'k', 'r', 'D']
+        .iter()
+        .map(|&c| KeyCode::Char(c))
+        .chain([KeyCode::Enter])
+    {
+        press(&mut app, code).await;
+        assert_eq!(app.tui_mode, mode, "{code:?} left {mode:?}");
+        let out = draw(&mut app, 80, 24);
+        assert!(!out.contains("Type 101"), "{code:?}: kill dialog:\n{out}");
     }
+    assert_eq!(
+        app.pool.all_sessions().len(),
+        before,
+        "{mode:?}: D dismissed"
+    );
+    assert!(!app.show_activity_log, "{mode:?}: d toggled the log");
+    press(&mut app, KeyCode::Char('d')).await;
+    assert_eq!(app.tui_mode, TuiMode::Detail(b), "d opens Detail");
+    assert!(!app.show_activity_log, "d toggled the log");
+    let actions = actions_on(registry(), mode);
+    assert!(
+        actions.iter().all(|b| b.action != Action::Kill),
+        "{mode:?}: the palette offers kill"
+    );
 }
 
 /// The whole Fullscreen screen at 80x24: the in-screen footer and the

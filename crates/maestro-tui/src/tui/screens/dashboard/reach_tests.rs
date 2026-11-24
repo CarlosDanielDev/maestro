@@ -200,10 +200,14 @@ async fn leaving_the_dashboard_disarms() {
     );
 }
 
-/// B2: the Agent graph (an Overview `g` until now) opens from the ⌃K
-/// palette; with `views.agent_graph_enabled = false` the entry says why.
+/// B2, #1292: the Agent graph is the Files lens of Deps. The ⌃K entry
+/// opens it; so does `g g` from the Dashboard. With
+/// `views.agent_graph_enabled = false` the entry says why and the second
+/// `g` stays on issues.
 #[tokio::test]
 async fn palette_opens_the_agent_graph() {
+    use super::deps::{Lens, lens};
+    use super::usage::View;
     for enabled in [true, false] {
         let (mut app, _) = sessions_app(1);
         let toml = format!(
@@ -221,11 +225,28 @@ async fn palette_opens_the_agent_graph() {
             press(&mut app, KeyCode::Char(c)).await;
         }
         press(&mut app, KeyCode::Enter).await;
-        let want = if enabled {
-            TuiMode::AgentGraph
+        app.palette = None;
+        let dash = &app.screen_state.dashboard;
+        assert_eq!(app.tui_mode, TuiMode::Dashboard, "enabled={enabled}");
+        if enabled {
+            assert_eq!((dash.view, lens(dash, true)), (View::Deps, Lens::Files));
         } else {
-            TuiMode::Dashboard
-        };
-        assert_eq!(app.tui_mode, want, "enabled={enabled}");
+            assert_ne!(dash.view, View::Deps, "a disabled entry runs nothing");
+        }
+        // From Ops, `g` reopens Deps on its last lens (files after the
+        // palette; issues when the flag is off).
+        press(&mut app, KeyCode::Char('o')).await;
+        press(&mut app, KeyCode::Char('g')).await;
+        if !enabled {
+            press(&mut app, KeyCode::Char('g')).await;
+        }
+        let want = if enabled { Lens::Files } else { Lens::Issues };
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        assert_eq!(app.screen_state.dashboard.view, View::Deps);
+        assert_eq!(
+            lens(&app.screen_state.dashboard, enabled),
+            want,
+            "enabled={enabled}"
+        );
     }
 }
