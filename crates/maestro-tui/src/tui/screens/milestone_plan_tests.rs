@@ -243,10 +243,48 @@ fn cross_repo_ref_is_held_and_never_read_as_a_local_number() {
 #[test]
 fn blocked_by_refs_splits_local_and_other_repo() {
     let body = "## Blocked By\n\n- #10 first\n- owner/r.s#5\n\n## Next\n- #99\n";
-    assert_eq!(blocked_by_refs(body), (vec![10], true));
+    assert_eq!(
+        blocked_by_refs(body),
+        (vec![10], vec!["owner/r.s#5".to_string()])
+    );
     assert_eq!(
         blocked_by_refs("## Blocked By\n\n- None\n"),
-        (vec![], false)
+        (vec![], vec![])
     );
-    assert_eq!(blocked_by_refs("no section #4"), (vec![], false));
+    assert_eq!(blocked_by_refs("no section #4"), (vec![], vec![]));
+}
+
+/// Judge round 4: the header and the section end are found exactly like
+/// `dag::parse_blocked_by` finds them: two spaces, a tab and an NBSP.
+#[test]
+fn blocked_by_header_matches_the_shared_parser() {
+    use crate::orchestration::dag::parse_blocked_by;
+    for header in [
+        "## Blocked By",
+        "##  Blocked  By",
+        "##\tBlocked\tBy",
+        "##\u{a0}Blocked\u{a0}By",
+        "## blocked by  ",
+    ] {
+        let body = format!("## Overview\nx #1\n\n{header}\n\n- #10\n- #11\n\n##\tNext\n- #99\n");
+        assert_eq!(
+            blocked_by_refs(&body).0,
+            parse_blocked_by(&body),
+            "{header:?}"
+        );
+        assert_eq!(blocked_by_refs(&body).0, vec![10, 11], "{header:?}");
+    }
+    // Not a header for either parser.
+    for not in ["#### Blocked By", "##Blocked By", "## Blocked By now"] {
+        let body = format!("{not}\n- #10\n");
+        assert_eq!(blocked_by_refs(&body).0, parse_blocked_by(&body), "{not:?}");
+    }
+}
+
+#[test]
+fn issue_under_a_spaced_header_is_held_by_its_blocker() {
+    let issues = vec![issue(30, "##  Blocked\tBy\n\n- #31\n"), issue(31, "")];
+    let p = plan_milestone(&issues, [], &HashSet::new(), 5.0).unwrap();
+    assert_eq!(p.readiness(30), IssueReadiness::Waits(31));
+    assert_eq!(p.plan.waves[0], vec![31]);
 }

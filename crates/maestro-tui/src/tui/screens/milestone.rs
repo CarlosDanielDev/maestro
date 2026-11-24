@@ -445,9 +445,13 @@ impl MilestoneScreen {
                 facts.push(format!("level {l}"));
             }
         }
-        let by = crate::orchestration::dag::parse_blocked_by(&issue.body);
-        if !by.is_empty() {
-            let refs: Vec<String> = by.iter().map(|n| format!("#{n}")).collect();
+        // Another repository's ref is shown as written (`acme/sdk#5`).
+        let (local, other) = super::milestone_plan::blocked_by_refs(&issue.body);
+        let refs: Vec<String> = (local.iter().map(|n| format!("#{n}")))
+            .chain(other.into_iter().map(|r| format!("{r} (other repo)")))
+            .map(|r| sanitize_for_terminal(&r))
+            .collect();
+        if !refs.is_empty() {
             facts.push(format!("blocked by {}", refs.join(", ")));
         }
         facts.push(

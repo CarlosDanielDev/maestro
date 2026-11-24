@@ -246,3 +246,36 @@ fn cross_repo_blocker_holds_its_issue_through_the_fetch() {
         crate::tui::screens::milestone_plan::IssueReadiness::OtherRepo
     );
 }
+
+/// The preview's facts line names another repository's blocker as written.
+#[test]
+fn preview_names_the_other_repo_blocker() {
+    use crate::tui::screens::milestone::MilestoneTab;
+    let entry = MilestoneEntry {
+        number: 62,
+        title: "v0.33.0".into(),
+        description: String::new(),
+        state: "open".into(),
+        open_issues: 1,
+        closed_issues: 0,
+        issues: vec![issue(
+            980,
+            "Needs the SDK",
+            62,
+            "## Blocked By\n\n- #964\n- acme/sdk#5\n",
+        )],
+    };
+    let mut s = MilestoneScreen::new(vec![entry]);
+    s.set_tab(MilestoneTab::IssuePreview);
+    let t = draw_screen(&mut s, 200, 24);
+    let buf = t.backend().buffer();
+    let text: String = (0..buf.area.height)
+        .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+        .map(|(x, y)| buf[(x, y)].symbol().to_string())
+        .collect();
+    assert!(
+        text.contains("blocked by #964, acme/sdk#5 (other repo)"),
+        "{text}"
+    );
+    assert!(!text.contains("blocked by #964, #5"));
+}
