@@ -490,6 +490,18 @@ Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K
 
 ---
 
+### Teams overview, preset card, Compose (`widgets/preset_card.rs`, `screens/team_wizard/`, #1286)
+
+Implements `docs/design-system/index.html` §02.16 (Teams: entry, Compose, Manage). Decision: `docs/design-system/decisions.md` (2026-11-24, Teams overview).
+
+| Item | For |
+|---|---|
+| `preset_card::draw_preset_card(f, area, theme, &team, &health, focused)` | One team preset on a card (shared with Teams Launch, §02.17): name + tier chip in the title (`tier_word`: `BUILT-IN` / `USER` / `PROJECT`, always the word), shape on the right border, the shape as a flow (unbound role in error, down agent in warning), one row per role with agent and health (`● ok`, `✗ down`, `○ unchecked`, `✗ unbound · launch fails here`), unused bindings dimmed, the L2 row, how a TUI launch runs it today, and `prompt tokens only ≈ $x/issue` (`+ $?` for an unpriced agent). Names pass `sanitize_for_terminal` |
+| `preset_card::readiness(&team, &health) -> (CheckState, String)` / `readiness_glyph` | One readiness word per preset: `✗ no <role>`, `! <agent> down`, `○ unchecked`, `✓ ready` |
+| `Primitive::dispatched_roles()` (`maestro-core` `orchestration/types.rs`) | The roles a shape's machine really runs. `roles_to_bind(primitive)` = dispatched roles, then any `required_roles()` the launch preflight still checks; Compose binds these and skips Roles when the list is empty |
+
+Rules: the Teams Home is the overview (presets by tier, readiness, the selected card); `c` / `l` / `m` start the flows. Compose uses `WizardFrame::draw_stepped` with four steps (`ComposeStep::ALL`) and a Draft checklist; its keys come from `Screen::footer_hints`. Review & save shows the exact path and TOML (`compose_preview`, keys sorted, written byte for byte) above an `ArmedBar` named for the file (`ArmedBar::to("disk")`; the default place is GitHub): ⏎ arms, ⏎ within `ARM_WINDOW` writes, Esc or an edit disarms. Saved / Failed live on `ComposePayload::save`, not as steps. The name is the canonical `Input` and reports `InputMode::Insert`, so letters never reach global keys. The keys are a `TeamWizard` block in `registry_screens.rs` (`j` / `k`, `c` / `l` / `m`, `Enter`).
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract

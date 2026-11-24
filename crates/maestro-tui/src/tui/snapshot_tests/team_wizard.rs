@@ -14,7 +14,7 @@ use crate::tui::screens::team_wizard::test_helpers::{
 };
 use crate::tui::screens::team_wizard::{
     LaunchInputKind, LaunchStep, ManageStep, TeamLaunchInput, TeamWizardMode, TeamWizardScreen,
-    types::ComposeStep,
+    types::{ComposeSource, ComposeStep},
 };
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
@@ -61,6 +61,53 @@ fn home_120x40() {
     assert_snapshot!(t.backend());
 }
 
+/// #1286: the overview groups presets by tier with readiness, and draws
+/// the selected preset's card beside the list.
+#[test]
+fn teams_overview_wide() {
+    let mut s = TeamWizardScreen::new(ProviderKind::default());
+    s.apply_resolved_teams(vec![
+        make_team(
+            "default-coder",
+            Primitive::Pipeline,
+            &[
+                (TeamRole::Implementer, "claude"),
+                (TeamRole::Reviewer, "claude"),
+                (TeamRole::Docs, "claude"),
+            ],
+            SourceTier::BuiltIn,
+        ),
+        make_team(
+            "default-researcher",
+            Primitive::VerdictOnly,
+            &[(TeamRole::Reviewer, "claude")],
+            SourceTier::BuiltIn,
+        ),
+        make_team(
+            "cheap-coder",
+            Primitive::Pipeline,
+            &[
+                (TeamRole::Implementer, "minimax"),
+                (TeamRole::Reviewer, "claude"),
+                (TeamRole::Docs, "claude"),
+            ],
+            SourceTier::User,
+        ),
+        make_team(
+            "issue-\x1b[31msanitizer",
+            Primitive::SinglePass,
+            &[(TeamRole::Reviewer, "claude")],
+            SourceTier::Project,
+        ),
+    ]);
+    s.apply_health_check(vec![
+        make_health("claude", true),
+        make_health("minimax", false),
+    ]);
+    let t = draw_team_wizard(&mut s, 168, 42);
+    assert_snapshot!(t.backend());
+}
+
 // ── Compose ─────────────────────────────────────────────────────────────
 
 fn populated_compose_screen() -> TeamWizardScreen {
@@ -82,6 +129,7 @@ fn populated_compose_screen() -> TeamWizardScreen {
         make_health("claude", true),
         make_health("codex", false),
     ]);
+    s.set_preset_dirs_for_test("/home/u/.config/maestro/teams".into(), "/repo".into());
     s.switch_mode(TeamWizardMode::Compose);
     s
 }
@@ -124,28 +172,38 @@ fn compose_roles_80x24() {
     assert_snapshot!(t.backend());
 }
 
+/// Review & save with a full draft: the path and every TOML line it writes.
+fn ready_to_save_screen() -> TeamWizardScreen {
+    let mut s = populated_compose_screen();
+    s.set_compose_source_for_test(ComposeSource::Extends("default-coder".into()));
+    s.set_compose_primitive_for_test(Primitive::Pipeline);
+    for role in [TeamRole::Implementer, TeamRole::Reviewer, TeamRole::Docs] {
+        s.set_compose_binding_for_test(role, "claude");
+    }
+    s.set_compose_name_for_test("my-team");
+    s
+}
+
 #[test]
 fn compose_save_80x24() {
-    let mut s = populated_compose_screen();
+    let mut s = ready_to_save_screen();
     s.set_compose_step_for_test(ComposeStep::Save);
-    s.set_compose_name_for_test("my-team");
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }
 
 #[test]
 fn compose_save_success_80x24() {
-    let mut s = populated_compose_screen();
-    s.set_compose_step_for_test(ComposeStep::SaveSuccess);
-    s.set_compose_name_for_test("my-team");
+    let mut s = ready_to_save_screen();
+    s.set_compose_save_result_for_test(Ok(()));
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }
 
 #[test]
 fn compose_save_failed_80x24() {
-    let mut s = populated_compose_screen();
-    s.apply_save_result(Err("name already exists".into()));
+    let mut s = ready_to_save_screen();
+    s.set_compose_save_result_for_test(Err("name already exists".into()));
     let t = draw_team_wizard(&mut s, 80, 24);
     assert_snapshot!(t.backend());
 }

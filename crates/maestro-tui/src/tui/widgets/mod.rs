@@ -11,6 +11,7 @@ pub mod input;
 pub mod launch_dialog;
 mod list_editor;
 mod number_stepper;
+pub mod preset_card;
 pub mod stats_bar;
 mod text_input;
 mod toggle;

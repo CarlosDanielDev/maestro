@@ -11,6 +11,7 @@ use crate::orchestration::team::{ResolvedTeam, SourceTier};
 use crate::orchestration::types::{Primitive, TeamRole};
 use crate::session::team_runner::CancellationToken;
 use crate::state::types::IssueNumber;
+use crate::tui::ds::armed::ArmedEnter;
 use std::collections::HashMap;
 
 /// Top-level mode of the wizard. `Home` shows the mode picker (`c` / `l` /
@@ -24,6 +25,9 @@ pub enum TeamWizardMode {
     Manage,
 }
 
+/// Compose steps (#1286): Start from · Shape · Roles · Review & save.
+/// Saved / Failed are states of the write bar (`ComposePayload::save`), not
+/// steps. Roles is skipped when the shape has no role to bind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ComposeStep {
     #[default]
@@ -31,28 +35,17 @@ pub enum ComposeStep {
     Primitive,
     Roles,
     Save,
-    SaveSuccess,
-    SaveFailed,
 }
 
 impl ComposeStep {
-    pub const ALL: &'static [Self] = &[
-        Self::Source,
-        Self::Primitive,
-        Self::Roles,
-        Self::Save,
-        Self::SaveSuccess,
-        Self::SaveFailed,
-    ];
+    pub const ALL: &'static [Self] = &[Self::Source, Self::Primitive, Self::Roles, Self::Save];
 
     pub const fn label(&self) -> &'static str {
         match self {
-            Self::Source => "Source",
-            Self::Primitive => "Primitive",
+            Self::Source => "Start from",
+            Self::Primitive => "Shape",
             Self::Roles => "Roles",
-            Self::Save => "Save",
-            Self::SaveSuccess => "Saved",
-            Self::SaveFailed => "Save Failed",
+            Self::Save => "Review & save",
         }
     }
 
@@ -250,6 +243,8 @@ pub struct ComposePayload {
     pub role_focus: usize,
     pub agent_focus: usize,
     pub source_focus: usize,
+    /// The armed write on Review & save: ⏎ arms, ⏎ again writes the file.
+    pub save: ArmedEnter,
 }
 
 /// Where the Compose Save step writes the new preset. Mirrors `SourceTier`
@@ -365,6 +360,19 @@ impl PreflightBlock {
     }
 }
 
+/// Roles Compose binds for `primitive`: the ones its machine dispatches,
+/// then any `required_roles()` the launch preflight still checks (#1286).
+/// Binding both keeps a composed preset runnable and launchable.
+pub fn roles_to_bind(primitive: Primitive) -> Vec<TeamRole> {
+    let mut roles = primitive.dispatched_roles().to_vec();
+    for role in primitive.required_roles() {
+        if !roles.contains(role) {
+            roles.push(*role);
+        }
+    }
+    roles
+}
+
 pub fn role_label(role: TeamRole) -> &'static str {
     match role {
         TeamRole::Implementer => "implementer",
@@ -424,8 +432,8 @@ mod tests {
     // ── ComposeStep ──────────────────────────────────────────────────────
 
     #[test]
-    fn compose_step_total_is_six() {
-        assert_eq!(ComposeStep::total(), 6);
+    fn compose_step_total_is_four() {
+        assert_eq!(ComposeStep::total(), 4);
     }
 
     #[test]
@@ -434,8 +442,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_step_save_failed_is_index_six() {
-        assert_eq!(ComposeStep::SaveFailed.index(), 6);
+    fn compose_step_save_is_index_four() {
+        assert_eq!(ComposeStep::Save.index(), 4);
     }
 
     #[test]
@@ -444,8 +452,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_step_save_success_is_not_first() {
-        assert!(!ComposeStep::SaveSuccess.is_first());
+    fn compose_step_save_is_not_first() {
+        assert!(!ComposeStep::Save.is_first());
     }
 
     #[test]
@@ -454,8 +462,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_step_save_failed_next_is_none() {
-        assert_eq!(ComposeStep::SaveFailed.next(), None);
+    fn compose_step_save_next_is_none() {
+        assert_eq!(ComposeStep::Save.next(), None);
     }
 
     #[test]

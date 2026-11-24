@@ -1,0 +1,18 @@
+---
+source: crates/maestro-tui/src/tui/widgets/preset_card.rs
+expression: "draw(&team, &cache, 80, 14).backend()"
+---
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ cheap-coder · USER ]━━━━━━━━━━━━━━━━━━ pipeline ┓"
+"┃implementer ─▶ reviewer ─▶ docs                                               ┃"
+"┃                                                                              ┃"
+"┃ implementer  minimax    ✗ down                                               ┃"
+"┃ reviewer     claude     ● ok                                                 ┃"
+"┃ docs         —          ✗ unbound · launch fails here                        ┃"
+"┃ triager      mystery-llm unused · not run by pipeline                        ┃"
+"┃ L2           claude     ● ok                                                 ┃"
+"┃                                                                              ┃"
+"┃TUI launch: 1 session per issue on implementer (minimax) · other roles not run┃"
+"┃yet                                                                           ┃"
+"┃est prompt tokens only ≈ $0.02/issue + $?                                     ┃"
+"┃                                                                              ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"

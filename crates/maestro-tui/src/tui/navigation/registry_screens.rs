@@ -91,6 +91,24 @@ pub(super) fn blocks() -> Vec<Binding> {
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
     // the retry, behind the armed bar.
+    // #1286: Teams overview (`screens::team_wizard`): select a preset,
+    // start a flow; ⏎ advances, and on Review & save ⏎ arms, ⏎ writes.
+    let teams = Scope::Screen(TuiMode::TeamWizard);
+    v.extend([
+        s(teams, ch('j'), A::ScrollDown, "Down"),
+        s(teams, ch('k'), A::ScrollUp, "Up"),
+        s(teams, Chord::key(KeyCode::Down), A::ScrollDown, "Down").hidden(),
+        s(teams, Chord::key(KeyCode::Up), A::ScrollUp, "Up").hidden(),
+        s(teams, ch('c'), A::Expand, "compose"),
+        s(teams, ch('l'), A::Expand, "launch"),
+        s(teams, ch('m'), A::Expand, "manage"),
+        s(
+            teams,
+            Chord::key(KeyCode::Enter),
+            A::Expand,
+            "next · arm save",
+        ),
+    ]);
     v
 }
 
