@@ -819,6 +819,11 @@ impl App {
         } else {
             target
         };
+        // #1289: Cost and Tokens are Dashboard views now.
+        let target = crate::tui::screens::dashboard::usage::navigate_target(
+            target,
+            &mut self.screen_state.dashboard,
+        );
 
         if self.tui_mode == target {
             return;

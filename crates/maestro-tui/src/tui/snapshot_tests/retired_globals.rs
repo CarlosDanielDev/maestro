@@ -13,6 +13,7 @@ use crate::tui::app::{App, TuiCommand, TuiMode};
 use crate::tui::ds::palette::{self, Run};
 use crate::tui::input_handler::handle_key;
 use crate::tui::navigation::registry::{PaletteCommand, Scope, registry};
+use crate::tui::screens::dashboard::usage::View;
 use crate::tui::screens::milestone::{MilestoneEntry, MilestoneScreen};
 
 const CONFIG_TOML: &str = concat!(
@@ -81,16 +82,14 @@ async fn shift_globals_retired() {
     for mode in SCREENS {
         for c in ['Q', 'M', 'C', 'P'] {
             let mut app = armed_app(mode);
+            let view = app.screen_state.dashboard.view;
             press(&mut app, c).await;
             let at = format!("{c} on {mode:?}");
-            // The owning screen: Dashboard's own `Q` quick action
-            // ("TurboQuant Savings", shadowed by the global until now).
-            // #1280: Overview routes to the Dashboard, so it owns `Q` too,
-            // and no screen takes `P`; ⏎ ⏎ on the PR row retries (below).
-            let q_owner = c == 'Q' && matches!(mode, TuiMode::Overview | TuiMode::Dashboard);
+            // #1280: no screen takes `P`; ⏎ ⏎ on the PR row retries (below).
+            // #1289: TurboQuant is a panel of Dashboard › Tokens (`t`), so
+            // the Dashboard's own `Q` launcher is gone too.
             let p_owner = false;
-            let tq = app.tui_mode == TuiMode::TurboquantDashboard;
-            assert_eq!(tq, q_owner, "{at}");
+            assert_eq!(app.screen_state.dashboard.view, view, "{at} switched view");
             assert_ne!(app.tui_mode, TuiMode::PrReview, "{at}");
             assert_eq!(modal_on(&app), Some(true), "{at} toggled the modal");
             assert_eq!(retry_queued(&app), p_owner, "{at}");
@@ -167,12 +166,13 @@ async fn run_from_palette(app: &mut App, label: &str) {
 #[tokio::test]
 async fn retired_actions_in_palette() {
     // Each retired Shift global, its palette entry and its new key, shown
-    // only on the screen where that key works: `Q` on Dashboard, "" where
-    // the palette is the way in. #1280 retired `P` with the Overview grid.
-    use PaletteCommand::{CompleteModal, PrPipeline, ReviewConcerns, TurboquantDashboard};
+    // only on the screen where that key works: `t` (Tokens) on Dashboard,
+    // "" where the palette is the way in. #1280 retired `P` with the
+    // Overview grid.
+    use PaletteCommand::{CompleteModal, PrPipeline, ReviewConcerns, Turboquant};
     let want = [
-        (TuiMode::Overview, TurboquantDashboard, ""),
-        (TuiMode::Dashboard, TurboquantDashboard, "Q"),
+        (TuiMode::Overview, Turboquant, ""),
+        (TuiMode::Dashboard, Turboquant, "t"),
         (TuiMode::Overview, CompleteModal, ""),
         (TuiMode::Overview, ReviewConcerns, ""),
         (TuiMode::Overview, PrPipeline, ""),
@@ -194,8 +194,9 @@ async fn retired_actions_in_palette() {
     // Each entry runs its action.
     let label = |cmd| entry(cmd).label;
     let mut app = armed_app(TuiMode::Overview);
-    run_from_palette(&mut app, label(PaletteCommand::TurboquantDashboard)).await;
-    assert_eq!(app.tui_mode, TuiMode::TurboquantDashboard);
+    run_from_palette(&mut app, label(PaletteCommand::Turboquant)).await;
+    assert_eq!(app.tui_mode, TuiMode::Dashboard);
+    assert_eq!(app.screen_state.dashboard.view, View::Tokens);
 
     let mut app = armed_app(TuiMode::Overview);
     run_from_palette(&mut app, label(PaletteCommand::CompleteModal)).await;

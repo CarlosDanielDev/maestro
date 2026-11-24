@@ -2,8 +2,10 @@ use super::*;
 use crate::budget::quota_snapshot::{QuotaBucket, QuotaRow};
 use crate::budget::test_support::FakeProviderQuotaSnapshots;
 use crate::session::types::SessionStatus;
+use crate::tui::screens::dashboard::tokens::{
+    draw_token_dashboard, draw_token_dashboard_with_quota,
+};
 use crate::tui::theme::Theme;
-use crate::tui::token_dashboard::{draw_token_dashboard, draw_token_dashboard_with_quota};
 use insta::assert_snapshot;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;

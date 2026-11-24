@@ -179,7 +179,8 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::Dashboard => (
+        // #1289: Cost and Tokens are Dashboard views (aliases).
+        TuiMode::Dashboard | TuiMode::CostDashboard | TuiMode::TokenDashboard => (
             "Dashboard",
             FKeyVis::DashboardLike,
             &[
@@ -209,8 +210,8 @@ pub fn mode_keymap(
                     priority: 4,
                 },
                 InlineHint {
-                    key: "Q",
-                    action: "TurboQuant",
+                    key: "t",
+                    action: "Tokens",
                     priority: 5,
                 },
             ],
@@ -316,38 +317,6 @@ pub fn mode_keymap(
                 InlineHint {
                     key: "Up/Down",
                     action: "Scroll",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::CostDashboard => (
-            "Cost Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::TokenDashboard => (
-            "Token Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
                     priority: 1,
                 },
             ],
@@ -612,22 +581,6 @@ pub fn mode_keymap(
                 action: "Back",
                 priority: 0,
             }],
-        ),
-        TuiMode::TurboquantDashboard => (
-            "TurboQuant A/B",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
         ),
         TuiMode::AdaptFollowUp => (
             "Next iteration paths",
