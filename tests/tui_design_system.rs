@@ -197,7 +197,6 @@ const HAND_ROLLED_INPUT_ALLOWLIST: &[&str] = &[
     "crates/maestro-tui/src/tui/screens/roadmap_dispatch.rs",
     "crates/maestro-tui/src/tui/screens/settings/input.rs",
     "crates/maestro-tui/src/tui/screens/settings/schema_tab/modals/add_entry.rs",
-    "crates/maestro-tui/src/tui/screens/team_wizard/launch.rs",
     "crates/maestro-tui/src/tui/widgets/list_editor.rs",
     "crates/maestro-tui/src/tui/widgets/text_input.rs",
 ];

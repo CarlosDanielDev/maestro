@@ -77,3 +77,16 @@ pub fn compose_name_app() -> crate::tui::app::App {
     app.screen_state.team_wizard_screen = Some(screen);
     app
 }
+
+/// #1290: an app on Launch › Input with the find-issue field focused (a
+/// text surface for `input_handler_text_input_tests`).
+pub fn launch_find_app() -> crate::tui::app::App {
+    use super::{TeamWizardMode, TeamWizardScreen};
+    let mut app = crate::tui::make_test_app("text-input-keys");
+    app.tui_mode = crate::tui::app::TuiMode::TeamWizard;
+    let mut screen = TeamWizardScreen::new(Default::default());
+    screen.switch_mode(TeamWizardMode::Launch);
+    screen.set_launch_manual_issue_input_for_test("");
+    app.screen_state.team_wizard_screen = Some(screen);
+    app
+}

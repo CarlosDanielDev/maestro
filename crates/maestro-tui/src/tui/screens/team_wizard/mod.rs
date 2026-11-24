@@ -3,7 +3,7 @@
 //! Home is the Teams overview: every preset by tier with readiness and the
 //! selected preset's card (#1286). Three flows start from it:
 //! - Compose: Start from → Shape → Roles → Review & save (armed write)
-//! - Launch:  TeamPicker → InputPicker → PlanPreview → Confirm
+//! - Launch:  Team → Input → Plan & launch, then the launch dialog (#1290)
 //! - Manage:  list user-tier presets, edit (jumps into Compose), delete
 //!
 //! Mirrors the `milestone_wizard` step-machine pattern.
@@ -15,8 +15,11 @@ mod compose;
 mod compose_save;
 mod draw;
 mod draw_compose;
+mod draw_launch;
+mod draw_launch_plan;
 mod issue_paste;
 mod launch;
+mod launch_cost;
 mod launch_plan;
 mod launch_waves;
 mod manage;
@@ -28,8 +31,8 @@ pub mod test_helpers;
 
 pub use types::{
     AgentHealth, ComposePayload, ComposeSource, ComposeStep, ComposeTier, LaunchInputKind,
-    LaunchPayload, LaunchStep, ManageState, ManageStep, PreflightCache, TeamLaunchInput,
-    TeamWizardMode, roles_to_bind,
+    LaunchPayload, LaunchPhase, LaunchStep, ManageState, ManageStep, PreflightCache,
+    TeamLaunchInput, TeamWizardMode, roles_to_bind,
 };
 
 use crate::orchestration::dag::IssueMeta;
@@ -40,6 +43,7 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::input::{Input, InputConfig};
+use crate::tui::widgets::launch_dialog::LaunchBudget;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{Frame, layout::Rect};
@@ -56,6 +60,7 @@ pub struct TeamWizardScreen {
     mode: TeamWizardMode,
     compose_step: ComposeStep,
     launch_step: LaunchStep,
+    launch_phase: LaunchPhase,
     manage_step: ManageStep,
     pub(super) compose: ComposePayload,
     pub(super) launch: LaunchPayload,
@@ -86,6 +91,11 @@ pub struct TeamWizardScreen {
     pub(super) clock: Option<Instant>,
     /// Selected row in the Home overview (`overview::ordered_presets`).
     pub(super) home_focus: usize,
+    /// Launch Input: the find-issue field (#1290).
+    pub(super) issue_input: Input,
+    /// The money the Plan's cost line states, fed each frame from the
+    /// launch dialog's source (`budget_prespawn::launch_budget`).
+    pub(super) launch_budget: LaunchBudget,
 }
 
 impl TeamWizardScreen {
@@ -103,6 +113,10 @@ impl TeamWizardScreen {
             ..LaunchPayload::default()
         };
         let initial_input = preselect.clone();
+        let issue_text = match &preselect {
+            Some(TeamLaunchInput::Issue { number, .. }) => number.to_string(),
+            _ => String::new(),
+        };
         if let Some(input) = preselect {
             apply_initial_input(&mut launch, &input);
         }
@@ -110,7 +124,8 @@ impl TeamWizardScreen {
             provider_kind,
             mode,
             compose_step: ComposeStep::default(),
-            launch_step: starting_launch_step(&initial_input),
+            launch_step: LaunchStep::Team,
+            launch_phase: LaunchPhase::Editing,
             manage_step: ManageStep::default(),
             compose: ComposePayload::default(),
             launch,
@@ -141,6 +156,8 @@ impl TeamWizardScreen {
             },
             clock: None,
             home_focus: 0,
+            issue_input: new_issue_input(&issue_text),
+            launch_budget: LaunchBudget::default(),
         }
     }
 
@@ -175,6 +192,15 @@ impl TeamWizardScreen {
 
     pub fn launch_step(&self) -> LaunchStep {
         self.launch_step
+    }
+
+    pub fn launch_phase(&self) -> LaunchPhase {
+        self.launch_phase
+    }
+
+    /// The spend the Plan states, set before every draw (#1290).
+    pub fn set_launch_budget(&mut self, budget: LaunchBudget) {
+        self.launch_budget = budget;
     }
 
     pub fn manage_step(&self) -> ManageStep {
@@ -269,8 +295,22 @@ impl TeamWizardScreen {
     }
 
     /// Replace the issue-meta cache used by Launch's plan preview.
+    /// A plan on screen (Plan or its dialog) is rebuilt from the new data,
+    /// and an open dialog goes back to the plan, so what dispatches is what
+    /// was shown (#1290 judge).
     pub fn apply_issue_metas(&mut self, metas: HashMap<IssueNumber, IssueMeta>) {
         self.issue_metas = metas;
+        let on_plan = self.mode == TeamWizardMode::Launch
+            && self.launch_step == LaunchStep::Plan
+            && matches!(
+                self.launch_phase,
+                LaunchPhase::Editing | LaunchPhase::Dialog
+            );
+        if on_plan && self.launch.plan.is_some() {
+            self.build_plan_preview();
+            self.launch.arm.reset();
+            self.launch_phase = LaunchPhase::Editing;
+        }
     }
 
     /// Read-only borrow of the issue-meta cache. Used by the dispatcher when
@@ -339,7 +379,7 @@ impl TeamWizardScreen {
             TeamWizardMode::Launch => match self.launch_step.next() {
                 Some(next) => {
                     self.launch_step = next;
-                    if self.launch_step == LaunchStep::PlanPreview {
+                    if self.launch_step == LaunchStep::Plan {
                         self.build_plan_preview();
                     }
                     true
@@ -392,7 +432,8 @@ impl TeamWizardScreen {
                 self.set_compose_step(ComposeStep::Source);
             }
             TeamWizardMode::Launch => {
-                self.launch_step = starting_launch_step(&self.initial_input);
+                self.launch_step = LaunchStep::Team;
+                self.launch_phase = LaunchPhase::Editing;
             }
             TeamWizardMode::Manage => {
                 self.manage_step = ManageStep::List;
@@ -489,6 +530,10 @@ impl TeamWizardScreen {
         self.launch_step = step;
     }
 
+    pub fn set_launch_phase_for_test(&mut self, phase: LaunchPhase) {
+        self.launch_phase = phase;
+    }
+
     pub fn set_launch_team_for_test(&mut self, name: &str) {
         self.launch.selected_team = Some(name.to_string());
     }
@@ -504,32 +549,15 @@ impl TeamWizardScreen {
         self.launch.manual_issues = issues;
     }
 
+    /// Focus the Input step's find field with `input` typed in it.
     pub fn set_launch_manual_issue_input_for_test(&mut self, input: &str) {
-        self.launch.manual_issue_input = input.to_string();
+        self.launch_step = LaunchStep::Input;
+        self.launch.finding = true;
+        self.issue_input.set_text(input);
     }
 
     pub fn set_autocomplete_focus_for_test(&mut self, focus: Option<usize>) {
         self.launch.autocomplete_focus = focus;
-    }
-
-    /// Top-N (=5) Open issues whose decimal number starts with the current
-    /// IssuePicker buffer. Sorted ascending. Excludes Closed issues. Empty
-    /// when the buffer is empty.
-    pub fn autocomplete_candidates(&self) -> Vec<u64> {
-        let buffer = self.launch.manual_issue_input.trim();
-        if buffer.is_empty() {
-            return Vec::new();
-        }
-        let mut out: Vec<u64> = self
-            .issue_metas
-            .iter()
-            .filter(|(_, m)| m.state == crate::orchestration::dag::IssueState::Open)
-            .filter(|(n, _)| n.to_string().starts_with(buffer))
-            .map(|(n, _)| *n)
-            .collect();
-        out.sort();
-        out.truncate(5);
-        out
     }
 
     pub fn build_plan_preview_for_test(&mut self) {
@@ -554,11 +582,14 @@ fn new_name_input(initial: &str) -> Input {
     )
 }
 
-fn starting_launch_step(_preselect: &Option<TeamLaunchInput>) -> LaunchStep {
-    // Always start at TeamPicker; preselect populates the InputPicker fields,
-    // but the user still confirms the team explicitly. Future flows could
-    // skip ahead based on `_preselect`; keep the function for that hook.
-    LaunchStep::TeamPicker
+/// The Input step's find field: `#n` or a number (#1290).
+fn new_issue_input(initial: &str) -> Input {
+    Input::single_line(
+        InputConfig::new()
+            .max_len(12)
+            .placeholder("issue number, like 42")
+            .initial(initial),
+    )
 }
 
 fn apply_initial_input(launch: &mut LaunchPayload, input: &TeamLaunchInput) {
@@ -566,7 +597,6 @@ fn apply_initial_input(launch: &mut LaunchPayload, input: &TeamLaunchInput) {
         TeamLaunchInput::Issue { number, title } => {
             launch.input_kind = LaunchInputKind::Issue;
             launch.manual_issue_title = title.clone();
-            launch.manual_issue_input = number.to_string();
             launch.manual_issues = vec![*number];
         }
         TeamLaunchInput::Milestone {
@@ -626,7 +656,7 @@ impl Screen for TeamWizardScreen {
         match self.mode {
             TeamWizardMode::Home => self.handle_home(*code),
             TeamWizardMode::Compose => self.handle_compose(event, *code),
-            TeamWizardMode::Launch => self.handle_launch(*code, *modifiers),
+            TeamWizardMode::Launch => self.handle_launch(event, *code, *modifiers),
             TeamWizardMode::Manage => self.handle_manage(*code),
         }
     }
@@ -634,15 +664,21 @@ impl Screen for TeamWizardScreen {
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let now = self.now();
         self.compose.save.tick(now);
+        self.launch.arm.tick(now);
         self.draw_impl(f, area, theme);
     }
 
-    /// The Review & save name field is a text input: letters type there,
-    /// never reach global keys.
+    /// The Review & save name field and Launch's find-issue field are text
+    /// inputs: letters type there, never reach global keys.
     fn desired_input_mode(&self) -> Option<InputMode> {
-        let typing = self.mode == TeamWizardMode::Compose
+        let naming = self.mode == TeamWizardMode::Compose
             && self.compose_step == ComposeStep::Save
             && *self.compose.save.state() != crate::tui::ds::armed::ArmedState::Done;
+        let finding = self.mode == TeamWizardMode::Launch
+            && self.launch_phase == LaunchPhase::Editing
+            && self.launch_step == LaunchStep::Input
+            && self.launch.finding;
+        let typing = naming || finding;
         Some(if typing {
             InputMode::Insert
         } else {
@@ -650,14 +686,15 @@ impl Screen for TeamWizardScreen {
         })
     }
 
-    /// Home and Compose put their keys in the shell footer. Launch and
-    /// Manage draw `WizardFrame::draw`'s own step hints; the shell footer
+    /// Home, Compose and Launch put their keys in the shell footer. Manage
+    /// draws `WizardFrame::draw`'s own step hints; the shell footer
     /// keeps to the two keys every step has.
     fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
         match self.mode {
             TeamWizardMode::Home => overview::footer_hints(),
             TeamWizardMode::Compose => draw_compose::footer_hints(self),
-            TeamWizardMode::Launch | TeamWizardMode::Manage => {
+            TeamWizardMode::Launch => draw_launch::footer_hints(self),
+            TeamWizardMode::Manage => {
                 vec![("Enter", "next"), ("Esc", "back")]
             }
         }
@@ -711,3 +748,11 @@ mod review_tests;
 #[cfg(test)]
 #[path = "race_tests.rs"]
 mod race_tests;
+
+#[cfg(test)]
+#[path = "launch_tests.rs"]
+mod launch_tests;
+
+#[cfg(test)]
+#[path = "launch_gate_tests.rs"]
+mod launch_gate_tests;
