@@ -429,8 +429,17 @@ pub enum TuiCommand {
     },
 }
 
-/// Each open milestone with its open issues, or why they did not load.
-pub type MilestoneFetch = Vec<(Milestone, Result<Vec<Issue>, String>)>;
+/// One milestone fetch (#1269).
+#[derive(Debug, Default)]
+pub struct MilestoneFetch {
+    /// Each open milestone with its open issues, or why they did not load.
+    pub milestones: Vec<(Milestone, Result<Vec<Issue>, String>)>,
+    /// Blockers the list did not return (closed ones, other milestones),
+    /// looked up one by one. A failed lookup is not here.
+    pub blockers: Vec<Issue>,
+    /// Blockers past the lookup cap: not looked up, their issues stay held.
+    pub skipped: Vec<u64>,
+}
 
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {

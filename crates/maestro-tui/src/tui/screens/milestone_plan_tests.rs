@@ -133,3 +133,93 @@ fn plan_waves_come_from_run_plan() {
     assert_eq!(p.open, 8);
     assert_eq!(p.plan.worst_case_usd, 20.0);
 }
+
+// ---- #1269 judge round 2: blockers the open-only list does not return ----
+
+use crate::provider::github::client::mock::MockGitHubClient;
+
+async fn plan_with_lookup(client: &MockGitHubClient, issues: &[Issue]) -> MilestonePlan {
+    let missing = unfetched_blockers(issues);
+    let (blockers, skipped) = resolve_blockers(client, &missing).await;
+    assert!(skipped.is_empty());
+    plan_milestone(issues, &blockers, &HashSet::new(), 5.0).unwrap()
+}
+
+#[test]
+fn unfetched_blockers_lists_each_missing_blocker_once() {
+    let issues = vec![
+        blocked_by(30, &[900, 31]),
+        blocked_by(31, &[900]),
+        issue(32, ""),
+    ];
+    assert_eq!(unfetched_blockers(&issues), vec![900]);
+}
+
+#[tokio::test]
+async fn merged_blocker_found_by_lookup_is_satisfied() {
+    let client = MockGitHubClient::new();
+    let mut merged = issue(900, "");
+    merged.state = "closed".into();
+    client.set_issues(vec![merged]);
+    let p = plan_with_lookup(&client, &[blocked_by(30, &[900])]).await;
+    assert_eq!(p.readiness(30), IssueReadiness::Ready);
+    assert_eq!(p.plan.waves, vec![vec![30]], "wave 1");
+    assert_eq!(p.start_count(), 1);
+}
+
+#[tokio::test]
+async fn open_blocker_found_by_lookup_holds_the_issue() {
+    let client = MockGitHubClient::new();
+    let mut open = issue(902, "");
+    open.milestone = Some(9);
+    client.set_issues(vec![open]);
+    let p = plan_with_lookup(&client, &[blocked_by(30, &[902])]).await;
+    assert_eq!(
+        p.readiness(30),
+        IssueReadiness::BlockedOutside {
+            by: 902,
+            milestone: Some(9)
+        }
+    );
+    assert_eq!(p.start_count(), 0);
+}
+
+#[tokio::test]
+async fn failed_lookup_keeps_the_issue_held_as_not_fetched() {
+    let client = MockGitHubClient::new();
+    client.set_get_issue_error(901, "rate limited");
+    let p = plan_with_lookup(&client, &[blocked_by(30, &[901])]).await;
+    assert_eq!(
+        p.readiness(30),
+        IssueReadiness::BlockedOutside {
+            by: 901,
+            milestone: None
+        }
+    );
+    assert_eq!(p.start_count(), 0);
+}
+
+#[tokio::test]
+async fn lookups_past_the_cap_are_skipped_and_stay_held() {
+    let client = MockGitHubClient::new();
+    let mut merged: Vec<Issue> = (1000..1000 + LOOKUP_CAP as u64 + 2)
+        .map(|n| issue(n, ""))
+        .collect();
+    for i in &mut merged {
+        i.state = "closed".into();
+    }
+    client.set_issues(merged);
+    let numbers: Vec<u64> = (1000..1000 + LOOKUP_CAP as u64 + 2).collect();
+    let (found, skipped) = resolve_blockers(&client, &numbers).await;
+    assert_eq!(found.len(), LOOKUP_CAP);
+    assert_eq!(skipped, vec![1050, 1051]);
+    let last = blocked_by(40, &[1051]);
+    let p = plan_milestone(&[last], &found, &HashSet::new(), 5.0).unwrap();
+    assert_eq!(
+        p.readiness(40),
+        IssueReadiness::BlockedOutside {
+            by: 1051,
+            milestone: None
+        }
+    );
+}

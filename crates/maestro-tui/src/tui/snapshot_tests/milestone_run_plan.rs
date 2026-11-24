@@ -105,7 +105,7 @@ fn milestones() -> Vec<MilestoneEntry> {
 
 fn screen() -> MilestoneScreen {
     let mut s = MilestoneScreen::new(Vec::new());
-    s.set_milestones(milestones(), HashMap::new(), 5.0);
+    s.set_milestones(milestones(), Vec::new(), HashMap::new(), 5.0);
     s.selected = 1;
     s
 }
@@ -258,7 +258,13 @@ fn milestone_fetch_fills_issue_cache() {
             (ms, Ok(m.issues))
         })
         .collect();
-    app.handle_data_event(crate::tui::app::TuiDataEvent::Milestones(Ok(fetched)));
+    app.handle_data_event(crate::tui::app::TuiDataEvent::Milestones(Ok(
+        crate::tui::app::MilestoneFetch {
+            milestones: fetched,
+            blockers: Vec::new(),
+            skipped: Vec::new(),
+        },
+    )));
     assert!(app.state.issue_cache.contains_key(&964));
     assert!(app.state.issue_cache.contains_key(&831));
     let screen = app.screen_state.milestone_screen.as_ref().unwrap();
@@ -290,7 +296,13 @@ async fn failed_milestone_fetch_shows_as_failed() {
             (ms, issues)
         })
         .collect();
-    app.handle_data_event(crate::tui::app::TuiDataEvent::Milestones(Ok(fetched)));
+    app.handle_data_event(crate::tui::app::TuiDataEvent::Milestones(Ok(
+        crate::tui::app::MilestoneFetch {
+            milestones: fetched,
+            blockers: Vec::new(),
+            skipped: Vec::new(),
+        },
+    )));
     let screen = app.screen_state.milestone_screen.as_mut().unwrap();
     assert_eq!(screen.start_count(0), None, "unknown, not 0");
     screen.selected = 0;

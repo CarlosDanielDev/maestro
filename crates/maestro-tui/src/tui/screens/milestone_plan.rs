@@ -3,6 +3,7 @@
 //! planner itself is `work::run_plan`; nothing here orders issues.
 
 use crate::orchestration::dag::{IssueMeta, IssueState, parse_blocked_by};
+use crate::provider::RepoProvider;
 use crate::provider::types::{Issue, MaestroLabel};
 use crate::work::conflicts::files_to_modify_from_body;
 use crate::work::run_plan::{Hold, RunPlan, run_plan};
@@ -99,9 +100,9 @@ fn meta(issue: &Issue) -> IssueMeta {
 /// fetched issue; `claimed` adds live sessions to the `maestro:in-progress`
 /// label.
 ///
-/// A blocker that no fetch returned has no meta, so `run_plan` holds its
-/// issue as blocked outside: its state is unknown, and a guess could launch
-/// an issue whose blocker is still open.
+/// A blocker that neither the fetch nor [`resolve_blockers`] returned has
+/// no meta, so `run_plan` holds its issue as blocked outside: its state is
+/// unknown, and a guess could launch an issue whose blocker is still open.
 pub fn plan_milestone<'a>(
     issues: &[Issue],
     known: impl IntoIterator<Item = &'a Issue>,
@@ -139,6 +140,45 @@ pub fn plan_milestone<'a>(
         open: open.len(),
         open_blockers,
     })
+}
+
+/// Blockers the milestone fetch did not return. The fetch lists open
+/// issues only, so this is where every merged blocker ends up.
+pub fn unfetched_blockers<'a>(fetched: impl IntoIterator<Item = &'a Issue> + Clone) -> Vec<u64> {
+    let have: HashSet<u64> = fetched.clone().into_iter().map(|i| i.number).collect();
+    let mut out: Vec<u64> = (fetched.into_iter())
+        .filter(|i| is_open(i))
+        .flat_map(|i| parse_blocked_by(&i.body))
+        .filter(|n| !have.contains(n))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Lookups one fetch may make; the rest stay held as not fetched.
+pub const LOOKUP_CAP: usize = 50;
+/// Lookups in flight at once.
+const LOOKUP_CONCURRENCY: usize = 4;
+
+/// Look up the first [`LOOKUP_CAP`] blockers, at most four at a time, off
+/// the draw path (the fetch task). Returns the issues found and the numbers
+/// past the cap. A closed issue is satisfied, an open one holds its issue
+/// as blocked outside, and a failed or skipped lookup is left out, so its
+/// issue stays held as not fetched.
+pub async fn resolve_blockers(
+    client: &dyn RepoProvider,
+    numbers: &[u64],
+) -> (Vec<Issue>, Vec<u64>) {
+    use futures::StreamExt;
+    let (look, skipped) = numbers.split_at(numbers.len().min(LOOKUP_CAP));
+    let lookups: Vec<_> = look.iter().map(|&n| client.get_issue(n)).collect();
+    let results: Vec<anyhow::Result<Issue>> = futures::stream::iter(lookups)
+        .buffer_unordered(LOOKUP_CONCURRENCY)
+        .collect()
+        .await;
+    let found = results.into_iter().filter_map(Result::ok).collect();
+    (found, skipped.to_vec())
 }
 
 #[cfg(test)]

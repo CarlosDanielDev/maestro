@@ -496,19 +496,38 @@ async fn event_loop(
                 app::TuiCommand::FetchMilestones => {
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
+                    // #1269: closed issues stay closed, so a blocker the
+                    // cache already has as closed is not looked up again.
+                    let cached_closed: Vec<_> = (app.state.issue_cache.values())
+                        .filter(|i| !i.state.eq_ignore_ascii_case("open"))
+                        .cloned()
+                        .collect();
                     tokio::spawn(async move {
                         let result = with_provider(provider_config, |client| async move {
+                            use crate::tui::screens::milestone_plan as plan;
                             let milestones = client.list_milestones("open").await?;
                             let futures: Vec<_> = milestones
                                 .iter()
                                 .map(|ms| client.list_issues_by_milestone(&ms.title))
                                 .collect();
                             let results = futures::future::join_all(futures).await;
-                            Ok(milestones
+                            let milestones: Vec<_> = milestones
                                 .into_iter()
                                 .zip(results)
                                 .map(|(ms, r)| (ms, r.map_err(|e| e.to_string())))
-                                .collect())
+                                .collect();
+                            let listed = (milestones.iter())
+                                .flat_map(|(_, r)| r.iter().flatten())
+                                .chain(cached_closed.iter());
+                            let missing = plan::unfetched_blockers(listed);
+                            let (mut blockers, skipped) =
+                                plan::resolve_blockers(client.as_ref(), &missing).await;
+                            blockers.extend(cached_closed);
+                            Ok(app::MilestoneFetch {
+                                milestones,
+                                blockers,
+                                skipped,
+                            })
                         })
                         .await;
                         let _ = tx.send(app::TuiDataEvent::Milestones(result));

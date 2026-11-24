@@ -86,6 +86,9 @@ pub struct MilestoneScreen {
     plans: Vec<Result<MilestonePlan, String>>,
     /// Milestones whose issue fetch failed, with the error.
     failed: HashMap<u64, String>,
+    /// Blockers the list did not return, looked up one by one (closed ones,
+    /// other milestones). Known to the plans, not listed.
+    blockers: Vec<Issue>,
     /// Live sessions' issues; the plans add them to the label claims, the
     /// same set the Run queue uses.
     claimed: HashSet<u64>,
@@ -110,6 +113,7 @@ impl MilestoneScreen {
             milestones: Vec::new(),
             plans: Vec::new(),
             failed: HashMap::new(),
+            blockers: Vec::new(),
             claimed: HashSet::new(),
             per_session_cap_usd: 0.0,
             selected: 0,
@@ -121,20 +125,23 @@ impl MilestoneScreen {
             spinner_tick: 0,
             reload_requested: false,
         };
-        screen.set_milestones(milestones, HashMap::new(), 0.0);
+        screen.set_milestones(milestones, Vec::new(), HashMap::new(), 0.0);
         screen
     }
 
-    /// Replace the milestones and plan each one (#1269). `failed` names the
+    /// Replace the milestones and plan each one (#1269). `blockers` are the
+    /// looked-up blockers the list did not return; `failed` names the
     /// milestones whose issue fetch failed; `per_session_cap_usd` prices
     /// the worst case.
     pub fn set_milestones(
         &mut self,
         milestones: Vec<MilestoneEntry>,
+        blockers: Vec<Issue>,
         failed: HashMap<u64, String>,
         per_session_cap_usd: f64,
     ) {
         self.milestones = milestones;
+        self.blockers = blockers;
         self.failed = failed;
         self.per_session_cap_usd = per_session_cap_usd;
         self.selected = self.selected.min(self.milestones.len().saturating_sub(1));
@@ -150,10 +157,9 @@ impl MilestoneScreen {
     }
 
     fn replan(&mut self) {
-        let known: Vec<&Issue> = self
-            .milestones
-            .iter()
+        let known: Vec<&Issue> = (self.milestones.iter())
             .flat_map(|m| m.issues.iter())
+            .chain(self.blockers.iter())
             .collect();
         self.plans = (self.milestones.iter())
             .map(|m| {
