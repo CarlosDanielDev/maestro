@@ -5,8 +5,10 @@
 use super::TeamWizardScreen;
 use super::draw_launch::text;
 use super::launch_cost::cost_lines;
-use super::types::{PlanPreview, role_label};
+use super::types::{IssueMetaMap, PlanPreview, role_label};
 use crate::orchestration::types::TeamRole;
+use crate::tui::ds::armed::ArmedState;
+use crate::tui::screens::milestone_plan::is_other_repo;
 use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::wizard_frame::field_block;
@@ -19,9 +21,16 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-/// One line of why `run_plan` left an issue out.
-fn hold_note(holds: &[Hold]) -> String {
+/// One line of why `run_plan` left an issue out. A blocker with no issue
+/// data is unknown, never called open (#1290 judge).
+fn hold_note(holds: &[Hold], metas: &IssueMetaMap) -> String {
     match holds.first() {
+        Some(Hold::BlockedOutside { by, .. }) if is_other_repo(*by) => {
+            "⊘ blocked by an issue in another repo".to_string()
+        }
+        Some(Hold::BlockedOutside { by, .. }) if !metas.contains_key(by) => {
+            format!("⊘ blocked by #{by} (no issue data, state unknown)")
+        }
         Some(Hold::BlockedOutside { by, .. }) => {
             format!("⊘ blocked by open #{by} outside this run")
         }
@@ -145,9 +154,10 @@ impl TeamWizardScreen {
                 ]));
             }
         }
-        if !plan.deferred.is_empty() {
+        let left_out = plan.deferred.len() + plan.closed.len();
+        if left_out > 0 {
             lines.push(text(
-                format!("NOT INCLUDED · {}", plan.deferred.len()),
+                format!("NOT INCLUDED · {left_out}"),
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -155,7 +165,16 @@ impl TeamWizardScreen {
             for (n, holds) in &plan.deferred {
                 lines.push(Line::from(vec![
                     Span::styled(format!("  #{n:<6}"), id),
-                    Span::styled(hold_note(holds), Style::default().fg(theme.accent_warning)),
+                    Span::styled(
+                        hold_note(holds, &self.issue_metas),
+                        Style::default().fg(theme.accent_warning),
+                    ),
+                ]));
+            }
+            for n in &plan.closed {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  #{n:<6}"), id),
+                    Span::styled("✓ already closed", muted),
                 ]));
             }
         }
@@ -197,12 +216,47 @@ impl TeamWizardScreen {
             Line::default(),
         ];
         lines.extend(cost_lines(plan, &self.launch_budget, theme));
+        if let Some(gate) = self.dialog_gate_line(theme) {
+            lines.push(Line::default());
+            lines.push(gate);
+        }
         f.render_widget(
             Paragraph::new(lines)
                 .wrap(Wrap { trim: false })
                 .block(block),
             area,
         );
+    }
+}
+
+impl TeamWizardScreen {
+    /// Why `Enter` here does not simply launch: locked by the pre-spawn
+    /// gate, or armed when the worst case is over the budget left. `None`
+    /// when one `Enter` launches (the footer says so).
+    fn dialog_gate_line(&self, theme: &Theme) -> Option<Line<'static>> {
+        if let Some(reason) = self.launch_block_reason() {
+            return Some(text(
+                format!("⊘ {reason} · raise [budget] total_usd in Settings to launch"),
+                Style::default()
+                    .fg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        if !self.launch_over_budget() {
+            return None;
+        }
+        Some(match self.launch.arm.state() {
+            ArmedState::Armed(_) => text(
+                "ARMED · Enter again within 3 s launches · Esc backs out",
+                Style::default()
+                    .fg(theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            _ => text(
+                "! over the budget left · Enter arms, Enter again within 3 s launches",
+                Style::default().fg(theme.accent_warning),
+            ),
+        })
     }
 }
 

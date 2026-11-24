@@ -4,6 +4,7 @@
 
 use super::TeamWizardScreen;
 use super::types::{LaunchInputKind, PlanPreview, PreflightBlock, PreflightSummary};
+use crate::orchestration::dag::IssueState;
 use crate::orchestration::preflight::{PreflightFailure, preflight_sync};
 use crate::orchestration::scheduler::Scheduler;
 use crate::orchestration::team::ResolvedTeam;
@@ -84,7 +85,13 @@ impl TeamWizardScreen {
         let metas = self.issue_metas.clone();
         let expanded = Scheduler::from_input(team.clone(), team_input, metas, max_parallel)
             .and_then(|scheduler| {
-                let open: HashSet<u64> = scheduler.levels().iter().flatten().copied().collect();
+                // A closed issue never runs (#1290 judge): it is listed, not
+                // planned. `run_plan` does not check an issue's own state.
+                let (closed, open): (Vec<u64>, Vec<u64>) =
+                    (scheduler.levels().iter().flatten().copied()).partition(|n| {
+                        (self.issue_metas.get(n)).is_some_and(|m| m.state == IssueState::Closed)
+                    });
+                let open: HashSet<u64> = open.into_iter().collect();
                 let plan = run_plan(
                     &open,
                     &self.issue_metas,
@@ -92,16 +99,18 @@ impl TeamWizardScreen {
                     &HashMap::new(),
                     self.launch_budget.per_session_usd,
                 )?;
-                Ok((scheduler.auto_added, plan))
+                Ok((scheduler.auto_added, plan, closed))
             });
         match expanded {
-            Ok((auto_added, plan)) => {
+            Ok((auto_added, plan, mut closed)) => {
+                closed.sort_unstable();
                 self.launch.plan = Some(PlanPreview {
                     team_name: team.name.clone(),
                     primitive: team.primitive,
                     final_count: plan.waves.iter().map(Vec::len).sum(),
                     levels: plan.waves,
                     deferred: plan.deferred,
+                    closed,
                     auto_added,
                     original_count,
                     worst_case_usd: plan.worst_case_usd,

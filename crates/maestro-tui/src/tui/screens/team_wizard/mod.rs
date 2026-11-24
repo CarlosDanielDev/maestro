@@ -295,8 +295,22 @@ impl TeamWizardScreen {
     }
 
     /// Replace the issue-meta cache used by Launch's plan preview.
+    /// A plan on screen (Plan or its dialog) is rebuilt from the new data,
+    /// and an open dialog goes back to the plan, so what dispatches is what
+    /// was shown (#1290 judge).
     pub fn apply_issue_metas(&mut self, metas: HashMap<IssueNumber, IssueMeta>) {
         self.issue_metas = metas;
+        let on_plan = self.mode == TeamWizardMode::Launch
+            && self.launch_step == LaunchStep::Plan
+            && matches!(
+                self.launch_phase,
+                LaunchPhase::Editing | LaunchPhase::Dialog
+            );
+        if on_plan && self.launch.plan.is_some() {
+            self.build_plan_preview();
+            self.launch.arm.reset();
+            self.launch_phase = LaunchPhase::Editing;
+        }
     }
 
     /// Read-only borrow of the issue-meta cache. Used by the dispatcher when
@@ -650,6 +664,7 @@ impl Screen for TeamWizardScreen {
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let now = self.now();
         self.compose.save.tick(now);
+        self.launch.arm.tick(now);
         self.draw_impl(f, area, theme);
     }
 
@@ -737,3 +752,7 @@ mod race_tests;
 #[cfg(test)]
 #[path = "launch_tests.rs"]
 mod launch_tests;
+
+#[cfg(test)]
+#[path = "launch_gate_tests.rs"]
+mod launch_gate_tests;
