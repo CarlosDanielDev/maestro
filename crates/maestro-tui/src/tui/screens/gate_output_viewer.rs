@@ -1,13 +1,17 @@
-//! Paged viewer for a `FailedGates` session's full gate stderr.
+//! Paged viewer for a session's gates: the `v Gates` session view (#1288).
 //!
-//! Reached via `[v]` on the failed-gates recovery modal (issue #560).
-//! Activity-log entries truncate gate failure messages to one line for
-//! readability; the full `gate_results[].message` text is preserved on
-//! the session and surfaced here.
+//! #1291 (§02.23 Diagnostics): a rail of every gate (result, command,
+//! duration), then per failing gate its failure digest with the first
+//! failure open, the output tail and the full-log path. Entries from
+//! before #1291 have no output and show their one-line message.
 
-use crate::session::types::Session;
+use crate::gates::digest::digest;
+use crate::icons::{self, IconId};
+use crate::session::types::{GateResultEntry, Session};
 use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::failure_list::failure_lines;
+use crate::util::sanitize::sanitize_log;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -52,7 +56,6 @@ pub fn draw_gate_output_viewer(
     }
     lines.push(Line::from(""));
 
-    // One block per gate failure — gate name + status + full message.
     if session.gate_results.is_empty() {
         lines.push(Line::from(vec![
             Span::raw("  "),
@@ -62,45 +65,11 @@ pub fn draw_gate_output_viewer(
             ),
         ]));
     } else {
-        for entry in &session.gate_results {
-            let status = if entry.passed { "PASS" } else { "FAIL" };
-            let status_color = if entry.passed {
-                theme.accent_success
-            } else {
-                theme.accent_error
-            };
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    format!("[{}] ", status),
-                    Style::default()
-                        .fg(status_color)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    sanitize_for_terminal(&entry.gate),
-                    Style::default()
-                        .fg(theme.text_primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            // Wrap the multi-line message — preserve embedded newlines but
-            // strip other control chars so a malicious dependency or a test
-            // fixture cannot inject ANSI/OSC escape sequences via compiler
-            // output (security review concern #6).
-            for chunk in entry.message.split('\n') {
-                lines.push(Line::from(vec![
-                    Span::raw("    "),
-                    Span::styled(
-                        sanitize_for_terminal(chunk),
-                        Style::default().fg(theme.text_secondary),
-                    ),
-                ]));
-            }
-            lines.push(Line::from(""));
+        rail(&mut lines, session, theme);
+        for entry in session.gate_results.iter().filter(|e| !e.passed) {
+            failure_block(&mut lines, entry, theme);
         }
     }
-
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("  "),
@@ -125,6 +94,120 @@ pub fn draw_gate_output_viewer(
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
     f.render_widget(paragraph, area);
+}
+
+/// Output lines shown under the digest.
+const TAIL_LINES: usize = 20;
+
+/// `GATES`: one row per gate, pass or fail.
+fn rail(lines: &mut Vec<Line<'static>>, session: &Session, theme: &Theme) {
+    let muted = Style::default().fg(theme.text_muted);
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("GATES", muted.add_modifier(Modifier::BOLD)),
+    ]));
+    let widest = |f: fn(&GateResultEntry) -> &str| {
+        let w = session.gate_results.iter().map(|e| f(e).chars().count());
+        w.max().unwrap_or(0)
+    };
+    let (width, cmd_width) = (widest(|e| &e.gate), widest(|e| &e.command));
+    for e in &session.gate_results {
+        let (icon, color) = if e.passed {
+            (IconId::ChipCompleted, theme.accent_success)
+        } else {
+            (IconId::ChipErrored, theme.accent_error)
+        };
+        let mut row = vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("{} ", icons::get(icon)),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:<width$}", sanitize_for_terminal(&e.gate)),
+                Style::default().fg(theme.text_primary),
+            ),
+        ];
+        if !e.command.is_empty() {
+            row.push(Span::styled(
+                format!("  {:<cmd_width$}", sanitize_for_terminal(&e.command)),
+                Style::default().fg(theme.text_secondary),
+            ));
+        }
+        if e.duration_ms > 0 {
+            row.push(Span::styled(
+                format!("  {:.1}s", e.duration_ms as f64 / 1000.0),
+                muted,
+            ));
+        }
+        lines.push(Line::from(row));
+    }
+    lines.push(Line::from(""));
+}
+
+/// One failing gate: title, then digest + output tail + log path, or the
+/// stored message for entries without output.
+fn failure_block(lines: &mut Vec<Line<'static>>, entry: &GateResultEntry, theme: &Theme) {
+    let muted = Style::default().fg(theme.text_muted);
+    let mut title = vec![
+        Span::raw("  "),
+        Span::styled(
+            format!("{} ", icons::get(IconId::ChipErrored)),
+            Style::default()
+                .fg(theme.accent_error)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            sanitize_for_terminal(&entry.gate),
+            Style::default()
+                .fg(theme.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if !entry.command.is_empty() {
+        title.push(Span::styled(
+            format!(" · {}", sanitize_for_terminal(&entry.command)),
+            muted,
+        ));
+    }
+    lines.push(Line::from(title));
+    // Embedded newlines are split into rows; control and bidi characters
+    // are replaced so compiler output cannot inject escapes (#1074).
+    let text_row = |chunk: &str| {
+        Line::from(vec![
+            Span::raw("    "),
+            Span::styled(
+                sanitize_log(chunk),
+                Style::default().fg(theme.text_secondary),
+            ),
+        ])
+    };
+    if entry.output.is_empty() {
+        lines.extend(entry.message.split('\n').map(text_row));
+        lines.push(Line::from(""));
+        return;
+    }
+    lines.extend(failure_lines(&digest(&entry.output), "    ", theme));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled("OUTPUT TAIL", muted.add_modifier(Modifier::BOLD)),
+    ]));
+    let tail: Vec<&str> = entry.output.lines().collect();
+    let from = tail.len().saturating_sub(TAIL_LINES);
+    lines.extend(tail[from..].iter().map(|l| text_row(l)));
+    if let Some(path) = &entry.log_path {
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(
+                format!(
+                    "full log: {}",
+                    sanitize_for_terminal(&path.display().to_string())
+                ),
+                muted,
+            ),
+        ]));
+    }
+    lines.push(Line::from(""));
 }
 
 #[cfg(test)]

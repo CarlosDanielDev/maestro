@@ -1,6 +1,6 @@
 //! #1286 judge round 2: the write refuses when the target file changed
-//! between arming and the second ⏎, and the card and Launch's plan share
-//! one estimate.
+//! between arming and the second ⏎. Launch's plan states the worst case,
+//! never the card's prompt estimate (#1290).
 
 use super::TeamWizardScreen;
 use super::test_helpers::{make_issue_meta, make_test_team};
@@ -96,8 +96,11 @@ fn a_refused_write_arms_again_on_the_next_enter_with_the_new_state() {
     assert_ne!(std::fs::read_to_string(&file).unwrap(), "theirs");
 }
 
+/// #1290 replaces the shared prompt-token estimate: Launch states the
+/// exact worst case from the launch dialog's budget, and the token figure
+/// is never drawn on the plan.
 #[test]
-fn launch_plan_and_preset_card_share_one_estimate() {
+fn launch_plan_states_the_worst_case_not_the_prompt_estimate() {
     let team = make_test_team(
         "solo",
         Primitive::SinglePass,
@@ -107,18 +110,27 @@ fn launch_plan_and_preset_card_share_one_estimate() {
     let mut s = TeamWizardScreen::new(Default::default());
     s.apply_resolved_teams(vec![team.clone()]);
     s.set_known_agents(vec!["claude".into(), "codex".into()]);
+    s.set_launch_budget(crate::tui::widgets::launch_dialog::LaunchBudget {
+        per_session_usd: 5.0,
+        ..Default::default()
+    });
+    s.switch_mode(TeamWizardMode::Launch);
     s.set_launch_team_for_test("solo");
     s.set_launch_input_for_test(LaunchInputKind::Issue, Some(1));
     let mut metas = std::collections::HashMap::new();
     metas.insert(1, make_issue_meta(1, IssueState::Open, None, &[]));
     s.apply_issue_metas(metas);
+    s.set_launch_step_for_test(super::types::LaunchStep::Plan);
     s.build_plan_preview_for_test();
     let plan = s.launch_payload().plan.as_ref().expect("plan built");
-    let per_issue = prompt_estimate(&team).0;
-    let want = per_issue * plan.final_count as f64;
-    assert!(
-        (plan.estimated_cost_usd - want).abs() < 1e-12,
-        "Launch {} vs card {want}",
-        plan.estimated_cost_usd
-    );
+    assert_eq!(plan.worst_case_usd, 5.0);
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
+    t.draw(|f| s.draw(f, f.area(), &crate::tui::theme::Theme::dark()))
+        .unwrap();
+    let drawn: String = (t.backend().buffer().content().iter())
+        .map(|c| c.symbol())
+        .collect();
+    let token = crate::tui::ds::money::money(Some(prompt_estimate(&team).0));
+    assert!(drawn.contains("$5.00"), "worst case drawn:\n{drawn}");
+    assert!(!drawn.contains(&token), "prompt estimate {token} drawn");
 }

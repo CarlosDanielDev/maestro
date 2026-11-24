@@ -2,9 +2,8 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/team_wizard.rs
 expression: t.backend()
 ---
-"┌───────────────────────────[ Step 6/8: Executing ]────────────────────────────┐"
-"│                                                                              │"
-"└──────────────────────────────────────────────────────────────────────────────┘"
+" Step 3/3 · Plan & launch   ✓✓●                        default-coder · 4 issues "
+" Preflight 4/4 ready                                                            "
 "┌────────────────────────────────[ Executing ]─────────────────────────────────┐"
 "│Each wave starts when the one before it has finished.                         │"
 "│                                                                              │"
@@ -23,6 +22,7 @@ expression: t.backend()
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-"                      Waves run in order   [Esc] cancel run                     "
-"                                                                                "

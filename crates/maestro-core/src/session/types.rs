@@ -534,6 +534,18 @@ pub struct GateResultEntry {
     pub gate: String,
     pub passed: bool,
     pub message: String,
+    /// The command the gate ran; empty for file and PR gates (#1291).
+    /// Every new field defaults so pre-#1291 state files still load.
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+    /// Last 64 KiB of stdout + stderr, secrets masked; kept for failures only.
+    #[serde(default)]
+    pub output: String,
+    /// Full log under `.maestro/logs/gates/`, when it was written.
+    #[serde(default)]
+    pub log_path: Option<std::path::PathBuf>,
 }
 
 #[allow(dead_code)] // Reason: gate result constructors — to be used by completion gates
@@ -543,14 +555,17 @@ impl GateResultEntry {
             gate: gate.to_string(),
             passed: true,
             message: message.into(),
+            command: String::new(),
+            duration_ms: 0,
+            output: String::new(),
+            log_path: None,
         }
     }
 
     pub fn fail(gate: &str, message: impl Into<String>) -> Self {
         Self {
-            gate: gate.to_string(),
             passed: false,
-            message: message.into(),
+            ..Self::pass(gate, message)
         }
     }
 }
@@ -1755,6 +1770,21 @@ mod tests {
         let stripped = json.replace(r#","gate_results":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.gate_results.is_empty());
+    }
+
+    #[test]
+    fn gate_entry_serde_default() {
+        // A state file written before #1291 has no command / duration /
+        // output / log_path on its gate entries.
+        let old = r#"{"gate":"clippy","passed":false,"message":"2 warnings"}"#;
+        let e: GateResultEntry = serde_json::from_str(old).expect("old entry loads");
+        assert_eq!(e.gate, "clippy");
+        assert!(!e.passed);
+        assert_eq!(e.message, "2 warnings");
+        assert!(e.command.is_empty());
+        assert_eq!(e.duration_ms, 0);
+        assert!(e.output.is_empty());
+        assert!(e.log_path.is_none());
     }
 
     // --- Issue #140: SessionStatus::ConflictFix and ConflictFixContext ---

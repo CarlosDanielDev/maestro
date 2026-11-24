@@ -2898,7 +2898,7 @@ mod tests {
         use crate::tui::app::TuiDataEvent;
         use crate::tui::screen_dispatch::handle_screen_action;
         use crate::tui::screens::team_wizard::types::{
-            LaunchInputKind, LaunchStep, TeamWizardMode,
+            LaunchInputKind, LaunchPhase, TeamWizardMode,
         };
         use crate::tui::screens::{ScreenAction, TeamWizardScreen};
         use std::collections::HashMap;
@@ -2920,7 +2920,7 @@ mod tests {
         screen.set_launch_team_for_test("default-coder");
         screen.set_launch_input_for_test(LaunchInputKind::Issue, Some(42));
         screen.switch_mode(TeamWizardMode::Launch);
-        screen.set_launch_step_for_test(LaunchStep::Executing);
+        screen.set_launch_phase_for_test(LaunchPhase::Executing);
         app.screen_state.team_wizard_screen = Some(screen);
 
         handle_screen_action(
@@ -2938,8 +2938,8 @@ mod tests {
             .team_wizard_screen
             .as_ref()
             .expect("wizard preserved")
-            .launch_step();
-        assert_eq!(mid_step, LaunchStep::Executing);
+            .launch_phase();
+        assert_eq!(mid_step, LaunchPhase::Executing);
         assert!(
             app.pending_commands
                 .iter()
@@ -2962,10 +2962,10 @@ mod tests {
             .team_wizard_screen
             .as_ref()
             .expect("wizard preserved")
-            .launch_step();
+            .launch_phase();
         assert_eq!(
             final_step,
-            LaunchStep::LaunchSuccess,
+            LaunchPhase::Launched,
             "wizard must advance to LaunchSuccess after TeamLaunchResult(Ok)"
         );
     }
@@ -2976,13 +2976,13 @@ mod tests {
     fn team_launch_result_err_flips_wizard_to_launch_failed() {
         use crate::tui::app::TuiDataEvent;
         use crate::tui::screens::TeamWizardScreen;
-        use crate::tui::screens::team_wizard::types::{LaunchStep, TeamWizardMode};
+        use crate::tui::screens::team_wizard::types::{LaunchPhase, TeamWizardMode};
 
         let mut app = make_app();
         app.tui_mode = TuiMode::TeamWizard;
         let mut screen = TeamWizardScreen::new(Default::default());
         screen.switch_mode(TeamWizardMode::Launch);
-        screen.set_launch_step_for_test(LaunchStep::Executing);
+        screen.set_launch_phase_for_test(LaunchPhase::Executing);
         app.screen_state.team_wizard_screen = Some(screen);
 
         app.handle_data_event(TuiDataEvent::TeamLaunchResult(Err(
@@ -2994,7 +2994,7 @@ mod tests {
             .team_wizard_screen
             .as_ref()
             .expect("wizard preserved");
-        assert_eq!(screen.launch_step(), LaunchStep::LaunchFailed);
+        assert_eq!(screen.launch_phase(), LaunchPhase::Failed);
     }
 
     /// Regression for 2026-05-23: `ScreenAction::LaunchSession` (and its

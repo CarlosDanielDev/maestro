@@ -8,6 +8,7 @@ mod ci_monitor;
 pub mod decision_card;
 mod dropdown;
 mod empty_state;
+pub mod failure_list;
 pub mod input;
 pub mod launch_dialog;
 mod list_editor;

@@ -157,7 +157,7 @@ fn is_open(issue: &Issue) -> bool {
     issue.state.eq_ignore_ascii_case("open")
 }
 
-fn meta(issue: &Issue) -> IssueMeta {
+pub(crate) fn meta(issue: &Issue) -> IssueMeta {
     let (mut blocked_by, other) = blocked_by_refs(&issue.body);
     if !other.is_empty() {
         blocked_by.push(OTHER_REPO_MIN + issue.number);

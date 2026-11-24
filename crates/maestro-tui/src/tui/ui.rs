@@ -346,8 +346,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::TeamWizard => {
+            let budget = crate::tui::budget_prespawn::launch_budget(app);
             if let Some(ref mut screen) = app.screen_state.team_wizard_screen {
                 screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
+                screen.set_launch_budget(budget);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }

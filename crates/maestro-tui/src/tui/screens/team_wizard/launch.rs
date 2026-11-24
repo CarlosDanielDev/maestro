@@ -1,262 +1,323 @@
-//! Launch flow — TeamPicker → InputPicker → PlanPreview → Confirm.
+//! Launch flow (#1290, §02.17): Team · Input · Plan & launch, then the
+//! launch dialog, the run and its result as `LaunchPhase`s.
 
 use super::issue_paste::parse_pasted_issue_token;
-use super::launch_plan::{map_preflight_failure, plan_from_scheduler, plan_issue_count};
-use super::types::{LaunchInputKind, LaunchStep, PreflightBlock, PreflightSummary};
+use super::launch_cost::Cost;
+use super::overview::ordered_presets;
+use super::types::{LaunchInputKind, LaunchPhase, LaunchStep};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
-use crate::orchestration::dag::IssueState;
-use crate::orchestration::preflight::preflight_sync;
-use crate::orchestration::scheduler::Scheduler;
+use crate::budget::PreSpawnDecision;
 use crate::orchestration::types::TeamInput;
-use crate::tui::widgets::preset_card::prompt_estimate; // one estimate with the card (#1286)
-use crossterm::event::{KeyCode, KeyModifiers};
+use crate::tui::ds::armed::EnterOutcome;
+use crate::tui::ds::money::money;
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-const INPUT_KINDS: &[LaunchInputKind] = &[
+pub(super) const INPUT_KINDS: &[LaunchInputKind] = &[
     LaunchInputKind::Issue,
     LaunchInputKind::IssueSet,
     LaunchInputKind::Milestone,
     LaunchInputKind::IdeaInbox,
 ];
 
-impl TeamWizardScreen {
-    pub(super) fn handle_launch(&mut self, code: KeyCode, modifiers: KeyModifiers) -> ScreenAction {
-        // #875 — Ctrl+V paste on IssuePicker, regardless of autocomplete focus.
-        if self.launch_step() == LaunchStep::IssuePicker
-            && modifiers.contains(KeyModifiers::CONTROL)
-            && code == KeyCode::Char('v')
-        {
-            if let Some(txt) = self.clipboard.read()
-                && let Some(token) = parse_pasted_issue_token(&txt)
-            {
-                self.launch.manual_issue_input = token;
-                self.launch.autocomplete_focus = None;
-            }
-            return ScreenAction::None;
-        }
+/// Most issues the find field suggests.
+const MAX_MATCHES: usize = 5;
 
-        if matches!(code, KeyCode::Esc) {
-            // #877 — terminal states either cancel the run (Executing, #1246;
-            // leaving would orphan the background task) or treat it as "close
-            // wizard" (LaunchSuccess / LaunchFailed). Retreating from a
-            // terminal step would walk the user backward into Executing,
-            // leaving the wizard stuck with no path forward.
-            match self.launch_step() {
-                LaunchStep::Executing => return self.cancel_team_run(),
-                LaunchStep::LaunchSuccess | LaunchStep::LaunchFailed => {
+impl TeamWizardScreen {
+    pub(super) fn handle_launch(
+        &mut self,
+        event: &Event,
+        code: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> ScreenAction {
+        self.launch.error = None;
+        match self.launch_phase {
+            // #877 / #1246: Esc cancels the run (leaving would orphan the
+            // background task); every other key is swallowed.
+            LaunchPhase::Executing => {
+                if code == KeyCode::Esc {
+                    return self.cancel_team_run();
+                }
+            }
+            LaunchPhase::Launched => {
+                if matches!(code, KeyCode::Enter | KeyCode::Esc) {
                     return ScreenAction::Pop;
                 }
-                _ => return self.handle_launch_back(),
             }
+            LaunchPhase::Failed => match code {
+                KeyCode::Esc => return ScreenAction::Pop,
+                // Back to the plan; nothing spends until the dialog again.
+                KeyCode::Char('r') => {
+                    self.launch_phase = LaunchPhase::Editing;
+                    self.launch_step = LaunchStep::Plan;
+                    self.failure_reason = None;
+                    self.build_plan_preview();
+                }
+                _ => {}
+            },
+            LaunchPhase::Dialog => match code {
+                KeyCode::Enter => return self.launch_dialog_enter(),
+                KeyCode::Esc => {
+                    self.launch.arm.reset();
+                    self.launch_phase = LaunchPhase::Editing;
+                }
+                _ => {}
+            },
+            LaunchPhase::Editing => return self.handle_launch_step(event, code, modifiers),
         }
-        if matches!(
-            (self.launch_step(), code),
-            (LaunchStep::LaunchSuccess, KeyCode::Enter)
-        ) {
-            return ScreenAction::Pop;
+        ScreenAction::None
+    }
+
+    fn handle_launch_step(
+        &mut self,
+        event: &Event,
+        code: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> ScreenAction {
+        if self.launch_step == LaunchStep::Input && self.launch.finding {
+            self.handle_launch_find(event, code, modifiers);
+            return ScreenAction::None;
         }
-        match (self.launch_step(), code) {
-            (LaunchStep::TeamPicker, KeyCode::Up | KeyCode::Char('k')) => {
-                self.launch_team_focus_dec()
+        match (self.launch_step, code) {
+            (_, KeyCode::Esc) => return self.handle_launch_back(),
+            (LaunchStep::Team, KeyCode::Up | KeyCode::Char('k')) => {
+                self.launch.team_focus = self.launch.team_focus.saturating_sub(1);
             }
-            (LaunchStep::TeamPicker, KeyCode::Down | KeyCode::Char('j')) => {
-                self.launch_team_focus_inc()
+            (LaunchStep::Team, KeyCode::Down | KeyCode::Char('j')) => {
+                let last = self.resolved_teams.len().saturating_sub(1);
+                self.launch.team_focus = (self.launch.team_focus + 1).min(last);
             }
-            (LaunchStep::TeamPicker, KeyCode::Enter) => self.launch_commit_team(),
-            (LaunchStep::InputPicker, KeyCode::Up | KeyCode::Char('k')) => {
-                self.launch_input_focus_dec()
+            (LaunchStep::Team, KeyCode::Enter) => self.launch_commit_team(),
+            (LaunchStep::Input, KeyCode::Up | KeyCode::Char('k')) => {
+                self.launch.input_focus = self.launch.input_focus.saturating_sub(1);
             }
-            (LaunchStep::InputPicker, KeyCode::Down | KeyCode::Char('j')) => {
-                self.launch_input_focus_inc()
+            (LaunchStep::Input, KeyCode::Down | KeyCode::Char('j')) => {
+                let last = INPUT_KINDS.len() - 1;
+                self.launch.input_focus = (self.launch.input_focus + 1).min(last);
             }
-            (LaunchStep::InputPicker, KeyCode::Enter) => self.launch_commit_input(),
-            // #876 — autocomplete focus on IssuePicker
-            (LaunchStep::IssuePicker, KeyCode::Down) => {
-                self.launch_autocomplete_focus_inc();
-            }
-            (LaunchStep::IssuePicker, KeyCode::Up) => {
-                self.launch_autocomplete_focus_dec();
-            }
-            (LaunchStep::IssuePicker, KeyCode::Tab) => {
-                self.launch_autocomplete_commit();
-            }
-            (LaunchStep::IssuePicker, KeyCode::Backspace) => {
-                self.launch.manual_issue_input.pop();
-                self.launch.autocomplete_focus = None;
-            }
-            (LaunchStep::IssuePicker, KeyCode::Char(c))
-                if c.is_ascii_digit() && self.launch.manual_issue_input.len() < 10 =>
-            {
-                self.launch.manual_issue_input.push(c);
-                self.launch.autocomplete_focus = None;
-            }
-            (LaunchStep::IssuePicker, KeyCode::Enter) => self.launch_commit_issue_number(),
-            (LaunchStep::PlanPreview, KeyCode::Enter) => self.launch_confirm_plan(),
-            (LaunchStep::Confirm, KeyCode::Enter) => return self.launch_dispatch(),
-            (LaunchStep::LaunchFailed, KeyCode::Char('r')) => {
-                self.launch_step = LaunchStep::PlanPreview;
-                self.failure_reason = None;
-            }
+            (LaunchStep::Input, KeyCode::Enter) => self.launch_commit_input(),
+            (LaunchStep::Plan, KeyCode::Enter) => self.launch_open_dialog(),
             _ => {}
         }
         ScreenAction::None
     }
 
-    fn launch_autocomplete_focus_inc(&mut self) {
-        let candidates = self.autocomplete_candidates();
-        if candidates.is_empty() {
+    /// The find-issue field (`widgets::input::Input`): every key it does
+    /// not claim types into it.
+    fn handle_launch_find(&mut self, event: &Event, code: KeyCode, modifiers: KeyModifiers) {
+        // #875: ⌃V pastes `#n` or an issue URL as the number.
+        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('v') {
+            if let Some(txt) = self.clipboard.read()
+                && let Some(token) = parse_pasted_issue_token(&txt)
+            {
+                self.issue_input.set_text(&token);
+                self.launch.autocomplete_focus = None;
+            }
             return;
         }
-        let next = match self.launch.autocomplete_focus {
-            None => 0,
-            Some(i) if i + 1 < candidates.len() => i + 1,
-            Some(i) => i,
-        };
-        self.launch.autocomplete_focus = Some(next);
+        match code {
+            KeyCode::Esc => self.launch.finding = false,
+            KeyCode::Down => {
+                let n = self.autocomplete_candidates().len();
+                if n > 0 {
+                    let next = self.launch.autocomplete_focus.map_or(0, |i| i + 1);
+                    self.launch.autocomplete_focus = Some(next.min(n - 1));
+                }
+            }
+            KeyCode::Up => {
+                if let Some(i) = self.launch.autocomplete_focus {
+                    self.launch.autocomplete_focus = Some(i.saturating_sub(1));
+                }
+            }
+            KeyCode::Enter => self.launch_pick_issue(),
+            _ => {
+                if self.issue_input.input(event.clone()) {
+                    self.launch.autocomplete_focus = None;
+                }
+            }
+        }
     }
 
-    fn launch_autocomplete_focus_dec(&mut self) {
-        if self.autocomplete_candidates().is_empty() {
-            return;
+    /// The typed number, `#` allowed: `Err` names what is wrong.
+    pub(super) fn typed_issue(&self) -> Result<u64, &'static str> {
+        let text = self.issue_input.text();
+        let trimmed = text.trim().trim_start_matches('#');
+        if trimmed.is_empty() {
+            return Err("Type an issue number");
         }
-        if let Some(i) = self.launch.autocomplete_focus {
-            self.launch.autocomplete_focus = Some(i.saturating_sub(1));
+        match trimmed.parse::<u64>() {
+            Ok(0) => Err("Issue number must be greater than 0"),
+            Ok(n) => Ok(n),
+            Err(_) => Err("Type an issue number, like 42 or #42"),
         }
     }
 
-    fn launch_autocomplete_commit(&mut self) {
-        let candidates = self.autocomplete_candidates();
-        let Some(idx) = self.launch.autocomplete_focus else {
-            return;
+    /// Open issues whose number starts with the typed digits, ascending,
+    /// at most five. Empty while the field is empty.
+    pub fn autocomplete_candidates(&self) -> Vec<u64> {
+        let text = self.issue_input.text();
+        let prefix = text.trim().trim_start_matches('#');
+        if prefix.is_empty() {
+            return Vec::new();
+        }
+        let mut out: Vec<u64> = (self.issue_metas.iter())
+            .filter(|(_, m)| m.state == crate::orchestration::dag::IssueState::Open)
+            .filter(|(n, _)| n.to_string().starts_with(prefix))
+            .map(|(n, _)| *n)
+            .collect();
+        out.sort_unstable();
+        out.truncate(MAX_MATCHES);
+        out
+    }
+
+    /// `Enter` in the find field: the focused match, else the typed number.
+    fn launch_pick_issue(&mut self) {
+        let focused = (self.launch.autocomplete_focus)
+            .and_then(|i| self.autocomplete_candidates().get(i).copied());
+        let picked = match focused {
+            Some(n) => Ok(n),
+            None => self.typed_issue(),
         };
-        if let Some(n) = candidates.get(idx) {
-            self.launch.manual_issue_input = n.to_string();
-            self.launch.autocomplete_focus = None;
+        match picked {
+            Ok(n) => {
+                self.issue_input.set_text(&n.to_string());
+                self.launch.input_kind = LaunchInputKind::Issue;
+                self.launch.manual_issues = vec![n];
+                self.launch.finding = false;
+                self.launch_go_to_plan();
+            }
+            Err(e) => self.launch.error = Some(e),
         }
     }
 
     pub(super) fn handle_launch_back(&mut self) -> ScreenAction {
-        if self.launch_step.is_first() {
-            self.switch_mode(TeamWizardMode::Home);
-        } else {
-            self.retreat();
+        match self.launch_step.previous() {
+            Some(prev) => self.launch_step = prev,
+            None => self.switch_mode(TeamWizardMode::Home),
         }
         ScreenAction::None
     }
 
+    /// Why the current step cannot move on; `None` when it can.
     pub(super) fn validate_launch_step(&self) -> Option<&'static str> {
         match self.launch_step {
-            LaunchStep::TeamPicker => {
-                if self.launch.selected_team.is_some() {
-                    None
-                } else {
-                    Some("Select a team")
-                }
-            }
-            LaunchStep::InputPicker => match self.launch.input_kind {
-                LaunchInputKind::Issue => None,
+            LaunchStep::Team => self
+                .launch
+                .selected_team
+                .is_none()
+                .then_some("Select a team"),
+            LaunchStep::Input => match self.launch.input_kind {
+                LaunchInputKind::Issue => self
+                    .launch
+                    .manual_issue()
+                    .is_none()
+                    .then_some("Pick an issue"),
                 LaunchInputKind::IssueSet | LaunchInputKind::Milestone => {
-                    if self.launch.manual_issues.is_empty() {
-                        Some("No issues selected")
-                    } else {
-                        None
-                    }
+                    self.launch.manual_issues.is_empty().then_some(
+                        "No issues selected · open Launch from Milestones (t) to bring a set",
+                    )
                 }
-                LaunchInputKind::IdeaInbox => None,
+                LaunchInputKind::IdeaInbox => Some(IDEA_INBOX_DISABLED),
             },
-            LaunchStep::IssuePicker => {
-                let trimmed = self.launch.manual_issue_input.trim();
-                if trimmed.is_empty() {
-                    return Some("Enter an issue number");
+            LaunchStep::Plan => match (&self.launch.preflight, &self.launch.plan) {
+                (Some(Err(_)), _) => Some("Pre-flight failed · fix the blockers first"),
+                (None, _) => Some("Pre-flight not run"),
+                (_, None) => Some("No plan · go back and pick the input"),
+                (_, Some(p)) if p.final_count == 0 => {
+                    Some("Nothing will run · every issue is held back")
                 }
-                match trimmed.parse::<u64>() {
-                    Ok(n) if n > 0 => None,
-                    Ok(_) => Some("Issue number must be greater than 0"),
-                    Err(_) => Some("Enter a valid issue number"),
-                }
-            }
-            LaunchStep::PlanPreview => match &self.launch.preflight {
-                Some(Ok(())) => None,
-                Some(Err(_)) => Some("Pre-flight failed — fix blockers"),
-                None => Some("Pre-flight not run"),
+                _ => None,
             },
-            _ => None,
         }
-    }
-
-    fn launch_team_focus_inc(&mut self) {
-        let max = self.resolved_teams.len().saturating_sub(1);
-        if self.launch.team_focus < max {
-            self.launch.team_focus += 1;
-        }
-    }
-
-    fn launch_team_focus_dec(&mut self) {
-        self.launch.team_focus = self.launch.team_focus.saturating_sub(1);
     }
 
     fn launch_commit_team(&mut self) {
-        let mut names: Vec<&str> = self.resolved_teams.keys().map(String::as_str).collect();
-        names.sort();
-        if let Some(name) = names.get(self.launch.team_focus) {
-            self.launch.selected_team = Some((*name).to_string());
-            self.try_advance();
+        let presets = ordered_presets(&self.resolved_teams);
+        if let Some(team) = presets.get(self.launch.team_focus) {
+            self.launch.selected_team = Some(team.name.clone());
+            self.launch_step = LaunchStep::Input;
+        } else {
+            self.launch.error = Some("Select a team");
         }
-    }
-
-    fn launch_input_focus_inc(&mut self) {
-        let max = INPUT_KINDS.len().saturating_sub(1);
-        if self.launch.input_focus < max {
-            self.launch.input_focus += 1;
-        }
-    }
-
-    fn launch_input_focus_dec(&mut self) {
-        self.launch.input_focus = self.launch.input_focus.saturating_sub(1);
     }
 
     fn launch_commit_input(&mut self) {
         let Some(kind) = INPUT_KINDS.get(self.launch.input_focus).copied() else {
             return;
         };
-        self.launch.input_kind = kind;
         match kind {
             LaunchInputKind::Issue => {
-                self.launch_step = LaunchStep::IssuePicker;
+                self.launch.input_kind = kind;
+                self.launch.finding = true;
             }
+            LaunchInputKind::IdeaInbox => self.launch.error = Some(IDEA_INBOX_DISABLED),
             LaunchInputKind::IssueSet | LaunchInputKind::Milestone => {
-                if self.launch.manual_issues.is_empty() {
-                    return;
-                }
-                self.launch_step = LaunchStep::PlanPreview;
-                self.build_plan_preview();
+                self.launch.input_kind = kind;
+                self.launch_go_to_plan();
             }
-            LaunchInputKind::IdeaInbox => {
-                self.launch_step = LaunchStep::PlanPreview;
+        }
+    }
+
+    /// Move to Plan & launch (building the plan), or show why not.
+    fn launch_go_to_plan(&mut self) {
+        match self.validate_launch_step() {
+            Some(e) => self.launch.error = Some(e),
+            None => {
+                self.launch_step = LaunchStep::Plan;
                 self.build_plan_preview();
             }
         }
     }
 
-    fn launch_commit_issue_number(&mut self) {
-        let trimmed = self.launch.manual_issue_input.trim();
-        if let Ok(n) = trimmed.parse::<u64>()
-            && n > 0
+    /// Plan `Enter`: open the launch dialog. It never spends by itself.
+    fn launch_open_dialog(&mut self) {
+        match self.validate_launch_step() {
+            Some(e) => self.launch.error = Some(e),
+            None => {
+                self.launch.arm.reset();
+                self.launch_phase = LaunchPhase::Dialog;
+            }
+        }
+    }
+
+    /// Why the dialog cannot launch at all: the pre-spawn gate's projected
+    /// `Block`, the same lock as the shared launch dialog (`check_pre_spawn`).
+    pub(super) fn launch_block_reason(&self) -> Option<String> {
+        match self.launch_budget.decision() {
+            PreSpawnDecision::Block {
+                projected_total,
+                limit,
+            } => Some(format!(
+                "over the cap ({} of {})",
+                money(Some(projected_total)),
+                money(Some(limit)),
+            )),
+            _ => None,
+        }
+    }
+
+    /// The worst case is more than the budget left (`Cost::over`).
+    pub(super) fn launch_over_budget(&self) -> bool {
+        (self.launch.plan.as_ref()).is_some_and(|p| Cost::of(p, &self.launch_budget).over())
+    }
+
+    /// Dialog `Enter`: locked on a projected Block; over the budget left it
+    /// is armed (⏎ ⏎ within 3 s, §02.17 "Launch dialog"); else it launches.
+    fn launch_dialog_enter(&mut self) -> ScreenAction {
+        if self.launch_block_reason().is_some() {
+            self.launch.error = Some("Over the cap · raise [budget] total_usd in Settings");
+            return ScreenAction::None;
+        }
+        if self.launch_over_budget() && self.launch.arm.on_enter(self.now()) != EnterOutcome::Commit
         {
-            self.launch.manual_issues = vec![n];
-            self.try_advance();
+            return ScreenAction::None;
         }
+        self.launch.arm.reset();
+        self.launch_dispatch()
     }
 
-    fn launch_confirm_plan(&mut self) {
-        if let Some(Ok(())) = &self.launch.preflight {
-            self.launch_step = LaunchStep::Confirm;
-        }
-    }
-
-    /// Build the LaunchTeam action and transition to Executing. The
-    /// dispatcher (`screen_dispatch.rs`) re-resolves the team from the
-    /// wizard's `resolved_teams` cache, builds the Scheduler, and fans the
-    /// run out per-level. The wizard listens for `apply_launch_result`.
+    /// Dialog `Enter`: dispatch exactly the issues the plan's waves hold.
+    /// The dispatcher (`screen_dispatch.rs`) builds the Scheduler from
+    /// them and `run_team` walks the waves; `apply_launch_result` answers.
     fn launch_dispatch(&mut self) -> ScreenAction {
         let Some(team_name) = self.launch.selected_team.clone() else {
             return ScreenAction::None;
@@ -264,22 +325,23 @@ impl TeamWizardScreen {
         if !self.resolved_teams.contains_key(&team_name) {
             return ScreenAction::None;
         }
-        let team_input = match self.launch.input_kind {
-            LaunchInputKind::Issue => match self.launch.manual_issue() {
-                Some(n) => TeamInput::Issue { number: n },
-                None => return ScreenAction::None,
-            },
-            LaunchInputKind::IssueSet | LaunchInputKind::Milestone => TeamInput::IssueSet {
-                primary_milestone: self.launch.primary_milestone,
-                issues: self.launch.manual_issues.clone(),
-            },
-            LaunchInputKind::IdeaInbox => TeamInput::IdeaInbox,
+        let Some(plan) = self.launch.plan.as_ref().filter(|p| p.final_count > 0) else {
+            return ScreenAction::None;
         };
-        self.launch_step = LaunchStep::Executing;
+        let mut issues: Vec<u64> = plan.levels.iter().flatten().copied().collect();
+        issues.sort_unstable();
+        let input = match (self.launch.input_kind, issues.as_slice()) {
+            (LaunchInputKind::Issue, [n]) => TeamInput::Issue { number: *n },
+            _ => TeamInput::IssueSet {
+                primary_milestone: self.launch.primary_milestone,
+                issues,
+            },
+        };
+        self.launch_phase = LaunchPhase::Executing;
         self.launch.running_wave = None;
         ScreenAction::LaunchTeam {
             team_name,
-            input: team_input,
+            input,
             max_parallel: self.launch.max_parallel.max(1),
         }
     }
@@ -289,112 +351,16 @@ impl TeamWizardScreen {
         self.launch.run_cancel = None;
         match result {
             Ok(()) => {
-                self.launch_step = LaunchStep::LaunchSuccess;
+                self.launch_phase = LaunchPhase::Launched;
                 self.failure_reason = None;
             }
             Err(e) => {
-                self.launch_step = LaunchStep::LaunchFailed;
+                self.launch_phase = LaunchPhase::Failed;
                 self.failure_reason = Some(e);
             }
         }
     }
-
-    /// Build the plan preview for the currently selected team and input.
-    /// Stores the plan + preflight summary on `self.launch`.
-    pub(super) fn build_plan_preview(&mut self) {
-        let Some(team_name) = self.launch.selected_team.clone() else {
-            return;
-        };
-        let Some(team) = self.resolved_teams.get(&team_name).cloned() else {
-            return;
-        };
-
-        let original_count = self.launch.manual_issues.len();
-        let team_input = match self.launch.input_kind {
-            LaunchInputKind::Issue => match self.launch.manual_issue() {
-                Some(n) => TeamInput::Issue { number: n },
-                None => return,
-            },
-            LaunchInputKind::IssueSet => TeamInput::IssueSet {
-                primary_milestone: self.launch.primary_milestone,
-                issues: self.launch.manual_issues.clone(),
-            },
-            LaunchInputKind::Milestone => TeamInput::IssueSet {
-                primary_milestone: self.launch.primary_milestone,
-                issues: self.launch.manual_issues.clone(),
-            },
-            LaunchInputKind::IdeaInbox => TeamInput::IdeaInbox,
-        };
-
-        let metas = self.issue_metas.clone();
-        let preview = match Scheduler::from_input(
-            team.clone(),
-            team_input,
-            metas,
-            self.launch.max_parallel.max(1),
-        ) {
-            Ok(scheduler) => Some(plan_from_scheduler(
-                &scheduler,
-                original_count,
-                prompt_estimate(&team).0 * plan_issue_count(&scheduler) as f64,
-            )),
-            Err(e) => {
-                self.failure_reason = Some(format!("Scheduler error: {e}"));
-                None
-            }
-        };
-        self.launch.plan = preview;
-
-        let preflight = self.compute_preflight(&team);
-        self.launch.preflight = Some(preflight);
-    }
-
-    fn compute_preflight(
-        &self,
-        team: &crate::orchestration::team::ResolvedTeam,
-    ) -> Result<(), PreflightSummary> {
-        let mut summary = PreflightSummary::default();
-
-        if let Err(failure) = preflight_sync(team, &self.known_agents, &self.known_modes) {
-            summary.blocking.extend(map_preflight_failure(failure));
-        }
-
-        for (id, health) in &self.preflight.by_agent {
-            if !health.available {
-                summary.blocking.push(PreflightBlock::AgentUnhealthy {
-                    agent_id: id.clone(),
-                    message: health.message.clone(),
-                });
-            }
-        }
-
-        if !team.min_agents.iter().any(|a| a == "claude") {
-            summary
-                .blocking
-                .push(PreflightBlock::MissingClaudeInMinAgents);
-        }
-
-        for issue in &self.launch.manual_issues {
-            let Some(meta) = self.issue_metas.get(issue) else {
-                continue;
-            };
-            for dep in &meta.blocked_by {
-                if let Some(dep_meta) = self.issue_metas.get(dep)
-                    && dep_meta.state == IssueState::Open
-                    && !self.launch.manual_issues.contains(dep)
-                {
-                    summary.blocking.push(PreflightBlock::OpenExternalDep {
-                        issue: *issue,
-                        ext_dep: *dep,
-                    });
-                }
-            }
-        }
-
-        if summary.blocking.is_empty() {
-            Ok(())
-        } else {
-            Err(summary)
-        }
-    }
 }
+
+/// Out of scope until the triager input exists (§02.17 finding 5).
+pub(super) const IDEA_INBOX_DISABLED: &str = "Idea inbox is not available yet · no triager input";

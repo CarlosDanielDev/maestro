@@ -43,14 +43,10 @@ impl App {
         let all_pass = types::all_required_gates_passed(&paired);
 
         if let Some(s) = self.pool.get_session_mut(session_id) {
+            // Every gate, pass or fail: the Gates rail lists them all (#1291).
             s.gate_results = paired
                 .iter()
-                .filter(|(r, _)| !r.passed)
-                .map(|(r, _)| GateResultEntry {
-                    gate: r.gate.clone(),
-                    passed: r.passed,
-                    message: r.message.clone(),
-                })
+                .map(|(r, _)| GateResultEntry::from(r))
                 .collect();
         }
 
@@ -237,6 +233,37 @@ mod tests {
         assert_eq!(s.gate_results.len(), 1);
         assert_eq!(s.gate_results[0].gate, "clippy");
         assert_eq!(s.gate_results[0].message, "fresh failure");
+    }
+
+    #[test]
+    fn retry_completion_gates_keeps_passing_gates_for_the_rail() {
+        // #1291: the Gates rail lists every gate, so a pass is stored too.
+        let runner = CapturingGateRunner::new(vec![
+            GateResult::pass("fmt", "fmt passed"),
+            GateResult::fail("clippy", "fresh failure"),
+        ]);
+        let mut app =
+            crate::tui::make_test_app("issue-1291-retry-rail").with_gate_runner(Box::new(runner));
+        app.config = Some(config_with_completion_commands(&[
+            ("fmt", "echo f", true),
+            ("clippy", "echo c", true),
+        ]));
+
+        let session = make_failed_gates_session(560, "/tmp/wt");
+        let id = session.id;
+        app.pool.enqueue(session);
+        app.pool.try_promote();
+        app.pool.finalize(id);
+
+        app.retry_completion_gates(id).expect("retry");
+
+        let s = app.pool.get_session_mut(id).expect("session");
+        let gates: Vec<(&str, bool)> = s
+            .gate_results
+            .iter()
+            .map(|g| (g.gate.as_str(), g.passed))
+            .collect();
+        assert_eq!(gates, [("fmt", true), ("clippy", false)]);
     }
 
     #[test]

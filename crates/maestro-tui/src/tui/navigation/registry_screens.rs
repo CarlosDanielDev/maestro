@@ -146,6 +146,14 @@ pub(super) fn blocks() -> Vec<Binding> {
             A::Expand,
             "next · ⏎ ⏎ writes on Review & save",
         ),
+        // #1290: a failed launch goes back to its plan (never spends); a
+        // failed delete retries.
+        s(
+            teams,
+            ch('r'),
+            A::Expand,
+            "re-plan (launch) · retry (delete)",
+        ),
     ]);
     // #1287: the run loop (`screens::run_loop::input`). `h` holds, `S`
     // stops behind a typed confirm; ↑↓ / k j and ⏎ pick and confirm on the decision

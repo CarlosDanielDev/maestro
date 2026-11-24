@@ -12,7 +12,7 @@ use crate::tui::screens::prd::{EditTarget, PrdScreen};
 use crate::tui::screens::roadmap::{FilterField, RoadmapScreen};
 use crate::tui::screens::{
     InteractionScreen, IssueBrowserScreen, IssueWizardScreen, MilestoneWizardScreen,
-    PromptInputScreen, team_wizard::test_helpers::compose_name_app,
+    PromptInputScreen, team_wizard::test_helpers as teams,
 };
 use crate::updater::{ReleaseInfo, UpgradeState};
 
@@ -283,7 +283,6 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 
 /// A text-input surface: its name and how to open it.
 type Surface = (&'static str, fn() -> App);
-
 /// Every text-input surface the walk covers.
 fn text_surfaces() -> [Surface; 17] {
     [
@@ -307,7 +306,8 @@ fn text_surfaces() -> [Surface; 17] {
         ("bypass warning", on_bypass_warning),
         ("run loop stop dialog", on_run_loop_stop),
         ("command palette", on_palette),
-        ("team compose name", compose_name_app),
+        ("team compose name", teams::compose_name_app),
+        ("team launch find issue", teams::launch_find_app),
     ]
 }
 

@@ -167,6 +167,7 @@ Reuse with text input: `clipboard.rs` (copy/paste, image attach),
 | `unified_pr_toggle::checkbox_rows(label, checked, width)` | Rows `draw_checkbox` needs: a label wider than the row wraps at words under its first column (#1399). Give the checkbox `Constraint::Length(checkbox_rows(..))` |
 | `launch_dialog::LaunchDialog` + `launch_dialog::draw(f, area, &dialog, theme)` (`widgets/launch_dialog/`, #1262) | The one dialog before any agent starts (§02.8): what, instructions (canonical `Input`), `LaunchMode` radio (`Autonomous` / `ChatUntilPr` / `ChatOpen`, `flags()` → `(produce_pr, interaction)`, `from_defaults` reads `[behavior.launch]`; 2+ issues offer Autonomous only), SPEND (`ds::money`, `ds::gauge` worst case vs `total_usd`), WHERE (worktree + branch) and the button row. Feed it a `LaunchBudget` every frame (`budget_prespawn::launch_budget(app)`). A projected `Block` from the pre-spawn gate's one-session rule (`LaunchBudget::decision`) disables `Enter` and the button row names why. Issues uses it; other spawn screens adopt it in their issues |
 | `bypass_indicator::render_line` | The `▲ BYPASS` chip (`BYPASS_CHIP`, reverse warn + bold). Only `ds::status_bar` draws it; no screen draws its own bypass banner |
+| `failure_list::failure_lines(&digest, indent, theme)` (`widgets/failure_list.rs`, #1291) | Failure digest from `gates::digest::digest` (§02.23): summary, `FAILURES BY FILE` in output order, first failure open, the rest one line with `:line:col` and lint tag; `✗` test or error, `!` warning (`FailureKind`). Text goes through `sanitize_log`; feed it masked text. No match draws `NO_PARSER`. The Gates view and the CI log use it |
 
 ### Armed-Enter — the only way a screen starts a GitHub write (#1250)
 
@@ -551,6 +552,20 @@ Implements `docs/design-system/index.html` §02.16 (Teams: entry, Compose, Manag
 | `Primitive::dispatched_roles()` (`maestro-core` `orchestration/types.rs`) | The roles a shape's machine really runs. `roles_to_bind(primitive)` = dispatched roles, then any `required_roles()` the launch preflight still checks; Compose binds these and skips Roles when the list is empty |
 
 Rules: the Teams Home is the overview (presets by tier, readiness, the selected card); `c` / `l` / `m` start the flows. Compose uses `WizardFrame::draw_stepped` with four steps (`ComposeStep::ALL`) and a Draft checklist; its keys come from `Screen::footer_hints`. Review & save shows the exact path and TOML (`compose_preview`, keys sorted, written byte for byte); when that file is already on disk (`compose_target_exists`) the name border and the bar say `replaces <path>`; the write refuses when the file appeared, changed or vanished since it armed (`write_if_unchanged`) above an `ArmedBar` named for the file (`ArmedBar::to("disk")`; the default place is GitHub): ⏎ arms, ⏎ within `ARM_WINDOW` writes, Esc or an edit disarms. Saved / Failed live on `ComposePayload::save`, not as steps. The name is the canonical `Input` and reports `InputMode::Insert`, so letters never reach global keys. The keys are a `TeamWizard` block in `registry_screens.rs` (`j` / `k`, `c` / `l` / `m`, `Enter`).
+
+### Teams Launch (`screens/team_wizard/` `draw_launch.rs`, `launch_plan.rs`, `launch_cost.rs`, #1290)
+
+Implements `docs/design-system/index.html` §02.17 (Teams: Launch). Decision: `docs/design-system/decisions.md` (2026-11-24, Teams Launch).
+
+| Item | For |
+|---|---|
+| `LaunchStep::{Team, Input, Plan}` + `LaunchPhase::{Editing, Dialog, Executing, Launched, Failed}` | Three steps on `WizardFrame::draw_stepped` with a Preflight checklist (Team, Input, Pre-flight, Something will run). The dialog, the run and its result are phases, never steps |
+| `build_plan_preview` (`launch_plan.rs`) | The Scheduler only expands the picked issues with their open same-milestone blockers; `work::run_plan` plans that set: `PlanPreview.levels` are its waves, `deferred` its holds, `worst_case_usd` its bound. Only the waves dispatch (`launch_dispatch`), so a held issue never runs |
+| `launch_cost::cost_lines(&plan, &budget, theme)` / `Cost::of` | The cost line: `worst case ▓▓░ $15.00 (3 × $5.00 cap) · $38.00 left now` (the launch dialog's words and gauge), `! … over the budget left` when it is, `worst case unknown` with no per-session cap, and `estimate not available` (no run history). The prompt-token figure is never drawn on Launch |
+| `TeamWizardScreen::set_launch_budget(LaunchBudget)` | Fed each frame from `budget_prespawn::launch_budget`, the launch dialog's source |
+| `issue_input` (canonical `Input::single_line`) | Input › Find issue: `#n` or `n`, open matches by number prefix (`autocomplete_candidates`), `↑↓` + `Enter` pick, `⌃V` pastes. Reports `InputMode::Insert`; walked in `input_handler_text_input_tests` |
+
+Rules: Plan `Enter` only opens the dialog; one `Enter` there launches, unless the pre-spawn gate projects a `Block` (locked, as the shared dialog) or the worst case is over the budget left (armed: `Enter` twice within 3 s). The plan rebuilds when new issue data lands; blockers come from `milestone_plan::meta` (`## Blocked By`), and an unknown blocker holds its issue. Nothing opens it while pre-flight fails or every issue is held (`Nothing will run · every issue is held back`). Errors show on the step's border after a refused `Enter`, never on entry (`LaunchPayload::error`). Idea inbox is drawn `⊘` and cannot be chosen. Keys come from `Screen::footer_hints` (`draw_launch::footer_hints`); `r` (re-plan a failed launch) is in the `TeamWizard` registry block. This supersedes the #1286 note that Launch's plan uses `prompt_estimate`.
 
 ### Run loop and decision card (`screens/run_loop/`, `widgets/decision_card.rs`, #1287)
 
