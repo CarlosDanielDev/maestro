@@ -290,7 +290,7 @@ fn global_state(app: &App) -> (std::mem::Discriminant<UpgradeState>, TuiMode, bo
 type Surface = (&'static str, fn() -> App);
 
 /// Every text-input surface the walk covers.
-fn text_surfaces() -> [Surface; 15] {
+fn text_surfaces() -> [Surface; 16] {
     [
         ("interaction composer", on_interaction),
         ("prompt input", on_prompt_input),
