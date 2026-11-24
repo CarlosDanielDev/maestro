@@ -245,7 +245,13 @@ pub struct ComposePayload {
     pub source_focus: usize,
     /// The armed write on Review & save: ⏎ arms, ⏎ again writes the file.
     pub save: ArmedEnter,
+    /// The target file as it was when the write armed: `None` absent,
+    /// `Some((modified, len))` present. The write refuses if it changed.
+    pub armed_target: Option<TargetFile>,
 }
+
+/// A file's state on disk: `None` when absent, else `(modified, len)`.
+pub type TargetFile = Option<(std::time::SystemTime, u64)>;
 
 /// Where the Compose Save step writes the new preset. Mirrors `SourceTier`
 /// but excludes BuiltIn (cannot write to embedded built-ins).

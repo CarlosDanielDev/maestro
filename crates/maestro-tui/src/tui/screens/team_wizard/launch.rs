@@ -4,11 +4,11 @@ use super::issue_paste::parse_pasted_issue_token;
 use super::launch_plan::{map_preflight_failure, plan_from_scheduler, plan_issue_count};
 use super::types::{LaunchInputKind, LaunchStep, PreflightBlock, PreflightSummary};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
-use crate::orchestration::cost::estimate_cost_usd;
 use crate::orchestration::dag::IssueState;
 use crate::orchestration::preflight::preflight_sync;
 use crate::orchestration::scheduler::Scheduler;
 use crate::orchestration::types::TeamInput;
+use crate::tui::widgets::preset_card::prompt_estimate;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 const INPUT_KINDS: &[LaunchInputKind] = &[
@@ -336,7 +336,8 @@ impl TeamWizardScreen {
             Ok(scheduler) => Some(plan_from_scheduler(
                 &scheduler,
                 original_count,
-                estimate_cost_usd(&team, plan_issue_count(&scheduler), 200),
+                // One estimate for the card and the plan (#1286).
+                prompt_estimate(&team).0 * plan_issue_count(&scheduler) as f64,
             )),
             Err(e) => {
                 self.failure_reason = Some(format!("Scheduler error: {e}"));

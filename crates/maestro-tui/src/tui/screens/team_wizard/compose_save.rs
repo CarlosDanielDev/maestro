@@ -3,6 +3,7 @@
 //! path and TOML; a second ⏎ within `ARM_WINDOW` writes that text. Esc or any
 //! edit disarms. Saved / Failed are states of the write bar.
 
+use super::types::TargetFile;
 use super::types::{ComposeSource, ComposeStep, ComposeTier, role_label};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
 use crate::orchestration::loader::Loader;
@@ -11,6 +12,8 @@ use crate::orchestration::types::TeamRole;
 use crate::tui::ds::armed::{ArmedState, EnterOutcome};
 use crossterm::event::{Event, KeyCode};
 use std::collections::HashMap;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -64,9 +67,18 @@ impl TeamWizardScreen {
         if matches!(self.compose.save.state(), ArmedState::Failed(_)) {
             self.compose.save.reset();
         }
-        if self.compose.save.on_enter(self.now()) == EnterOutcome::Commit {
-            let result = self.persist_compose();
-            self.compose.save.finish(result);
+        match self.compose.save.on_enter(self.now()) {
+            EnterOutcome::Armed => {
+                self.compose.armed_target = self
+                    .compose_preview()
+                    .ok()
+                    .map(|(path, _)| target_file(&path));
+            }
+            EnterOutcome::Commit => {
+                let result = self.persist_compose();
+                self.compose.save.finish(result);
+            }
+            EnterOutcome::Ignored => {}
         }
     }
 
@@ -169,7 +181,7 @@ impl TeamWizardScreen {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("creating {dir:?}: {e}"))?;
         }
-        std::fs::write(&path, text).map_err(|e| format!("writing {path:?}: {e}"))?;
+        write_if_unchanged(&path, &text, self.compose.armed_target.take())?;
 
         // The just-saved preset is fully described locally; no re-read.
         let bindings: HashMap<TeamRole, RoleBinding> = self
@@ -202,5 +214,46 @@ impl TeamWizardScreen {
     pub(super) fn set_compose_step(&mut self, step: ComposeStep) {
         self.compose_step = step;
         self.compose.save.reset();
+    }
+}
+
+fn target_file(path: &Path) -> TargetFile {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+/// Write `text` only if the file is as it was when the write armed (#1286
+/// judge): a new file is created with `create_new`, so one that appeared
+/// meanwhile is never replaced; a replaced file must be unchanged.
+fn write_if_unchanged(path: &Path, text: &str, armed: Option<TargetFile>) -> Result<(), String> {
+    let file = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let write_err = |e: std::io::Error| format!("writing {path:?}: {e}");
+    match armed {
+        None => Err("the write was not armed; press ⏎ to arm it".to_string()),
+        Some(None) => {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|e| match e.kind() {
+                    std::io::ErrorKind::AlreadyExists => {
+                        format!("{file} appeared since you armed; ⏎ to review it")
+                    }
+                    _ => write_err(e),
+                })?;
+            f.write_all(text.as_bytes()).map_err(write_err)
+        }
+        Some(Some(before)) => match target_file(path) {
+            None => Err(format!(
+                "{file} was removed since you armed; ⏎ to arm again"
+            )),
+            Some(now) if now != before => {
+                Err(format!("{file} changed since you armed; ⏎ to review it"))
+            }
+            Some(_) => std::fs::write(path, text).map_err(write_err),
+        },
     }
 }

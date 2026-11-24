@@ -707,3 +707,7 @@ mod compose_tests;
 #[cfg(test)]
 #[path = "review_tests.rs"]
 mod review_tests;
+
+#[cfg(test)]
+#[path = "race_tests.rs"]
+mod race_tests;
