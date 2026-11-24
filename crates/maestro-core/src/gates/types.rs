@@ -1,5 +1,7 @@
 use crate::config::CompletionGateEntry;
+use crate::session::types::GateResultEntry;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// A gate that must pass before a session is considered truly complete.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +56,19 @@ impl CompletionGate {
 pub struct GateResult {
     pub gate: String,
     pub passed: bool,
+    /// One-line summary for the activity log.
     pub message: String,
+    /// The command the gate ran; empty for file and PR gates (#1291).
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+    /// Last 64 KiB of stdout + stderr, secrets masked; kept for failures only.
+    #[serde(default)]
+    pub output: String,
+    /// Full log under `.maestro/logs/gates/`, when it was written.
+    #[serde(default)]
+    pub log_path: Option<PathBuf>,
 }
 
 impl GateResult {
@@ -63,14 +77,33 @@ impl GateResult {
             gate: gate.to_string(),
             passed: true,
             message: message.into(),
+            command: String::new(),
+            duration_ms: 0,
+            output: String::new(),
+            log_path: None,
         }
     }
 
     pub fn fail(gate: &str, message: impl Into<String>) -> Self {
         Self {
-            gate: gate.to_string(),
             passed: false,
-            message: message.into(),
+            ..Self::pass(gate, message)
+        }
+    }
+}
+
+/// Session copy of a gate result: every gate, pass or fail, so the Gates
+/// rail can list them all (#1291).
+impl From<&GateResult> for GateResultEntry {
+    fn from(r: &GateResult) -> Self {
+        Self {
+            gate: r.gate.clone(),
+            passed: r.passed,
+            message: r.message.clone(),
+            command: r.command.clone(),
+            duration_ms: r.duration_ms,
+            output: r.output.clone(),
+            log_path: r.log_path.clone(),
         }
     }
 }
