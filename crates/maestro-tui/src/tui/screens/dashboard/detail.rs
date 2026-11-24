@@ -88,7 +88,7 @@ fn section(label: &str, theme: &Theme) -> Line<'static> {
 /// ` PIPELINE  ✓ run ─ ✗ gates ─ ○ push ─ ○ PR ─ ○ CI` through
 /// `ds::stepper` (#1274): a failed step is `✗` + error colour, never colour
 /// alone; a narrow terminal gets the `Step n/N` form.
-fn stepper(
+pub(crate) fn stepper(
     stage: usize,
     failed: Option<usize>,
     frame_width: u16,
@@ -123,6 +123,41 @@ fn render_lines(f: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// The pane's first two lines: status · model · elapsed · cost · retry, and
+/// the bold title. The session screen draws them too (#1288).
+pub(crate) fn session_header(
+    s: &Session,
+    now: chrono::DateTime<chrono::Utc>,
+    theme: &Theme,
+    nerd_font: bool,
+) -> Vec<Line<'static>> {
+    let text = Style::new().fg(theme.text_primary);
+    let title = sanitize_for_terminal(&session_title(s));
+    let cost = session_cost(s);
+    let dot = || Span::styled(" · ", muted(theme));
+    vec![
+        Line::from(vec![
+            Span::raw(" "),
+            status_chip_for_mode(s.status, theme, nerd_font),
+            Span::raw("   "),
+            Span::styled(
+                sanitize_for_terminal(&s.model),
+                Style::new().fg(theme.accent_info),
+            ),
+            dot(),
+            Span::styled(crate::tui::app::mission::elapsed(s, now), text),
+            dot(),
+            Span::styled(money(cost), text),
+            Span::styled(" · retry ", muted(theme)),
+            Span::styled(s.retry_count.to_string(), text),
+        ]),
+        Line::from(Span::styled(
+            format!(" {title}"),
+            text.add_modifier(Modifier::BOLD),
+        )),
+    ]
+}
+
 fn session(
     f: &mut Frame,
     area: Rect,
@@ -138,27 +173,7 @@ fn session(
         Some(n) => format!("#{n} {title}"),
         None => title.clone(),
     };
-    let cost = session_cost(s);
-    let dot = || Span::styled(" · ", muted(theme));
-    let mut lines = vec![Line::from(vec![
-        Span::raw(" "),
-        status_chip_for_mode(s.status, theme, nerd_font),
-        Span::raw("   "),
-        Span::styled(
-            sanitize_for_terminal(&s.model),
-            Style::new().fg(theme.accent_info),
-        ),
-        dot(),
-        Span::styled(crate::tui::app::mission::elapsed(s, view.now), text),
-        dot(),
-        Span::styled(money(cost), text),
-        Span::styled(" · retry ", muted(theme)),
-        Span::styled(s.retry_count.to_string(), text),
-    ])];
-    lines.push(Line::from(Span::styled(
-        format!(" {title}"),
-        text.add_modifier(Modifier::BOLD),
-    )));
+    let mut lines = session_header(s, view.now, theme, nerd_font);
     if tall {
         let wt = s
             .worktree_path
