@@ -1,7 +1,8 @@
 //! [`RunView`]: what the run loop draws, read from the app every frame.
 
+use super::RunLoopState;
 use crate::session::types::SessionStatus;
-use crate::tui::app::App;
+use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::money::money;
 use crate::tui::ds::status_chip::status_word;
 use crate::tui::widgets::decision_card::{Cost, DecisionCard, DecisionOption, Section};
@@ -72,19 +73,16 @@ pub struct RunView {
 }
 
 impl RunView {
-    /// The run loop of the app's current run, `choice` picked on the card.
-    /// `None` when no queue or continuous run exists.
-    pub fn from_app(app: &App, choice: usize) -> Option<Self> {
+    /// The run loop of the run the mode shows: `ContinuousPause` reads the
+    /// continuous state only, any other mode the queue executor only (a
+    /// finished queue stays in the app after its run). `None`: no such run.
+    pub fn from_app(app: &App) -> Option<Self> {
         let budget = crate::tui::budget_prespawn::launch_budget(app);
         let retry = Cost::retry(&budget);
-        if let Some(exec) = app.queue_executor.as_ref() {
-            return Some(Self::queue(
-                app,
-                exec,
-                budget.per_session_usd,
-                retry,
-                choice,
-            ));
+        let state = &app.screen_state.run_loop;
+        if app.tui_mode != TuiMode::ContinuousPause {
+            let exec = app.queue_executor.as_ref()?;
+            return Some(Self::queue(app, exec, budget.per_session_usd, retry, state));
         }
         let cont = app.continuous_mode.as_ref()?;
         let failure = cont.current_failure();
@@ -125,7 +123,7 @@ impl RunView {
                     cost: retry,
                 },
             ],
-            selected: choice.min(1),
+            selected: state.choice_for(f.issue_number).min(1),
             // Continuous mode waits on this card alone: no "later".
             later: false,
             // The failure record has no session id to show.
@@ -147,7 +145,7 @@ impl RunView {
         })
     }
 
-    fn queue(app: &App, exec: &QueueExecutor, cap: f64, retry: Cost, choice: usize) -> Self {
+    fn queue(app: &App, exec: &QueueExecutor, cap: f64, retry: Cost, state: &RunLoopState) -> Self {
         let waiting = match exec.phase() {
             ExecutorPhase::AwaitingDecision { failed_index } => Some(failed_index),
             _ => None,
@@ -238,7 +236,7 @@ impl RunView {
                         cost: retry,
                     },
                 ],
-                selected: choice.min(1),
+                selected: state.choice_for(n).min(1),
                 later: true,
                 evidence: session.is_some(),
             }

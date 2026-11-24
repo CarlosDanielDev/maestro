@@ -15,6 +15,8 @@ mod view;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_safety;
 
 pub use draw::draw;
 pub use view::{Flavour, Phase, Row, RowState, RunView};
@@ -25,10 +27,25 @@ use crate::tui::ds::money::money;
 /// What the run loop keeps between frames.
 #[derive(Default)]
 pub struct RunLoopState {
-    /// The picked option of the decision card.
-    pub choice: usize,
+    /// The option picked on one issue's decision card: `(issue, option)`.
+    /// Any other card opens on its default (option 0, never a spend).
+    pub choice: Option<(u64, usize)>,
+    /// Stop › Kill came before the running item's session existed (its
+    /// issue was still being fetched): that session never starts.
+    pub kill_unstarted: Option<u64>,
     /// `S`: the "Stop the run?" dialog, open.
     pub stop: Option<StopDialog>,
+}
+
+impl RunLoopState {
+    /// The picked option on `issue`'s card; 0 (the safe default) when the
+    /// pick was made on another card or never.
+    pub fn choice_for(&self, issue: u64) -> usize {
+        match self.choice {
+            Some((n, i)) if n == issue => i,
+            _ => 0,
+        }
+    }
 }
 
 /// "Stop the run?" (`S`): finish the running session (default) or kill it.
@@ -36,6 +53,8 @@ pub struct RunLoopState {
 pub struct StopDialog {
     pub kill: bool,
     running: usize,
+    /// The running item has no session yet (its issue is being fetched).
+    starting: bool,
     not_started: usize,
     /// The most the running sessions can still cost (`None`: no cap).
     most: Option<f64>,
@@ -43,11 +62,12 @@ pub struct StopDialog {
 }
 
 impl StopDialog {
-    pub fn new(running: usize, not_started: usize, most: Option<f64>) -> Self {
-        let confirm = Self::confirm(false, running, not_started, most);
+    pub fn new(running: usize, starting: bool, not_started: usize, most: Option<f64>) -> Self {
+        let confirm = Self::confirm(false, running, starting, not_started, most);
         Self {
             kill: false,
             running,
+            starting,
             not_started,
             most,
             confirm,
@@ -61,11 +81,23 @@ impl StopDialog {
         let kill = !self.kill && self.running > 0;
         if kill != self.kill {
             self.kill = kill;
-            self.confirm = Self::confirm(kill, self.running, self.not_started, self.most);
+            self.confirm = Self::confirm(
+                kill,
+                self.running,
+                self.starting,
+                self.not_started,
+                self.most,
+            );
         }
     }
 
-    fn confirm(kill: bool, running: usize, not_started: usize, most: Option<f64>) -> TypedConfirm {
+    fn confirm(
+        kill: bool,
+        running: usize,
+        starting: bool,
+        not_started: usize,
+        most: Option<f64>,
+    ) -> TypedConfirm {
         let mark = |on: bool| if on { "▸ ●" } else { "  ○" };
         let mut rows = vec![
             (
@@ -74,7 +106,9 @@ impl StopDialog {
             ),
             (
                 String::new(),
-                if running > 0 {
+                if starting {
+                    format!("{} Kill the {running} starting: it never runs", mark(kill))
+                } else if running > 0 {
                     format!("{} Kill the {running} running now (as X does)", mark(kill))
                 } else {
                     "  ○ Kill: nothing is running".to_string()

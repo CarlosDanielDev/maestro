@@ -26,6 +26,10 @@ impl App {
         // Reset dismissed flag so completion summary can trigger for new sessions
         self.completion_summary_dismissed = false;
 
+        // #1287: Stop › Kill before this session existed: it never starts.
+        if self.drop_killed_queue_session(&session) {
+            return Ok(());
+        }
         self.record_queue_session(&session);
         self.pool.enqueue(session);
 

@@ -43,7 +43,7 @@ fn issue(number: u64) -> Issue {
 }
 
 /// A queue over `issues` with its launch configs, advanced onto the first.
-fn queue_app(issues: &[u64]) -> App {
+pub(super) fn queue_app(issues: &[u64]) -> App {
     let mut app = base_app();
     let items: Vec<WorkItem> = issues
         .iter()
@@ -69,7 +69,7 @@ fn queue_app(issues: &[u64]) -> App {
 }
 
 /// Put an active session for the running item in the pool (no process).
-fn run_item(app: &mut App, issue: u64, status: SessionStatus, cost: f64) -> uuid::Uuid {
+pub(super) fn run_item(app: &mut App, issue: u64, status: SessionStatus, cost: f64) -> uuid::Uuid {
     let mut s = Session::new(
         "work".into(),
         "opus".into(),
@@ -86,11 +86,11 @@ fn run_item(app: &mut App, issue: u64, status: SessionStatus, cost: f64) -> uuid
     id
 }
 
-async fn key(app: &mut App, code: KeyCode) {
+pub(super) async fn key(app: &mut App, code: KeyCode) {
     handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
 }
 
-async fn chord(app: &mut App, c: char) {
+pub(super) async fn chord(app: &mut App, c: char) {
     let mods = if c.is_ascii_uppercase() {
         KeyModifiers::SHIFT
     } else {
@@ -99,25 +99,25 @@ async fn chord(app: &mut App, c: char) {
     handle_key(app, KeyEvent::new(KeyCode::Char(c), mods)).await;
 }
 
-async fn type_text(app: &mut App, text: &str) {
+pub(super) async fn type_text(app: &mut App, text: &str) {
     for c in text.chars() {
         key(app, KeyCode::Char(c)).await;
     }
 }
 
-fn frame(app: &mut App) -> String {
+pub(super) fn frame(app: &mut App) -> String {
     let mut t = Terminal::new(TestBackend::new(100, 30)).unwrap();
     t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
     format!("{}", t.backend())
 }
 
-fn launches(app: &App) -> usize {
+pub(super) fn launches(app: &App) -> usize {
     (app.pending_commands.iter())
         .filter(|c| matches!(c, TuiCommand::LaunchSession(_)))
         .count()
 }
 
-fn exec(app: &App) -> &QueueExecutor {
+pub(super) fn exec(app: &App) -> &QueueExecutor {
     app.queue_executor.as_ref().unwrap()
 }
 
@@ -259,7 +259,7 @@ async fn run_loop_card_needs_pick_and_confirm() {
 }
 
 fn snapshot(app: &App) -> String {
-    let view = RunView::from_app(app, app.screen_state.run_loop.choice).expect("a run");
+    let view = RunView::from_app(app).expect("a run");
     let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
     t.draw(|f| draw_view(f, &view, f.area(), &Theme::dark(), false))
         .unwrap();

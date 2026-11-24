@@ -1590,6 +1590,8 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     let executor = QueueExecutor::new(&queue);
                     app.queue_launch_configs = Some(configs);
                     app.queue_executor = Some(executor);
+                    // #1287: a new run starts with no pick, stop or kill.
+                    app.screen_state.run_loop = Default::default();
                     app.advance_queue_and_launch();
                     app.completion_summary_dismissed = false;
                     app.tui_mode = app::TuiMode::QueueExecution;

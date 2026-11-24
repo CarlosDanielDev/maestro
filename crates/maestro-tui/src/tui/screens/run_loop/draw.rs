@@ -21,8 +21,7 @@ use crate::tui::theme::Theme;
 
 /// The run loop of the app's run in `area`. No run: nothing drawn.
 pub fn draw(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    let choice = app.screen_state.run_loop.choice;
-    if let Some(view) = RunView::from_app(app, choice) {
+    if let Some(view) = RunView::from_app(app) {
         draw_view(f, &view, area, theme, crate::icon_mode::use_nerd_font());
     }
 }

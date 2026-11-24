@@ -89,6 +89,9 @@ fn dismissed(app: &crate::tui::app::App, id: Uuid) -> bool {
 async fn hollow_decision_card_skip_only() {
     let mut app = crate::tui::make_test_app("hollow-1287");
     app.no_splash = true;
+    let toml =
+        "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n[github]\n[notifications]\n";
+    app.config = Some(toml::from_str(toml).expect("test config"));
     let mut s = Session::new(
         "work".into(),
         "opus".into(),
@@ -136,4 +139,14 @@ async fn hollow_decision_card_skip_only() {
     assert!(dismissed(&app, id), "Skip dismisses");
     assert!(app.screen_state.hollow_retry_screen.is_none());
     assert_ne!(app.tui_mode, TuiMode::HollowRetry);
+
+    // Retry (↓ ⏎) also marks the source session, as decisions.md says:
+    // `Completed` has no transition, so without the mark the dialog would
+    // reopen for it on the next tick (#890). A new attempt is queued.
+    app.pool.get_session_mut(id).unwrap().hollow_dismissed = false;
+    open(&mut app);
+    handle_key(&mut app, press(KeyCode::Down)).await;
+    handle_key(&mut app, press(KeyCode::Enter)).await;
+    assert!(dismissed(&app, id), "Retry marks the source handled");
+    assert_eq!(app.pending_session_launches.len(), 1, "a retry is queued");
 }

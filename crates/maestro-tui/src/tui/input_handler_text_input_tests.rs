@@ -171,11 +171,8 @@ fn on_bypass_warning() -> App {
 /// #1287: the run loop's "Stop the run?" typed confirm.
 fn on_run_loop_stop() -> App {
     let mut app = base_app(TuiMode::QueueExecution);
-    app.screen_state.run_loop.stop = Some(crate::tui::screens::run_loop::StopDialog::new(
-        1,
-        2,
-        Some(5.0),
-    ));
+    let stop = crate::tui::screens::run_loop::StopDialog::new(1, false, 2, Some(5.0));
+    app.screen_state.run_loop.stop = Some(stop);
     app
 }
 

@@ -8,7 +8,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::{RunLoopState, RunView, StopDialog};
+use super::{Phase, RunLoopState, RunView, StopDialog};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::confirm::ConfirmOutcome;
@@ -21,9 +21,10 @@ pub async fn handle(app: &mut App, key: &KeyEvent) {
     if app.screen_state.run_loop.stop.is_some() {
         return handle_stop(app, key).await;
     }
-    let Some(mut card) =
-        RunView::from_app(app, app.screen_state.run_loop.choice).and_then(|v| v.card)
-    else {
+    let Some((issue, mut card)) = RunView::from_app(app).and_then(|v| match (v.phase, v.card) {
+        (Phase::Waiting(n), Some(card)) => Some((n, card)),
+        _ => None,
+    }) else {
         return handle_run_keys(app, key);
     };
     if matches!(key.code, KeyCode::Char('r' | 's' | 'a')) {
@@ -32,9 +33,9 @@ pub async fn handle(app: &mut App, key: &KeyEvent) {
         return;
     }
     match card.handle_key(key) {
-        DecisionAction::Pick(i) => app.screen_state.run_loop.choice = i,
+        DecisionAction::Pick(i) => app.screen_state.run_loop.choice = Some((issue, i)),
         DecisionAction::Confirm(i) => {
-            app.screen_state.run_loop.choice = 0;
+            app.screen_state.run_loop.choice = None;
             match app.tui_mode {
                 TuiMode::ContinuousPause => decide_continuous(app, i == 1),
                 _ => decide_queue(app, i == 1),
@@ -51,7 +52,7 @@ pub async fn handle(app: &mut App, key: &KeyEvent) {
         }
         // Later never keeps a paid pick: the card reopens on the default.
         DecisionAction::Later => {
-            app.screen_state.run_loop.choice = 0;
+            app.screen_state.run_loop.choice = None;
             app.navigate_back_or_dashboard();
         }
         DecisionAction::None => handle_run_keys(app, key),
@@ -95,7 +96,7 @@ fn toggle_hold(app: &mut App) {
 }
 
 fn open_stop(app: &mut App) {
-    let Some(view) = RunView::from_app(app, 0) else {
+    let Some(view) = RunView::from_app(app) else {
         return;
     };
     let running_spent: f64 = (app.queue_executor.as_ref())
@@ -103,7 +104,14 @@ fn open_stop(app: &mut App) {
         .and_then(|id| app.pool.get_session(id))
         .map_or(0.0, |s| s.cost_usd);
     let most = (view.cap > 0.0).then(|| (view.running as f64 * view.cap - running_spent).max(0.0));
-    app.screen_state.run_loop.stop = Some(StopDialog::new(view.running, view.not_started, most));
+    let starting = (app.queue_executor.as_ref())
+        .is_some_and(|e| e.running_issue().is_some() && e.running_session_id().is_none());
+    app.screen_state.run_loop.stop = Some(StopDialog::new(
+        view.running,
+        starting,
+        view.not_started,
+        most,
+    ));
 }
 
 /// The open "Stop the run?" dialog: `↑↓` switches drain ↔ kill, typed
@@ -135,7 +143,14 @@ async fn stop_run(app: &mut App, kill: bool) {
         return;
     };
     let running = exec.running_session_id();
+    let starting = exec.running_issue().filter(|_| running.is_none());
     exec.stop();
+    // A paid pick never outlives the run it was made on.
+    app.screen_state.run_loop.choice = None;
+    if kill {
+        // No session yet: it is dropped when it arrives (`add_session`).
+        app.screen_state.run_loop.kill_unstarted = starting;
+    }
     let finished = exec.is_finished();
     let message = if kill {
         "Run stopped: running session killed, nothing new starts"

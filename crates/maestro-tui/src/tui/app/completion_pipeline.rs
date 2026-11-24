@@ -90,11 +90,16 @@ impl App {
             .as_ref()
             .map(|c| RetryPolicy::from_config(&c.sessions));
 
+        // #1287: a held or stopped queue starts nothing new, auto-retries
+        // of its running item included; that item settles as it ended.
+        let no_retry = (self.queue_executor.as_ref())
+            .filter(|e| e.is_held() || e.is_stopped())
+            .and_then(|e| e.running_session_id());
         let retryable_ids: Vec<uuid::Uuid> = if let Some(ref policy) = retry_policy {
             self.pool
                 .all_sessions()
                 .iter()
-                .filter(|s| policy.should_retry(s))
+                .filter(|s| policy.should_retry(s) && Some(s.id) != no_retry)
                 .map(|s| s.id)
                 .collect()
         } else {
@@ -260,7 +265,8 @@ impl App {
         // `Errored` only leads to `Retrying`, so `is_terminal` misses it.
         let last_attempt_errored = |s: &crate::session::types::Session| {
             s.status == SessionStatus::Errored
-                && !retry_policy.as_ref().is_some_and(|p| p.may_retry(s))
+                && (Some(s.id) == no_retry
+                    || !retry_policy.as_ref().is_some_and(|p| p.may_retry(s)))
         };
         let completed_ids: Vec<uuid::Uuid> = self
             .pool
@@ -488,6 +494,39 @@ impl App {
         {
             exec.set_session_id(session.id);
         }
+    }
+
+    /// #1287: Stop › Kill came while the running queue item had no session
+    /// yet (its issue was being fetched). Its session never starts: the
+    /// item fails and the stopped run is finished. True when dropped.
+    pub(crate) fn drop_killed_queue_session(
+        &mut self,
+        session: &crate::session::types::Session,
+    ) -> bool {
+        let Some(issue) = self.screen_state.run_loop.kill_unstarted else {
+            return false;
+        };
+        let Some(exec) = self.queue_executor.as_mut() else {
+            return false;
+        };
+        if session.issue_number != Some(issue)
+            || exec.running_issue() != Some(issue)
+            || exec.running_session_id().is_some()
+        {
+            return false;
+        }
+        self.screen_state.run_loop.kill_unstarted = None;
+        exec.mark_failure();
+        let finished = exec.is_finished();
+        self.activity_log.push_simple(
+            "Queue".into(),
+            format!("#{issue} not started: the run was stopped with kill"),
+            LogLevel::Warn,
+        );
+        if finished {
+            self.open_completion_summary();
+        }
+        true
     }
 
     /// #1244: a failed launch fetch for the running queue item fails the
