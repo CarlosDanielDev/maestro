@@ -87,6 +87,11 @@ pub(super) fn blocks() -> Vec<Binding> {
         ),
         // `handle_global_shortcuts` runs it while a CI check fails (#695).
         s(dash, ch('e'), A::Expand, "CI error review").hidden(),
+        // #1289: the Usage views; the selection is kept across them. The
+        // view strip shows these keys, so the footer does not repeat them.
+        s(dash, ch('o'), A::Expand, "Ops view").hidden(),
+        s(dash, ch('c'), A::Expand, "Cost view").hidden(),
+        s(dash, ch('t'), A::Expand, "Tokens view").hidden(),
     ]);
     // #1280: Overview routes to the Dashboard, so Overview's `P` (retry the
     // selected session's PR, #1265) is gone; ⏎ ⏎ on a PR pipeline row is
@@ -121,7 +126,8 @@ pub(super) fn blocks() -> Vec<Binding> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCommand {
     Network,
-    TurboquantDashboard,
+    /// The TurboQuant panel: opens Dashboard › Tokens (#1289).
+    Turboquant,
     CompleteModal,
     ReviewConcerns,
     PrPipeline,
@@ -135,9 +141,9 @@ pub type KeyOn = Option<(&'static str, TuiMode)>;
 pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
     ("network", PaletteCommand::Network, None),
     (
-        "TurboQuant dashboard",
-        PaletteCommand::TurboquantDashboard,
-        Some(("Q", TuiMode::Dashboard)),
+        "TurboQuant (Dashboard › Tokens)",
+        PaletteCommand::Turboquant,
+        Some(("t", TuiMode::Dashboard)),
     ),
     (
         "session-complete modal (Settings)",

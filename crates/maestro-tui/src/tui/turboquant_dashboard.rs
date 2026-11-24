@@ -1,26 +1,23 @@
-//! TurboQuant savings dashboard.
+//! TurboQuant savings: the logic behind the Dashboard › Tokens tile and
+//! panel (#1289). The full screen is gone; its old mode is an alias for
+//! Dashboard › Tokens (`screens::dashboard::usage::alias_view`).
 //!
 //! Shows **honest** projections of token/cost savings based on actual
 //! `TokenUsage` per session, and **real** savings when fork-handoff
-//! compression (#343) has populated per-session handoff metrics.
-//!
-//! When at least one session has real handoff data, the header reads
-//! "Actual Savings" and aggregate totals combine real + projected rows.
-//! Otherwise the header reads "Estimated Savings (projection)" and every
-//! row is a theoretical projection.
+//! compression (#343) has populated per-session handoff metrics. The two
+//! are separate rows (`✓ measured`, `~ estimate`), never one total.
 
-use crate::flags::Flag;
-use crate::flags::store::FeatureFlags;
 use crate::session::types::Session;
+use crate::tui::ds::money::money;
 use crate::tui::theme::Theme;
 use crate::turboquant::adapter::{SavingsKind, SessionSavings, TurboQuantAdapter, session_savings};
 use crate::util::formatting::format_tokens;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::Rect,
+    style::Style,
     text::{Line, Span},
-    widgets::{BorderType, Paragraph},
+    widgets::Paragraph,
 };
 
 /// Aggregate rollup of per-session savings shown on the dashboard.
@@ -30,32 +27,6 @@ pub struct AggregateSavings {
     pub total_saved_usd: f64,
     pub actual_count: usize,
     pub projection_count: usize,
-}
-
-/// Draw the TurboQuant savings dashboard. `bit_width` should come from
-/// `config.turboquant.bit_width` so projections reflect the user's setting.
-pub fn draw_turboquant_dashboard(
-    f: &mut Frame,
-    sessions: &[&Session],
-    flags: &FeatureFlags,
-    bit_width: u8,
-    area: Rect,
-    theme: &Theme,
-) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5), // header + aggregate
-            Constraint::Min(5),    // per-session breakdown
-        ])
-        .split(area);
-
-    let adapter = TurboQuantAdapter::new(bit_width);
-    let items = classify_savings(sessions, &adapter);
-    let aggregate = aggregate_savings(&items);
-
-    draw_summary(f, flags, aggregate, chunks[0], theme);
-    draw_breakdown(f, &items, aggregate.actual_count > 0, chunks[1], theme);
 }
 
 /// Pair each session that produced savings data with its `SessionSavings`.
@@ -85,176 +56,98 @@ pub fn aggregate_savings(items: &[(&Session, SessionSavings)]) -> AggregateSavin
     agg
 }
 
-fn draw_summary(
-    f: &mut Frame,
-    flags: &FeatureFlags,
-    agg: AggregateSavings,
-    area: Rect,
-    theme: &Theme,
-) {
-    let any_actual = agg.actual_count > 0;
-    let tq_enabled = flags.is_enabled(Flag::TurboQuant);
-    let status_text = if tq_enabled { "ON" } else { "OFF" };
-    let status_color = if tq_enabled {
-        theme.accent_success
-    } else {
-        theme.text_muted
-    };
-
-    let (header_text, header_style, border_type) = if any_actual {
-        (
-            "Actual Savings",
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD),
-            BorderType::Plain,
-        )
-    } else {
-        (
-            "Estimated Savings (projection)",
-            Style::default()
-                .fg(theme.accent_info)
-                .add_modifier(Modifier::ITALIC),
-            BorderType::Rounded,
-        )
-    };
-
-    let counts_text = if any_actual {
-        format!(
-            " Sessions: {} actual, {} projected ",
-            agg.actual_count, agg.projection_count
-        )
-    } else {
-        format!(" Sessions projected: {} ", agg.projection_count)
-    };
-
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(" TurboQuant: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                status_text,
-                Style::default()
-                    .fg(status_color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(counts_text, Style::default().fg(theme.text_secondary)),
-        ]),
-        Line::from(vec![
-            Span::styled(" Tokens saved: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format_tokens(agg.total_saved_tokens),
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  USD saved: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format!("${:.4}", agg.total_saved_usd),
-                Style::default().fg(theme.accent_warning),
-            ),
-        ]),
-    ];
-
-    let block = theme
-        .styled_block(header_text, false)
-        .border_type(border_type)
-        .border_style(header_style);
-    f.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-fn draw_breakdown(
+/// The TurboQuant panel of Dashboard › Tokens (#1289; the screen is gone).
+/// Measured (fork-handoff compression) and estimated savings are separate
+/// rows; the estimate is a ceiling and says so. `tq` is (enabled, bits).
+pub fn draw_turboquant_panel(
     f: &mut Frame,
     items: &[(&Session, SessionSavings)],
-    any_actual: bool,
+    tq: (bool, u8),
     area: Rect,
     theme: &Theme,
 ) {
-    let title = if any_actual {
-        "Savings Breakdown"
+    let (enabled, bits) = tq;
+    let title = if enabled {
+        format!("TurboQuant · on · {bits}-bit")
     } else {
-        "Savings Breakdown (projected)"
+        "TurboQuant · off".to_string()
     };
-
+    let block = theme.styled_block(&title, false);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let muted = Style::default().fg(theme.text_muted);
+    let text = Style::default().fg(theme.text_primary);
     if items.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled(
-            " No session token data yet. Run sessions to gather projections.",
-            Style::default().fg(theme.text_muted),
-        )))
-        .block(theme.styled_block(title, false));
-        f.render_widget(empty, area);
+        let lines = vec![
+            Line::from(Span::styled(" No token data yet.", text)),
+            Line::from(Span::styled(" It fills in as sessions run.", muted)),
+        ];
+        f.render_widget(Paragraph::new(lines), inner);
         return;
     }
-
-    let header = Line::from(vec![Span::styled(
-        format!(
-            " {:>8}  {:>18}  {:>6}  {:>8}  {:>10}  {:>6}",
-            "ID", "Title", "Kind", "Saved", "USD", "Ratio"
-        ),
-        Style::default()
-            .fg(theme.text_secondary)
-            .add_modifier(Modifier::BOLD),
-    )]);
-
-    let max_rows = area.height.saturating_sub(3) as usize;
-    let mut lines = vec![header];
-
-    for (s, sv) in items.iter().take(max_rows) {
-        let label = session_row_label(s);
-        let title_text = session_row_title(s, 18);
-        let (kind_style, row_modifier) = match sv.kind {
-            SavingsKind::Actual => (
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-                Modifier::BOLD,
-            ),
-            SavingsKind::Projection => (
-                Style::default()
-                    .fg(theme.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-                Modifier::ITALIC,
-            ),
+    let (m_tok, m_usd) = savings_of(items, SavingsKind::Actual);
+    let (e_tok, e_usd) = savings_of(items, SavingsKind::Projection);
+    let estimate_word = if enabled { "a ceiling" } else { "would save" };
+    let row = |glyph: &str, label: &str, tok: u64, usd: f64, note: &str| {
+        Line::from(vec![
+            Span::styled(format!(" {glyph} {label:<9}"), text),
+            Span::styled(format!("{:>7}", format_tokens(tok)), text),
+            Span::styled(format!("{:>8}", money(Some(usd))), text),
+            Span::styled(format!("  {note}"), muted),
+        ])
+    };
+    let mut lines = vec![
+        row("✓", "measured", m_tok, m_usd, "fork handoffs"),
+        row("~", "estimate", e_tok, e_usd, estimate_word),
+        Line::from(Span::styled(
+            format!(" est. = input − input ÷ {bits}, one fixed ratio"),
+            muted,
+        )),
+    ];
+    for (s, sv) in items {
+        let priced = crate::tui::screens::dashboard::session_cost(s).is_some();
+        let glyph = match sv.kind {
+            SavingsKind::Actual => "✓",
+            SavingsKind::Projection => "~",
         };
-
-        let usd_text = if sv.saved_usd > 0.0 {
-            format!("${:.4}", sv.saved_usd)
-        } else {
-            "—".to_string()
-        };
-
         lines.push(Line::from(vec![
             Span::styled(
-                format!(" {:>8}", label),
-                Style::default().fg(theme.accent_info),
+                format!(" {:<7}", session_row_label(s)),
+                Style::default().fg(theme.accent_identifier),
             ),
+            Span::styled(format!("{glyph} "), text),
+            Span::styled(format!("{:>7}", format_tokens(sv.saved_tokens)), text),
+            // Priced at the session's own rate: unknown when it is unpriced.
             Span::styled(
-                format!("  {:>18}", title_text),
-                Style::default().fg(theme.text_primary),
+                format!("{:>8}", money(priced.then_some(sv.saved_usd))),
+                text,
             ),
-            Span::styled(format!("  {:>6}", sv.kind.label()), kind_style),
-            Span::styled(
-                format!("  {:>8}", format_tokens(sv.saved_tokens)),
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(row_modifier),
-            ),
-            Span::styled(
-                format!("  {:>10}", usd_text),
-                Style::default()
-                    .fg(theme.accent_warning)
-                    .add_modifier(row_modifier),
-            ),
-            Span::styled(
-                format!("  {:>5.1}x", sv.ratio),
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(row_modifier),
-            ),
+            Span::styled(format!("{:>6.1}x", sv.ratio), muted),
         ]));
     }
+    lines.push(Line::from(Span::styled(
+        format!(
+            " on/off: {}",
+            crate::tui::navigation::registry::TURBOQUANT_TOGGLE
+        ),
+        muted,
+    )));
+    let lines: Vec<Line> = lines
+        .into_iter()
+        .map(|l| crate::tui::ds::fit::ellipsize_line(l, inner.width as usize))
+        .collect();
+    f.render_widget(Paragraph::new(lines), inner);
+}
 
-    let block = theme.styled_block(title, false);
-    f.render_widget(Paragraph::new(lines).block(block), area);
+/// Tokens and dollars saved by the rows of one kind; measured and
+/// estimated savings are never added together.
+pub fn savings_of(items: &[(&Session, SessionSavings)], kind: SavingsKind) -> (u64, f64) {
+    items
+        .iter()
+        .filter(|(_, sv)| sv.kind == kind)
+        .fold((0, 0.0), |(t, u), (_, sv)| {
+            (t.saturating_add(sv.saved_tokens), u + sv.saved_usd)
+        })
 }
 
 /// Session label for dashboard rows: issue number when present, else a short

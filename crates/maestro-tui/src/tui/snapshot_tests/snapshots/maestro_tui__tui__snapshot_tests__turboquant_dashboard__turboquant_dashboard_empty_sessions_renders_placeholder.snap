@@ -2,13 +2,13 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/turboquant_dashboard.rs
 expression: terminal.backend()
 ---
-"╭──────────────────────────────────────────[ Estimated Savings (projection) ]──────────────────────────────────────────╮"
-"│ TurboQuant: ON Sessions projected: 0                                                                                 │"
-"│ Tokens saved: 0  USD saved: $0.0000                                                                                  │"
+"┌─────────────────────────────────────────────[ TurboQuant · on · 4-bit ]──────────────────────────────────────────────┐"
+"│ No token data yet.                                                                                                   │"
+"│ It fills in as sessions run.                                                                                         │"
 "│                                                                                                                      │"
-"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
-"┌──────────────────────────────────────────[ Savings Breakdown (projected) ]───────────────────────────────────────────┐"
-"│ No session token data yet. Run sessions to gather projections.                                                       │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"

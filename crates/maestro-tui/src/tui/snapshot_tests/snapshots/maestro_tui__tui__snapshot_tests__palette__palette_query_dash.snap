@@ -10,7 +10,7 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 "┏━━━━━━━│› dash                                                        │━━━━━━━┓"
 "┃ ✓ Noth│──────────────────────────────────────────────────────────────│       ┃"
 "┃   i ne│▌ Dashboard                                                 2 │       ┃"
-"┃       │  TurboQuant dashboard                                        │       ┃"
+"┃       │  TurboQuant (Dashboard › Tokens)                             │       ┃"
 "┗━━━━━━━│  retry PR (Dashboard PR pipeline)                            │━━━━━━━┛"
 "┌───────│                                                              │───────┐"
 "│ No age│                                                              │       │"
@@ -29,5 +29,5 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 
 --- underlined ---
  7|           Dash
- 8|                      dash
+ 8|                       Dash
  9|                     Dash

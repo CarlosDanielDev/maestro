@@ -237,7 +237,8 @@ pub fn registry() -> &'static [Binding] {
         // §06 Global. ⌃K opens the palette (#1255). ⌃Q quits
         // (#1260): an idle fleet at once, else through the Confirm Exit hold.
         // The TurboQuant toggle it replaced is [`TURBOQUANT_TOGGLE`] (a
-        // Settings field, no chord); `Q` still opens the TurboQuant dashboard.
+        // Settings field, no chord); TurboQuant is a panel of Dashboard ›
+        // Tokens (`t`, #1289).
         let mut v = vec![
             g(Chord::ctrl('k'), A::Palette, Safe, "palette"),
             g(Chord::ctrl('q'), A::Quit, Destructive, "quit"),

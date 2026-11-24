@@ -7,7 +7,6 @@ use crate::mascot::widget::MascotWidget;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::agent_graph;
 use crate::tui::app::{App, TuiMode};
-use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
 use crate::tui::detail;
 use crate::tui::ds::toast::{Severity, Toast};
@@ -145,6 +144,8 @@ fn route_overview_alias(app: &mut App) {
     if app.tui_mode == TuiMode::Overview {
         app.tui_mode = TuiMode::Dashboard;
     }
+    // #1289: the old Cost and Tokens screens are Dashboard views.
+    crate::tui::screens::dashboard::usage::route_alias(app);
 }
 
 /// The Dashboard cockpit (#1280) in `area`.
@@ -362,19 +363,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     .draw(f, &sessions, chunks[1], &theme, spinner_tick);
             }
         }
-        TuiMode::CostDashboard => {
-            let sessions = app.pool.all_sessions();
-            let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
-            cost_dashboard::draw_cost_dashboard(
-                f,
-                &sessions,
-                app.total_cost,
-                budget_limit,
-                chunks[1],
-                &theme,
-            );
-        }
-        TuiMode::Dashboard => {
+        // `route_overview_alias` turned the Usage aliases into Dashboard.
+        TuiMode::Dashboard | TuiMode::CostDashboard | TuiMode::TokenDashboard => {
             draw_dashboard(f, app, chunks[1], &theme);
         }
         TuiMode::Landing => draw_home(f, app, chunks[1], &theme),
@@ -498,10 +488,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             if let Some(ref cont) = app.continuous_mode {
                 draw_continuous_pause_overlay(f, cont, chunks[1], &app.theme);
             }
-        }
-        TuiMode::TokenDashboard => {
-            let sessions = app.pool.all_sessions();
-            draw_token_dashboard_with_app_quota(f, app, &sessions, chunks[1], &theme);
         }
         TuiMode::Sanitize => {
             if let Some(ref mut screen) = app.screen_state.sanitize_screen {
@@ -638,36 +624,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         );
                     }
                 }
-                Some(&TuiMode::CostDashboard) => {
-                    let sessions: Vec<&crate::session::types::Session> =
-                        app.pool.all_sessions().into_iter().collect();
-                    let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
-                    crate::tui::cost_dashboard::draw_cost_dashboard(
-                        f,
-                        &sessions,
-                        app.total_cost,
-                        budget_limit,
-                        chunks[1],
-                        &theme,
-                    );
-                }
-                Some(&TuiMode::TokenDashboard) => {
-                    let sessions: Vec<&crate::session::types::Session> =
-                        app.pool.all_sessions().into_iter().collect();
-                    draw_token_dashboard_with_app_quota(f, app, &sessions, chunks[1], &theme);
-                }
-                Some(&TuiMode::TurboquantDashboard) => {
-                    let sessions: Vec<&crate::session::types::Session> =
-                        app.pool.all_sessions().into_iter().collect();
-                    let bit_width = app
-                        .config
-                        .as_ref()
-                        .map(|c| c.turboquant.bit_width)
-                        .unwrap_or(4);
-                    crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
-                        f, &sessions, &app.flags, bit_width, chunks[1], &theme,
-                    );
-                }
                 _ => {
                     let sessions = app.pool.all_sessions();
                     app.panel_view.draw_with_claims(
@@ -720,18 +676,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                 );
             }
-        }
-        TuiMode::TurboquantDashboard => {
-            let sessions: Vec<&crate::session::types::Session> =
-                app.pool.all_sessions().into_iter().collect();
-            let bit_width = app
-                .config
-                .as_ref()
-                .map(|c| c.turboquant.bit_width)
-                .unwrap_or(4);
-            crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
-                f, &sessions, &app.flags, bit_width, chunks[1], &theme,
-            );
         }
         TuiMode::AdaptFollowUp => {
             let sessions = app.pool.all_sessions();
@@ -1293,6 +1237,8 @@ fn draw_footer(
     {
         hints = key_hints::from_pairs(&[("n", "Cancel")]);
     }
+    // #1289: in Cost / Tokens ⏎ only opens a session.
+    crate::tui::screens::dashboard::dispatch::usage_footer(app, &mut hints);
     // #1263: the shown log drawer is modal; the footer shows only its keys.
     if log_drawer_shown(app) {
         hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
@@ -1951,43 +1897,6 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str>
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
         std::borrow::Cow::Owned(format!("{}...", truncated))
-    }
-}
-
-/// Pick between live (`MinimaxQuotaSnapshots`) and placeholder
-/// (`NoQuotaSnapshots`) quota source based on what the App holds (#769).
-fn draw_token_dashboard_with_app_quota(
-    f: &mut Frame,
-    app: &App,
-    sessions: &[&crate::session::types::Session],
-    area: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    let badges = app.quota_badges();
-    match &app.minimax_quota {
-        Some(quota) => {
-            let snapshots =
-                crate::budget::quota_snapshot::MinimaxQuotaSnapshots::new(quota.clone());
-            crate::tui::token_dashboard::draw_token_dashboard_with_quota_and_badges(
-                f,
-                sessions,
-                app.total_cost,
-                &snapshots,
-                &badges,
-                area,
-                theme,
-            );
-        }
-        None => {
-            crate::tui::token_dashboard::draw_token_dashboard_with_badges(
-                f,
-                sessions,
-                app.total_cost,
-                &badges,
-                area,
-                theme,
-            );
-        }
     }
 }
 
