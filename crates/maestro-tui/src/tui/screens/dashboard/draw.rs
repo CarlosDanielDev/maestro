@@ -1,6 +1,6 @@
 //! Dashboard layout (§02.1): the view strip, the Work list and the detail
 //! of the selected row. Wide and Regular put the detail right of the list;
-//! Compact stacks them. The Activity pane under it is the shell's.
+//! Compact stacks them. The Activity pane is the shell's (#1289: `c t` swap views).
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -10,6 +10,7 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use super::rows::{Group, WorkKey};
+use super::usage::View;
 use super::{Dashboard, DashboardView, session_cost, session_title};
 use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::provider::types::{CheckConclusion, CheckRun, CheckStatus};
@@ -46,7 +47,12 @@ pub fn draw(
 ) {
     dash.armed.tick(dash.now());
     let [strip, main] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
-    draw_view_strip(f, strip, view, bp, theme);
+    draw_view_strip(f, strip, view, dash.view, bp, theme);
+    match dash.view {
+        View::Cost => return super::cost::draw(f, main, view, dash, bp, theme, nerd_font),
+        View::Tokens => return super::tokens::view::draw(f, main, view, bp, theme, nerd_font),
+        View::Ops => {}
+    }
     let (list, detail) = match bp {
         Breakpoint::Wide | Breakpoint::Regular => {
             let w = if bp == Breakpoint::Wide {
@@ -74,26 +80,37 @@ pub fn draw(
     }
 }
 
-/// `o Ops · c Cost · t Tokens · g Deps`; Ops is the only view drawn
-/// here (#1280), `c` and `t` open the Cost and Token screens, `g` is not
-/// bound yet so it is muted. Right side: the one screen summary.
+/// `o Ops · c Cost · t Tokens · g Deps`, the active view highlighted; `g`
+/// is not bound yet so it is muted. Right side: the Ops summary, or the
+/// scope of every Usage number (`this run · since 10:00 UTC`).
 fn draw_view_strip(
     f: &mut Frame,
     area: Rect,
     view: &DashboardView<'_>,
+    active: View,
     bp: Breakpoint,
     theme: &Theme,
 ) {
     let sel = focused_selection_style(theme);
     let muted = Style::new().fg(theme.text_muted);
-    let mut spans = vec![Span::raw(" "), Span::styled(" o Ops ", sel)];
-    for (k, label, bound) in [
-        ("c", "Cost", true),
-        ("t", "Tokens", true),
-        ("g", "Deps", false),
-    ] {
-        spans.push(Span::raw("  "));
-        let key = if bound { key_style(theme) } else { muted };
+    let mut spans = vec![Span::raw(" ")];
+    for (i, (k, label, v)) in [
+        ("o", "Ops", Some(View::Ops)),
+        ("c", "Cost", Some(View::Cost)),
+        ("t", "Tokens", Some(View::Tokens)),
+        ("g", "Deps", None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        if v == Some(active) {
+            spans.push(Span::styled(format!(" {k} {label} "), sel));
+            continue;
+        }
+        let key = if v.is_some() { key_style(theme) } else { muted };
         spans.push(Span::styled(k, key));
         spans.push(Span::styled(format!(" {label}"), muted));
     }
@@ -101,13 +118,17 @@ fn draw_view_strip(
     if bp == Breakpoint::Compact {
         return;
     }
-    let live = view
-        .sessions
-        .iter()
-        .filter(|s| !s.status.is_terminal())
-        .count();
-    let pipe = view.ci.len() + view.pending.len();
-    let summary = format!("{live} live · {pipe} in PR pipeline ");
+    let summary = if active == View::Ops {
+        let live = view
+            .sessions
+            .iter()
+            .filter(|s| !s.status.is_terminal())
+            .count();
+        let pipe = view.ci.len() + view.pending.len();
+        format!("{live} live · {pipe} in PR pipeline ")
+    } else {
+        format!("{} ", super::usage::scope_line(&view.usage))
+    };
     let w = summary.width() as u16;
     if w < area.width / 2 {
         let r = Rect::new(area.x + area.width - w, area.y, w, 1);
@@ -199,7 +220,7 @@ fn list_lines(
     (lines, selected_line)
 }
 
-fn header_line(group: Group, rows: usize, theme: &Theme) -> Line<'static> {
+pub(super) fn header_line(group: Group, rows: usize, theme: &Theme) -> Line<'static> {
     let label = match group {
         Group::Sessions => "SESSIONS",
         Group::PrPipeline => "PR PIPELINE",
@@ -228,7 +249,12 @@ fn empty_line(group: Group, theme: &Theme) -> Line<'static> {
 }
 
 /// `▌` and the focused selection style on the selected row, cut with `…`.
-fn mark(line: Line<'static>, selected: bool, width: usize, theme: &Theme) -> Line<'static> {
+pub(super) fn mark(
+    line: Line<'static>,
+    selected: bool,
+    width: usize,
+    theme: &Theme,
+) -> Line<'static> {
     let mut spans = vec![Span::raw(if selected { "▌" } else { " " })];
     spans.extend(line.spans);
     let line = ellipsize_line(Line::from(spans), width);
@@ -267,7 +293,7 @@ fn session_line(
     row_line(chip, s.issue_number, &title, tail, width, theme)
 }
 
-fn row_line(
+pub(super) fn row_line(
     chip: Span<'static>,
     issue: Option<u64>,
     title: &str,

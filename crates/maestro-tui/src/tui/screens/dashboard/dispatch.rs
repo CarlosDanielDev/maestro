@@ -2,12 +2,14 @@
 //! (`HomeScreen`), which still answer every key this module leaves.
 //! `j k ↑ ↓` move, `⏎` opens a session or arms a pending PR, `X` kills
 //! through the typed confirm, `l` opens the log, `D` dismisses finished
-//! sessions. Any key but `⏎` disarms an armed PR, also keys that never
+//! sessions, `o c t` switch the Ops, Cost and Tokens views (#1289). Any
+//! key but `⏎` disarms an armed PR, also keys that never
 //! reach this module (`note_key`); `Esc` then only disarms.
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::rows::WorkKey;
+use super::usage::{Usage, View};
 use super::{Dashboard, DashboardView, pr_lock_reason};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::armed::{ArmedState, EnterOutcome};
@@ -15,14 +17,34 @@ use crate::tui::screens::ScreenAction;
 
 /// The data the Dashboard reads and its own state, borrowed together.
 pub fn split(app: &mut App) -> (DashboardView<'_>, &mut Dashboard) {
+    let usage = usage(app);
     let view = DashboardView {
         sessions: app.pool.all_sessions(),
         pending: &app.pending_prs,
         ci: &app.ci_poller.ci_check_details,
         gh_auth_ok: app.gh_auth_ok,
-        now: chrono::Utc::now(),
+        now: app
+            .screen_state
+            .dashboard
+            .wall
+            .unwrap_or_else(chrono::Utc::now),
+        usage,
     };
     (view, &mut app.screen_state.dashboard)
+}
+
+/// The numbers the Cost and Tokens views read (#1289), from state and
+/// config only: nothing here is made up.
+fn usage(app: &App) -> Usage {
+    Usage {
+        total_cost: app.total_cost,
+        budget: app.config.as_ref().map(|c| c.budget.clone()),
+        since: app.start_time,
+        tq_enabled: app.flags.is_enabled(crate::flags::Flag::TurboQuant),
+        tq_bit_width: app.config.as_ref().map_or(4, |c| c.turboquant.bit_width),
+        badges: app.quota_badges(),
+        quota: app.minimax_quota.clone(),
+    }
 }
 
 /// Rebuild the rows. A Home `⏎` jump (`PanelView::reveal`) selects its
@@ -127,6 +149,14 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
         }
         KeyCode::Char('D') => app.dismiss_all_completed(),
         KeyCode::Esc if was_armed => {}
+        // #1289: the views share the selection; Esc leaves a Usage view
+        // for Ops before it leaves the Dashboard.
+        KeyCode::Char('o') => app.screen_state.dashboard.view = View::Ops,
+        KeyCode::Char('c') => app.screen_state.dashboard.view = View::Cost,
+        KeyCode::Char('t') => app.screen_state.dashboard.view = View::Tokens,
+        KeyCode::Esc if app.screen_state.dashboard.view != View::Ops => {
+            app.screen_state.dashboard.view = View::Ops;
+        }
         _ => return None,
     }
     Some(ScreenAction::None)

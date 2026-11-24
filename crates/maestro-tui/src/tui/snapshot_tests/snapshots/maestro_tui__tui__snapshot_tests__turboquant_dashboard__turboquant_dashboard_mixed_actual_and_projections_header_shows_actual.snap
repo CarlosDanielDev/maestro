@@ -2,15 +2,15 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/turboquant_dashboard.rs
 expression: terminal.backend()
 ---
-"┌──────────────────────────────────────────────────[ Actual Savings ]──────────────────────────────────────────────────┐"
-"│ TurboQuant: ON Sessions: 1 actual, 1 projected                                                                       │"
-"│ Tokens saved: 9.8k  USD saved: $0.0463                                                                               │"
+"┌─────────────────────────────────────────────[ TurboQuant · on · 4-bit ]──────────────────────────────────────────────┐"
+"│ ✓ measured    7.5k   $0.04  fork handoffs                                                                            │"
+"│ ~ estimate    2.2k  <$0.01  a ceiling                                                                                │"
+"│ est. = input − input ÷ 4, one fixed ratio                                                                            │"
+"│ #10    ✓    7.5k   $0.04   4.0x                                                                                      │"
+"│ #11    ~    2.2k  <$0.01   4.0x                                                                                      │"
+"│ on/off: Settings › TurboQuant › Enabled                                                                              │"
 "│                                                                                                                      │"
-"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"┌────────────────────────────────────────────────[ Savings Breakdown ]─────────────────────────────────────────────────┐"
-"│       ID               Title    Kind     Saved         USD   Ratio                                                   │"
-"│      #10    Compress handoff  ACTUAL      7.5k     $0.0357    4.0x                                                   │"
-"│      #11        Pending work   proj.      2.2k     $0.0105    4.0x                                                   │"
+"│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"

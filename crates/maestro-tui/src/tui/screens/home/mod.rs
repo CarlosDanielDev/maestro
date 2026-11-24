@@ -80,21 +80,8 @@ const QUICK_ACTIONS: &[(&str, char, QuickActionDispatch)] = &[
         QuickActionDispatch::Push(TuiMode::PrReview),
     ),
     // #1280: `s Status` opened Overview, which is this Dashboard now.
-    (
-        "Cost Report",
-        'c',
-        QuickActionDispatch::Push(TuiMode::CostDashboard),
-    ),
-    (
-        "Token Report",
-        't',
-        QuickActionDispatch::Push(TuiMode::TokenDashboard),
-    ),
-    (
-        "TurboQuant Savings",
-        'Q',
-        QuickActionDispatch::Push(TuiMode::TurboquantDashboard),
-    ),
+    // #1289: `c` Cost and `t` Tokens are Dashboard views (registry block);
+    // TurboQuant is a panel in Tokens, so its `Q` launcher is gone.
     (
         "Settings",
         'S',

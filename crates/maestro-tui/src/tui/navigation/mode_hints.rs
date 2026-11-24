@@ -207,8 +207,8 @@ pub fn mode_keymap(
                     priority: 4,
                 },
                 InlineHint {
-                    key: "Q",
-                    action: "TurboQuant",
+                    key: "t",
+                    action: "Tokens",
                     priority: 5,
                 },
             ],
@@ -604,22 +604,6 @@ pub fn mode_keymap(
                 action: "Back",
                 priority: 0,
             }],
-        ),
-        TuiMode::TurboquantDashboard => (
-            "TurboQuant A/B",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
         ),
         TuiMode::AdaptFollowUp => (
             "Next iteration paths",

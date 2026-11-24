@@ -819,6 +819,11 @@ impl App {
         } else {
             target
         };
+        // #1289: Cost, Tokens and TurboQuant are Dashboard views now.
+        let target = crate::tui::screens::dashboard::usage::resolve(
+            target,
+            &mut self.screen_state.dashboard,
+        );
 
         if self.tui_mode == target {
             return;

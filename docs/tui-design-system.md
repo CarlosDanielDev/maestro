@@ -488,6 +488,26 @@ Implements `§02.1 Dashboard: operations cockpit` of `docs/design-system/index.h
 
 Rules: kill is `X` + TypedConfirm here and in Detail, `k` is "up" here. The ⌃K palette has `retry PR (Dashboard PR pipeline)` (opens this screen on the first pending PR row) and `agent graph` (the Agent graph, Overview's old `g`; off with `views.agent_graph_enabled = false`). The launcher's `s Status` is gone (it opened this screen). A GitHub write from this screen goes through the armed bar (`ArmedBar` with `pr_write_description`). The registry block (`Scope::Screen(TuiMode::Dashboard)`) feeds the footer. Not drawn yet: the Cost, Tokens and Deps sub-views, the PR pipeline header's retry-all, Tab focus into the detail, `r` re-run gates and `v` gate output (they keep their old keys or come with their own issues). Tests: `screens/dashboard/rows_tests.rs`, `screens/dashboard/dispatch_tests.rs`, `screens/dashboard/reach_tests.rs`, `snapshot_tests/dashboard_cockpit.rs`.
 
+
+### Usage views: Cost and Tokens (`screens/dashboard/{usage,cost}.rs`, `tokens/view.rs`, #1289)
+
+Implements `§02.14 Usage: cost, tokens and TurboQuant` of `docs/design-system/index.html` (Reimagined: view strip, KPI row, Spend by session, Budget, TurboQuant savings; Implementation). Decision: `docs/design-system/decisions.md` (2026-11-24, Usage views). This section supersedes the cockpit row above that says `c t` open the old screens.
+
+| Item | For |
+|---|---|
+| `usage::View::{Ops, Cost, Tokens}` in `Dashboard::view` | The Dashboard body. `o c t` switch it (`dispatch`, registry block, hidden from the footer because the view strip shows them); `Esc` in Cost / Tokens goes back to Ops first. The Work list selection (`WorkList::selected`) is shared, so `j k ⏎ X l` act on the same session in every view |
+| `usage::alias_view(mode)` / `usage::route_alias(app)` | `TuiMode::CostDashboard` → Cost, `TokenDashboard` → Tokens: `App::navigate_to` and `ui::draw` turn them into `TuiMode::Dashboard` + the view, so F4 / F5 and every old route land on the view. `TuiMode::TurboquantDashboard` is removed; the ⌃K `TurboQuant (Dashboard › Tokens)` entry opens Tokens |
+| `usage::Usage` (in `DashboardView::usage`) | What the views read, filled by `dispatch::split` from state and config only: `total_cost`, `[budget]`, `start_time` (scope line `this run · since 10:00 UTC`), TurboQuant on/bits, quota badges and source. `Dashboard::wall` pins the clock in tests |
+| `usage::budget_thresholds(&BudgetConfig)` | The Budget panel's "What happens" list (alert = `total × alert_threshold_pct`, per-session cap, total cap), worded after `App::check_budget`. Never literals |
+| `usage::draw_budget` / `budget_height` | Spent of cap on a `ds::gauge::bar` (0.6 / 0.8 / 1.0), the three thresholds (`← now` once crossed), the cap note and the unpriced count. No `[budget]` says no cap applies |
+| `usage::draw_session_table(.., tail, ..)` | A Usage table over the Work list's session rows (Ops `row_line` + `mark`, group headers), a right-aligned column header, and the empty state (`○ Nothing has run yet` · `start work from 1 Home`) |
+| `usage::draw_kpis` | `ds::kpi_tile` row: Wide 4, Regular 3, Compact 2 tiles. A tile with nothing to show uses `KpiState::Empty` with its reason |
+| `cost::draw` | KPI (Spent, Rate = spend ÷ time this run, To cap, Sessions), Spend by session (model, share, cost, cost against the per-session cap; unpriced reads `$?` and `no cap`), Budget at 58 / 48 columns, stacked on Compact |
+| `tokens::view::draw` | KPI (Tokens, Cache hit, TurboQuant, Spent), then `tokens::draw_token_dashboard_with_quota_and_badges` (Per-Provider Usage + Tokens by session; the quota injection seam stays for tests) and `turboquant_dashboard::draw_turboquant_panel` |
+| `turboquant_dashboard::{classify_savings, savings_of, draw_turboquant_panel}` | `✓ measured` (fork handoffs) and `~ estimate` (a ceiling, or `would save` when off) are separate rows, never one total; the formula is printed; on/off is `TURBOQUANT_TOGGLE` |
+
+Rules: every dollar on these views is `ds::money` (`usage_money_formatting` scans every `$` over a NaN / negative / `-0.0` fixture); rates are `$/MTok`. Not drawn yet: Quota windows, Spend less, the By model rule, the burn-rate sparkline, `b` / `,` / `r` keys and a per-view Activity pane rule (the shell still draws it). Tests: `snapshot_tests/usage.rs`, `snapshot_tests/usage_money.rs`, `snapshot_tests/cost_dashboard.rs`, `snapshot_tests/turboquant_dashboard.rs`.
+
 ---
 
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`

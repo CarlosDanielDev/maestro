@@ -57,7 +57,6 @@ pub enum TuiMode {
     ConfirmKill(uuid::Uuid),
     ConfirmExit,
     SessionSummary,
-    TurboquantDashboard,
     /// Overlay shown after an adapt-flavored session completes, presenting the
     /// parsed next-iteration paths for one-key selection.
     AdaptFollowUp,
@@ -142,7 +141,6 @@ impl TuiMode {
             Self::ConfirmKill(_) => "Confirm Kill",
             Self::ConfirmExit => "Confirm Exit",
             Self::SessionSummary => "Sessions",
-            Self::TurboquantDashboard => "TQ Dashboard",
             Self::AdaptFollowUp => "Next Steps",
             Self::Prd => "PRD",
             Self::Roadmap => "Roadmap",
@@ -739,7 +737,6 @@ mod tests {
             TuiMode::AgentGraph,
             TuiMode::CostDashboard,
             TuiMode::TokenDashboard,
-            TuiMode::TurboquantDashboard,
             TuiMode::Settings,
             TuiMode::PromptInput,
             TuiMode::Interaction,

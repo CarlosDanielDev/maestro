@@ -13,12 +13,12 @@ Help — Dashboard Mode
     r                 Run Prompt                                      
     a                 Adapt Project                                   
     p                 Review PRs                                      
-    c                 Cost Report                                     
-    t                 Token Report                                    
-    Q                 TurboQuant Savings                              
     S                 Settings                                        
     n                 Release Notes                                   
     R                 Refresh Suggestions                             
                                                                       
   Global keys                                                         
-    ⌃K                palette — TurboQuant; on/off in Settings
+    ⌃K                palette — TurboQuant; on/off in Settings        
+    ⌃Q / ⌃X / ⌃C / q  quit — asks first while work is live            
+    Tab               next panel                                      
+    ⇧Tab              previous panel
