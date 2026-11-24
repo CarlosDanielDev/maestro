@@ -1237,6 +1237,8 @@ fn draw_footer(
     {
         hints = key_hints::from_pairs(&[("n", "Cancel")]);
     }
+    // #1289: in Cost / Tokens ⏎ only opens a session.
+    crate::tui::screens::dashboard::dispatch::usage_footer(app, &mut hints);
     // #1263: the shown log drawer is modal; the footer shows only its keys.
     if log_drawer_shown(app) {
         hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);

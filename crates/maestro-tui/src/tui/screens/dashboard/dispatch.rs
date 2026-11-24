@@ -170,6 +170,18 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
     Some(ScreenAction::None)
 }
 
+/// The footer in Cost and Tokens: `⏎` only opens a session there (no PR
+/// row to arm), so its hint drops `arm PR` (#1289; `ui::draw_footer`).
+pub fn usage_footer(app: &App, hints: &mut [crate::tui::navigation::keymap::InlineHint]) {
+    let dash = &app.screen_state.dashboard;
+    if app.tui_mode != TuiMode::Dashboard || dash.view == View::Ops {
+        return;
+    }
+    for h in hints.iter_mut().filter(|h| h.key == "Enter") {
+        h.action = "open";
+    }
+}
+
 /// Cost or Tokens, with the selection moved off a PR row (#1289).
 fn show_usage(app: &mut App, view: View) {
     let dash = &mut app.screen_state.dashboard;

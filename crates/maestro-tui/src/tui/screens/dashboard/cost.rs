@@ -172,24 +172,27 @@ fn tile_texts(view: &DashboardView<'_>, facts: &SpendFacts) -> TileTexts {
         rate: facts.per_hour.map(|r| format!("{}/h", money(Some(r)))),
         to_cap,
         sessions: format!("{live} live · {} done", view.sessions.len() - live),
-        sessions_ctx: sessions_context(view, facts),
+        sessions_ctx: sessions_context(view),
     }
 }
 
 /// `2 running · 1 failed · avg $1.60` (the old Cost screen's counts and
-/// average; the average is over priced sessions).
-fn sessions_context(view: &DashboardView<'_>, facts: &SpendFacts) -> String {
+/// average). The average is over the priced sessions listed, numerator and
+/// count alike: `D` dismisses sessions but not their spend from the total.
+fn sessions_context(view: &DashboardView<'_>) -> String {
     use crate::session::types::SessionStatus::{Errored, FailedGates, Running};
     let count = |f: &dyn Fn(&Session) -> bool| view.sessions.iter().filter(|s| f(s)).count();
     let running = count(&|s| s.status == Running);
     let failed = count(&|s| matches!(s.status, Errored | FailedGates));
-    let priced = view.sessions.len() - facts.unpriced;
+    let priced: Vec<f64> = view
+        .sessions
+        .iter()
+        .filter_map(|s| session_cost(s))
+        .collect();
     let mut ctx = format!("{running} running · {failed} failed");
-    if priced > 0 {
-        ctx.push_str(&format!(
-            " · avg {}",
-            money(Some(facts.spent / priced as f64))
-        ));
+    if !priced.is_empty() {
+        let avg = priced.iter().sum::<f64>() / priced.len() as f64;
+        ctx.push_str(&format!(" · avg {}", money(Some(avg))));
     }
     ctx
 }

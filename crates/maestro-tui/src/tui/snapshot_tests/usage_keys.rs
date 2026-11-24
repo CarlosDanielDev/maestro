@@ -117,3 +117,41 @@ async fn turboquant_tile_and_panel_share_the_off_word() {
         .unwrap_or_default();
     assert!(tile.contains("would save"), "{out}");
 }
+
+/// The average is over the sessions listed, numerator and count alike:
+/// `D` dismisses sessions but leaves their spend in the run total.
+#[tokio::test]
+async fn usage_cost_average_counts_listed_sessions_only() {
+    let mut app = empty_app();
+    let k = || super::usage::tokens(1_000, 1_000, 0, 0);
+    for issue in [1, 2] {
+        let s = super::usage::session(
+            issue,
+            crate::session::types::SessionStatus::Running,
+            "claude-opus-4-5",
+            2.0,
+            k(),
+        );
+        app.pool.enqueue(s);
+    }
+    app.total_cost = 6.0; // a third $2.00 session was dismissed
+    press(&mut app, 'c').await;
+    let out = text(&draw(&mut app, 160, 40));
+    assert!(out.contains("avg $2.00"), "{out}");
+}
+
+/// No hint for a key that does nothing: `⏎` cannot arm a PR row in the
+/// Usage views, so their footer says `open` only.
+#[tokio::test]
+async fn usage_footer_enter_says_open_only() {
+    let mut app = usage_app();
+    let ops = text(&draw(&mut app, 120, 36));
+    assert!(ops.contains("Enter open · arm PR"), "{ops}");
+    for v in ['c', 't'] {
+        press(&mut app, v).await;
+        let out = text(&draw(&mut app, 120, 36));
+        let footer = out.lines().last().unwrap_or_default();
+        assert!(footer.contains("Enter open"), "{v}: {footer}");
+        assert!(!out.contains("arm PR"), "{v}: {footer}");
+    }
+}

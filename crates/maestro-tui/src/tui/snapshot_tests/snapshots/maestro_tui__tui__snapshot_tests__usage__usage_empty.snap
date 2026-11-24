@@ -31,4 +31,4 @@ expression: t.backend()
 "┃                                                                      ┃│                                              │"
 "┃                                                                      ┃│                                              │"
 "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────┘"
-" j Down   k Up   Enter open · arm PR   X kill   l log   D dismiss finished                                      ⌃Q quit "
+" j Down   k Up   Enter open   X kill   l log   D dismiss finished                                               ⌃Q quit "
