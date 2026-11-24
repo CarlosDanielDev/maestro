@@ -267,3 +267,86 @@ async fn fkeys_on_the_session_screen_act_on_the_shown_session() {
         assert_eq!(app.tui_mode, TuiMode::Fullscreen(b_id), "{entry}: F3");
     }
 }
+
+/// #1291: the Gates view lists every gate (pass and fail) with command and
+/// duration, and a failing gate shows its digest with the first failure
+/// open, then the output tail.
+#[tokio::test]
+async fn session_gates_digest() {
+    use crate::session::types::GateResultEntry;
+    let tests_out = "\
+running 3 tests
+test parser::tests::parses_header ... FAILED
+test store::tests::round_trip ... FAILED
+test store::tests::loads ... ok
+
+failures:
+
+---- parser::tests::parses_header stdout ----
+
+thread 'parser::tests::parses_header' panicked at src/parser.rs:42:9:
+assertion `left == right` failed
+  left: 3
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- store::tests::round_trip stdout ----
+
+thread 'store::tests::round_trip' panicked at src/store.rs:88:5:
+called `Result::unwrap()` on an `Err` value: NotFound
+
+failures:
+    parser::tests::parses_header
+    store::tests::round_trip
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`
+";
+    let gate = |name: &str, passed: bool, command: &str, ms: u64, output: &str| GateResultEntry {
+        command: command.into(),
+        duration_ms: ms,
+        output: output.into(),
+        log_path: (!passed).then(|| format!(".maestro/logs/gates/issue-412/{name}.log").into()),
+        ..if passed {
+            GateResultEntry::pass(name, format!("{name} passed"))
+        } else {
+            GateResultEntry::fail(name, format!("{name} failed: error: test failed"))
+        }
+    };
+    let (mut app, id) = one_session();
+    {
+        let s = app.pool.get_session_mut(id).unwrap();
+        s.status = SessionStatus::FailedGates;
+        s.gate_results = vec![
+            gate("fmt", true, "cargo fmt -- --check", 400, ""),
+            gate("clippy", true, "cargo clippy -- -D warnings", 12_300, ""),
+            gate("test", false, "cargo test", 41_000, tests_out),
+        ];
+    }
+    app.tui_mode = TuiMode::Session {
+        id,
+        view: SessionView::Gates,
+    };
+    let out = draw(&mut app, 100, 40);
+    for want in [
+        "fmt",
+        "cargo clippy -- -D warnings",
+        "41.0s",
+        "✗ 2 failing · 1 passed",
+        "FAILURES BY FILE",
+        "src/parser.rs",
+        "parser::tests::parses_header  :42:9",
+        "assertion `left == right` failed",
+        "store::tests::round_trip  :88:5",
+        "OUTPUT TAIL",
+    ] {
+        assert!(out.contains(want), "Gates view lacks {want:?}:\n{out}");
+    }
+    assert_eq!(
+        out.matches("called `Result::unwrap()`").count(),
+        1,
+        "only the first failure is open (the second one's body is in the tail only):\n{out}"
+    );
+    insta::assert_snapshot!("session_gates_digest", out);
+}

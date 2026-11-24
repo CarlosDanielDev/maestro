@@ -7,6 +7,7 @@ pub mod bypass_indicator;
 mod ci_monitor;
 mod dropdown;
 mod empty_state;
+pub mod failure_list;
 pub mod input;
 pub mod launch_dialog;
 mod list_editor;

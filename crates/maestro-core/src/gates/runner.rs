@@ -1,8 +1,7 @@
 use std::path::Path;
-use std::process::Command;
 
+use super::capture;
 use super::types::{CompletionGate, GateResult};
-use crate::util::truncate_at_char_boundary;
 
 /// Trait for running completion gates, enabling mock injection in tests.
 pub trait GateCheck: Send {
@@ -22,38 +21,40 @@ pub struct GateRunner;
 
 impl GateCheck for GateRunner {
     fn run_gates(&self, gates: &[CompletionGate], worktree_path: &Path) -> Vec<GateResult> {
+        let log_dir = capture::default_log_dir();
         gates
             .iter()
-            .map(|gate| run_single_gate(gate, worktree_path))
+            .map(|gate| run_gate(gate, worktree_path, Some(&log_dir)))
             .collect()
     }
 }
 
 pub(super) fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
+    run_gate(gate, worktree_path, None)
+}
+
+/// Run one gate; with `log_dir`, command gates also write their full log there.
+pub(super) fn run_gate(
+    gate: &CompletionGate,
+    worktree_path: &Path,
+    log_dir: Option<&Path>,
+) -> GateResult {
+    let log = log_dir.map(|dir| (dir, worktree_path));
     match gate {
         CompletionGate::TestsPass { command } => {
             let Some((program, args)) = crate::util::parse_command(command) else {
                 return GateResult::fail("tests_pass", "Empty or malformed test command");
             };
 
-            let result = Command::new(&program)
-                .args(&args)
-                .current_dir(worktree_path)
-                .output();
-
-            match result {
-                Ok(output) => {
-                    if output.status.success() {
+            match capture::run(&program, &args, worktree_path) {
+                Ok(run) => {
+                    let result = if run.success {
                         GateResult::pass("tests_pass", "All tests passed")
                     } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let end = truncate_at_char_boundary(&stderr, 200);
-                        let suffix = if end < stderr.len() { "..." } else { "" };
-                        GateResult::fail(
-                            "tests_pass",
-                            format!("Tests failed: {}{}", &stderr[..end], suffix),
-                        )
-                    }
+                        let short = capture::short(&run.stderr);
+                        GateResult::fail("tests_pass", format!("Tests failed: {short}"))
+                    };
+                    capture::attach(result, command, &run, log)
                 }
                 Err(e) => GateResult::fail("tests_pass", format!("Failed to run tests: {}", e)),
             }
@@ -104,24 +105,15 @@ pub(super) fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> Ga
                 return GateResult::fail(name, "Empty or malformed command");
             };
 
-            let result = Command::new(&program)
-                .args(&args)
-                .current_dir(worktree_path)
-                .output();
-
-            match result {
-                Ok(output) => {
-                    if output.status.success() {
+            match capture::run(&program, &args, worktree_path) {
+                Ok(run) => {
+                    let result = if run.success {
                         GateResult::pass(name, format!("{} passed", name))
                     } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let end = truncate_at_char_boundary(&stderr, 200);
-                        let suffix = if end < stderr.len() { "..." } else { "" };
-                        GateResult::fail(
-                            name,
-                            format!("{} failed: {}{}", name, &stderr[..end], suffix),
-                        )
-                    }
+                        let short = capture::short(&run.stderr);
+                        GateResult::fail(name, format!("{} failed: {short}", name))
+                    };
+                    capture::attach(result, command, &run, log)
                 }
                 Err(e) => GateResult::fail(name, format!("Failed to run {}: {}", name, e)),
             }

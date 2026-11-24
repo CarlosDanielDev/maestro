@@ -4,9 +4,11 @@
 //! and the planned local gate command before launching a fix session.
 
 use super::{CiFixConfig, Screen, ScreenAction};
+use crate::gates::digest::digest;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::failure_list::failure_lines;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
@@ -208,10 +210,21 @@ impl Screen for CiErrorReviewScreen {
                 "Fetching failed check logs…",
                 Style::default().fg(theme.text_muted),
             ))),
-            FetchPhase::Ready { log_excerpt } => Paragraph::new(log_excerpt.as_str())
-                .style(Style::default().fg(theme.text_primary))
-                .wrap(Wrap { trim: false })
-                .scroll((self.scroll_offset, 0)),
+            FetchPhase::Ready { log_excerpt } => {
+                // #1291: the Gates view's failure digest above the raw log.
+                // The fetch handler already masked and sanitized the text.
+                let d = digest(log_excerpt);
+                let mut lines = Vec::new();
+                if !d.is_empty() {
+                    lines.extend(failure_lines(&d, "", theme));
+                    lines.push(Line::from(""));
+                }
+                lines.extend(log_excerpt.lines().map(Line::from));
+                Paragraph::new(lines)
+                    .style(Style::default().fg(theme.text_primary))
+                    .wrap(Wrap { trim: false })
+                    .scroll((self.scroll_offset, 0))
+            }
             FetchPhase::Failed { reason } => Paragraph::new(format!(
                 "Log fetch failed: {}\n\n(You can still press Enter to launch the fix session — the agent will get the failed check names without the log body.)",
                 reason
@@ -313,5 +326,35 @@ mod tests {
         assert_eq!(screen.scroll_offset, 0);
         let _ = screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.scroll_offset, 0, "k must not underflow below zero");
+    }
+
+    /// #1291: the CI log shows the same failure digest as the Gates view,
+    /// above the raw log. Goes through the real fetch handler, which masks
+    /// secrets and turns the `job<TAB>step<TAB>time` tabs into spaces.
+    #[test]
+    fn ready_log_shows_failure_digest_masked() {
+        let log = "build\tClippy\t2026-11-24T10:00:00.1Z error[E0308]: mismatched types\n\
+                   build\tClippy\t2026-11-24T10:00:00.1Z  --> src/main.rs:10:18\n\
+                   build\tClippy\t2026-11-24T10:00:00.1Z   |  token ghp_secret123\n";
+        let mut app = crate::tui::make_test_app("issue-1291-ci-digest");
+        let mut state = ready_state();
+        state.fetch = FetchPhase::Loading;
+        app.screen_state.ci_error_review_screen = Some(CiErrorReviewScreen::new(state));
+        app.handle_ci_error_review_fetched(42, Ok(log.into()));
+        let screen = app.screen_state.ci_error_review_screen.as_mut().unwrap();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        terminal
+            .draw(|f| screen.draw(f, f.area(), &Theme::dark()))
+            .unwrap();
+        let out = format!("{}", terminal.backend());
+        for want in [
+            "FAILURES BY FILE",
+            "src/main.rs",
+            "mismatched types  E0308  :10:18",
+        ] {
+            assert!(out.contains(want), "CI log lacks {want:?}:\n{out}");
+        }
+        assert!(!out.contains("ghp_secret123"), "secrets masked:\n{out}");
     }
 }
