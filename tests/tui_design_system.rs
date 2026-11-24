@@ -208,7 +208,7 @@ fn palette_has_no_radial_entry() {
         "the palette still offers the old picture:\n{block}"
     );
     assert!(
-        lower.contains("\"agent graph (dashboard › deps files)\""),
+        lower.contains("\"agent graph (deps › files)\""),
         "the agent graph entry names its new place:\n{block}"
     );
 }

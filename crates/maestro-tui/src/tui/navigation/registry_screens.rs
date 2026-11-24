@@ -205,7 +205,7 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
         None,
     ),
     (
-        "agent graph (Dashboard › Deps files)",
+        "agent graph (Deps › files)",
         PaletteCommand::AgentGraph,
         None,
     ),

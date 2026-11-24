@@ -12,11 +12,11 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
 "┃   i ne│▌ Dashboard                                                 2 │       ┃"
 "┃       │  TurboQuant (Dashboard › Tokens)                             │       ┃"
 "┗━━━━━━━│  retry PR (Dashboard PR pipeline)                            │━━━━━━━┛"
-"┌───────│  ⊘ agent graph (Dashboard › Deps files) views.agent_gra      │───────┐"
+"┌───────│                                                              │───────┐"
 "│ No age│                                                              │       │"
 "│       │                                                              │       │"
 "│       │                                                              │       │"
-"│       │⏎ run  ↑↓ pick  Esc close · 4 of 25 commands                  │       │"
+"│       │⏎ run  ↑↓ pick  Esc close · 3 of 25 commands                  │       │"
 "│       ╰──────────────────────────────────────────────────────────────╯       │"
 "│                                                                              │"
 "│                                                                              │"
@@ -31,4 +31,3 @@ expression: "format!(\"{}\\n--- underlined ---\\n{hits}\", t.backend())"
  7|           Dash
  8|                       Dash
  9|                     Dash
-10|                          Dash
