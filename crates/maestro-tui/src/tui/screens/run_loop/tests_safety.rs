@@ -132,6 +132,9 @@ async fn run_loop_kill_before_the_session_starts() {
     let late_id = late.id;
     app.add_session(late).await.expect("add_session");
     assert!(app.pool.get_session(late_id).is_none(), "it never starts");
+    let logged = |text: &str| (app.activity_log.entries().iter()).any(|e| e.message.contains(text));
+    assert!(!logged("Enqueuing session"), "no false enqueue line");
+    assert!(logged("not started: the run was stopped with kill"));
     assert_eq!(exec(&app).items()[0].state, QueueItemState::Failed);
     assert!(exec(&app).is_finished());
 }
