@@ -171,7 +171,7 @@ fn session(
     let title = sanitize_for_terminal(&session_title(s));
     let head = match s.issue_number {
         Some(n) => format!("#{n} {title}"),
-        None => title.clone(),
+        None => title,
     };
     let mut lines = session_header(s, view.now, theme, nerd_font);
     if tall {
