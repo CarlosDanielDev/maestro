@@ -1,18 +1,18 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/milestone_run_plan.rs
-assertion_line: 90
+assertion_line: 122
 expression: "draw_screen(&mut screen(), 160, 30).backend()"
 ---
 "┌──────────────────[ [M] Milestones ]──────────────────┐[1] Issues  [2] Preview                                                                                 "
 "│ v0.32.0 Polish                #######-  9/10  1 ready│                                                                                                        "
-"│▌v0.33.0 Input Standardization ##------   2/8  3 ready│┌──────────────────────────────────[ v0.33.0 Input Standardization ]───────────────────────────────────┐"
-"│ Backlog                       --------   0/0  0 ready││ [ ] 3 ready · [~] 1 waiting · [X] 1 blocked · [?] 1 claimed                                          │"
+"│▌v0.33.0 Input Standardization ##------   2/8  2 ready│┌──────────────────────────────────[ v0.33.0 Input Standardization ]───────────────────────────────────┐"
+"│ Backlog                       --------   0/0  0 ready││ [ ] 2 ready · [~] 2 waiting · [X] 1 blocked · [?] 1 claimed                                          │"
 "│                                                      ││ LEVEL 0                                                                                              │"
 "│                                                      ││> [ ] ready   #964 Migrate the Issue wizard to Input                                                  │"
 "│                                                      ││  [ ] ready   #965 Spike: input history                                                               │"
 "│                                                      ││ LEVEL 1                                                                                              │"
 "│                                                      ││  [~] waits   #966 Migrate the Settings forms                                                  <- #964│"
-"│                                                      ││  [ ] ready   #969 Migrate the Roadmap filter                                                         │"
+"│                                                      ││  [~] waits   #969 Migrate the Roadmap filter                                                  <- #964│"
 "│                                                      ││ HELD                                                                                                 │"
 "│                                                      ││  [?] claimed #967 Migrate the PRD fields                                                             │"
 "│                                                      ││  [X] blocked #968 Delete TextAreaField                                                    <- #831 m61│"
@@ -31,5 +31,5 @@ expression: "draw_screen(&mut screen(), 160, 30).backend()"
 "│                                                      ││                                                                                                      │"
 "│                                                      ││                                                                                                      │"
 "│                                                      ││ Run this milestone                                                                                   │"
-"│ ready = can start now (no open blocker, no claim)    ││ 4 of 6 run in 2 waves · worst case $20.00 · 2 wait  R plan the run                                   │"
+"│ ready = wave 1: no open blocker, no claim            ││ 4 of 6 run in 2 waves · worst case $20.00 · 2 wait  R plan the run                                   │"
 "└──────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────┘"

@@ -89,7 +89,7 @@ pub fn legend(theme: &Theme, width: usize) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            " = can start now (no open blocker, no claim)",
+            " = wave 1: no open blocker, no claim",
             Style::default().fg(theme.text_muted),
         ),
     ]);
@@ -110,7 +110,6 @@ pub fn summary(
             IssueReadiness::Waits(_) => counts[1] += 1,
             IssueReadiness::BlockedOutside { .. } | IssueReadiness::Unknown => counts[2] += 1,
             IssueReadiness::Claimed => counts[3] += 1,
-            IssueReadiness::Closed => {}
         }
     }
     let parts = [
@@ -144,7 +143,7 @@ pub fn issue_row(
     nerd: bool,
 ) -> Line<'static> {
     let chip_color = match readiness {
-        IssueReadiness::Ready | IssueReadiness::Closed => theme.accent_success,
+        IssueReadiness::Ready => theme.accent_success,
         IssueReadiness::Waits(_) => theme.text_secondary,
         IssueReadiness::Claimed => theme.accent_info,
         IssueReadiness::BlockedOutside { .. } | IssueReadiness::Unknown => theme.accent_warning,
@@ -185,7 +184,7 @@ pub fn issue_row(
             by,
             milestone: Some(m),
         } => format!("{arrow} #{by} m{m}"),
-        IssueReadiness::BlockedOutside { by, .. } => format!("{arrow} #{by}"),
+        IssueReadiness::BlockedOutside { by, .. } => format!("{arrow} #{by} not fetched"),
         _ => String::new(),
     };
     let right = vec![Span::styled(
@@ -252,7 +251,6 @@ pub fn readiness_chip(r: IssueReadiness, nerd: bool) -> String {
         IssueReadiness::BlockedOutside { .. } => (IconId::XCircle, "blocked"),
         IssueReadiness::Claimed => (IconId::ChipNeedsReview, "claimed"),
         IssueReadiness::Unknown => (IconId::Warning, "no data"),
-        IssueReadiness::Closed => (IconId::ChipCompleted, "closed"),
     };
     format!("{} {word}", get_for_mode(icon, nerd))
 }

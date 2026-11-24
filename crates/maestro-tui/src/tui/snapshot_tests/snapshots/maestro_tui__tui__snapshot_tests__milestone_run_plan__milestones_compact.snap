@@ -1,18 +1,18 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/milestone_run_plan.rs
-assertion_line: 95
+assertion_line: 127
 expression: "draw_screen(&mut screen(), 80, 24).backend()"
 ---
 "┌────[ [M] Milestones ]────┐[1] Issues  [2] Preview                             "
 "│ v0.32.0 P…  9/10  1 ready│                                                    "
-"│▌v0.33.0 I…   2/8  3 ready│┌────────[ v0.33.0 Input Standardization ]─────────┐"
-"│ Backlog      0/0  0 ready││ [ ] 3 ready · [~] 1 waiting · [X] 1 blocked · [?…│"
+"│▌v0.33.0 I…   2/8  2 ready│┌────────[ v0.33.0 Input Standardization ]─────────┐"
+"│ Backlog      0/0  0 ready││ [ ] 2 ready · [~] 2 waiting · [X] 1 blocked · [?…│"
 "│                          ││ LEVEL 0                                          │"
 "│                          ││> [ ] ready   #964 Migrate the Issue wizard to In…│"
 "│                          ││  [ ] ready   #965 Spike: input history           │"
 "│                          ││ LEVEL 1                                          │"
 "│                          ││  [~] waits   #966 Migrate the Settings f… <- #964│"
-"│                          ││  [ ] ready   #969 Migrate the Roadmap filter     │"
+"│                          ││  [~] waits   #969 Migrate the Roadmap fi… <- #964│"
 "│                          ││ HELD                                             │"
 "│                          ││  [?] claimed #967 Migrate the PRD fields         │"
 "│                          ││  [X] blocked #968 Delete TextAreaFie… <- #831 m61│"
@@ -25,5 +25,5 @@ expression: "draw_screen(&mut screen(), 80, 24).backend()"
 "│                          ││                                                  │"
 "│                          ││                                                  │"
 "│                          ││ Run this milestone                               │"
-"│ ready = can start now (n…││ 4 of 6 run in 2 waves · worst case $20.00 · 2 wa…│"
+"│ ready = wave 1: no open …││ 4 of 6 run in 2 waves · worst case $20.00 · 2 wa…│"
 "└──────────────────────────┘└──────────────────────────────────────────────────┘"

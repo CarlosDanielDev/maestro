@@ -8,23 +8,21 @@ use crate::work::conflicts::files_to_modify_from_body;
 use crate::work::run_plan::{Hold, RunPlan, run_plan};
 use std::collections::{HashMap, HashSet};
 
-/// Where one issue stands in the plan. Chip words match Roadmap's.
+/// Where one open issue stands in the plan. Chip words match Roadmap's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IssueReadiness {
-    /// Open, no open blocker, no claim: it can start now.
+    /// In wave 1, no open blocker, no claim: `⏎` in the Run queue starts it.
     Ready,
-    /// Waits on an open issue of this run; it starts in order.
+    /// Starts after this issue: an open blocker of this run, or an issue of
+    /// an earlier wave that edits the same file.
     Waits(u64),
-    /// Blocked by an open issue outside this milestone.
-    BlockedOutside {
-        by: u64,
-        milestone: Option<u64>,
-    },
-    /// A session or the `maestro:in-progress` label already claims it.
+    /// Blocked by an issue outside this run. `milestone` is `None` when no
+    /// fetch returned the blocker, so its state is unknown.
+    BlockedOutside { by: u64, milestone: Option<u64> },
+    /// A live session or the `maestro:in-progress` label already claims it.
     Claimed,
-    /// No data to plan it (partial fetch).
+    /// No data to plan it.
     Unknown,
-    Closed,
 }
 
 /// One milestone's plan plus what the rows need to explain it.
@@ -33,38 +31,17 @@ pub struct MilestonePlan {
     pub plan: RunPlan,
     /// Open issues of the run.
     pub open: usize,
-    /// Each open issue's blockers that are still open.
+    /// Each open issue's blockers that are open in this run.
     open_blockers: HashMap<u64, Vec<u64>>,
-    closed: HashSet<u64>,
 }
 
 impl MilestonePlan {
     pub fn readiness(&self, n: u64) -> IssueReadiness {
-        if self.closed.contains(&n) {
-            return IssueReadiness::Closed;
-        }
         if let Some((_, holds)) = self.plan.deferred.iter().find(|(d, _)| *d == n) {
-            if holds.contains(&Hold::Claimed) {
-                return IssueReadiness::Claimed;
-            }
-            return holds
-                .iter()
-                .find_map(|h| match h {
-                    Hold::BlockedOutside { by, milestone } => {
-                        Some(IssueReadiness::BlockedOutside {
-                            by: *by,
-                            milestone: *milestone,
-                        })
-                    }
-                    _ => None,
-                })
-                .or_else(|| {
-                    holds.iter().find_map(|h| match h {
-                        Hold::WaitsOnDeferred(d) => Some(IssueReadiness::Waits(*d)),
-                        _ => None,
-                    })
-                })
-                .unwrap_or(IssueReadiness::Unknown);
+            return hold_readiness(holds);
+        }
+        if let Some((_, after, _)) = self.plan.moved.iter().find(|(m, _, _)| *m == n) {
+            return IssueReadiness::Waits(*after);
         }
         match self.open_blockers.get(&n).and_then(|b| b.first()) {
             Some(&by) => IssueReadiness::Waits(by),
@@ -72,20 +49,33 @@ impl MilestonePlan {
         }
     }
 
-    /// START: open issues with no open blocker and no claim.
+    /// START: the issues `⏎` in the Run queue launches (wave 1).
     pub fn start_count(&self) -> usize {
-        self.plan
-            .waves
-            .iter()
-            .flatten()
-            .filter(|n| self.readiness(**n) == IssueReadiness::Ready)
-            .count()
+        self.plan.waves.first().map_or(0, Vec::len)
     }
 
     /// Issues the plan launches, all waves.
     pub fn runs(&self) -> usize {
         self.plan.waves.iter().map(Vec::len).sum()
     }
+}
+
+/// The reason a held issue shows. A claim is the decision to make first.
+fn hold_readiness(holds: &[Hold]) -> IssueReadiness {
+    if holds.contains(&Hold::Claimed) {
+        return IssueReadiness::Claimed;
+    }
+    holds
+        .iter()
+        .find_map(|h| match h {
+            Hold::BlockedOutside { by, milestone } => Some(IssueReadiness::BlockedOutside {
+                by: *by,
+                milestone: *milestone,
+            }),
+            Hold::WaitsOnDeferred(d) => Some(IssueReadiness::Waits(*d)),
+            _ => None,
+        })
+        .unwrap_or(IssueReadiness::Unknown)
 }
 
 fn is_open(issue: &Issue) -> bool {
@@ -105,13 +95,13 @@ fn meta(issue: &Issue) -> IssueMeta {
     }
 }
 
-/// Plan a run of `issues` (one milestone). `known` is every other fetched
-/// issue (all open milestones, the issue cache); `claimed` adds live
-/// sessions to the `maestro:in-progress` label.
+/// Plan a run of the open `issues` (one milestone). `known` is every other
+/// fetched issue; `claimed` adds live sessions to the `maestro:in-progress`
+/// label.
 ///
-/// The fetch lists every open issue of every open milestone, so a blocker
-/// that no fetch returned is taken as closed; reading it as open would hold
-/// every issue whose blocker already merged.
+/// A blocker that no fetch returned has no meta, so `run_plan` holds its
+/// issue as blocked outside: its state is unknown, and a guess could launch
+/// an issue whose blocker is still open.
 pub fn plan_milestone<'a>(
     issues: &[Issue],
     known: impl IntoIterator<Item = &'a Issue>,
@@ -121,18 +111,6 @@ pub fn plan_milestone<'a>(
     let mut metas: HashMap<u64, IssueMeta> =
         known.into_iter().map(|i| (i.number, meta(i))).collect();
     metas.extend(issues.iter().map(|i| (i.number, meta(i))));
-    let referenced: Vec<u64> = issues
-        .iter()
-        .flat_map(|i| metas[&i.number].blocked_by.clone())
-        .collect();
-    for by in referenced {
-        metas.entry(by).or_insert(IssueMeta {
-            number: by,
-            state: IssueState::Closed,
-            milestone: None,
-            blocked_by: Vec::new(),
-        });
-    }
 
     let open_issues: Vec<&Issue> = issues.iter().filter(|i| is_open(i)).collect();
     let open: HashSet<u64> = open_issues.iter().map(|i| i.number).collect();
@@ -149,13 +127,10 @@ pub fn plan_milestone<'a>(
     let open_blockers = open_issues
         .iter()
         .map(|i| {
-            let open_by = metas[&i.number]
-                .blocked_by
-                .iter()
-                .copied()
-                .filter(|b| metas.get(b).is_some_and(|m| m.state == IssueState::Open))
+            let in_run = (metas[&i.number].blocked_by.iter().copied())
+                .filter(|b| open.contains(b))
                 .collect();
-            (i.number, open_by)
+            (i.number, in_run)
         })
         .collect();
 
@@ -163,11 +138,6 @@ pub fn plan_milestone<'a>(
         plan: run_plan(&open, &metas, &claimed, &files, per_session_cap_usd)?,
         open: open.len(),
         open_blockers,
-        closed: issues
-            .iter()
-            .filter(|i| !is_open(i))
-            .map(|i| i.number)
-            .collect(),
     })
 }
 

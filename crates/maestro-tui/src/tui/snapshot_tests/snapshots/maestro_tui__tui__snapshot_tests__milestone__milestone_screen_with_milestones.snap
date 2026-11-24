@@ -41,5 +41,5 @@ expression: terminal.backend()
 "│                                        ││                                                                            │"
 "│                                        ││                                                                            │"
 "│                                        ││                                                                            │"
-"│ ready = can start now (no open blocker…││                                                                            │"
+"│ ready = wave 1: no open blocker, no cl…││                                                                            │"
 "└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────┘"

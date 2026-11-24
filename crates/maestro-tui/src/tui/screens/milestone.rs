@@ -1,4 +1,4 @@
-use super::milestone_plan::{IssueReadiness, MilestonePlan, plan_milestone};
+use super::milestone_plan::{MilestonePlan, plan_milestone};
 use super::milestone_rows as rows;
 use super::{Screen, ScreenAction, sanitize_for_terminal};
 use crate::provider::types::{Issue, Milestone};
@@ -18,6 +18,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -80,9 +81,15 @@ impl MilestoneTab {
 
 pub struct MilestoneScreen {
     pub(crate) milestones: Vec<MilestoneEntry>,
-    /// One plan per milestone (#1269), computed once per fetch. `None` when
-    /// the milestone's graph has a cycle.
-    plans: Vec<Option<MilestonePlan>>,
+    /// One plan per milestone (#1269). `Err` says why there is none: its
+    /// issue fetch failed, or its Blocked By graph has a cycle.
+    plans: Vec<Result<MilestonePlan, String>>,
+    /// Milestones whose issue fetch failed, with the error.
+    failed: HashMap<u64, String>,
+    /// Live sessions' issues; the plans add them to the label claims, the
+    /// same set the Run queue uses.
+    claimed: HashSet<u64>,
+    per_session_cap_usd: f64,
     pub(crate) selected: usize,
     scroll_offset: usize,
     pub(crate) loading: bool,
@@ -102,6 +109,9 @@ impl MilestoneScreen {
         let mut screen = Self {
             milestones: Vec::new(),
             plans: Vec::new(),
+            failed: HashMap::new(),
+            claimed: HashSet::new(),
+            per_session_cap_usd: 0.0,
             selected: 0,
             scroll_offset: 0,
             loading: false,
@@ -111,33 +121,74 @@ impl MilestoneScreen {
             spinner_tick: 0,
             reload_requested: false,
         };
-        screen.set_milestones(milestones, 0.0);
+        screen.set_milestones(milestones, HashMap::new(), 0.0);
         screen
     }
 
-    /// Replace the milestones and plan each one (#1269). Blockers are looked
-    /// up across every milestone; `per_session_cap_usd` prices the worst case.
-    pub fn set_milestones(&mut self, milestones: Vec<MilestoneEntry>, per_session_cap_usd: f64) {
-        let known: Vec<&Issue> = milestones.iter().flat_map(|m| m.issues.iter()).collect();
-        let none = std::collections::HashSet::new();
-        self.plans = milestones
-            .iter()
-            .map(|m| {
-                plan_milestone(&m.issues, known.iter().copied(), &none, per_session_cap_usd).ok()
-            })
-            .collect();
+    /// Replace the milestones and plan each one (#1269). `failed` names the
+    /// milestones whose issue fetch failed; `per_session_cap_usd` prices
+    /// the worst case.
+    pub fn set_milestones(
+        &mut self,
+        milestones: Vec<MilestoneEntry>,
+        failed: HashMap<u64, String>,
+        per_session_cap_usd: f64,
+    ) {
         self.milestones = milestones;
+        self.failed = failed;
+        self.per_session_cap_usd = per_session_cap_usd;
         self.selected = self.selected.min(self.milestones.len().saturating_sub(1));
+        self.replan();
     }
 
-    /// START of milestone `i`: open issues with no open blocker and no
-    /// claim. `None` when its plan failed.
+    /// The live sessions' issues. Plans again only when the set changed.
+    pub fn set_claimed(&mut self, claimed: HashSet<u64>) {
+        if claimed != self.claimed {
+            self.claimed = claimed;
+            self.replan();
+        }
+    }
+
+    fn replan(&mut self) {
+        let known: Vec<&Issue> = self
+            .milestones
+            .iter()
+            .flat_map(|m| m.issues.iter())
+            .collect();
+        self.plans = (self.milestones.iter())
+            .map(|m| {
+                if let Some(e) = self.failed.get(&m.number) {
+                    return Err(format!("issues not loaded ({e}); r retries"));
+                }
+                let cap = self.per_session_cap_usd;
+                plan_milestone(&m.issues, known.iter().copied(), &self.claimed, cap)
+                    .map_err(|e| format!("not planned: {e}"))
+            })
+            .collect();
+    }
+
+    /// The plan of milestone `number`, or why there is none.
+    pub fn plan_for(&self, number: u64) -> Option<&Result<MilestonePlan, String>> {
+        let i = self.milestones.iter().position(|m| m.number == number)?;
+        self.plans.get(i)
+    }
+
+    /// START of milestone `i`: the issues `⏎` in its Run queue launches.
+    /// `None` when it has no plan.
     pub fn start_count(&self, i: usize) -> Option<usize> {
-        self.plans.get(i)?.as_ref().map(MilestonePlan::start_count)
+        self.plans
+            .get(i)?
+            .as_ref()
+            .ok()
+            .map(MilestonePlan::start_count)
+    }
+
+    fn selected_number(&self) -> u64 {
+        self.milestones.get(self.selected).map_or(0, |m| m.number)
     }
 
     fn selected_plan(&self) -> Option<&MilestonePlan> {
-        self.plans.get(self.selected)?.as_ref()
+        self.plans.get(self.selected)?.as_ref().ok()
     }
 
     /// True once after `r` asked for a reload (#1265).
@@ -159,17 +210,19 @@ impl MilestoneScreen {
         self.active_tab = tab;
     }
 
-    /// Issues of the selected milestone in plan order (#1269): each wave of
-    /// `work::run_plan`, then the held issues, then the closed ones. Without
-    /// a plan (cycle), by issue number.
+    /// Open issues of the selected milestone in plan order (#1269): each
+    /// wave of `work::run_plan`, then the held issues. Without a plan, the
+    /// open issues by number.
     pub fn sorted_issues(&self) -> Vec<&Issue> {
         let Some(entry) = self.milestones.get(self.selected) else {
             return Vec::new();
         };
         let Some(plan) = self.selected_plan() else {
-            let mut all: Vec<&Issue> = entry.issues.iter().collect();
-            all.sort_by_key(|i| i.number);
-            return all;
+            let mut open: Vec<&Issue> = (entry.issues.iter())
+                .filter(|i| i.state.eq_ignore_ascii_case("open"))
+                .collect();
+            open.sort_by_key(|i| i.number);
+            return open;
         };
         let by_number = |n: &u64| entry.issues.iter().find(|i| i.number == *n);
         let mut out: Vec<&Issue> = plan
@@ -180,30 +233,19 @@ impl MilestoneScreen {
             .filter_map(by_number)
             .collect();
         out.extend(plan.plan.deferred.iter().filter_map(|(n, _)| by_number(n)));
-        let mut closed: Vec<&Issue> = (entry.issues.iter())
-            .filter(|i| plan.readiness(i.number) == IssueReadiness::Closed)
-            .collect();
-        closed.sort_by_key(|i| i.number);
-        out.extend(closed);
         out
     }
 
-    /// The plan level of each sorted issue: wave index, `waves.len()` for
-    /// held, one more for closed. Same order as [`Self::sorted_issues`].
+    /// The plan level of each sorted issue: its wave index, `waves.len()`
+    /// for held. Same order as [`Self::sorted_issues`].
     fn sorted_levels(&self) -> Vec<(usize, &Issue)> {
-        let Some(plan) = self.selected_plan() else {
-            return self.sorted_issues().into_iter().map(|i| (0, i)).collect();
-        };
-        let waves = plan.plan.waves.len();
+        let waves = self.selected_plan().map_or(&[][..], |p| &p.plan.waves[..]);
         self.sorted_issues()
             .into_iter()
             .map(|i| {
-                let level = match plan.readiness(i.number) {
-                    IssueReadiness::Closed => waves + 1,
-                    _ => (plan.plan.waves.iter())
-                        .position(|w| w.contains(&i.number))
-                        .unwrap_or(waves),
-                };
+                let level = (waves.iter())
+                    .position(|w| w.contains(&i.number))
+                    .unwrap_or(waves.len());
                 (level, i)
             })
             .collect()
@@ -272,7 +314,7 @@ impl MilestoneScreen {
         f.render_widget(block, area);
 
         let levels = self.sorted_levels();
-        if levels.is_empty() {
+        if levels.is_empty() && !self.failed.contains_key(&self.selected_number()) {
             let msg = if let Some(entry) = self.milestones.get(self.selected) {
                 format!("  {} — no issues loaded", entry.title)
             } else {
@@ -284,13 +326,20 @@ impl MilestoneScreen {
             );
             return;
         }
-        let Some(plan) = self.selected_plan() else {
-            f.render_widget(
-                Paragraph::new("  ! dependency cycle in Blocked By: fix it in Milestone review")
-                    .style(Style::default().fg(theme.accent_warning)),
-                inner,
-            );
-            return;
+        let plan = match self.plans.get(self.selected) {
+            Some(Ok(plan)) => plan,
+            Some(Err(why)) => {
+                let line = Line::from(Span::styled(
+                    format!("  ! {}", sanitize_for_terminal(why)),
+                    Style::default().fg(theme.accent_warning),
+                ));
+                f.render_widget(
+                    Paragraph::new(line).wrap(ratatui::widgets::Wrap { trim: false }),
+                    inner,
+                );
+                return;
+            }
+            None => return,
         };
 
         let chunks = Layout::default()
@@ -307,10 +356,10 @@ impl MilestoneScreen {
         for (i, (l, issue)) in levels.iter().enumerate() {
             if *l != level {
                 level = *l;
-                let label = match level {
-                    l if l < waves => format!(" LEVEL {l}"),
-                    l if l == waves => " HELD".to_string(),
-                    _ => " CLOSED".to_string(),
+                let label = if level < waves {
+                    format!(" LEVEL {level}")
+                } else {
+                    " HELD".to_string()
                 };
                 lines.push(Line::from(Span::styled(
                     label,
@@ -444,7 +493,11 @@ impl MilestoneScreen {
     /// spawns; the Run queue's launch dialog is the only spend step.
     fn handle_plan_run(&self) -> ScreenAction {
         match self.milestones.get(self.selected) {
-            Some(entry) if entry.issues.iter().any(|i| i.state == "open") => {
+            // No plan (fetch failed, cycle): the Run queue path toasts why.
+            Some(entry)
+                if entry.issues.iter().any(|i| i.state == "open")
+                    || self.failed.contains_key(&entry.number) =>
+            {
                 ScreenAction::PlanRun {
                     milestone: entry.number,
                 }

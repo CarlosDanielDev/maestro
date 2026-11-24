@@ -41,5 +41,5 @@ expression: terminal.backend()
 "│                                        ││                                                                            │"
 "│                                        ││                                                                            │"
 "│                                        ││ Run this milestone                                                         │"
-"│ ready = can start now (no open blocker…││ 2 of 2 run in 1 wave  R plan the run                                       │"
+"│ ready = wave 1: no open blocker, no cl…││ 2 of 2 run in 1 wave  R plan the run                                       │"
 "└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────┘"

@@ -189,15 +189,24 @@ impl App {
                 // #1269: every fetched issue enters the cache, so the Run
                 // queue and the queue review read real bodies (file scope,
                 // Blocked By) instead of "unknown scope".
-                for issue in entries.iter().flat_map(|(_, issues)| issues) {
+                for issue in entries.iter().flat_map(|(_, r)| r.iter().flatten()) {
                     self.state.issue_cache.insert(issue.number, issue.clone());
                 }
+                let live = crate::tui::screens::run_queue::live_claims(self);
                 if let Some(ref mut screen) = self.screen_state.milestone_screen {
                     let cap = (self.config.as_ref()).map_or(0.0, |c| c.budget.per_session_usd);
-                    screen.set_milestones(
-                        entries.into_iter().map(MilestoneEntry::from).collect(),
-                        cap,
-                    );
+                    let mut failed = std::collections::HashMap::new();
+                    let milestones = (entries.into_iter())
+                        .map(|(ms, r)| {
+                            let issues = r.unwrap_or_else(|e| {
+                                failed.insert(ms.number, e);
+                                Vec::new()
+                            });
+                            MilestoneEntry::from((ms, issues))
+                        })
+                        .collect();
+                    screen.set_claimed(live);
+                    screen.set_milestones(milestones, failed, cap);
                     screen.loading = false;
                 }
             }

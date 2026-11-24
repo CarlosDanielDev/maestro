@@ -507,7 +507,7 @@ async fn event_loop(
                             Ok(milestones
                                 .into_iter()
                                 .zip(results)
-                                .map(|(ms, r)| (ms, r.unwrap_or_default()))
+                                .map(|(ms, r)| (ms, r.map_err(|e| e.to_string())))
                                 .collect())
                         })
                         .await;

@@ -429,6 +429,9 @@ pub enum TuiCommand {
     },
 }
 
+/// Each open milestone with its open issues, or why they did not load.
+pub type MilestoneFetch = Vec<(Milestone, Result<Vec<Issue>, String>)>;
+
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<Issue>>),
@@ -461,7 +464,9 @@ pub enum TuiDataEvent {
     MilestonePlanCreated(
         Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
     ),
-    Milestones(anyhow::Result<Vec<(Milestone, Vec<Issue>)>>),
+    /// Each open milestone with its open issues, or why they did not load
+    /// (#1269: a failed milestone is not shown as an empty one).
+    Milestones(anyhow::Result<MilestoneFetch>),
     Issue(anyhow::Result<Issue>, Option<String>, Option<String>),
     SuggestionData(anyhow::Result<SuggestionDataPayload>),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),

@@ -7,7 +7,7 @@
 //! from a base that has its blockers merged, so it is planned again with `R`
 //! once wave 1 lands (the live run loop is its own issue).
 
-use super::milestone_plan::{IssueReadiness, MilestonePlan, plan_milestone};
+use super::milestone_plan::IssueReadiness;
 use super::milestone_rows::{readiness_chip, row_line};
 use super::{ScreenAction, sanitize_for_terminal};
 use crate::tui::app::{self, App};
@@ -318,54 +318,58 @@ fn hold_note(holds: &[Hold], nerd: bool) -> String {
         Some(Hold::BlockedOutside {
             by,
             milestone: None,
-        }) => {
-            format!("{} #{by}", get_for_mode(IconId::XCircle, nerd))
-        }
+        }) => format!(
+            "{} #{by} (not fetched)",
+            get_for_mode(IconId::XCircle, nerd)
+        ),
         Some(Hold::WaitsOnDeferred(d)) => format!("waits on #{d}"),
         Some(Hold::Claimed) => readiness_chip(IssueReadiness::Claimed, nerd),
         Some(Hold::NoMetadata) | None => readiness_chip(IssueReadiness::Unknown, nerd),
     }
 }
 
-/// Milestones `R` (#1269): plan the selected milestone and open the Run
-/// queue. Nothing spawns here. Claims are the `maestro:in-progress` label
-/// plus every live session's issue.
+/// The issues live sessions work on: claims for the plan, with the
+/// `maestro:in-progress` label.
+pub fn live_claims(app: &App) -> HashSet<u64> {
+    (app.pool.all_sessions().into_iter())
+        .filter(|s| !s.status.is_terminal())
+        .filter_map(|s| s.issue_number)
+        .collect()
+}
+
+/// Milestones `R` (#1269): open the Run queue on the milestone's plan, the
+/// same plan the START column shows. Nothing spawns here. No plan (fetch
+/// failed, cycle): a toast says why and nothing opens.
 pub fn open_run_queue(app: &mut App, milestone: u64) {
-    let Some(screen) = app.screen_state.milestone_screen.as_ref() else {
+    let live = live_claims(app);
+    let budget = crate::tui::budget_prespawn::launch_budget(app);
+    let Some(screen) = app.screen_state.milestone_screen.as_mut() else {
         return;
     };
+    screen.set_claimed(live);
     let Some(entry) = screen.milestones.iter().find(|m| m.number == milestone) else {
         return;
     };
-    let live: HashSet<u64> = (app.pool.all_sessions().into_iter())
-        .filter(|s| !s.status.is_terminal())
-        .filter_map(|s| s.issue_number)
+    let title = entry.title.clone();
+    let titles: HashMap<u64, String> = (entry.issues.iter())
+        .map(|i| (i.number, i.title.clone()))
         .collect();
-    // The issues of this fetch only (the cache may hold an issue that
-    // closed since). Live sessions add claims the START column, which
-    // reads only the label, does not see.
-    let known = screen.milestones.iter().flat_map(|m| m.issues.iter());
-    let budget = crate::tui::budget_prespawn::launch_budget(app);
-    let planned: anyhow::Result<MilestonePlan> =
-        plan_milestone(&entry.issues, known, &live, budget.per_session_usd);
-    match planned {
-        Ok(p) => {
-            let titles = (entry.issues.iter())
-                .map(|i| (i.number, i.title.clone()))
-                .collect();
-            let mut run = RunQueue::new(entry.title.clone(), p.open, p.plan, titles);
+    match screen.plan_for(milestone).cloned() {
+        Some(Ok(p)) => {
+            let mut run = RunQueue::new(title, p.open, p.plan, titles);
             run.set_launch_budget(budget);
             app.screen_state.queue_confirmation_screen =
                 Some(super::QueueConfirmationScreen::from_run(run));
             app.navigate_to(app::TuiMode::QueueConfirmation);
         }
-        Err(e) => {
-            let message = format!("Run not planned: {e}");
+        Some(Err(why)) => {
+            let message = format!("Run queue not opened: {why}");
             app.push_toast(
                 crate::tui::ds::toast::Toast::new(crate::tui::ds::toast::Severity::Error, message),
                 std::time::Instant::now(),
             );
         }
+        None => {}
     }
 }
 
