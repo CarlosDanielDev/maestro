@@ -45,6 +45,12 @@ pub enum ExecutorPhase {
 pub struct QueueExecutor {
     items: Vec<ExecutorItem>,
     phase: ExecutorPhase,
+    /// `h` on the run loop (#1287): start nothing new; the running item
+    /// finishes.
+    held: bool,
+    /// `S` on the run loop (#1287): the run ends once the running item
+    /// does. Items not started stay `Pending`.
+    stopped: bool,
 }
 
 impl QueueExecutor {
@@ -64,7 +70,32 @@ impl QueueExecutor {
         Self {
             items,
             phase: ExecutorPhase::Idle,
+            held: false,
+            stopped: false,
         }
+    }
+
+    /// Hold (`true`) or resume (`false`) the queue (#1287). A held queue
+    /// launches nothing new; the caller checks it before `advance`.
+    pub fn set_held(&mut self, held: bool) {
+        self.held = held;
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.held
+    }
+
+    /// Stop the run (#1287): nothing new starts and the run is finished
+    /// once no item runs. Items not started stay `Pending`.
+    pub fn stop(&mut self) {
+        self.stopped = true;
+        if !matches!(self.phase, ExecutorPhase::Running { .. }) {
+            self.phase = ExecutorPhase::Finished;
+        }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stopped
     }
 
     /// Current execution phase.
@@ -100,10 +131,9 @@ impl QueueExecutor {
             );
         }
 
-        let next = self
-            .items
-            .iter()
-            .position(|i| i.state == QueueItemState::Pending);
+        let next = (self.items.iter())
+            .position(|i| i.state == QueueItemState::Pending)
+            .filter(|_| !self.stopped);
 
         match next {
             Some(idx) => {
@@ -165,12 +195,17 @@ impl QueueExecutor {
         }
     }
 
-    /// Notify the executor that the current session failed.
+    /// Notify the executor that the current session failed. A stopped run
+    /// asks nothing: it is finished.
     pub fn mark_failure(&mut self) {
         if let ExecutorPhase::Running { current_index } = self.phase {
             self.items[current_index].state = QueueItemState::Failed;
-            self.phase = ExecutorPhase::AwaitingDecision {
-                failed_index: current_index,
+            self.phase = if self.stopped {
+                ExecutorPhase::Finished
+            } else {
+                ExecutorPhase::AwaitingDecision {
+                    failed_index: current_index,
+                }
             };
         }
     }
@@ -204,11 +239,13 @@ impl QueueExecutor {
         self.phase == ExecutorPhase::Finished
     }
 
-    /// Returns true if there are still Pending items in the queue.
+    /// Returns true if there are still Pending items the run will start.
     fn has_remaining(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| i.state == QueueItemState::Pending)
+        !self.stopped
+            && self
+                .items
+                .iter()
+                .any(|i| i.state == QueueItemState::Pending)
     }
 }
 
@@ -538,5 +575,30 @@ mod tests {
         };
 
         assert!(err.to_string().contains("cannot advance queue"));
+    }
+
+    /// #1287: `stop` lets the running item finish and starts nothing
+    /// after it; a failure after a stop asks nothing.
+    #[test]
+    fn stop_finishes_after_the_running_item() {
+        let queue = make_queue(&[1, 2]);
+        let mut exec = QueueExecutor::new(&queue);
+        advance_ok(&mut exec);
+        exec.stop();
+        assert_eq!(exec.phase(), ExecutorPhase::Running { current_index: 0 });
+        exec.mark_success();
+        assert_eq!(exec.phase(), ExecutorPhase::Finished);
+        assert_eq!(exec.items()[1].state, QueueItemState::Pending);
+
+        let mut exec = QueueExecutor::new(&queue);
+        advance_ok(&mut exec);
+        exec.stop();
+        exec.mark_failure();
+        assert_eq!(exec.phase(), ExecutorPhase::Finished);
+
+        let mut exec = QueueExecutor::new(&queue);
+        exec.stop();
+        assert_eq!(exec.phase(), ExecutorPhase::Finished, "idle stops at once");
+        assert!(exec.advance().is_err(), "nothing starts after a stop");
     }
 }

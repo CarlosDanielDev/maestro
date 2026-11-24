@@ -155,6 +155,39 @@ pub(super) fn blocks() -> Vec<Binding> {
             "re-plan (launch) · retry (delete)",
         ),
     ]);
+    // #1287: the run loop (`screens::run_loop::input`). `h` holds, `S`
+    // stops behind a typed confirm; ↑↓ / k j and ⏎ pick and confirm on the decision
+    // card. Hidden: the Run bar and the card draw them only while they work.
+    let run = Scope::Screen(TuiMode::QueueExecution);
+    v.extend([
+        s(run, ch('h'), A::Hold, "hold queue").hidden(),
+        Binding::new(ch('S'), run, A::Stop, Danger::Destructive, "stop queue…").hidden(),
+        s(run, Chord::key(KeyCode::Up), A::ScrollUp, "pick").hidden(),
+        s(run, Chord::key(KeyCode::Down), A::ScrollDown, "pick").hidden(),
+        s(run, ch('k'), A::ScrollUp, "pick").hidden(),
+        s(run, ch('j'), A::ScrollDown, "pick").hidden(),
+        s(run, Chord::key(KeyCode::Enter), A::Expand, "confirm").hidden(),
+        s(run, ch('v'), A::Expand, "evidence").hidden(),
+    ]);
+    for mode in [TuiMode::ContinuousPause, TuiMode::HollowRetry] {
+        let card = Scope::Screen(mode);
+        v.extend([
+            s(card, Chord::key(KeyCode::Up), A::ScrollUp, "pick").hidden(),
+            s(card, Chord::key(KeyCode::Down), A::ScrollDown, "pick").hidden(),
+            s(card, ch('k'), A::ScrollUp, "pick").hidden(),
+            s(card, ch('j'), A::ScrollDown, "pick").hidden(),
+            s(card, Chord::key(KeyCode::Enter), A::Expand, "confirm").hidden(),
+        ]);
+    }
+    v.push(
+        s(
+            Scope::Screen(TuiMode::HollowRetry),
+            ch('v'),
+            A::Expand,
+            "evidence",
+        )
+        .hidden(),
+    );
     v
 }
 

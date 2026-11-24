@@ -90,11 +90,16 @@ impl App {
             .as_ref()
             .map(|c| RetryPolicy::from_config(&c.sessions));
 
+        // #1287: a held or stopped queue starts nothing new, auto-retries
+        // of its running item included; that item settles as it ended.
+        let no_retry = (self.queue_executor.as_ref())
+            .filter(|e| e.is_held() || e.is_stopped())
+            .and_then(|e| e.running_session_id());
         let retryable_ids: Vec<uuid::Uuid> = if let Some(ref policy) = retry_policy {
             self.pool
                 .all_sessions()
                 .iter()
-                .filter(|s| policy.should_retry(s))
+                .filter(|s| policy.should_retry(s) && Some(s.id) != no_retry)
                 .map(|s| s.id)
                 .collect()
         } else {
@@ -220,6 +225,7 @@ impl App {
                 s.status == SessionStatus::Completed
                     && s.is_hollow_completion
                     && !s.hollow_dismissed
+                    && !self.screen_state.hollow_later.contains(&s.id)
                     && !retryable_ids.contains(&s.id)
                     && !RetryPolicy::is_consultation_satisfied(s)
                     // #1244: the queue screen owns a queue item's decision.
@@ -232,12 +238,19 @@ impl App {
                 .as_ref()
                 .map(|p| p.effective_max(hollow_session))
                 .unwrap_or(0);
+            // #1287: the dialog shows the four checks and what Retry costs.
+            let evidence =
+                crate::tui::screens::hollow_retry::HollowEvidence::from_session(hollow_session);
+            let retry_cost = crate::tui::widgets::decision_card::Cost::retry(
+                &crate::tui::budget_prespawn::launch_budget(self),
+            );
             self.screen_state.hollow_retry_screen =
                 Some(crate::tui::screens::HollowRetryScreen::new(
                     hollow_session.id,
                     label,
-                    hollow_session.retry_count,
-                    max,
+                    (hollow_session.retry_count, max),
+                    evidence,
+                    retry_cost,
                 ));
             // #895: route through navigate_to so the prior mode (Overview /
             // Detail / Dashboard) is pushed onto the nav-stack. Without this
@@ -252,7 +265,8 @@ impl App {
         // `Errored` only leads to `Retrying`, so `is_terminal` misses it.
         let last_attempt_errored = |s: &crate::session::types::Session| {
             s.status == SessionStatus::Errored
-                && !retry_policy.as_ref().is_some_and(|p| p.may_retry(s))
+                && (Some(s.id) == no_retry
+                    || !retry_policy.as_ref().is_some_and(|p| p.may_retry(s)))
         };
         let completed_ids: Vec<uuid::Uuid> = self
             .pool
@@ -459,6 +473,10 @@ impl App {
             }
         } else if let Some(ref mut exec) = self.queue_executor {
             exec.mark_failure();
+            // #1287: a stopped run asks nothing; it is finished.
+            if exec.is_finished() {
+                self.open_completion_summary();
+            }
             // The queue screen owns this decision; the hollow modal must
             // not reopen for the session once a retry clears the record.
             if let Some(session) = self.pool.get_session_mut(session_id) {
@@ -478,6 +496,39 @@ impl App {
         }
     }
 
+    /// #1287: Stop › Kill came while the running queue item had no session
+    /// yet (its issue was being fetched). Its session never starts: the
+    /// item fails and the stopped run is finished. True when dropped.
+    pub(crate) fn drop_killed_queue_session(
+        &mut self,
+        session: &crate::session::types::Session,
+    ) -> bool {
+        let Some(issue) = self.screen_state.run_loop.kill_unstarted else {
+            return false;
+        };
+        let Some(exec) = self.queue_executor.as_mut() else {
+            return false;
+        };
+        if session.issue_number != Some(issue)
+            || exec.running_issue() != Some(issue)
+            || exec.running_session_id().is_some()
+        {
+            return false;
+        }
+        self.screen_state.run_loop.kill_unstarted = None;
+        exec.mark_failure();
+        let finished = exec.is_finished();
+        self.activity_log.push_simple(
+            "Queue".into(),
+            format!("#{issue} not started: the run was stopped with kill"),
+            LogLevel::Warn,
+        );
+        if finished {
+            self.open_completion_summary();
+        }
+        true
+    }
+
     /// #1244: a failed launch fetch for the running queue item fails the
     /// item, so the queue screen offers retry / skip / abort instead of
     /// waiting forever for a session that will never start.
@@ -491,6 +542,10 @@ impl App {
             && exec.running_session_id().is_none()
         {
             exec.mark_failure();
+            // #1287: a stopped run asks nothing; it is finished.
+            if exec.is_finished() {
+                self.open_completion_summary();
+            }
         }
     }
 

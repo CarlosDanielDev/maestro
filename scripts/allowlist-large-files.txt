@@ -203,3 +203,6 @@ crates/maestro-tui/src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-
 # The coverage is intentional — it proves StateStore::load tolerates legacy
 # state files missing the new `interactions` key.
 crates/maestro-core/src/state/store_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #734, plan: split into state/store_tests/{round_trip.rs, migration.rs, backward_compat.rs} once a fifth schema-guard test family lands
+# input_handler_text_input_tests.rs was at exactly 400 LOC; #1287 added the
+# run loop's "Stop the run?" typed confirm as a walked text surface.
+crates/maestro-tui/src/tui/input_handler_text_input_tests.rs # deadline: 2026-12-31, owner: @carlos, ticket: #1287, plan: move the per-surface constructors (on_*) into input_handler_text_input_surfaces.rs and keep only the walk tests here

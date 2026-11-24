@@ -927,17 +927,12 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.screen_state.queue_confirmation_screen = None;
                 }
                 app::TuiMode::HollowRetry => {
-                    // #890: mark the session as user-dismissed so the
-                    // completion pipeline does not re-open the modal on the
-                    // next tick. Without this the [s] Skip chord vanished
-                    // the modal for one frame and immediately re-fired.
-                    if let Some(screen) = app.screen_state.hollow_retry_screen.as_ref() {
-                        let session_id = screen.session_id;
-                        if let Some(session) = app.pool.get_session_mut(session_id) {
-                            session.hollow_dismissed = true;
-                        }
+                    // #1287: Esc decides later. The dialog does not reopen
+                    // on its own this run (#890), but the session is not
+                    // dismissed: only the Skip option does that.
+                    if let Some(screen) = app.screen_state.hollow_retry_screen.take() {
+                        app.screen_state.hollow_later.insert(screen.session_id);
                     }
-                    app.screen_state.hollow_retry_screen = None;
                 }
                 app::TuiMode::AdaptFollowUp => {
                     app.screen_state.adapt_follow_up_screen = None;
@@ -1405,6 +1400,15 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.screen_state.ci_error_review_screen = None;
             app.tui_mode = app::TuiMode::Overview;
         }
+        ScreenAction::SkipHollow(session_id) => {
+            // #1287: Skip is the choice that dismisses the hollow dialog
+            // for good (#890: it must not reopen on the next tick).
+            if let Some(session) = app.pool.get_session_mut(session_id) {
+                session.hollow_dismissed = true;
+            }
+            app.screen_state.hollow_retry_screen = None;
+            app.navigate_back_or_dashboard();
+        }
         ScreenAction::RetryHollow(session_id) => {
             // Queue a retry for the hollow session. By the time the user
             // presses [r] the hollow session has already been moved to
@@ -1586,6 +1590,8 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     let executor = QueueExecutor::new(&queue);
                     app.queue_launch_configs = Some(configs);
                     app.queue_executor = Some(executor);
+                    // #1287: a new run starts with no pick, stop or kill.
+                    app.screen_state.run_loop = Default::default();
                     app.advance_queue_and_launch();
                     app.completion_summary_dismissed = false;
                     app.tui_mode = app::TuiMode::QueueExecution;

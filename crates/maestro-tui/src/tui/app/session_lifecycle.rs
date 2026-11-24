@@ -19,6 +19,11 @@ impl App {
         // stream handler parks them in GATES_RUNNING at stream
         // completion (see `mark_gates_pending`).
         super::helpers::mark_gates_pending(&mut session, self.config.as_ref());
+        // #1287: Stop › Kill before this session existed: it never starts
+        // (checked before the "Enqueuing" line, which would be untrue).
+        if self.drop_killed_queue_session(&session) {
+            return Ok(());
+        }
         let label = session_label(&session);
         self.activity_log
             .push_simple(label.clone(), "Enqueuing session...".into(), LogLevel::Info);

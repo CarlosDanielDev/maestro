@@ -31,6 +31,7 @@ pub mod queue_confirmation;
 pub mod release_notes;
 pub mod roadmap;
 pub mod roadmap_dispatch;
+pub mod run_loop;
 pub mod run_queue;
 pub mod sanitize;
 pub mod session;
@@ -158,6 +159,9 @@ pub enum ScreenAction {
     LaunchCiFix(CiFixConfig),
     /// Retry a hollow-completed session by ID.
     RetryHollow(uuid::Uuid),
+    /// Skip a hollow-completed session: the only choice that dismisses its
+    /// dialog for good (#1287).
+    SkipHollow(uuid::Uuid),
     /// Trigger a version check and self-update.
     CheckForUpdate,
     /// Update the live app config (e.g., after Settings save).

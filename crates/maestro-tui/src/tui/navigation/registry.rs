@@ -161,6 +161,10 @@ pub enum Action {
     Switcher,
     /// Copy the session's last reply (Detail `c`, #1288).
     Copy,
+    /// Hold ↔ resume the queue: nothing new starts (run loop `h`, #1287).
+    Hold,
+    /// Stop the run behind a typed confirm (run loop `S`, #1287).
+    Stop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
