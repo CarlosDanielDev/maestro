@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/adapt.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Dashboard › Adapt                                             Esc back  ? help "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Adapt project ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃ Project: .                                                                  ┃"
+"┃  Stop after:                                                                 ┃"
+"┃    ( ) Scan                                                                  ┃"
+"┃    ( ) Analysis                                                              ┃"
+"┃    (•) Plan · dry run                                                        ┃"
+"┃    ( ) Full run                                                              ┃"
+"┃        adds PRD and plan, writes only the cache (recommended first run)      ┃"
+"┃  Model: sonnet                                                               ┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"┌──────────────────────────────[ This run will ]───────────────────────────────┐"
+"│READ  local files under . · GitHub milestone titles (plan hint)               │"
+"│SEND TO CLAUDE  3 calls: analysis, PRD draft, plan                            │"
+"│WRITE LOCALLY  .maestro/adapt-cache.json (resume cache) · docs/PRD.md is      │"
+"│drafted in memory, not written                                                │"
+"│CREATE ON REMOTE  nothing                                                     │"
+"│COST  3 Claude calls on sonnet · not counted in the budget                    │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Enter Start dry run   ←→ Stop after   j/k Navigate   Esc Back          ⌃Q quit "

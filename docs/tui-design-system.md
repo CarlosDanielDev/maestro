@@ -643,6 +643,20 @@ Implements `§02.3 Create milestone (wizard)` of `docs/design-system/index.html`
 
 Rules: keys come from `Screen::footer_hints` (`draw::footer_hints`) and are declared in the registry `MilestoneWizard` block (j k a x r ⏎); no new keys. A write in flight takes no keys (`writing… wait`). The AI planner runs only on `⏎` on AI structuring (entering the step spends nothing); `tick_milestone_wizard_hooks` queues the plan and the create. Errors sit on the field / panel border (`field_block`). Not built (see the decision): Goals + Non-goals on one screen, `c` / `b` stranded fixes, `e` / `t` title edits, `R` re-plan, the Draft checklist, progress events per item, retry of only the remaining items. Tests: `milestone_wizard/create_tests.rs`, `snapshot_tests/milestone_wizard.rs` (`milestone_wizard_plan`, `milestone_wizard_create`).
 
+### Adapt run: Stop after, This run will, Review (`screens/adapt/`, #1281)
+
+Implements `docs/design-system/index.html` §02.11 (Adapt project: Stop after picker, RunPlan, the Review pause). Decision: `docs/design-system/decisions.md` (2026-11-24, Adapt as a predictable run).
+
+| Item | For |
+|---|---|
+| `adapt::StopAfter { Scan, Analysis, Plan, Full }` (`stop_after.rs`) | One radio for the old Dry Run / Scan Only / No Issues toggles. `apply(&self, &mut AdaptWizardConfig)` sets those booleans, so `complete_*`, `AdaptConfig` and the CLI flags do not change. `Plan` (dry run) is the default. `label()` / `consequence()` draw it; `Full run` is always `accent_warning`. |
+| `stop_after::run_plan(&cfg, remote)` | "This run will": `(heading, line)` pairs for READ · SEND TO CLAUDE · WRITE LOCALLY · CREATE ON REMOTE · COST, from the code paths the option enables. No money figure: the `claude --print` calls are not in the budget, and the line says so. Also feeds the Review "Will write" list. |
+| `AdaptStep::Review` + `AdaptScreen::review: ArmedEnter` (`draw_run::draw_review`) | A non-dry run pauses after Plan with the plan tree, the "Will write" list and a `widgets::armed_bar`; ⏎ arms, ⏎ within 3 s resumes at Scaffolding (or Materializing when the scaffold is cached). Esc disarms, then leaves (plan cached). A cached plan never resumes straight into a write: ⏎ on Configure goes to Review. |
+| `AdaptScreen::cancel` (`CancellationToken`) | `RepoMaterializer::with_cancel` checks it before every milestone, issue and the tech-debt issue. Esc while Scaffolding / Materializing stops after the item in flight and stays on screen; the result says `‖ Stopped by Esc` over what was written. |
+| `AdaptResults::cache_path(root)` | The cache is `<project>/.maestro/adapt-cache.json`, never the CWD; tests use a temp dir. |
+
+Rules: the PRD is kept in `results.prd_content` and written (`write_contained`, no symlink follow) only in the `RunAdaptScaffold` arm, after Review. Keys are declared as hidden `AdaptWizard` bindings in `registry_screens.rs`. Compact (80–99 columns, measured on the frame): the form takes the rows it needs (options one line each, only the chosen consequence) and the plan is one wrapped line per heading. The cache reloads from the chosen Project on every Project edit; `x x` clears it only on Stop after (`x` is a letter on Project and Model); Space never types. A failed create keeps what was written: `materializer::PartialMaterialize` rides in the `anyhow::Error`, `AdaptScreen::fail_materialize` keeps it and the Failed screen lists it. Retry and every new run get a fresh cancel token; dropping the screen while it writes cancels, and a write in flight counts as live work for ⌃Q / ⌃C (`input_handler::adapt_write_live`). Failed opens at its top (`set_error` resets the scroll) and scrolls with `j` / `k`. Tests: `screens/adapt/run_tests.rs`, `snapshot_tests/adapt.rs` (`handle_key` + `ui::draw`: `adapt_configure_80x24`, `adapt_configure_wide`, `adapt_review_80x24`, `adapt_review_wide`, Review ⏎ ⏎ → `RunAdaptScaffold`), `stop_after.rs`, `materializer.rs` (`adapt_cancel_between_items`, `adapt_failed_create_keeps_what_was_written`).
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract

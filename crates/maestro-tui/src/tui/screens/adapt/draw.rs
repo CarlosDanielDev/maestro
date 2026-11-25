@@ -15,10 +15,11 @@ use crate::tui::spinner::spinner_frame;
 
 pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
     match screen.step {
-        AdaptStep::Configure => draw_configure(screen, f, area, theme),
+        AdaptStep::Configure => super::draw_run::draw_configure(screen, f, area, theme),
+        AdaptStep::Review => super::draw_run::draw_review(screen, f, area, theme),
         step if step.is_progress() => draw_progress(screen, f, area, theme),
         AdaptStep::Complete => draw_complete(screen, f, area, theme),
-        AdaptStep::Failed => draw_failed(screen, f, area, theme),
+        AdaptStep::Failed => super::draw_failed::draw_failed(screen, f, area, theme),
         _ => {}
     }
 }
@@ -27,63 +28,37 @@ pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme:
 pub(super) fn footer_hints(screen: &AdaptScreen) -> Vec<(&'static str, &'static str)> {
     match screen.step {
         AdaptStep::Configure => vec![
-            ("Enter", "Start"),
-            ("Space", "Toggle"),
+            ("Enter", start_label(screen)),
+            ("←→", "Stop after"),
             ("j/k", "Navigate"),
             ("Esc", "Back"),
         ],
+        AdaptStep::Review => vec![
+            ("Enter", "Arm · again writes"),
+            ("j/k", "Scroll"),
+            ("Esc", "Disarm · back"),
+        ],
+        AdaptStep::Scaffolding | AdaptStep::Materializing => {
+            vec![("Esc", "Stop after this item")]
+        }
         step if step.is_progress() => vec![("Esc", "Cancel")],
         AdaptStep::Complete => vec![("j/k", "Scroll"), ("Esc", "Back")],
-        AdaptStep::Failed => vec![("r", "Retry"), ("Esc", "Back")],
+        AdaptStep::Failed => vec![("j/k", "Scroll"), ("r", "Retry"), ("Esc", "Back")],
         _ => vec![],
     }
 }
 
-fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = theme
-        .styled_block("Adapt Project", false)
-        .border_style(Style::default().fg(theme.accent_info));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let fields = [
-        ("Path", field_text(&screen.config.path)),
-        ("Dry Run", bool_text(screen.config.dry_run)),
-        ("Scan Only", bool_text(screen.config.scan_only)),
-        ("No Issues", bool_text(screen.config.no_issues)),
-        ("Model", field_text(&screen.config.model)),
-    ];
-
-    let field_height = 2u16;
-    let max_fields = (inner.height / field_height) as usize;
-
-    for (i, (label, value)) in fields.iter().enumerate().take(max_fields) {
-        let y = inner.y + (i as u16) * field_height;
-        if y >= inner.y + inner.height {
-            break;
-        }
-        let field_area = Rect::new(inner.x, y, inner.width, field_height);
-        let is_selected = i == screen.selected_field;
-
-        let style = if is_selected {
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.text_primary)
-        };
-
-        let marker = if is_selected {
-            format!("{} ", icons::get(IconId::ChevronRight))
-        } else {
-            "  ".to_string()
-        };
-        let line = Line::from(vec![
-            Span::styled(marker, style),
-            Span::styled(format!("{}: ", label), style),
-            Span::styled(value, Style::default().fg(theme.text_secondary)),
-        ]);
-        f.render_widget(Paragraph::new(line), field_area);
+/// The Configure ⏎ names the run it starts (§02.11 keymap).
+fn start_label(screen: &AdaptScreen) -> &'static str {
+    use super::StopAfter;
+    if screen.loaded_from_cache {
+        return "Resume";
+    }
+    match screen.config.stop_after {
+        StopAfter::Scan => "Start scan",
+        StopAfter::Analysis => "Start analysis",
+        StopAfter::Plan => "Start dry run",
+        StopAfter::Full => "Start full run",
     }
 }
 
@@ -103,6 +78,10 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         phases.push((AdaptStep::Planning, "Generating plan"));
     }
     if !screen.config.scan_only && !screen.config.no_issues && !screen.config.dry_run {
+        phases.push((
+            AdaptStep::Review,
+            "Pauses here: you review the plan before anything is written",
+        ));
         phases.push((AdaptStep::Scaffolding, "Scaffolding .claude/"));
         phases.push((AdaptStep::Materializing, "Creating issues"));
     }
@@ -153,6 +132,14 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         ]));
     }
 
+    if screen.is_stopping() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  ‖ stopping after the item in flight · what was written is shown next",
+            Style::default().fg(theme.accent_warning),
+        )));
+    }
+
     let paragraph = Paragraph::new(lines);
     f.render_widget(paragraph, inner);
 }
@@ -165,11 +152,18 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
     f.render_widget(block, area);
 
     let mut lines = Vec::new();
+    // #1281: a run stopped by Esc says so over what it did write.
+    let (banner, color) = if screen.is_stopping() {
+        (
+            "‖ Stopped by Esc: the items below were written, nothing after them",
+            theme.accent_warning,
+        )
+    } else {
+        ("Pipeline completed successfully!", theme.accent_success)
+    };
     lines.push(Line::from(Span::styled(
-        "Pipeline completed successfully!",
-        Style::default()
-            .fg(theme.accent_success)
-            .add_modifier(Modifier::BOLD),
+        banner,
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
     )));
     lines.push(Line::from(""));
 
@@ -252,6 +246,16 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
                 Style::default().fg(theme.text_primary),
             ),
         ]));
+        for file in scaffold
+            .files
+            .iter()
+            .filter(|f| f.status == crate::adapt::types::ScaffoldFileStatus::Created)
+        {
+            lines.push(Line::from(Span::styled(
+                format!("  + {}", sanitize_for_terminal(&file.path)),
+                Style::default().fg(theme.text_secondary),
+            )));
+        }
     }
 
     if let Some(ref mat) = screen.results.materialize {
@@ -279,47 +283,6 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         .scroll((screen.scroll_offset, 0))
         .alignment(Alignment::Left);
     f.render_widget(paragraph, inner);
-}
-
-fn draw_failed(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = theme
-        .styled_block("Adapt Failed", false)
-        .border_style(Style::default().fg(theme.accent_error));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let mut lines = Vec::new();
-    if let Some(ref error) = screen.error {
-        lines.push(Line::from(Span::styled(
-            format!("Failed during: {:?}", error.phase),
-            Style::default()
-                .fg(theme.accent_error)
-                .add_modifier(Modifier::BOLD),
-        )));
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            sanitize_for_terminal(&error.message),
-            Style::default().fg(theme.text_primary),
-        )));
-    }
-
-    f.render_widget(Paragraph::new(lines), inner);
-}
-
-fn field_text(s: &str) -> String {
-    if s.is_empty() {
-        "(empty)".to_string()
-    } else {
-        s.to_string()
-    }
-}
-
-fn bool_text(v: bool) -> String {
-    if v {
-        "[x]".to_string()
-    } else {
-        "[ ]".to_string()
-    }
 }
 
 fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {

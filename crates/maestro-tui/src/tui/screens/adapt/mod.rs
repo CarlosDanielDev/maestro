@@ -1,6 +1,10 @@
 mod draw;
+mod draw_failed;
+mod draw_run;
+mod stop_after;
 pub mod types;
 
+pub use stop_after::StopAfter;
 pub use types::*;
 
 use crate::adapt::types::{
@@ -15,7 +19,8 @@ use ratatui::{Frame, layout::Rect};
 
 use super::{Screen, ScreenAction};
 
-const FIELD_COUNT: usize = 5;
+/// Project, Stop after, Model (#1281).
+const FIELD_COUNT: usize = 3;
 
 pub struct AdaptScreen {
     pub provider_kind: ProviderKind,
@@ -32,6 +37,11 @@ pub struct AdaptScreen {
     /// Poka-yoke (#9): armed by the first cache-clear keypress; the wipe only
     /// happens on the second. Any other key disarms it.
     pub pending_clear: bool,
+    /// #1281: stops the running phase between items (the materializer
+    /// checks it before every GitHub write).
+    pub cancel: crate::session::team_runner::CancellationToken,
+    /// #1281: the Review step's armed ⏎ ⏎ before any write.
+    pub review: crate::tui::ds::armed::ArmedEnter,
 }
 
 impl AdaptScreen {
@@ -40,23 +50,54 @@ impl AdaptScreen {
     }
 
     pub fn with_provider_kind(provider_kind: ProviderKind) -> Self {
-        let (results, loaded_from_cache) = match AdaptResults::load_cache() {
-            Some(cached) => (cached, true),
-            None => (AdaptResults::default(), false),
-        };
-        Self {
+        let mut screen = Self {
             provider_kind,
             step: AdaptStep::Configure,
             config: AdaptWizardConfig::default(),
             selected_field: 0,
-            results,
+            results: AdaptResults::default(),
             error: None,
             spinner_tick: 0,
             scroll_offset: 0,
             cancelled: false,
-            loaded_from_cache,
+            loaded_from_cache: false,
             pending_clear: false,
+            cancel: crate::session::team_runner::CancellationToken::new(),
+            review: crate::tui::ds::armed::ArmedEnter::new(),
+        };
+        screen.reload_cache();
+        screen
+    }
+
+    /// The cache of the chosen Project only (#1281): called on open and on
+    /// every Project edit, so a cache from another folder never resumes.
+    fn reload_cache(&mut self) {
+        self.pending_clear = false;
+        match AdaptResults::load_cache(&self.root()) {
+            Some(cached) => {
+                self.results = cached;
+                self.loaded_from_cache = true;
+            }
+            None => {
+                self.results = AdaptResults::default();
+                self.loaded_from_cache = false;
+            }
         }
+    }
+
+    /// A fresh token for a new run (#1281): a token cancelled by an
+    /// earlier Esc must not stop a retry.
+    fn fresh_cancel(&mut self) {
+        self.cancel = crate::session::team_runner::CancellationToken::new();
+    }
+
+    /// A failed materialize (#1281): keep what was written before the
+    /// failure (`PartialMaterialize`) so the Failed screen lists it.
+    pub fn fail_materialize(&mut self, e: anyhow::Error) {
+        if let Some(partial) = e.downcast_ref::<crate::adapt::materializer::PartialMaterialize>() {
+            self.results.materialize = Some(partial.written.clone());
+        }
+        self.set_error(AdaptStep::Materializing, format!("{e}"));
     }
 
     pub fn milestone_label(&self) -> &'static str {
@@ -77,6 +118,20 @@ impl AdaptScreen {
 
     pub fn tick(&mut self) {
         self.spinner_tick = self.spinner_tick.wrapping_add(1);
+        self.review.tick(std::time::Instant::now());
+    }
+
+    /// The project the run adapts; its `.maestro/` holds the cache (#1281).
+    fn root(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.config.path)
+    }
+
+    fn save_cache(&self) {
+        self.results.save_cache(&self.root());
+    }
+
+    fn clear_cache(&self) {
+        AdaptResults::clear_cache(&self.root());
     }
 
     pub fn set_scan_result(&mut self, profile: ProjectProfile) {
@@ -98,6 +153,9 @@ impl AdaptScreen {
     pub fn set_error(&mut self, phase: AdaptStep, message: String) {
         self.error = Some(AdaptError { phase, message });
         self.step = AdaptStep::Failed;
+        // #1281: Failed opens at its top (the error line), never at the
+        // Review scroll it came from.
+        self.scroll_offset = 0;
     }
 
     pub fn build_adapt_config(&self) -> crate::adapt::AdaptConfig {
@@ -111,11 +169,11 @@ impl AdaptScreen {
         profile: ProjectProfile,
     ) -> Option<crate::tui::app::TuiCommand> {
         self.set_scan_result(profile.clone());
-        self.results.save_cache();
+        self.save_cache();
         let config = self.build_adapt_config();
         if config.scan_only {
             self.step = AdaptStep::Complete;
-            AdaptResults::clear_cache();
+            self.clear_cache();
             None
         } else {
             self.step = AdaptStep::Analyzing;
@@ -128,11 +186,11 @@ impl AdaptScreen {
     /// Advance the wizard after a successful analyze phase.
     pub fn complete_analyze(&mut self, report: AdaptReport) -> Option<crate::tui::app::TuiCommand> {
         self.set_analyze_result(report.clone());
-        self.results.save_cache();
+        self.save_cache();
         let config = self.build_adapt_config();
         if config.no_issues {
             self.step = AdaptStep::Complete;
-            AdaptResults::clear_cache();
+            self.clear_cache();
             None
         } else {
             self.step = AdaptStep::Consolidating;
@@ -153,11 +211,11 @@ impl AdaptScreen {
         prd_content: String,
     ) -> Option<crate::tui::app::TuiCommand> {
         self.set_prd_result(prd_content.clone());
-        self.results.save_cache();
+        self.save_cache();
         let config = self.build_adapt_config();
         if config.no_issues {
             self.step = AdaptStep::Complete;
-            AdaptResults::clear_cache();
+            self.clear_cache();
             None
         } else {
             self.step = AdaptStep::Planning;
@@ -174,21 +232,28 @@ impl AdaptScreen {
 
     /// Advance the wizard after a successful plan phase.
     pub fn complete_plan(&mut self, plan: AdaptPlan) -> Option<crate::tui::app::TuiCommand> {
-        self.set_plan_result(plan.clone());
-        self.results.save_cache();
-        let config = self.build_adapt_config();
-        if config.dry_run {
+        self.set_plan_result(plan);
+        self.save_cache();
+        if self.config.dry_run {
             self.step = AdaptStep::Complete;
-            AdaptResults::clear_cache();
-            None
+            self.clear_cache();
         } else {
-            self.step = AdaptStep::Scaffolding;
-            let profile = self.results.profile.clone()?;
-            let report = self.results.report.clone()?;
-            Some(crate::tui::app::TuiCommand::RunAdaptScaffold(
-                config, profile, report, plan,
-            ))
+            // #1281: pause before any write; the Review ⏎ ⏎ resumes at
+            // Scaffolding through `StartAdaptPipeline`.
+            self.enter_review();
         }
+        None
+    }
+
+    fn enter_review(&mut self) {
+        self.step = AdaptStep::Review;
+        self.review = crate::tui::ds::armed::ArmedEnter::new();
+    }
+
+    /// Esc while writing (#1281): the item in flight finishes, nothing
+    /// after it starts, and the result of what was written still arrives.
+    pub fn is_stopping(&self) -> bool {
+        self.cancel.is_cancelled()
     }
 
     pub fn set_scaffold_result(&mut self, result: ScaffoldResult) {
@@ -201,7 +266,11 @@ impl AdaptScreen {
         result: ScaffoldResult,
     ) -> Option<crate::tui::app::TuiCommand> {
         self.set_scaffold_result(result);
-        self.results.save_cache();
+        self.save_cache();
+        if self.is_stopping() {
+            self.step = AdaptStep::Complete;
+            return None;
+        }
         self.step = AdaptStep::Materializing;
         let plan = self.results.plan.clone()?;
         let report = self.results.report.clone()?;
@@ -214,7 +283,11 @@ impl AdaptScreen {
     pub fn complete_materialize(&mut self, result: MaterializeResult) {
         self.set_materialize_result(result);
         self.step = AdaptStep::Complete;
-        AdaptResults::clear_cache();
+        // A stopped run keeps its cache: a resume re-creates nothing (the
+        // create calls match titles) and finishes the rest.
+        if !self.is_stopping() {
+            self.clear_cache();
+        }
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -225,10 +298,44 @@ impl AdaptScreen {
         if let Some(ref error) = self.error {
             self.step = error.phase;
             self.error = None;
+            self.fresh_cancel();
             Some(ScreenAction::StartAdaptPipeline(self.build_adapt_config()))
         } else {
             None
         }
+    }
+
+    /// Review (#1281): ⏎ arms, ⏎ again within the window writes, Esc
+    /// disarms (or leaves when nothing is armed; the plan stays cached).
+    fn handle_review_input(&mut self, code: KeyCode) -> ScreenAction {
+        use crate::tui::ds::armed::{ArmedState, EnterOutcome};
+        match code {
+            KeyCode::Enter => {
+                if self.review.on_enter(std::time::Instant::now()) == EnterOutcome::Commit {
+                    self.fresh_cancel();
+                    self.step = if self.results.scaffold.is_some() {
+                        AdaptStep::Materializing
+                    } else {
+                        AdaptStep::Scaffolding
+                    };
+                    return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
+                }
+            }
+            KeyCode::Esc if matches!(self.review.state(), ArmedState::Armed(_)) => {
+                self.review.disarm();
+            }
+            KeyCode::Esc => return ScreenAction::Pop,
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.review.disarm();
+                self.scroll_offset = self.scroll_offset.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.review.disarm();
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
+            _ => self.review.disarm(),
+        }
+        ScreenAction::None
     }
 
     fn handle_configure_input(&mut self, code: KeyCode) -> ScreenAction {
@@ -243,45 +350,61 @@ impl AdaptScreen {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.selected_field = self.selected_field.saturating_sub(1);
             }
-            KeyCode::Char(' ') => {
-                // Toggle boolean fields
-                match self.selected_field {
-                    1 => self.config.dry_run = !self.config.dry_run,
-                    2 => self.config.scan_only = !self.config.scan_only,
-                    3 => self.config.no_issues = !self.config.no_issues,
-                    _ => {}
-                }
+            KeyCode::Char(' ') | KeyCode::Right if self.selected_field == 1 => {
+                self.config.stop_after.next().apply(&mut self.config);
             }
+            KeyCode::Left if self.selected_field == 1 => {
+                self.config.stop_after.prev().apply(&mut self.config);
+            }
+            // Space never types into Project or Model (a model name has none).
+            KeyCode::Char(' ') => {}
             KeyCode::Backspace => match self.selected_field {
                 0 => {
                     self.config.path.pop();
+                    self.reload_cache();
                 }
-                4 => {
+                2 => {
                     self.config.model.pop();
                 }
                 _ => {}
             },
             KeyCode::Char(c) if self.selected_field == 0 => {
                 self.config.path.push(c);
+                self.reload_cache();
             }
-            KeyCode::Char(c) if self.selected_field == 4 => {
+            KeyCode::Char(c) if self.selected_field == 2 => {
                 self.config.model.push(c);
             }
             KeyCode::Enter => {
                 if self.loaded_from_cache {
-                    self.step = self.results.resume_step();
+                    let step = self.results.resume_step();
+                    // #1281: a cached plan never resumes into a write.
+                    if matches!(step, AdaptStep::Scaffolding | AdaptStep::Materializing) {
+                        if self.config.dry_run {
+                            self.step = AdaptStep::Complete;
+                        } else {
+                            self.enter_review();
+                        }
+                        return ScreenAction::None;
+                    }
+                    self.step = step;
                 }
+                self.fresh_cancel();
                 return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
             }
+            // The clear chord acts only off the text fields (#1281): on
+            // Project or Model, `x` is a letter.
             KeyCode::Delete | KeyCode::Char('x')
-                if self.loaded_from_cache && self.pending_clear =>
+                if self.selected_field == 1 && self.loaded_from_cache && self.pending_clear =>
             {
                 self.results = AdaptResults::default();
-                AdaptResults::clear_cache();
+                self.clear_cache();
                 self.loaded_from_cache = false;
                 self.pending_clear = false;
             }
-            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
+            KeyCode::Delete | KeyCode::Char('x')
+                if self.selected_field == 1 && self.loaded_from_cache =>
+            {
                 // Poka-yoke (#9): first press only arms — the wipe needs a second.
                 self.pending_clear = true;
             }
@@ -289,6 +412,16 @@ impl AdaptScreen {
             _ => {}
         }
         ScreenAction::None
+    }
+}
+
+/// Leaving the screen while it writes stops the run after the item in
+/// flight (#1281): the result would have no screen to land on.
+impl Drop for AdaptScreen {
+    fn drop(&mut self) {
+        if matches!(self.step, AdaptStep::Scaffolding | AdaptStep::Materializing) {
+            self.cancel.cancel();
+        }
     }
 }
 
@@ -304,8 +437,8 @@ impl KeymapProvider for AdaptScreen {
             AdaptStep::Configure => {
                 let mut action_bindings = vec![
                     KeyBinding {
-                        key: "Space",
-                        description: "Toggle",
+                        key: "Space/←→",
+                        description: "Choose stop after",
                     },
                     KeyBinding {
                         key: "Enter",
@@ -316,7 +449,8 @@ impl KeymapProvider for AdaptScreen {
                         },
                     },
                 ];
-                if self.loaded_from_cache {
+                // `x` is a letter on Project and Model (#1281).
+                if self.loaded_from_cache && self.selected_field == 1 {
                     action_bindings.push(KeyBinding {
                         key: "x",
                         description: if self.pending_clear {
@@ -350,6 +484,30 @@ impl KeymapProvider for AdaptScreen {
                     },
                 ]
             }
+            AdaptStep::Review => vec![KeyBindingGroup {
+                title: "Actions",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Arm · again within 3s writes",
+                    },
+                    KeyBinding {
+                        key: "j/k",
+                        description: "Scroll",
+                    },
+                    KeyBinding {
+                        key: "Esc",
+                        description: "Disarm · back (plan cached)",
+                    },
+                ],
+            }],
+            AdaptStep::Scaffolding | AdaptStep::Materializing => vec![KeyBindingGroup {
+                title: "Actions",
+                bindings: vec![KeyBinding {
+                    key: "Esc",
+                    description: "Stop after this item",
+                }],
+            }],
             step if step.is_progress() => vec![KeyBindingGroup {
                 title: "Actions",
                 bindings: vec![KeyBinding {
@@ -373,6 +531,10 @@ impl KeymapProvider for AdaptScreen {
             AdaptStep::Failed => vec![KeyBindingGroup {
                 title: "Actions",
                 bindings: vec![
+                    KeyBinding {
+                        key: "j/k",
+                        description: "Scroll",
+                    },
                     KeyBinding {
                         key: "r",
                         description: "Retry",
@@ -398,7 +560,14 @@ impl Screen for AdaptScreen {
         {
             match self.step {
                 AdaptStep::Configure => return self.handle_configure_input(*code),
+                AdaptStep::Review => return self.handle_review_input(*code),
+                // #1281: Esc while writing stops after the item in flight and
+                // stays, so what was written is shown, never dropped.
+                AdaptStep::Scaffolding | AdaptStep::Materializing if *code == KeyCode::Esc => {
+                    self.cancel.cancel();
+                }
                 step if step.is_progress() && *code == KeyCode::Esc => {
+                    self.cancel.cancel();
                     self.cancelled = true;
                     return ScreenAction::Pop;
                 }
@@ -413,6 +582,14 @@ impl Screen for AdaptScreen {
                     _ => {}
                 },
                 AdaptStep::Failed => match code {
+                    // #1281: the written-before-the-failure list can be
+                    // longer than the screen.
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                    }
                     KeyCode::Char('r') => {
                         if let Some(action) = self.retry() {
                             return action;
@@ -441,15 +618,32 @@ impl Screen for AdaptScreen {
 }
 
 #[cfg(test)]
+mod guard_tests;
+#[cfg(test)]
+pub(crate) mod run_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::adapt::types::*;
     use crate::tui::screens::test_helpers::key_event;
 
+    /// #1281: the project root is a temp dir, so `complete_*` never writes
+    /// a cache into the repo, and a stale CWD cache never leaks in.
+    fn test_screen() -> AdaptScreen {
+        let mut s = AdaptScreen::new();
+        s.results = AdaptResults::default();
+        s.loaded_from_cache = false;
+        let root = std::env::temp_dir().join("maestro-adapt-screen-tests");
+        std::fs::create_dir_all(&root).unwrap();
+        s.config.path = root.display().to_string();
+        s
+    }
+
     #[test]
     fn cache_clear_requires_two_presses() {
         // Poka-yoke (#9): one x must never wipe the resumable cache — it only arms.
-        let mut s = AdaptScreen::new();
+        let mut s = test_screen();
         s.loaded_from_cache = true;
         s.pending_clear = false;
         s.selected_field = 1; // non-text field so `x` reaches the clear arm
@@ -460,7 +654,7 @@ mod tests {
 
     #[test]
     fn cache_clear_disarms_on_other_key() {
-        let mut s = AdaptScreen::new();
+        let mut s = test_screen();
         s.loaded_from_cache = true;
         s.pending_clear = true;
         s.selected_field = 1;
@@ -538,7 +732,7 @@ mod tests {
 
     #[test]
     fn new_starts_at_configure() {
-        let screen = AdaptScreen::new();
+        let screen = test_screen();
         assert_eq!(screen.step, AdaptStep::Configure);
         assert_eq!(screen.selected_field, 0);
         assert!(!screen.cancelled);
@@ -548,14 +742,14 @@ mod tests {
 
     #[test]
     fn configure_j_moves_field_down() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_field, 1);
     }
 
     #[test]
     fn configure_k_moves_field_up() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.selected_field = 2;
         screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_field, 1);
@@ -563,55 +757,72 @@ mod tests {
 
     #[test]
     fn configure_k_at_zero_stays_at_zero() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_field, 0);
     }
 
     #[test]
     fn configure_j_does_not_exceed_max() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.selected_field = FIELD_COUNT - 1;
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_field, FIELD_COUNT - 1);
     }
 
+    // #1281: the three toggles became the Stop after radio (field 1).
     #[test]
-    fn configure_space_toggles_dry_run() {
-        let mut screen = AdaptScreen::new();
+    fn configure_space_moves_stop_after_to_full_clearing_dry_run() {
+        let mut screen = test_screen();
         screen.selected_field = 1;
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
-        assert!(screen.config.dry_run);
+        assert!(screen.config.dry_run, "default Plan · dry run");
         screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
         assert!(!screen.config.dry_run);
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert!(screen.config.dry_run, "wraps to Scan, which is dry");
     }
 
     #[test]
-    fn configure_space_toggles_scan_only() {
-        let mut screen = AdaptScreen::new();
-        screen.selected_field = 2;
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+    fn configure_space_reaches_scan_only() {
+        let mut screen = test_screen();
+        screen.selected_field = 1;
+        screen.handle_input(&key_event(KeyCode::Left), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Left), InputMode::Normal);
+        assert_eq!(screen.config.stop_after, StopAfter::Scan);
         assert!(screen.config.scan_only);
     }
 
     #[test]
-    fn configure_space_toggles_no_issues() {
-        let mut screen = AdaptScreen::new();
-        screen.selected_field = 3;
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+    fn configure_space_reaches_no_issues() {
+        let mut screen = test_screen();
+        screen.selected_field = 1;
+        screen.handle_input(&key_event(KeyCode::Left), InputMode::Normal);
+        assert_eq!(screen.config.stop_after, StopAfter::Analysis);
         assert!(screen.config.no_issues);
     }
 
     #[test]
+    fn configure_space_on_path_does_nothing() {
+        let mut screen = test_screen();
+        let path = screen.config.path.clone();
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert_eq!(screen.config.stop_after, StopAfter::Plan);
+        assert_eq!(screen.config.path, path, "Space never types into Project");
+        screen.selected_field = 2;
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert_eq!(screen.config.model, "sonnet", "nor into Model");
+    }
+
+    #[test]
     fn configure_enter_starts_pipeline() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert!(matches!(action, ScreenAction::StartAdaptPipeline(_)));
     }
 
     #[test]
     fn configure_esc_pops() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
@@ -620,7 +831,7 @@ mod tests {
 
     #[test]
     fn progress_esc_cancels_and_pops() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Scanning;
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
@@ -631,7 +842,7 @@ mod tests {
 
     #[test]
     fn complete_j_scrolls_down() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Complete;
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.scroll_offset, 1);
@@ -639,7 +850,7 @@ mod tests {
 
     #[test]
     fn complete_k_scrolls_up() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Complete;
         screen.scroll_offset = 3;
         screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
@@ -648,7 +859,7 @@ mod tests {
 
     #[test]
     fn complete_esc_pops() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Complete;
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
@@ -658,7 +869,7 @@ mod tests {
 
     #[test]
     fn failed_r_retries() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_error(AdaptStep::Analyzing, "timeout".into());
         assert_eq!(screen.step, AdaptStep::Failed);
 
@@ -670,7 +881,7 @@ mod tests {
 
     #[test]
     fn failed_esc_pops() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Failed;
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
@@ -680,35 +891,35 @@ mod tests {
 
     #[test]
     fn set_scan_result_stores_profile() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_scan_result(make_mock_profile());
         assert!(screen.results.profile.is_some());
     }
 
     #[test]
     fn set_analyze_result_stores_report() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_analyze_result(make_mock_report());
         assert!(screen.results.report.is_some());
     }
 
     #[test]
     fn set_plan_result_stores_plan() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_plan_result(make_mock_plan());
         assert!(screen.results.plan.is_some());
     }
 
     #[test]
     fn set_materialize_result_stores_result() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_materialize_result(make_mock_materialize_result());
         assert!(screen.results.materialize.is_some());
     }
 
     #[test]
     fn set_error_transitions_to_failed() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.set_error(AdaptStep::Planning, "bad".into());
         assert_eq!(screen.step, AdaptStep::Failed);
         assert_eq!(screen.error.as_ref().unwrap().phase, AdaptStep::Planning);
@@ -719,7 +930,7 @@ mod tests {
 
     #[test]
     fn tick_increments_spinner() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         assert_eq!(screen.spinner_tick, 0);
         screen.tick();
         assert_eq!(screen.spinner_tick, 1);
@@ -729,7 +940,7 @@ mod tests {
 
     #[test]
     fn build_adapt_config_reflects_form_state() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.config.dry_run = true;
         screen.config.path = "/tmp/test".into();
         let config = screen.build_adapt_config();
@@ -758,7 +969,7 @@ mod tests {
 
     #[test]
     fn complete_analyze_transitions_to_consolidating() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.results.profile = Some(make_mock_profile());
         let cmd = screen.complete_analyze(make_mock_report());
         assert_eq!(screen.step, AdaptStep::Consolidating);
@@ -770,7 +981,7 @@ mod tests {
 
     #[test]
     fn complete_analyze_with_no_issues_skips_consolidating() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.config.no_issues = true;
         screen.results.profile = Some(make_mock_profile());
         let cmd = screen.complete_analyze(make_mock_report());
@@ -782,7 +993,7 @@ mod tests {
 
     #[test]
     fn complete_consolidate_transitions_to_planning() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Consolidating;
         screen.results.profile = Some(make_mock_profile());
         screen.results.report = Some(make_mock_report());
@@ -796,7 +1007,7 @@ mod tests {
 
     #[test]
     fn complete_consolidate_stores_prd_content() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Consolidating;
         screen.results.profile = Some(make_mock_profile());
         screen.results.report = Some(make_mock_report());
@@ -809,7 +1020,7 @@ mod tests {
 
     #[test]
     fn complete_consolidate_without_profile_returns_none() {
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Consolidating;
         screen.results.profile = None;
         screen.results.report = Some(make_mock_report());
@@ -877,7 +1088,7 @@ mod tests {
     #[test]
     fn set_scaffold_result_stores_result() {
         use crate::adapt::types::ScaffoldResult;
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         let sr = ScaffoldResult {
             files: vec![],
             created_count: 0,
@@ -888,22 +1099,22 @@ mod tests {
     }
 
     #[test]
-    fn complete_plan_transitions_to_scaffolding() {
-        let mut screen = AdaptScreen::new();
+    fn complete_plan_transitions_to_review_not_scaffolding() {
+        // #1281: a full run pauses at Review; the scaffold is queued only by
+        // the armed ⏎ ⏎ (see run_tests::adapt_review_pause_before_write).
+        let mut screen = test_screen();
+        StopAfter::Full.apply(&mut screen.config);
         screen.results.profile = Some(make_mock_profile());
         screen.results.report = Some(make_mock_report());
         let cmd = screen.complete_plan(make_mock_plan());
-        assert_eq!(screen.step, AdaptStep::Scaffolding);
-        assert!(matches!(
-            cmd,
-            Some(crate::tui::app::TuiCommand::RunAdaptScaffold(_, _, _, _))
-        ));
+        assert_eq!(screen.step, AdaptStep::Review);
+        assert!(cmd.is_none());
     }
 
     #[test]
     fn complete_scaffold_transitions_to_materializing() {
         use crate::adapt::types::ScaffoldResult;
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Scaffolding;
         screen.results.profile = Some(make_mock_profile());
         screen.results.report = Some(make_mock_report());
@@ -924,7 +1135,7 @@ mod tests {
     #[test]
     fn complete_scaffold_stores_result() {
         use crate::adapt::types::ScaffoldResult;
-        let mut screen = AdaptScreen::new();
+        let mut screen = test_screen();
         screen.step = AdaptStep::Scaffolding;
         screen.results.report = Some(make_mock_report());
         screen.results.plan = Some(make_mock_plan());

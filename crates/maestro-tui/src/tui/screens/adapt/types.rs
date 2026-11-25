@@ -1,3 +1,4 @@
+use super::stop_after::StopAfter;
 use crate::adapt::AdaptConfig;
 use crate::adapt::prd_source::PrdSource;
 use crate::adapt::types::{
@@ -13,6 +14,9 @@ pub enum AdaptStep {
     Analyzing,
     Consolidating,
     Planning,
+    /// Paused before any write (§02.11): the plan is shown and the write
+    /// waits for an armed ⏎ ⏎.
+    Review,
     Scaffolding,
     Materializing,
     Complete,
@@ -42,18 +46,24 @@ pub struct AdaptWizardConfig {
     pub no_issues: bool,
     pub model: String,
     pub prd_source: PrdSource,
+    /// The radio that sets `dry_run` / `scan_only` / `no_issues`.
+    pub stop_after: StopAfter,
 }
 
 impl Default for AdaptWizardConfig {
+    /// Plan · dry run (#1281): a first run writes nothing outside `.maestro/`.
     fn default() -> Self {
-        Self {
+        let mut cfg = Self {
             path: ".".to_string(),
             dry_run: false,
             scan_only: false,
             no_issues: false,
             model: "sonnet".to_string(),
             prd_source: PrdSource::default(),
-        }
+            stop_after: StopAfter::default(),
+        };
+        StopAfter::default().apply(&mut cfg);
+        cfg
     }
 }
 
@@ -89,15 +99,20 @@ pub struct AdaptResults {
 }
 
 impl AdaptResults {
-    /// Cache file path for adapt pipeline resumption.
-    fn cache_path() -> std::path::PathBuf {
+    /// The cache, relative to the project root (#1281: never the CWD).
+    fn cache_rel() -> std::path::PathBuf {
         std::path::PathBuf::from(".maestro").join("adapt-cache.json")
     }
 
-    /// Save current results to cache file. A failed write is logged, never
-    /// fatal: the cache only speeds up a resumed run.
-    pub fn save_cache(&self) {
-        if let Err(e) = self.save_cache_in(std::path::Path::new(".")) {
+    /// `<root>/.maestro/adapt-cache.json`.
+    pub fn cache_path(root: &std::path::Path) -> std::path::PathBuf {
+        root.join(Self::cache_rel())
+    }
+
+    /// Save current results to the project's cache file. A failed write is
+    /// logged, never fatal: the cache only speeds up a resumed run.
+    pub fn save_cache(&self, root: &std::path::Path) {
+        if let Err(e) = self.save_cache_in(root) {
             tracing::warn!("adapt cache not saved: {e}");
         }
     }
@@ -105,19 +120,18 @@ impl AdaptResults {
     fn save_cache_in(&self, root: &std::path::Path) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
         // Refuses a repo-planted `.maestro -> ~/x` or symlinked cache file (#1313).
-        crate::util::write_contained(root, &Self::cache_path(), &json)
+        crate::util::write_contained(root, &Self::cache_rel(), &json)
     }
 
-    /// Load cached results if available.
-    pub fn load_cache() -> Option<Self> {
-        let path = Self::cache_path();
-        let data = std::fs::read_to_string(&path).ok()?;
+    /// Load the project's cached results if available.
+    pub fn load_cache(root: &std::path::Path) -> Option<Self> {
+        let data = std::fs::read_to_string(Self::cache_path(root)).ok()?;
         serde_json::from_str(&data).ok()
     }
 
-    /// Delete the cache file (called after successful completion).
-    pub fn clear_cache() {
-        let _ = std::fs::remove_file(Self::cache_path());
+    /// Delete the project's cache file (called after completion).
+    pub fn clear_cache(root: &std::path::Path) {
+        let _ = std::fs::remove_file(Self::cache_path(root));
     }
 
     /// Determine which phase to resume from based on cached results.
@@ -216,7 +230,8 @@ mod tests {
     fn wizard_config_default_values() {
         let config = AdaptWizardConfig::default();
         assert_eq!(config.path, ".");
-        assert!(!config.dry_run);
+        // #1281: the default is Plan · dry run.
+        assert!(config.dry_run);
         assert!(!config.scan_only);
         assert!(!config.no_issues);
         assert_eq!(config.model, "sonnet");
@@ -227,7 +242,7 @@ mod tests {
         let config = AdaptWizardConfig::default();
         let adapt = config.to_adapt_config();
         assert_eq!(adapt.path, PathBuf::from("."));
-        assert!(!adapt.dry_run);
+        assert!(adapt.dry_run, "#1281: Plan · dry run by default");
         assert!(!adapt.scan_only);
         assert!(!adapt.no_issues);
         assert_eq!(adapt.model, Some("sonnet".to_string()));

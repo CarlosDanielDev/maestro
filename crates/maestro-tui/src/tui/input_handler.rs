@@ -1239,6 +1239,17 @@ pub(crate) fn has_live_work(app: &App) -> bool {
             .is_some_and(|q| !q.is_finished())
         || team_run_live(app)
         || milestone_write_live(app)
+        || adapt_write_live(app)
+}
+
+/// An Adapt write in flight (#1281): quitting would stop it after the item
+/// in flight, with the run cut off partway.
+fn adapt_write_live(app: &App) -> bool {
+    use crate::tui::screens::adapt::AdaptStep;
+    app.screen_state
+        .adapt_screen
+        .as_ref()
+        .is_some_and(|s| matches!(s.step, AdaptStep::Scaffolding | AdaptStep::Materializing))
 }
 
 /// A milestone wizard create in flight (#1284): quitting would cut it off
@@ -1278,6 +1289,8 @@ pub(crate) fn live_work_question(app: &App) -> String {
         "A team run is between waves. Exit anyway?".into()
     } else if milestone_write_live(app) {
         "A milestone create is still writing. Exit anyway?".into()
+    } else if adapt_write_live(app) {
+        "An Adapt run is still writing. Exit anyway?".into()
     } else {
         "A queue or PR job is still running. Exit anyway?".into()
     }

@@ -651,10 +651,9 @@ async fn event_loop(
                     tokio::spawn(async move {
                         use crate::adapt::prd::{ClaudePrdGenerator, PrdGenerator};
                         let generator = ClaudePrdGenerator::new(model);
+                        // #1281: the PRD stays in the results; it is written
+                        // only after Review, in the Scaffold arm below.
                         let result = generator.generate(&profile, &report).await;
-                        if let Ok(ref content) = result {
-                            save_consolidated_prd(&profile.root, content);
-                        }
                         let _ = tx.send(app::TuiDataEvent::AdaptConsolidateResult(result));
                     });
                 }
@@ -685,7 +684,16 @@ async fn event_loop(
                 app::TuiCommand::RunAdaptScaffold(config, profile, report, plan) => {
                     let tx = app.data_tx.clone();
                     let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    // #1281: the first write, after the Review ⏎ ⏎.
+                    let prd = app
+                        .screen_state
+                        .adapt_screen
+                        .as_ref()
+                        .and_then(|s| s.results.prd_content.clone());
                     tokio::spawn(async move {
+                        if let Some(ref content) = prd {
+                            save_consolidated_prd(&profile.root, content);
+                        }
                         use crate::adapt::scaffolder::{ClaudeScaffolder, ProjectScaffolder};
                         let scaffolder = ClaudeScaffolder::new(model);
                         let result = scaffolder.scaffold(&profile, &report, &plan).await;
@@ -696,11 +704,19 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
                     let provider_kind = provider_config.kind;
+                    // #1281: Esc on the screen stops between items.
+                    let cancel = app
+                        .screen_state
+                        .adapt_screen
+                        .as_ref()
+                        .map(|s| s.cancel.clone())
+                        .unwrap_or_default();
                     tokio::spawn(async move {
                         use crate::adapt::materializer::{PlanMaterializer, RepoMaterializer};
                         let result = with_provider(provider_config, |provider| async move {
                             let materializer =
-                                RepoMaterializer::new(provider_kind, provider.as_ref());
+                                RepoMaterializer::new(provider_kind, provider.as_ref())
+                                    .with_cancel(cancel);
                             materializer.materialize(&plan, &report, false).await
                         })
                         .await;

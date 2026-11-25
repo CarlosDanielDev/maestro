@@ -1,4 +1,5 @@
 mod activity_log_dispatch;
+mod adapt;
 mod agent_graph_keybinding_hint;
 mod budget_banner;
 mod budget_prespawn;
