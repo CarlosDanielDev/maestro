@@ -373,6 +373,10 @@ pub(super) fn footer_hints(s: &IssueWizardScreen) -> Vec<(&'static str, &'static
                 ("Esc", "back"),
             ]
         }
+        // While a call runs, `i` and Enter do nothing, so they are not shown.
+        IssueWizardStep::AiReview if s.review_loading() || s.improve_loading() => {
+            vec![("e", "revise"), ("s", "skip"), ("Esc", "back")]
+        }
         IssueWizardStep::AiReview => vec![
             ("i", "improve (paid AI call)"),
             ("e", "revise"),

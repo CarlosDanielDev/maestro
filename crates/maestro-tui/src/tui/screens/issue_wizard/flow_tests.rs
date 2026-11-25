@@ -7,6 +7,7 @@
 use super::*;
 use crate::tui::app::{App, TuiCommand, TuiMode};
 use crate::tui::ds::armed::ArmedState;
+use crate::tui::ds::checklist::CheckState;
 use crate::tui::input_handler::handle_key;
 use crate::tui::screens::test_helpers::key_event;
 use ratatui::{Terminal, backend::TestBackend};
@@ -79,8 +80,21 @@ async fn issue_create_blocked_by_placeholder() {
         wizard(&app).focused_field(),
         Some(FieldId::AcceptanceCriteria)
     );
+    let row = wizard(&app).checklist_rows().pop().unwrap();
+    assert_eq!(
+        (row.0, row.1, row.2.as_deref()),
+        (
+            "No [TODO] placeholders",
+            CheckState::Missing,
+            Some("1 left")
+        ),
+        "the checklist still shows it"
+    );
     let out = screen_text(&mut app);
-    assert!(out.contains("No [TODO] placeholders"), "checklist:\n{out}");
+    assert!(
+        out.contains("No [TODO] placeholders 1 left"),
+        "checklist:\n{out}"
+    );
 
     // Every field is linted, the title too.
     let mut payload = ready_payload();
@@ -389,4 +403,49 @@ fn gate_and_checklist_count_placeholders_the_same_way() {
     );
     let row = s.checklist_rows().pop().unwrap();
     assert_eq!(row.2.as_deref(), Some("2 left"));
+}
+
+fn review_launches(app: &App) -> usize {
+    app.pending_commands
+        .iter()
+        .filter(|c| matches!(c, TuiCommand::LaunchAiReview(_)))
+        .count()
+}
+
+#[tokio::test]
+async fn r_after_a_review_error_queues_exactly_one_review() {
+    let mut w = IssueWizardScreen::new();
+    *w.payload_mut() = ready_payload();
+    w.set_step_for_tests(IssueWizardStep::AiReview);
+    w.begin_ai_review();
+    w.apply_ai_review(Err("claude: rate limited".into()));
+    let mut app = app_with(w);
+    let out = screen_text(&mut app);
+    assert!(out.contains("r retries"), "{out}");
+
+    press(&mut app, KeyCode::Char('r')).await;
+    assert_eq!(review_launches(&app), 1, "r sends one AI review");
+    assert!(wizard(&app).review_loading());
+    assert!(wizard(&app).review_error().is_none());
+    let out = screen_text(&mut app);
+    assert!(out.contains("AI is reviewing your issue"), "{out}");
+    assert!(
+        !out.contains("Enter next"),
+        "Enter does nothing while loading:\n{out}"
+    );
+    assert!(
+        !out.contains("improve"),
+        "i does nothing while loading:\n{out}"
+    );
+
+    press(&mut app, KeyCode::Char('r')).await;
+    assert_eq!(review_launches(&app), 1, "r while loading sends nothing");
+
+    // The result lands; the review is usable again.
+    app.screen_state
+        .issue_wizard_screen
+        .as_mut()
+        .unwrap()
+        .apply_ai_review(Ok("critique".into()));
+    assert!(wizard(&app).can_begin_improve());
 }

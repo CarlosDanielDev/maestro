@@ -15,9 +15,12 @@ pub struct Placeholder {
 }
 
 /// Every placeholder line, in `FieldId::ALL` order.
+/// Only fields written for the issue type count: a `[TODO:` in a hidden
+/// bug-only field of a Feature never reaches GitHub.
 pub fn placeholders(p: &IssueCreationPayload) -> Vec<Placeholder> {
     FieldId::ALL
         .iter()
+        .filter(|f| f.is_written_for(p.issue_type))
         .flat_map(|&field| {
             field
                 .payload_ref(p)
@@ -32,7 +35,11 @@ pub fn placeholders(p: &IssueCreationPayload) -> Vec<Placeholder> {
 /// Every `[TODO:` in the payload's 8 text fields: the one count the gate,
 /// the Draft checklist and the AI section rows all show.
 pub fn total(p: &IssueCreationPayload) -> usize {
-    FieldId::ALL.iter().map(|f| count(f.payload_ref(p))).sum()
+    FieldId::ALL
+        .iter()
+        .filter(|f| f.is_written_for(p.issue_type))
+        .map(|f| count(f.payload_ref(p)))
+        .sum()
 }
 
 /// Number of placeholders in one text.
@@ -71,6 +78,19 @@ mod tests {
         );
         assert_eq!(count(&p.test_hints), 2);
         assert_eq!(total(&p), 4, "occurrences, not lines");
+    }
+
+    #[test]
+    fn hidden_bug_fields_of_a_feature_are_not_linted() {
+        let mut p = IssueCreationPayload {
+            current_behavior: "[TODO: what breaks]".into(),
+            ..Default::default()
+        };
+        assert!(placeholders(&p).is_empty());
+        assert_eq!(total(&p), 0);
+        p.issue_type = crate::tui::screens::issue_wizard::IssueType::Bug;
+        assert_eq!(total(&p), 1);
+        assert_eq!(placeholders(&p)[0].field, FieldId::CurrentBehavior);
     }
 
     #[test]

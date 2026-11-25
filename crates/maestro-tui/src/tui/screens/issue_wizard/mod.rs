@@ -61,6 +61,15 @@ impl FieldId {
         Self::TestHints,
     ];
 
+    /// Whether `render_body_markdown` writes this field for `kind`: the
+    /// bug-only fields are dropped from a Feature.
+    pub const fn is_written_for(&self, kind: IssueType) -> bool {
+        match self {
+            Self::CurrentBehavior | Self::StepsToReproduce => matches!(kind, IssueType::Bug),
+            _ => true,
+        }
+    }
+
     /// The step whose form holds this field.
     pub const fn step(&self) -> IssueWizardStep {
         match self {
@@ -393,6 +402,15 @@ impl IssueWizardScreen {
     }
 
     // ---- #296 AI Review ----
+
+    /// `r` after a failed review: clear the error so the step-entry hook
+    /// (`tick_wizard_step_hooks`, the one queuer of `LaunchAiReview`) sees
+    /// `entered_ai_review_step()` and queues exactly one new call.
+    pub fn retry_ai_review(&mut self) {
+        self.review_error = None;
+        self.review_text = None;
+        self.review_loading = false;
+    }
 
     pub fn begin_ai_review(&mut self) {
         self.sync_fields_into_payload();
@@ -1084,7 +1102,7 @@ impl Screen for IssueWizardScreen {
                     self.begin_improve();
                 }
                 KeyCode::Char('r') if self.review_error.is_some() => {
-                    self.begin_ai_review();
+                    self.retry_ai_review();
                 }
                 KeyCode::Char('e') => {
                     // "Revise" — jump back to BasicInfo so the user can edit.
