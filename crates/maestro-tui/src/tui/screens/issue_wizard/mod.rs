@@ -1,18 +1,27 @@
 pub mod ai_improve;
 pub mod ai_review;
+mod deps;
 mod draw;
 mod draw_ai_review;
+mod draw_deps;
 mod draw_diff;
+mod draw_gate;
+mod gate;
+mod improve_sections;
+pub mod lint;
 mod prompt_common;
 pub mod types;
+mod validation;
 
 pub use ai_improve::{build_improve_prompt, parse_improve_response};
 pub use ai_review::build_review_prompt;
+pub use improve_sections::Decision;
 pub use types::{IssueCreationPayload, IssueType, IssueWizardStep};
 
 use super::prompt_input::{ClipboardContent, ClipboardProvider, SystemClipboard};
 use super::wizard_fields::{TextAreaField, WizardFields};
 use super::{Screen, ScreenAction};
+use crate::tui::ds::armed::ArmedEnter;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -21,12 +30,13 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Modifier, Style},
-    widgets::{Block, Borders},
 };
+use std::collections::BTreeSet;
+use std::time::Instant;
 
 /// Identifier of a focusable text field inside a wizard step. Stable across
 /// re-renders so the focused field survives a redraw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FieldId {
     Title,
     Overview,
@@ -39,6 +49,35 @@ pub enum FieldId {
 }
 
 impl FieldId {
+    /// Every text field, in `draw_diff::diff_fields` order.
+    pub const ALL: [Self; 8] = [
+        Self::Title,
+        Self::Overview,
+        Self::ExpectedBehavior,
+        Self::CurrentBehavior,
+        Self::StepsToReproduce,
+        Self::AcceptanceCriteria,
+        Self::FilesToModify,
+        Self::TestHints,
+    ];
+
+    /// Whether `render_body_markdown` writes this field for `kind`: the
+    /// bug-only fields are dropped from a Feature.
+    pub const fn is_written_for(&self, kind: IssueType) -> bool {
+        match self {
+            Self::CurrentBehavior | Self::StepsToReproduce => matches!(kind, IssueType::Bug),
+            _ => true,
+        }
+    }
+
+    /// The step whose form holds this field.
+    pub const fn step(&self) -> IssueWizardStep {
+        match self {
+            Self::Title | Self::Overview => IssueWizardStep::BasicInfo,
+            _ => IssueWizardStep::DorFields,
+        }
+    }
+
     pub const fn label(&self) -> &'static str {
         match self {
             Self::Title => "Title",
@@ -57,7 +96,7 @@ impl FieldId {
         !matches!(self, Self::Title)
     }
 
-    fn payload_ref<'a>(&self, p: &'a IssueCreationPayload) -> &'a str {
+    pub(super) fn payload_ref<'a>(&self, p: &'a IssueCreationPayload) -> &'a str {
         match self {
             Self::Title => &p.title,
             Self::Overview => &p.overview,
@@ -70,7 +109,7 @@ impl FieldId {
         }
     }
 
-    fn payload_ref_mut<'a>(&self, p: &'a mut IssueCreationPayload) -> &'a mut String {
+    pub(super) fn payload_ref_mut<'a>(&self, p: &'a mut IssueCreationPayload) -> &'a mut String {
         match self {
             Self::Title => &mut p.title,
             Self::Overview => &mut p.overview,
@@ -84,6 +123,10 @@ impl FieldId {
     }
 }
 
+/// How long a second Esc on Basics still closes a typed draft (the same
+/// window as `ds::confirm::HoldToConfirm`'s second press).
+pub const LEAVE_WINDOW: std::time::Duration = crate::tui::ds::confirm::WINDOW;
+
 pub struct IssueWizardScreen {
     step: IssueWizardStep,
     payload: IssueCreationPayload,
@@ -91,11 +134,21 @@ pub struct IssueWizardScreen {
     /// changes so BasicInfo owns Title+Overview textareas, DorFields
     /// owns its 4 or 6 textareas, and non-text steps hold `empty()`.
     pub(super) fields: WizardFields,
+    /// #1282: the Basics Type row (between Title and Overview) has focus.
+    /// It is a NORMAL-mode stop, so letters pick the type, not text.
+    pub(super) type_focused: bool,
+    /// #1282: fields the user has left or tried to advance past. Only these
+    /// show their error on the border; the checklist shows every error.
+    pub(super) touched: BTreeSet<FieldId>,
     /// #295 Dependencies step state.
     pub(super) dep_issues: Option<Vec<crate::provider::types::Issue>>,
     pub(super) dep_loading: bool,
     pub(super) dep_selected: usize,
-    pub(super) dep_checked: std::collections::BTreeSet<u64>,
+    pub(super) dep_checked: BTreeSet<u64>,
+    /// #1282: the Blocked-by filter (`/`), over number, title and labels.
+    /// It narrows the list only; `dep_checked` is never touched by it.
+    pub(super) dep_filter: TextAreaField,
+    pub(super) dep_filter_editing: bool,
     /// #296 AI Review step state.
     pub(super) review_loading: bool,
     pub(super) review_text: Option<String>,
@@ -111,8 +164,18 @@ pub struct IssueWizardScreen {
     /// `LaunchAiImprove` before the first one's result lands. Cleared
     /// when `apply_improve_result` fires.
     pub(super) improve_enqueued: bool,
-    /// Vertical scroll offset for the improve diff view.
+    /// #1282: one decision per `FieldId::ALL` section of the candidate;
+    /// only `Accepted` sections are merged.
+    pub(super) decisions: [Decision; 8],
+    /// #1282: the focused section (index into `FieldId::ALL`).
+    pub(super) section_focus: usize,
+    /// #1282: line offset inside the focused section's diff (↑/↓).
     pub(super) diff_scroll: u16,
+    /// The diff view's last drawn (width, height), so ↓ stops when the end
+    /// of the section is on screen.
+    pub(super) diff_view: std::cell::Cell<(u16, u16)>,
+    /// #1282: when the first Esc on Basics asked to drop a typed draft.
+    pub(super) leave_armed_at: Option<Instant>,
     /// Clipboard provider for Ctrl+V. Injected as a trait object so
     /// tests can supply a deterministic fake.
     clipboard: Box<dyn ClipboardProvider>,
@@ -128,6 +191,11 @@ pub struct IssueWizardScreen {
     /// #455 Blocking modal surfaced when `create_issue` returns
     /// `CreateOutcome::Existed` — user must pick Edit or Cancel.
     pub(super) already_exists_modal: Option<AlreadyExistsModal>,
+    /// #1282: the create gate on Preview: blocked while a `[TODO:` is left,
+    /// then ⏎ arms and a second ⏎ within 3s creates.
+    pub(super) create_gate: ArmedEnter,
+    /// Tests inject the clock for the armed create; the app uses `now`.
+    pub(super) clock: Option<Instant>,
     spinner_tick: usize,
     use_nerd_font: bool,
 }
@@ -148,14 +216,18 @@ impl IssueWizardScreen {
     }
 
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
-        Self {
+        let mut s = Self {
             step: IssueWizardStep::default(),
             payload: IssueCreationPayload::new(),
             fields: WizardFields::empty(),
+            type_focused: false,
+            touched: BTreeSet::new(),
             dep_issues: None,
             dep_loading: false,
             dep_selected: 0,
-            dep_checked: std::collections::BTreeSet::new(),
+            dep_checked: BTreeSet::new(),
+            dep_filter: TextAreaField::single_line(),
+            dep_filter_editing: false,
             review_loading: false,
             review_text: None,
             review_error: None,
@@ -163,16 +235,24 @@ impl IssueWizardScreen {
             improve_candidate: None,
             improve_error: None,
             improve_enqueued: false,
+            decisions: [Decision::Pending; 8],
+            section_focus: 0,
             diff_scroll: 0,
+            diff_view: std::cell::Cell::new((0, 0)),
+            leave_armed_at: None,
             clipboard,
             create_in_flight: false,
             create_enqueued: false,
             created_issue_number: None,
             create_error: None,
             already_exists_modal: None,
+            create_gate: ArmedEnter::new(),
+            clock: None,
             spinner_tick: 0,
             use_nerd_font: false,
-        }
+        };
+        s.rebuild_fields_for_step();
+        s
     }
 
     pub fn set_spinner_context(&mut self, spinner_tick: usize, use_nerd_font: bool) {
@@ -264,10 +344,12 @@ impl IssueWizardScreen {
             Ok(n) => {
                 self.created_issue_number = Some(n);
                 self.step = IssueWizardStep::Complete;
+                self.create_gate.finish(Ok(()));
             }
             Err(e) => {
                 self.create_error = Some(e.to_string());
                 self.step = IssueWizardStep::Failed;
+                self.create_gate.finish(Err(e.to_string()));
             }
         }
     }
@@ -278,6 +360,7 @@ impl IssueWizardScreen {
     pub fn finish_create_already_exists(&mut self, number: u64, state: String, title: String) {
         self.create_in_flight = false;
         self.create_enqueued = false;
+        self.create_gate.reset();
         self.already_exists_modal = Some(AlreadyExistsModal {
             number,
             state,
@@ -312,13 +395,22 @@ impl IssueWizardScreen {
         self.already_exists_modal = None;
     }
 
-    /// Reset to Context with a fresh payload — used by the Complete
+    /// Reset to Basics with a fresh payload — used by the Complete
     /// step's "Enter to create another" action.
     pub fn reset_for_another(&mut self) {
         *self = Self::new();
     }
 
     // ---- #296 AI Review ----
+
+    /// `r` after a failed review: clear the error so the step-entry hook
+    /// (`tick_wizard_step_hooks`, the one queuer of `LaunchAiReview`) sees
+    /// `entered_ai_review_step()` and queues exactly one new call.
+    pub fn retry_ai_review(&mut self) {
+        self.review_error = None;
+        self.review_text = None;
+        self.review_loading = false;
+    }
 
     pub fn begin_ai_review(&mut self) {
         self.sync_fields_into_payload();
@@ -394,7 +486,6 @@ impl IssueWizardScreen {
         self.improve_loading = true;
         self.improve_candidate = None;
         self.improve_error = None;
-        self.diff_scroll = 0;
     }
 
     /// Apply a result coming back from the background tokio task.
@@ -405,6 +496,12 @@ impl IssueWizardScreen {
         self.improve_enqueued = false;
         match result {
             Ok(candidate) => {
+                self.decisions = [Decision::Pending; 8];
+                self.diff_scroll = 0;
+                self.section_focus = improve_sections::changed(&self.payload, &candidate)
+                    .first()
+                    .copied()
+                    .unwrap_or(0);
                 self.improve_candidate = Some(candidate);
                 self.improve_error = None;
             }
@@ -415,21 +512,11 @@ impl IssueWizardScreen {
         }
     }
 
-    /// Replace the wizard's payload with the improved candidate and
-    /// drop the candidate. Keeps `review_text` visible so the user sees
-    /// the original critique beside the new draft.
-    pub fn accept_improve(&mut self) {
-        if let Some(cand) = self.improve_candidate.take() {
-            self.payload = cand;
-            self.diff_scroll = 0;
-        }
-    }
-
     /// Drop the candidate and any error. The wizard's payload is unchanged.
     pub fn discard_improve(&mut self) {
         self.improve_candidate = None;
         self.improve_error = None;
-        self.diff_scroll = 0;
+        self.decisions = [Decision::Pending; 8];
     }
 
     /// True when `tick_wizard_step_hooks` should enqueue a new
@@ -459,10 +546,6 @@ impl IssueWizardScreen {
         self.improve_error.as_deref()
     }
 
-    pub fn diff_scroll(&self) -> u16 {
-        self.diff_scroll
-    }
-
     /// Test helper — lets unit tests short-circuit to `AiReview` (or any
     /// other step) without walking the form's validation. Not exposed
     /// outside test builds.
@@ -476,6 +559,13 @@ impl IssueWizardScreen {
         self.sync_fields_into_payload();
         self.step = target;
         self.rebuild_fields_for_step();
+    }
+
+    /// Basics: give the Type row focus (NORMAL mode).
+    pub fn focus_type_row(&mut self) {
+        if self.step == IssueWizardStep::BasicInfo {
+            self.type_focused = true;
+        }
     }
 }
 
@@ -604,15 +694,17 @@ impl IssueWizardScreen {
         self.dep_checked.contains(&issue_number)
     }
 
+    /// Space: toggle the highlighted row of the filtered list.
     fn dep_toggle_selected(&mut self) {
-        let Some(issues) = self.dep_issues.as_ref() else {
+        let Some(&idx) = self.dep_visible().get(self.dep_selected) else {
             return;
         };
-        let Some(issue) = issues.get(self.dep_selected) else {
+        let Some(issue) = self.dep_issues.as_ref().and_then(|i| i.get(idx)) else {
             return;
         };
-        if !self.dep_checked.remove(&issue.number) {
-            self.dep_checked.insert(issue.number);
+        let number = issue.number;
+        if !self.dep_checked.remove(&number) {
+            self.dep_checked.insert(number);
         }
     }
 
@@ -700,6 +792,10 @@ impl IssueWizardScreen {
     /// recovers what the user typed earlier. Called after every step
     /// change.
     fn rebuild_fields_for_step(&mut self) {
+        self.type_focused = false;
+        if self.step == IssueWizardStep::Preview {
+            self.refresh_gate();
+        }
         let step_fields = self.step_fields();
         if step_fields.is_empty() {
             self.fields = WizardFields::empty();
@@ -721,78 +817,35 @@ impl IssueWizardScreen {
         self.fields = WizardFields::new(new_fields);
     }
 
-    /// Paint focused/unfocused border styles onto each textarea's
-    /// internal `Block`. Called from `Screen::draw` (the only mutable
-    /// entry point) so `draw_impl` can stay `&self`.
-    pub(super) fn refresh_field_blocks(&mut self, theme: &Theme) {
-        let step_fields = self.step_fields();
-        let focused_idx = self.fields.focus();
-        for (i, field_id) in step_fields.iter().enumerate() {
-            let focused = i == focused_idx;
-            let border_style = if focused {
-                Style::default()
-                    .fg(theme.border_active)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(theme.border_inactive)
-                    .add_modifier(Modifier::DIM)
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(field_id.label());
+    /// The field borders are drawn by `draw_field` (`field_block`, with the
+    /// error on the bottom border), so each textarea draws no block. The
+    /// Type row hides the text cursor while it has focus.
+    pub(super) fn refresh_field_blocks(&mut self) {
+        for i in 0..self.step_fields().len() {
             if let Some(ta) = self.fields.get_mut(i) {
-                ta.area_mut().set_block(block);
+                ta.area_mut().remove_block();
             }
+        }
+        if self.type_focused
+            && let Some(field) = self.fields.focused_mut()
+        {
+            field
+                .area_mut()
+                .set_cursor_style(Style::default().add_modifier(Modifier::HIDDEN));
         }
     }
 
-    /// Validate that the current step is allowed to advance. Reads
-    /// live textarea content via `field_text` so the footer error
-    /// updates as the user types (no wait for a sync boundary).
-    pub fn validation_error(&self) -> Option<&'static str> {
-        match self.step {
-            IssueWizardStep::BasicInfo => {
-                let title = self.field_text(FieldId::Title);
-                // Delegates to the canonical validator from #452. We only
-                // surface a coarse reason here because the footer expects a
-                // &'static str; the granular anyhow error from
-                // validate_title fires again at dispatch time.
-                match crate::util::validate_title(&title, "title") {
-                    Err(_) if title.trim().is_empty() => Some("Title is required"),
-                    Err(_) => Some("Title is invalid (too long or leading '-')"),
-                    Ok(_) => {
-                        if self.field_text(FieldId::Overview).trim().is_empty() {
-                            Some("Overview is required")
-                        } else {
-                            None
-                        }
-                    }
-                }
-            }
-            IssueWizardStep::DorFields => {
-                if self
-                    .field_text(FieldId::AcceptanceCriteria)
-                    .trim()
-                    .is_empty()
-                {
-                    Some("Acceptance Criteria is required")
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// Try to advance. Returns true on success, false if validation
-    /// blocked the move.
+    /// Try to advance. Returns true on success. When the step has errors,
+    /// they are marked touched (so they show on the borders) and focus moves
+    /// to the first invalid field.
     pub fn try_advance(&mut self) -> bool {
         // Sync BEFORE validation so payload reflects the live textarea
         // content, then validation reads the canonical source.
         self.sync_fields_into_payload();
-        if self.validation_error().is_some() {
+        let errors = self.step_errors();
+        if let Some(&(first, _)) = errors.first() {
+            self.touched.extend(errors.iter().map(|(f, _)| *f));
+            self.focus_field(first);
             return false;
         }
         if matches!(self.step, IssueWizardStep::Dependencies) {
@@ -818,15 +871,91 @@ impl IssueWizardScreen {
         }
     }
 
-    fn handle_type_select(&mut self, code: KeyCode) -> ScreenAction {
+    /// Move to `field`'s step if needed and focus it.
+    pub(super) fn focus_field(&mut self, field: FieldId) {
+        if field.step() != self.step {
+            self.jump_to(field.step());
+        }
+        self.type_focused = false;
+        let Some(idx) = self.step_fields().iter().position(|f| *f == field) else {
+            return;
+        };
+        for _ in 0..self.step_fields().len() {
+            if self.fields.focus() == idx {
+                break;
+            }
+            self.fields.focus_next();
+        }
+    }
+
+    /// Tab on Basics and Details: Title → Type row → Overview → Title.
+    /// The field left behind counts as touched.
+    fn focus_step(&mut self, forward: bool) {
+        let basics = self.step == IssueWizardStep::BasicInfo;
+        if self.type_focused {
+            self.type_focused = false;
+            // The row sits between Title (0) and Overview (1).
+            match (forward, self.fields.focus()) {
+                (true, 0) => self.fields.focus_next(),
+                (false, 1) => self.fields.focus_prev(),
+                _ => {}
+            }
+            return;
+        }
+        if let Some(left) = self.step_fields().get(self.fields.focus()).copied() {
+            self.touched.insert(left);
+        }
+        match (basics, forward, self.fields.focus()) {
+            (true, true, 0) | (true, false, 1) => self.type_focused = true,
+            (_, true, _) => self.fields.focus_next(),
+            (_, false, _) => self.fields.focus_prev(),
+        }
+    }
+
+    /// Type row keys: ←/f Feature, →/b Bug.
+    fn handle_type_row(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Left => self.payload.issue_type = IssueType::Feature,
-            KeyCode::Right => self.payload.issue_type = IssueType::Bug,
-            KeyCode::Char('h') => self.payload.issue_type = IssueType::Feature,
-            KeyCode::Char('l') => self.payload.issue_type = IssueType::Bug,
+            KeyCode::Left | KeyCode::Char('f') => self.payload.issue_type = IssueType::Feature,
+            KeyCode::Right | KeyCode::Char('b') => self.payload.issue_type = IssueType::Bug,
             _ => {}
         }
-        ScreenAction::None
+    }
+
+    /// The clock for the armed create: injected in tests.
+    pub(super) fn now(&self) -> Instant {
+        self.clock.unwrap_or_else(Instant::now)
+    }
+
+    /// True when something was typed or picked: leaving would drop it.
+    pub fn draft_is_dirty(&self) -> bool {
+        FieldId::ALL
+            .iter()
+            .any(|f| !self.field_text(*f).trim().is_empty())
+            || !self.payload.blocked_by.is_empty()
+            || !self.payload.image_paths.is_empty()
+    }
+
+    /// True while a second Esc on Basics would close the wizard.
+    pub fn leave_armed(&self) -> bool {
+        self.leave_armed_at
+            .is_some_and(|at| self.now().saturating_duration_since(at) <= LEAVE_WINDOW)
+    }
+
+    /// Esc on Basics: an empty draft closes at once; a typed one asks
+    /// first (the screen says so) and closes on a second Esc within
+    /// [`LEAVE_WINDOW`]. Returns true when the wizard should close.
+    fn confirm_leave(&mut self) -> bool {
+        if !self.draft_is_dirty() || self.leave_armed() {
+            self.leave_armed_at = None;
+            return true;
+        }
+        self.leave_armed_at = Some(self.now());
+        false
+    }
+
+    #[cfg(test)]
+    pub fn set_clock_for_test(&mut self, now: Instant) {
+        self.clock = Some(now);
     }
 }
 
@@ -837,31 +966,15 @@ impl Default for IssueWizardScreen {
 }
 
 impl KeymapProvider for IssueWizardScreen {
+    /// Every other key is in the registry IssueWizard block (one source for
+    /// Help); this group lists only the chord the registry cannot name.
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
             title: "Issue Wizard",
-            bindings: vec![
-                KeyBinding {
-                    key: "Enter",
-                    description: "Next step (validates required fields)",
-                },
-                KeyBinding {
-                    key: "Esc",
-                    description: "Previous step (or close)",
-                },
-                KeyBinding {
-                    key: "Tab",
-                    description: "Cycle focus between fields",
-                },
-                KeyBinding {
-                    key: "Shift+Enter",
-                    description: "Newline in multi-line fields",
-                },
-                KeyBinding {
-                    key: "←/→",
-                    description: "TypeSelect: Feature ↔ Bug",
-                },
-            ],
+            bindings: vec![KeyBinding {
+                key: "Shift+Enter",
+                description: "Newline in multi-line fields",
+            }],
         }]
     }
 }
@@ -922,29 +1035,32 @@ impl Screen for IssueWizardScreen {
             return ScreenAction::None;
         }
 
+        // Any key but Esc keeps the draft and drops a pending "leave?".
+        if *code != KeyCode::Esc {
+            self.leave_armed_at = None;
+        }
+
         // Step-specific routing.
         match self.step {
-            IssueWizardStep::TypeSelect => match code {
-                KeyCode::Esc => {
-                    self.retreat();
-                    return ScreenAction::None;
+            IssueWizardStep::BasicInfo if *code == KeyCode::Esc => {
+                if self.confirm_leave() {
+                    return ScreenAction::Pop;
                 }
+            }
+            IssueWizardStep::BasicInfo if self.type_focused => match code {
+                KeyCode::Tab => self.focus_step(true),
+                KeyCode::BackTab => self.focus_step(false),
                 KeyCode::Enter => {
                     self.try_advance();
-                    return ScreenAction::None;
                 }
-                _ => return self.handle_type_select(*code),
+                _ => self.handle_type_row(*code),
             },
             IssueWizardStep::BasicInfo | IssueWizardStep::DorFields => match (code, *modifiers) {
                 (KeyCode::Esc, _) => {
                     self.retreat();
                 }
-                (KeyCode::Tab, _) => {
-                    self.fields.focus_next();
-                }
-                (KeyCode::BackTab, _) => {
-                    self.fields.focus_prev();
-                }
+                (KeyCode::Tab, _) => self.focus_step(true),
+                (KeyCode::BackTab, _) => self.focus_step(false),
                 (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => {
                     // Shift+Enter inserts a newline on multi-line fields
                     // (the Title single-line field filters it out).
@@ -967,12 +1083,12 @@ impl Screen for IssueWizardScreen {
                     }
                 }
             },
+            IssueWizardStep::AiReview if self.improve_candidate.is_some() => {
+                self.handle_improve_diff(*code)
+            }
             IssueWizardStep::AiReview => match code {
                 KeyCode::Esc if self.improve_error.is_some() => {
                     self.improve_error = None;
-                }
-                KeyCode::Esc if self.improve_candidate.is_some() => {
-                    self.discard_improve();
                 }
                 KeyCode::Esc => {
                     self.retreat();
@@ -980,34 +1096,20 @@ impl Screen for IssueWizardScreen {
                 KeyCode::Char('i') if self.can_begin_improve() => {
                     self.begin_improve();
                 }
-                KeyCode::Char('a') if self.improve_candidate.is_some() => {
-                    self.accept_improve();
-                }
-                KeyCode::Char('d') if self.improve_candidate.is_some() => {
-                    self.discard_improve();
-                }
-                KeyCode::Char('r')
-                    if self.improve_candidate.is_some() || self.improve_error.is_some() =>
-                {
-                    self.improve_candidate = None;
+                // `r` has one meaning: re-run the failed AI call (paid).
+                KeyCode::Char('r') if self.improve_error.is_some() => {
                     self.improve_error = None;
                     self.begin_improve();
                 }
-                KeyCode::Char('r') => {
+                KeyCode::Char('r') if self.review_error.is_some() => {
+                    self.retry_ai_review();
+                }
+                KeyCode::Char('e') => {
                     // "Revise" — jump back to BasicInfo so the user can edit.
                     self.jump_to(IssueWizardStep::BasicInfo);
                 }
-                KeyCode::Char('j') | KeyCode::Down if self.improve_candidate.is_some() => {
-                    self.diff_scroll = self.diff_scroll.saturating_add(1);
-                }
-                KeyCode::Char('k') | KeyCode::Up if self.improve_candidate.is_some() => {
-                    self.diff_scroll = self.diff_scroll.saturating_sub(1);
-                }
                 KeyCode::Char('s') => {
                     self.jump_to(IssueWizardStep::Preview);
-                }
-                KeyCode::Char('R') if self.review_error.is_some() => {
-                    self.begin_ai_review();
                 }
                 KeyCode::Enter
                     if !self.review_loading
@@ -1017,32 +1119,20 @@ impl Screen for IssueWizardScreen {
                     self.try_advance();
                 }
                 // else: Enter is blocked while loading / error / improve sub-state;
-                // use 'R'/'r'/'a'/'d' to resolve.
+                // use `r` (retry) or `s` (skip) to resolve.
                 _ => {}
             },
-            IssueWizardStep::Preview => match code {
-                KeyCode::Esc => {
-                    self.retreat();
-                }
-                KeyCode::Enter => {
-                    // The dispatch layer's `tick_wizard_step_hooks` queues
-                    // `TuiCommand::CreateIssue` when the wizard transitions
-                    // to `Creating`.
-                    self.begin_create();
-                }
-                _ => {}
-            },
-            IssueWizardStep::Failed => match code {
-                KeyCode::Esc => {
+            IssueWizardStep::Preview => self.handle_preview(*code),
+            IssueWizardStep::Failed => {
+                if *code == KeyCode::Esc {
+                    // Back to the gate: a retry is armed ⏎ ⏎ like the first
+                    // try, never one key.
                     self.step = IssueWizardStep::Preview;
                     self.create_error = None;
+                    self.create_gate.reset();
+                    self.refresh_gate();
                 }
-                KeyCode::Char('r') => {
-                    self.create_error = None;
-                    self.begin_create();
-                }
-                _ => {}
-            },
+            }
             IssueWizardStep::Complete => match code {
                 KeyCode::Enter => {
                     self.reset_for_another();
@@ -1056,60 +1146,37 @@ impl Screen for IssueWizardScreen {
                 // No-op while in flight — the data event triggers the
                 // transition to Complete or Failed.
             }
-            IssueWizardStep::Dependencies => match code {
-                KeyCode::Esc => {
-                    self.retreat();
-                }
-                KeyCode::Char(' ') => self.dep_toggle_selected(),
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if let Some(issues) = self.dep_issues.as_ref()
-                        && !issues.is_empty()
-                        && self.dep_selected + 1 < issues.len()
-                    {
-                        self.dep_selected += 1;
-                    }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.dep_selected = self.dep_selected.saturating_sub(1);
-                }
-                KeyCode::Enter => {
-                    self.try_advance();
-                }
-                _ => {}
-            },
-            _ => match code {
-                KeyCode::Esc => {
-                    if self.step.is_first() {
-                        return ScreenAction::Pop;
-                    }
-                    self.retreat();
-                }
-                KeyCode::Enter => {
-                    self.try_advance();
-                }
-                _ => {}
-            },
+            IssueWizardStep::Dependencies => return self.handle_dependencies(event, *code),
         }
         ScreenAction::None
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let now = self.now();
+        self.create_gate.tick(now);
         self.fields.refresh_focus_styles();
-        self.refresh_field_blocks(theme);
+        self.refresh_field_blocks();
         self.draw_impl(f, area, theme);
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {
-        // Form steps capture printable characters as field input — request
-        // Insert mode so the global `q` shortcut doesn't steal them.
-        if matches!(
-            self.step,
-            IssueWizardStep::BasicInfo | IssueWizardStep::DorFields
-        ) {
-            Some(InputMode::Insert)
+        // Form fields and the Blocked-by filter capture printable characters
+        // as input — request Insert mode so the global `q` shortcut doesn't
+        // steal them. The Type row is a NORMAL stop.
+        let typing = match self.step {
+            IssueWizardStep::BasicInfo | IssueWizardStep::DorFields => !self.type_focused,
+            IssueWizardStep::Dependencies => self.dep_filter_editing,
+            _ => false,
+        };
+        Some(if typing {
+            InputMode::Insert
         } else {
-            Some(InputMode::Normal)
-        }
+            InputMode::Normal
+        })
+    }
+
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints(self)
     }
 }
 
@@ -1138,80 +1205,104 @@ mod tests {
     }
 
     #[test]
-    fn new_starts_at_context_step() {
+    fn new_starts_on_basics_with_title_focused() {
         let s = IssueWizardScreen::new();
-        assert_eq!(s.step(), IssueWizardStep::Context);
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
+        assert_eq!(s.focused_field(), Some(FieldId::Title));
+        assert_eq!(s.desired_input_mode(), Some(InputMode::Insert));
     }
 
     #[test]
-    fn step_index_is_one_based() {
-        assert_eq!(IssueWizardStep::Context.index(), 1);
-        assert_eq!(IssueWizardStep::TypeSelect.index(), 2);
-        assert_eq!(IssueWizardStep::Failed.index(), 10);
+    fn stepper_has_five_steps_and_create_states_sit_on_preview() {
+        let labels = IssueWizardStep::STEPPER.map(|s| s.label());
+        assert_eq!(
+            labels,
+            ["Basics", "Details", "Blocked by", "AI review", "Preview"]
+        );
+        assert_eq!(IssueWizardStep::BasicInfo.stepper_index(), 0);
+        for state in [
+            IssueWizardStep::Creating,
+            IssueWizardStep::Complete,
+            IssueWizardStep::Failed,
+        ] {
+            assert_eq!(state.stepper_index(), 4, "{state:?}");
+        }
+        assert_eq!(IssueWizardStep::Preview.next(), None);
+        assert_eq!(IssueWizardStep::BasicInfo.previous(), None);
     }
 
     #[test]
-    fn step_total_is_ten() {
-        assert_eq!(IssueWizardStep::total(), 10);
-    }
-
-    #[test]
-    fn enter_advances_step() {
+    fn enter_on_empty_basics_stays_and_marks_fields_touched() {
         let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(s.step(), IssueWizardStep::TypeSelect);
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
+        assert_eq!(s.focused_field(), Some(FieldId::Title));
+        assert!(s.field_error(FieldId::Title).is_some());
+        assert!(s.field_error(FieldId::Overview).is_some());
+    }
+
+    #[test]
+    fn untouched_empty_fields_show_no_border_error() {
+        let s = IssueWizardScreen::new();
+        assert!(s.field_error(FieldId::Title).is_none());
+        assert_eq!(s.validation_errors().len(), 4, "the checklist sees all");
     }
 
     #[test]
     fn esc_on_first_step_returns_pop() {
         let mut s = IssueWizardScreen::new();
-        let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
         assert_eq!(action, ScreenAction::Pop);
     }
 
-    // ---- TypeSelect ----
+    // ---- Type row (Basics, between Title and Overview) ----
 
     #[test]
-    fn type_select_default_is_feature() {
-        let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    fn type_row_default_is_feature() {
+        let s = IssueWizardScreen::new();
         assert_eq!(s.payload().issue_type, IssueType::Feature);
     }
 
     #[test]
-    fn type_select_right_arrow_picks_bug() {
+    fn tab_from_title_reaches_type_row_then_overview() {
         let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        s.handle_input(&key_event(KeyCode::Right), InputMode::Normal);
-        assert_eq!(s.payload().issue_type, IssueType::Bug);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        assert!(s.type_focused);
+        assert_eq!(s.desired_input_mode(), Some(InputMode::Normal));
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(!s.type_focused);
+        assert_eq!(s.focused_field(), Some(FieldId::Overview));
+        s.handle_input(&key_event(KeyCode::BackTab), InputMode::Insert);
+        assert!(s.type_focused);
+        s.handle_input(&key_event(KeyCode::BackTab), InputMode::Normal);
+        assert_eq!(s.focused_field(), Some(FieldId::Title));
     }
 
     #[test]
-    fn type_select_left_arrow_picks_feature() {
+    fn type_row_arrows_and_f_b_pick_feature_or_bug() {
         let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        s.focus_type_row();
         s.handle_input(&key_event(KeyCode::Right), InputMode::Normal);
+        assert_eq!(s.payload().issue_type, IssueType::Bug);
         s.handle_input(&key_event(KeyCode::Left), InputMode::Normal);
         assert_eq!(s.payload().issue_type, IssueType::Feature);
-    }
-
-    #[test]
-    fn type_select_h_l_pick_feature_or_bug() {
-        let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        s.handle_input(&key_event(KeyCode::Char('l')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Char('b')), InputMode::Normal);
         assert_eq!(s.payload().issue_type, IssueType::Bug);
-        s.handle_input(&key_event(KeyCode::Char('h')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Char('f')), InputMode::Normal);
         assert_eq!(s.payload().issue_type, IssueType::Feature);
+        assert_eq!(s.field_text(FieldId::Title), "", "letters never type");
     }
 
     // ---- BasicInfo ----
 
     fn at_basic_info() -> IssueWizardScreen {
-        let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // → TypeSelect
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // → BasicInfo
-        s
+        IssueWizardScreen::new()
+    }
+
+    /// Title → Type row → Overview.
+    fn tab_to_overview(s: &mut IssueWizardScreen) {
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
 
     #[test]
@@ -1240,7 +1331,7 @@ mod tests {
     #[test]
     fn basic_info_tab_cycles_to_overview() {
         let mut s = at_basic_info();
-        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        tab_to_overview(&mut s);
         assert_eq!(s.focused_field(), Some(FieldId::Overview));
         type_string(&mut s, "x");
         assert_eq!(s.field_text(FieldId::Overview), "x");
@@ -1274,7 +1365,7 @@ mod tests {
     fn basic_info_advance_succeeds_when_both_filled() {
         let mut s = at_basic_info();
         type_string(&mut s, "title");
-        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        tab_to_overview(&mut s);
         type_string(&mut s, "overview");
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(s.step(), IssueWizardStep::DorFields);
@@ -1283,7 +1374,7 @@ mod tests {
     #[test]
     fn basic_info_shift_enter_inserts_newline_in_overview() {
         let mut s = at_basic_info();
-        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        tab_to_overview(&mut s);
         type_string(&mut s, "a");
         s.handle_input(
             &key_event_with_modifiers(KeyCode::Enter, KeyModifiers::SHIFT),
@@ -1315,7 +1406,7 @@ mod tests {
         // Title + Overview now live in textareas; seed them via the
         // public input path so try_advance sees populated content.
         type_string(&mut s, "t");
-        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        tab_to_overview(&mut s);
         type_string(&mut s, "o");
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         s
@@ -1368,8 +1459,24 @@ mod tests {
     }
 
     #[test]
-    fn dor_fields_advance_succeeds_with_acceptance_filled() {
+    fn dor_fields_advance_blocked_when_expected_behavior_empty() {
         let mut s = at_dor_fields(IssueType::Feature);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        type_string(&mut s, "criteria");
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(s.step(), IssueWizardStep::DorFields);
+        assert_eq!(
+            s.focused_field(),
+            Some(FieldId::ExpectedBehavior),
+            "Enter focuses the first invalid field"
+        );
+        assert!(s.field_error(FieldId::ExpectedBehavior).is_some());
+    }
+
+    #[test]
+    fn dor_fields_advance_succeeds_with_expected_and_acceptance_filled() {
+        let mut s = at_dor_fields(IssueType::Feature);
+        type_string(&mut s, "expected");
         // Move to acceptance criteria field
         s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
         assert_eq!(s.focused_field(), Some(FieldId::AcceptanceCriteria));
@@ -1379,10 +1486,10 @@ mod tests {
     }
 
     #[test]
-    fn esc_in_basic_info_returns_to_type_select() {
-        let mut s = at_basic_info();
+    fn esc_in_details_returns_to_basics() {
+        let mut s = at_dor_fields(IssueType::Feature);
         s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
-        assert_eq!(s.step(), IssueWizardStep::TypeSelect);
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
     }
 
     // ---- Insert input mode for capturing chars ----
@@ -1394,9 +1501,9 @@ mod tests {
     }
 
     #[test]
-    fn type_select_desires_normal_mode() {
+    fn type_row_desires_normal_mode() {
         let mut s = IssueWizardScreen::new();
-        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        s.focus_type_row();
         assert_eq!(s.desired_input_mode(), Some(InputMode::Normal));
     }
 
@@ -1418,10 +1525,7 @@ mod tests {
     }
 
     fn basic_info_wizard(clip: super::ClipboardContent) -> IssueWizardScreen {
-        let mut s = IssueWizardScreen::with_clipboard(Box::new(FakeClipboard::new(clip)));
-        s.try_advance(); // Context → TypeSelect
-        s.try_advance(); // TypeSelect → BasicInfo
-        s
+        IssueWizardScreen::with_clipboard(Box::new(FakeClipboard::new(clip)))
     }
 
     fn paste_event(text: &str) -> crossterm::event::Event {
@@ -1446,7 +1550,7 @@ mod tests {
     #[test]
     fn bracketed_paste_preserves_newlines_in_overview() {
         let mut s = basic_info_wizard(super::ClipboardContent::Empty);
-        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert); // focus Overview
+        tab_to_overview(&mut s);
         s.handle_input(&paste_event("line1\nline2"), InputMode::Insert);
         assert_eq!(s.payload().overview, "line1\nline2");
     }
@@ -1547,6 +1651,7 @@ mod tests {
 
     fn at_dependencies() -> IssueWizardScreen {
         let mut s = at_dor_fields(IssueType::Feature);
+        type_string(&mut s, "expected");
         // Move to acceptance criteria field, fill it, advance to Dependencies.
         s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
         type_string(&mut s, "criteria");
@@ -1648,8 +1753,8 @@ mod tests {
         s.payload_mut().expected_behavior = "Fills proportionally".into();
         s.payload_mut().acceptance_criteria = "- Renders 0..100".into();
         s.payload_mut().blocked_by = vec![10];
-        // Jump directly for testing.
-        s.jump_to(IssueWizardStep::Preview);
+        // Jump directly for testing (no sync: the Basics textareas are empty).
+        s.set_step_for_tests(IssueWizardStep::Preview);
         s
     }
 
@@ -1722,8 +1827,10 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_preview_begins_create() {
+    fn enter_enter_on_preview_begins_create() {
         let mut s = at_preview();
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert!(!s.create_in_flight(), "one Enter only arms");
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert!(s.create_in_flight());
         assert_eq!(s.step(), IssueWizardStep::Creating);
@@ -1754,7 +1861,7 @@ mod tests {
         s.begin_create();
         s.finish_create(Ok(42));
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(s.step(), IssueWizardStep::Context);
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
         assert!(s.payload().title.is_empty());
     }
 
@@ -1768,14 +1875,20 @@ mod tests {
     }
 
     #[test]
-    fn r_on_failed_retries_create() {
+    fn esc_on_failed_retries_create_through_the_armed_gate() {
         let mut s = at_preview();
         s.begin_create();
         s.finish_create(Err(anyhow::anyhow!("boom")));
         s.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
+        assert_eq!(s.step(), IssueWizardStep::Failed, "r is unbound on Failed");
+        s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(s.step(), IssueWizardStep::Preview);
+        assert!(!s.create_in_flight(), "Esc alone never writes");
+        assert!(s.create_error().is_none());
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(s.step(), IssueWizardStep::Creating);
         assert!(s.create_in_flight());
-        assert!(s.create_error().is_none());
     }
 
     #[test]
@@ -1889,11 +2002,16 @@ mod tests {
     }
 
     #[test]
-    fn accept_improve_replaces_payload_and_drops_candidate() {
+    fn accepting_every_section_replaces_payload_and_drops_candidate() {
         let mut s = at_ai_review_with_critique();
         s.apply_improve_result(Ok(sample_improved()));
-        s.accept_improve();
+        for _ in s.changed_sections() {
+            s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+            s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        }
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(s.payload().title, "Improved title");
+        assert_eq!(s.payload().test_hints, "improved");
         assert!(s.improve_candidate().is_none());
         assert_eq!(
             s.review_text(),
@@ -1952,22 +2070,36 @@ mod tests {
     }
 
     #[test]
-    fn a_key_accepts_candidate_when_present() {
+    fn a_key_accepts_the_focused_section_only() {
         let mut s = at_ai_review_with_critique();
         s.apply_improve_result(Ok(sample_improved()));
         s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
-        assert_eq!(s.payload().title, "Improved title");
-        assert!(s.improve_candidate().is_none());
+        assert_eq!(s.decisions()[0], Decision::Accepted, "Title is first");
+        assert!(s.improve_candidate().is_some(), "a alone merges nothing");
+        assert_eq!(s.payload().title, "Original title");
     }
 
     #[test]
-    fn d_key_discards_candidate_when_present() {
+    fn d_key_keeps_mine_for_the_focused_section() {
         let mut s = at_ai_review_with_critique();
         let original_title = s.payload().title.clone();
         s.apply_improve_result(Ok(sample_improved()));
         s.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        assert_eq!(s.decisions()[0], Decision::KeptMine);
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(s.payload().title, original_title);
         assert!(s.improve_candidate().is_none());
+    }
+
+    #[test]
+    fn esc_on_the_diff_discards_the_candidate() {
+        let mut s = at_ai_review_with_critique();
+        let original = s.payload().overview.clone();
+        s.apply_improve_result(Ok(sample_improved()));
+        s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert!(s.improve_candidate().is_none());
+        assert_eq!(s.payload().overview, original);
+        assert_eq!(s.step(), IssueWizardStep::AiReview);
     }
 
     #[test]
@@ -2058,7 +2190,7 @@ mod tests {
         // Type whitespace only
         s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Insert);
         s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Insert);
-        assert!(s.validation_error().is_some());
+        assert!(s.step_errors().iter().any(|(f, _)| *f == FieldId::Title));
     }
 
     #[test]
@@ -2068,6 +2200,14 @@ mod tests {
         for c in "-evil".chars() {
             s.handle_input(&key_event(KeyCode::Char(c)), InputMode::Insert);
         }
-        assert!(s.validation_error().is_some());
+        assert!(s.step_errors().iter().any(|(f, _)| *f == FieldId::Title));
     }
 }
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
+
+#[cfg(test)]
+#[path = "flow_guard_tests.rs"]
+mod flow_guard_tests;

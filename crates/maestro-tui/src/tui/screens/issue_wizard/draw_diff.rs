@@ -47,65 +47,88 @@ fn diff_fields<'a>(
     ]
 }
 
-pub(super) fn build_diff_lines<'a>(
+/// #1282: the diff of one section (`idx` into `FieldId::ALL`).
+pub(super) fn section_diff_lines<'a>(
     original: &'a IssueCreationPayload,
     candidate: &'a IssueCreationPayload,
+    idx: usize,
 ) -> Vec<Line<'a>> {
-    let mut lines: Vec<Line<'a>> = Vec::new();
-    for (label, before, after) in diff_fields(original, candidate) {
-        if before == after {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {}:", label),
-                    Style::default().add_modifier(Modifier::DIM),
-                ),
-                Span::styled(" unchanged", Style::default().add_modifier(Modifier::DIM)),
-            ]));
-            continue;
-        }
-        lines.push(Line::from(Span::styled(
-            format!("▼ {}", label),
-            Style::default().add_modifier(Modifier::BOLD),
-        )));
-        for l in before.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  - {}", l),
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::CROSSED_OUT),
-            )));
-        }
-        if before.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  - (empty)",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM),
-            )));
-        }
-        for l in after.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  + {}", l),
-                Style::default().fg(Color::Green),
-            )));
-        }
-        if after.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  + (empty)",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::DIM),
-            )));
-        }
-        lines.push(Line::from(""));
+    let mut lines = Vec::new();
+    if let Some((label, before, after)) = diff_fields(original, candidate).get(idx).copied() {
+        push_field_lines(&mut lines, label, before, after);
     }
     lines
+}
+
+fn push_field_lines<'a>(
+    lines: &mut Vec<Line<'a>>,
+    label: &'static str,
+    before: &'a str,
+    after: &'a str,
+) {
+    if before == after {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {}:", label),
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+            Span::styled(" unchanged", Style::default().add_modifier(Modifier::DIM)),
+        ]));
+        return;
+    }
+    lines.push(Line::from(Span::styled(
+        format!("▼ {}", label),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    for l in before.lines() {
+        lines.push(Line::from(Span::styled(
+            format!("  - {}", l),
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::CROSSED_OUT),
+        )));
+    }
+    if before.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  - (empty)",
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM),
+        )));
+    }
+    for l in after.lines() {
+        lines.push(Line::from(Span::styled(
+            format!("  + {}", l),
+            Style::default().fg(Color::Green),
+        )));
+    }
+    if after.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  + (empty)",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::DIM),
+        )));
+    }
+    lines.push(Line::from(""));
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::{IssueCreationPayload, IssueType};
     use super::*;
+
+    /// The whole 8-field diff, section by section.
+    fn build_diff_lines<'a>(
+        original: &'a IssueCreationPayload,
+        candidate: &'a IssueCreationPayload,
+    ) -> Vec<Line<'a>> {
+        let mut lines: Vec<Line<'a>> = Vec::new();
+        for (label, before, after) in diff_fields(original, candidate) {
+            push_field_lines(&mut lines, label, before, after);
+        }
+        lines
+    }
 
     fn baseline() -> IssueCreationPayload {
         IssueCreationPayload {

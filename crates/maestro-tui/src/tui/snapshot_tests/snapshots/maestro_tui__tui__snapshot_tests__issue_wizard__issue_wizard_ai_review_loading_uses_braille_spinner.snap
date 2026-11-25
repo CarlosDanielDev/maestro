@@ -1,11 +1,11 @@
 ---
 source: crates/maestro-tui/src/tui/snapshot_tests/issue_wizard.rs
+assertion_line: 75
 expression: terminal.backend()
 ---
-"┌───────────────────────────────────────────────[ Step 6/10: AI Review ]───────────────────────────────────────────────┐"
-"│                                                                                                                      │"
-"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"┌─────────────[ AI Review  (r: revise, s: skip, i: improve with AI, Enter: continue, R: retry on error) ]──────────────┐"
+" ✗ Basics ─ ✗ Details ─ ✓ Blocked by ─ ● AI review ─ ○ Preview                                                  feature "
+" Draft 1/5 ready   ✗ Title required   ✗ Overview required   ✗ Expected Behavior required   …                            "
+"┌────────────────────────────────────────────────────[ AI review ]─────────────────────────────────────────────────────┐"
 "│                                                                                                                      │"
 "│                                             ⠸ AI is reviewing your issue…                                            │"
 "│                                                                                                                      │"
@@ -39,6 +39,7 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"                             [r] revise   [s] skip   [i] improve   [Enter] next   [Esc] back                            "
-"                                                                                                                        "
