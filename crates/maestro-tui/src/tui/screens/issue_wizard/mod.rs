@@ -2207,3 +2207,7 @@ mod tests {
 #[cfg(test)]
 #[path = "flow_tests.rs"]
 mod flow_tests;
+
+#[cfg(test)]
+#[path = "flow_guard_tests.rs"]
+mod flow_guard_tests;
