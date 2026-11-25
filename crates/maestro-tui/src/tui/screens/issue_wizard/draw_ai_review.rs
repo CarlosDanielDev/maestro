@@ -9,7 +9,7 @@ use crate::tui::theme::Theme;
 use crate::tui::widgets::BrailleSpinner;
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
@@ -55,7 +55,7 @@ impl IssueWizardScreen {
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "r: retry    Esc: back to review",
+                    "r: retry (paid AI call)    Esc: back to review",
                     Style::default().fg(theme.text_secondary),
                 )),
             ];
@@ -72,21 +72,45 @@ impl IssueWizardScreen {
             let block = theme.styled_block("AI review · proposed changes, per section", false);
             let inner = block.inner(area);
             f.render_widget(block, area);
-            let mut lines: Vec<Line> = self.section_list_lines(candidate, theme);
-            lines.push(Line::from(""));
-            lines.extend(section_diff_lines(
-                self.payload(),
-                candidate,
-                self.section_focus(),
-            ));
-            f.render_widget(Paragraph::new(lines), inner);
+            let list = self.section_list_lines(candidate, theme);
+            let list_h = u16::try_from(list.len() + 1).unwrap_or(u16::MAX);
+            let [list_area, diff_area] =
+                Layout::vertical([Constraint::Length(list_h), Constraint::Fill(1)]).areas(inner);
+            f.render_widget(Paragraph::new(list), list_area);
+            // The focused section, wrapped and scrolled with ↑/↓, so every
+            // line of what `a` accepts can be read. A cut says so.
+            let diff = section_diff_lines(self.payload(), candidate, self.section_focus());
+            self.diff_view.set((diff_area.width, diff_area.height));
+            let rows = super::improve_sections::wrapped_rows(&diff, diff_area.width)
+                .saturating_sub(usize::from(self.diff_scroll()));
+            let more = rows.saturating_sub(usize::from(diff_area.height));
+            let mut para = Paragraph::new(diff)
+                .wrap(Wrap { trim: false })
+                .scroll((self.diff_scroll(), 0));
+            if more > 0 || self.diff_scroll() > 0 {
+                let hint = if more > 0 {
+                    format!(" ↓ {more} more rows · ↑↓ scroll ")
+                } else {
+                    " ↑ scroll up ".to_string()
+                };
+                para = para.block(
+                    ratatui::widgets::Block::default().title_bottom(
+                        Line::from(Span::styled(
+                            hint,
+                            Style::default()
+                                .fg(theme.accent_warning)
+                                .add_modifier(Modifier::BOLD),
+                        ))
+                        .right_aligned(),
+                    ),
+                );
+            }
+            f.render_widget(para, diff_area);
             return;
         }
 
-        let block = theme.styled_block(
-            "AI Review  (r: revise, s: skip, i: improve with AI, Enter: continue, R: retry on error)",
-            false,
-        );
+        // Keys are in the footer (`footer_hints`), not in the title.
+        let block = theme.styled_block("AI review", false);
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -105,7 +129,7 @@ impl IssueWizardScreen {
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "Press R to retry, s to skip, Esc to go back.",
+                    "r retries (a paid AI call) · s skips to Preview · Esc goes back · your draft is unchanged",
                     Style::default().fg(theme.text_secondary),
                 )),
             ];

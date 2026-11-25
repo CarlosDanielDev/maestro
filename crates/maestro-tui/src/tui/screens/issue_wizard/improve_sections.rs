@@ -30,6 +30,12 @@ pub(super) fn changed(
         .collect()
 }
 
+/// Rows `lines` take when wrapped at `width` (each line at least one).
+pub(super) fn wrapped_rows(lines: &[ratatui::text::Line], width: u16) -> usize {
+    let width = usize::from(width.max(1));
+    lines.iter().map(|l| l.width().max(1).div_ceil(width)).sum()
+}
+
 impl IssueWizardScreen {
     pub fn decisions(&self) -> &[Decision; 8] {
         &self.decisions
@@ -69,7 +75,38 @@ impl IssueWizardScreen {
         self.decisions = [Decision::Pending; 8];
     }
 
+    /// Rows the focused section's diff takes at the last drawn width.
+    pub fn section_diff_rows(&self) -> usize {
+        let width = self.diff_view.get().0;
+        self.improve_candidate
+            .as_ref()
+            .map(|c| {
+                let lines =
+                    super::draw_diff::section_diff_lines(&self.payload, c, self.section_focus);
+                wrapped_rows(&lines, width)
+            })
+            .unwrap_or(0)
+    }
+
+    pub fn diff_scroll(&self) -> u16 {
+        self.diff_scroll
+    }
+
+    /// ↑/↓ scroll inside the focused section, so every line can be read
+    /// before `a` accepts it.
+    fn scroll_section(&mut self, down: bool) {
+        let height = usize::from(self.diff_view.get().1);
+        let max =
+            u16::try_from(self.section_diff_rows().saturating_sub(height)).unwrap_or(u16::MAX);
+        self.diff_scroll = if down {
+            self.diff_scroll.saturating_add(1).min(max)
+        } else {
+            self.diff_scroll.saturating_sub(1)
+        };
+    }
+
     fn move_section(&mut self, down: bool) {
+        self.diff_scroll = 0;
         let changed = self.changed_sections();
         let Some(pos) = changed.iter().position(|i| *i == self.section_focus) else {
             self.section_focus = changed.first().copied().unwrap_or(0);
@@ -88,8 +125,10 @@ impl IssueWizardScreen {
         match code {
             KeyCode::Char('a') => self.decide_section(Decision::Accepted),
             KeyCode::Char('d') => self.decide_section(Decision::KeptMine),
-            KeyCode::Char('j') | KeyCode::Down => self.move_section(true),
-            KeyCode::Char('k') | KeyCode::Up => self.move_section(false),
+            KeyCode::Char('j') => self.move_section(true),
+            KeyCode::Char('k') => self.move_section(false),
+            KeyCode::Down => self.scroll_section(true),
+            KeyCode::Up => self.scroll_section(false),
             KeyCode::Enter => self.apply_improve_decisions(),
             KeyCode::Char('r') => {
                 self.discard_improve();

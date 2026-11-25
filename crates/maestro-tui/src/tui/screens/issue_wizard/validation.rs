@@ -39,6 +39,15 @@ impl IssueWizardScreen {
         out
     }
 
+    /// The payload with the current step's live textarea text in it.
+    pub(super) fn live_payload(&self) -> super::IssueCreationPayload {
+        let mut p = self.payload.clone();
+        for f in FieldId::ALL {
+            *f.payload_ref_mut(&mut p) = self.field_text(f);
+        }
+        p
+    }
+
     /// Errors of the fields on the current step.
     pub fn step_errors(&self) -> Vec<(FieldId, Cow<'static, str>)> {
         let mut errors = self.validation_errors();
@@ -92,10 +101,8 @@ impl IssueWizardScreen {
                 (field.label(), state, note)
             })
             .collect();
-        let left: usize = FieldId::ALL
-            .iter()
-            .map(|f| lint::count(&self.field_text(*f)))
-            .sum();
+        // Same count as the gate (`lint::total`), over the live fields.
+        let left = lint::total(&self.live_payload());
         rows.push(if left == 0 {
             (NO_PLACEHOLDERS, CheckState::Ok, None)
         } else {

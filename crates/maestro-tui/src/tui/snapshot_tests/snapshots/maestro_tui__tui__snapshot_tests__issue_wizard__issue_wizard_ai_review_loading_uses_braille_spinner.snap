@@ -5,7 +5,7 @@ expression: terminal.backend()
 ---
 " ✗ Basics ─ ✗ Details ─ ✓ Blocked by ─ ● AI review ─ ○ Preview                                                  feature "
 " Draft 1/5 ready   ✗ Title required   ✗ Overview required   ✗ Expected Behavior required   …                            "
-"┌─────────────[ AI Review  (r: revise, s: skip, i: improve with AI, Enter: continue, R: retry on error) ]──────────────┐"
+"┌────────────────────────────────────────────────────[ AI review ]─────────────────────────────────────────────────────┐"
 "│                                                                                                                      │"
 "│                                             ⠸ AI is reviewing your issue…                                            │"
 "│                                                                                                                      │"

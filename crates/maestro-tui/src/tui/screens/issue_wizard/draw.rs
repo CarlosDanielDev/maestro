@@ -149,6 +149,24 @@ impl IssueWizardScreen {
         self.draw_field(f, title, FieldId::Title, theme);
         self.draw_type_row(f, kind, theme);
         self.draw_field(f, overview, FieldId::Overview, theme);
+        if self.leave_armed() {
+            // On the Overview bottom border: what the second Esc does.
+            let row = Rect {
+                y: overview.bottom().saturating_sub(1),
+                height: 1,
+                ..overview
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    " Esc again closes and drops this draft · any other key keeps it ",
+                    Style::default()
+                        .fg(theme.accent_warning)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                )))
+                .alignment(Alignment::Center),
+                row,
+            );
+        }
     }
 
     /// The Type control: `● Feature  ○ Bug` and what Bug adds.
@@ -253,7 +271,7 @@ impl IssueWizardScreen {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "r: retry  Esc: back to Preview",
+                "Esc: back to the create gate (⏎ ⏎ retries)",
                 Style::default().fg(theme.text_secondary),
             )),
         ];
@@ -305,6 +323,9 @@ pub(super) fn selection_style(theme: &Theme, selected: bool, default_fg: Color) 
 pub(super) fn footer_hints(s: &IssueWizardScreen) -> Vec<(&'static str, &'static str)> {
     use crate::tui::ds::armed::ArmedState;
     match s.step() {
+        IssueWizardStep::BasicInfo if s.leave_armed() => {
+            vec![("Esc", "close, drop the draft"), ("any key", "keep it")]
+        }
         IssueWizardStep::BasicInfo if s.type_focused => vec![
             ("←→ f b", "type"),
             ("Tab", "Overview"),
@@ -337,25 +358,35 @@ pub(super) fn footer_hints(s: &IssueWizardScreen) -> Vec<(&'static str, &'static
         ],
         IssueWizardStep::AiReview if s.improve_candidate().is_some() => vec![
             ("j k", "section"),
+            ("↑↓", "scroll"),
             ("a", "accept"),
             ("d", "keep mine"),
             ("Enter", "merge accepted"),
+            ("r", "re-run (paid)"),
             ("Esc", "discard all"),
         ],
+        IssueWizardStep::AiReview if s.review_error().is_some() || s.improve_error().is_some() => {
+            vec![
+                ("r", "retry (paid AI call)"),
+                ("s", "skip"),
+                ("e", "revise"),
+                ("Esc", "back"),
+            ]
+        }
         IssueWizardStep::AiReview => vec![
-            ("i", "improve"),
-            ("r", "revise"),
+            ("i", "improve (paid AI call)"),
+            ("e", "revise"),
             ("s", "skip"),
             ("Enter", "next"),
             ("Esc", "back"),
         ],
         IssueWizardStep::Preview => match s.create_gate().state() {
-            ArmedState::Blocked(_) => vec![("Enter", "go to the [TODO:"), ("Esc", "back")],
+            ArmedState::Blocked(_) => vec![("Enter", "go to the problem"), ("Esc", "back")],
             ArmedState::Armed(_) => vec![("Enter", "create on GitHub"), ("Esc", "disarm")],
             _ => vec![("Enter", "arm create"), ("Esc", "back")],
         },
         IssueWizardStep::Creating => Vec::new(),
         IssueWizardStep::Complete => vec![("Enter", "create another"), ("Esc", "Landing")],
-        IssueWizardStep::Failed => vec![("r", "back to the gate"), ("Esc", "Preview")],
+        IssueWizardStep::Failed => vec![("Esc", "back to the gate")],
     }
 }

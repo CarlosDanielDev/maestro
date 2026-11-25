@@ -217,9 +217,10 @@ pub(super) fn blocks() -> Vec<Binding> {
         .hidden(),
     );
     // #1282: the issue wizard (`screens::issue_wizard`). ⏎ ⏎ on Preview is
-    // the only GitHub write (armed, blocked while a `[TODO:` is left). `/`
-    // is the Global filter (the Blocked-by picker); Tab and Esc are Global.
-    // Letters act only outside a text field (INSERT types them).
+    // the only GitHub write (armed, blocked while a required field is empty
+    // or a `[TODO:` is left). `/` is the Global filter (the Blocked-by
+    // picker); Tab and Esc are Global. Letters act only outside a text field
+    // (INSERT types them). `i` and `r` start a paid `claude --print` call.
     let issue = Scope::Screen(TuiMode::IssueWizard);
     v.extend([
         s(
@@ -249,19 +250,39 @@ pub(super) fn blocks() -> Vec<Binding> {
             issue,
             ch('j'),
             A::ScrollDown,
-            "move · next section (AI diff)",
+            "down · next section (AI diff)",
         ),
         s(
             issue,
             ch('k'),
             A::ScrollUp,
-            "move · previous section (AI diff)",
+            "up · previous section (AI diff)",
         ),
-        s(issue, Chord::key(KeyCode::Down), A::ScrollDown, "move").hidden(),
-        s(issue, Chord::key(KeyCode::Up), A::ScrollUp, "move").hidden(),
+        s(
+            issue,
+            Chord::key(KeyCode::Down),
+            A::ScrollDown,
+            "down · scroll (AI diff)",
+        )
+        .hidden(),
+        s(
+            issue,
+            Chord::key(KeyCode::Up),
+            A::ScrollUp,
+            "up · scroll (AI diff)",
+        )
+        .hidden(),
         s(issue, ch('a'), A::Expand, "accept section (AI diff)"),
         s(issue, ch('d'), A::Expand, "keep mine (AI diff)"),
-        s(issue, ch('i'), A::Expand, "improve with AI"),
+        s(issue, ch('i'), A::Expand, "improve with AI (paid AI call)"),
+        s(issue, ch('r'), A::Expand, "re-run the AI call (paid)"),
+        s(
+            issue,
+            ch('e'),
+            A::Expand,
+            "revise: back to Basics (AI review)",
+        ),
+        s(issue, ch('s'), A::Expand, "skip to Preview (AI review)"),
     ]);
     v
 }

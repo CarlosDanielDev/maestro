@@ -29,6 +29,12 @@ pub fn placeholders(p: &IssueCreationPayload) -> Vec<Placeholder> {
         .collect()
 }
 
+/// Every `[TODO:` in the payload's 8 text fields: the one count the gate,
+/// the Draft checklist and the AI section rows all show.
+pub fn total(p: &IssueCreationPayload) -> usize {
+    FieldId::ALL.iter().map(|f| count(f.payload_ref(p))).sum()
+}
+
 /// Number of placeholders in one text.
 pub fn count(text: &str) -> usize {
     text.matches(MARKER).count()
@@ -64,6 +70,7 @@ mod tests {
             ]
         );
         assert_eq!(count(&p.test_hints), 2);
+        assert_eq!(total(&p), 4, "occurrences, not lines");
     }
 
     #[test]
