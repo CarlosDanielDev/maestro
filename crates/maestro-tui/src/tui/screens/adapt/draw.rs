@@ -43,7 +43,7 @@ pub(super) fn footer_hints(screen: &AdaptScreen) -> Vec<(&'static str, &'static 
         }
         step if step.is_progress() => vec![("Esc", "Cancel")],
         AdaptStep::Complete => vec![("j/k", "Scroll"), ("Esc", "Back")],
-        AdaptStep::Failed => vec![("r", "Retry"), ("Esc", "Back")],
+        AdaptStep::Failed => vec![("j/k", "Scroll"), ("r", "Retry"), ("Esc", "Back")],
         _ => vec![],
     }
 }

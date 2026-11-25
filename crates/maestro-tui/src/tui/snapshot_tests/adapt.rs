@@ -214,3 +214,42 @@ async fn adapt_review_is_not_live_work() {
         "nothing is being written"
     );
 }
+
+/// A create that fails after Review was scrolled: Failed opens at its top,
+/// so "Failed during" and the error show at 80x24, and j/k scroll it.
+#[tokio::test]
+async fn failed_after_a_scrolled_review_shows_the_error() {
+    use crate::adapt::materializer::PartialMaterialize;
+    use crate::adapt::types::MaterializeResult;
+    use crate::tui::app::TuiDataEvent;
+    let mut app = review_app();
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Char('j')).await;
+    }
+    assert_eq!(
+        screen_mut(&mut app).scroll_offset,
+        5,
+        "setup: Review scrolled"
+    );
+    screen_mut(&mut app).step = AdaptStep::Materializing;
+    let err = anyhow::Error::new(PartialMaterialize {
+        written: MaterializeResult {
+            milestones_created: vec![],
+            issues_created: vec![],
+            issues_skipped: vec![],
+            tech_debt_issue: None,
+            dry_run: false,
+        },
+        source: anyhow::anyhow!("HTTP 502 from GitHub"),
+    });
+
+    app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Err(err)));
+
+    let out = text(&mut app, 80, 24);
+    assert!(out.contains("Failed during"), "the phase line:\n{out}");
+    assert!(out.contains("HTTP 502 from GitHub"), "the error:\n{out}");
+    press(&mut app, KeyCode::Char('j')).await;
+    assert_eq!(screen_mut(&mut app).scroll_offset, 1, "j scrolls Failed");
+    press(&mut app, KeyCode::Char('k')).await;
+    assert_eq!(screen_mut(&mut app).scroll_offset, 0, "k scrolls back");
+}

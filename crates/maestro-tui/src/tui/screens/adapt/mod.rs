@@ -153,6 +153,9 @@ impl AdaptScreen {
     pub fn set_error(&mut self, phase: AdaptStep, message: String) {
         self.error = Some(AdaptError { phase, message });
         self.step = AdaptStep::Failed;
+        // #1281: Failed opens at its top (the error line), never at the
+        // Review scroll it came from.
+        self.scroll_offset = 0;
     }
 
     pub fn build_adapt_config(&self) -> crate::adapt::AdaptConfig {
@@ -529,6 +532,10 @@ impl KeymapProvider for AdaptScreen {
                 title: "Actions",
                 bindings: vec![
                     KeyBinding {
+                        key: "j/k",
+                        description: "Scroll",
+                    },
+                    KeyBinding {
                         key: "r",
                         description: "Retry",
                     },
@@ -575,6 +582,14 @@ impl Screen for AdaptScreen {
                     _ => {}
                 },
                 AdaptStep::Failed => match code {
+                    // #1281: the written-before-the-failure list can be
+                    // longer than the screen.
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                    }
                     KeyCode::Char('r') => {
                         if let Some(action) = self.retry() {
                             return action;

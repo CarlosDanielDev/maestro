@@ -328,6 +328,9 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(adapt, Chord::key(KeyCode::Left), A::Expand, "stop after").hidden(),
         s(adapt, Chord::key(KeyCode::Right), A::Expand, "stop after").hidden(),
         s(adapt, ch(' '), A::Expand, "stop after").hidden(),
+        // Review, Complete and Failed scroll; Configure moves between fields.
+        s(adapt, ch('j'), A::ScrollDown, "move · scroll").hidden(),
+        s(adapt, ch('k'), A::ScrollUp, "move · scroll").hidden(),
         s(
             adapt,
             Chord::key(KeyCode::Enter),
