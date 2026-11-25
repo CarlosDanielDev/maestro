@@ -132,10 +132,13 @@ pub struct App {
     /// via `with_budget_projector`.
     pub budget_projector: Option<Box<dyn BudgetProjector>>,
     /// Session ids for which the pre-spawn gate (#776/#850) has been
-    /// dismissed by the user (modal `[y]` or `[s]`). The next spawn
+    /// dismissed by the user (modal `S`, #1276). The next spawn
     /// attempt for these ids bypasses the gate. Cleared lazily as
     /// sessions transition to terminal states.
     pub(crate) budget_skip_once: std::collections::HashSet<uuid::Uuid>,
+    /// The session parked at the budget gate when `b` opened Settings
+    /// (#1276): leaving Settings by any route brings the gate back.
+    pub(crate) budget_gate_return: Option<uuid::Uuid>,
     pub model_router: Option<ModelRouter>,
     pub progress_tracker: ProgressTracker,
     pub notifications: NotificationDispatcher,
@@ -389,6 +392,7 @@ impl App {
             budget_enforcer: None,
             budget_projector: None,
             budget_skip_once: std::collections::HashSet::new(),
+            budget_gate_return: None,
             model_router: None,
             progress_tracker: ProgressTracker::new(),
             notifications: NotificationDispatcher::new(false),

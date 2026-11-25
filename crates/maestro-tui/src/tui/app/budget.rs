@@ -92,6 +92,7 @@ impl App {
             'S' if blocked => {}
             'b' => {
                 use crate::tui::screens::{ScreenAction, settings::SettingsTab};
+                self.budget_gate_return = Some(session_id);
                 crate::tui::screen_dispatch::handle_screen_action(
                     self,
                     ScreenAction::Push(TuiMode::Settings),
@@ -136,6 +137,38 @@ impl App {
                 );
             }
             _ => {}
+        }
+    }
+
+    /// After a key: if `b` left `budget_gate_return` parked and Settings
+    /// is no longer open, open its gate again over the current screen, so
+    /// the session never sits in a pool slot with nothing to answer it.
+    /// A session that started or left the pool meanwhile is forgotten.
+    /// Settings' own dialogs (bypass warning), the typed kill confirm and
+    /// Confirm Exit (its ⌃Q hold included) wait; `handle_key` also skips
+    /// this while a text field or the palette has the keys.
+    pub(crate) fn restore_budget_gate(&mut self) {
+        use crate::tui::app::types::TuiMode;
+        let Some(id) = self.budget_gate_return else {
+            return;
+        };
+        match self.tui_mode {
+            TuiMode::BudgetPreSpawn { session_id } if session_id == id => {
+                self.budget_gate_return = None;
+                return;
+            }
+            TuiMode::Settings
+            | TuiMode::BypassWarning
+            | TuiMode::ConfirmKill(_)
+            | TuiMode::ConfirmExit
+            | TuiMode::BudgetPreSpawn { .. } => return,
+            _ => {}
+        }
+        self.budget_gate_return = None;
+        let parked = (self.pool.get_active_mut(id))
+            .is_some_and(|m| m.session.status == SessionStatus::Queued);
+        if parked {
+            self.tui_mode = TuiMode::BudgetPreSpawn { session_id: id };
         }
     }
 

@@ -45,8 +45,19 @@ pub(super) async fn handle_key_under_size_guard(
 }
 
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
-/// global shortcuts, and screen dispatch in priority order.
+/// global shortcuts, and screen dispatch in priority order. After every
+/// key, a session the budget gate's `b` left parked gets its gate back
+/// once Settings is left, by any route (#1276); never while a text field,
+/// the palette or a typed confirm has the keys.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+    let action = dispatch_key(app, key).await;
+    if !is_text_input_mode(app) {
+        app.restore_budget_gate();
+    }
+    action
+}
+
+async fn dispatch_key(app: &mut App, key: KeyEvent) -> KeyAction {
     // #1280: a key the Dashboard does not take disarms its armed PR row.
     screens::dashboard::dispatch::note_key(app, &key);
     // If confirm exit dialog is showing, handle it
