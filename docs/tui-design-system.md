@@ -596,6 +596,20 @@ Implements `docs/design-system/index.html` §02.20 (Agent graph → Deps files l
 
 Rules: `TuiMode::AgentGraph` is an alias (like `CostDashboard`): `usage::resolve` (in `screens/dashboard/alias.rs`) maps it to Dashboard › Deps › files; `navigate_to` still redirects it when the flag is off. Deps takes every key it gets (nothing reaches the launcher letters); `X` acts only on a drawn agent row. Its footer is `deps::footer` (only the keys of the drawn lens and column). Every colour is a `Theme` token: `screens_use_theme_colors_only` scans `agent_graph/` too. Tests: `screens/dashboard/deps_tests.rs`, `agent_graph/model_tests.rs`, `app/conflict_toast_tests.rs`, `snapshot_tests/files_lens.rs`.
 
+### Adapt run: Stop after, This run will, Review (`screens/adapt/`, #1281)
+
+Implements `docs/design-system/index.html` §02.11 (Adapt project: Stop after picker, RunPlan, the Review pause). Decision: `docs/design-system/decisions.md` (2026-11-24, Adapt as a predictable run).
+
+| Item | For |
+|---|---|
+| `adapt::StopAfter { Scan, Analysis, Plan, Full }` (`stop_after.rs`) | One radio for the old Dry Run / Scan Only / No Issues toggles. `apply(&self, &mut AdaptWizardConfig)` sets those booleans, so `complete_*`, `AdaptConfig` and the CLI flags do not change. `Plan` (dry run) is the default. `label()` / `consequence()` draw it; `Full run` is always `accent_warning`. |
+| `stop_after::run_plan(&cfg, remote)` | "This run will": `(heading, line)` pairs for READ · SEND TO CLAUDE · WRITE LOCALLY · CREATE ON REMOTE · COST, from the code paths the option enables. No money figure: the `claude --print` calls are not in the budget, and the line says so. Also feeds the Review "Will write" list. |
+| `AdaptStep::Review` + `AdaptScreen::review: ArmedEnter` (`draw_run::draw_review`) | A non-dry run pauses after Plan with the plan tree, the "Will write" list and a `widgets::armed_bar`; ⏎ arms, ⏎ within 3 s resumes at Scaffolding (or Materializing when the scaffold is cached). Esc disarms, then leaves (plan cached). A cached plan never resumes straight into a write: ⏎ on Configure goes to Review. |
+| `AdaptScreen::cancel` (`CancellationToken`) | `RepoMaterializer::with_cancel` checks it before every milestone, issue and the tech-debt issue. Esc while Scaffolding / Materializing stops after the item in flight and stays on screen; the result says `‖ Stopped by Esc` over what was written. |
+| `AdaptResults::cache_path(root)` | The cache is `<project>/.maestro/adapt-cache.json`, never the CWD; tests use a temp dir. |
+
+Rules: the PRD is kept in `results.prd_content` and written (`write_contained`, no symlink follow) only in the `RunAdaptScaffold` arm, after Review. Keys are declared as hidden `AdaptWizard` bindings in `registry_screens.rs`. Tests: `screens/adapt/run_tests.rs`, `draw_tests.rs` (`adapt_configure_wide`, `adapt_review_wide` at 168×42), `stop_after.rs`, `materializer.rs` (`adapt_cancel_between_items`).
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract

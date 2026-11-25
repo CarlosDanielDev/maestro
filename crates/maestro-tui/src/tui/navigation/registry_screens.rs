@@ -216,6 +216,22 @@ pub(super) fn blocks() -> Vec<Binding> {
         )
         .hidden(),
     );
+    // #1281: Adapt (`screens::adapt`). `← →` / Space choose Stop after on
+    // Configure; ⏎ starts the chosen run there and arms, then writes, on
+    // Review. Hidden: the screen's footer draws them per step.
+    let adapt = Scope::Screen(TuiMode::AdaptWizard);
+    v.extend([
+        s(adapt, Chord::key(KeyCode::Left), A::Expand, "stop after").hidden(),
+        s(adapt, Chord::key(KeyCode::Right), A::Expand, "stop after").hidden(),
+        s(adapt, ch(' '), A::Expand, "stop after").hidden(),
+        s(
+            adapt,
+            Chord::key(KeyCode::Enter),
+            A::Expand,
+            "start · ⏎ ⏎ writes on Review",
+        )
+        .hidden(),
+    ]);
     v
 }
 

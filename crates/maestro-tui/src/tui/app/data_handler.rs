@@ -1355,11 +1355,34 @@ mod adapt_chaining_migrated_tests {
             }
         }
 
+        /// #1281: a Full run (the default is Plan · dry run, which ends at
+        /// the plan) whose cache goes to a temp dir, never the repo.
         fn app_with_adapt_screen() -> App {
             let mut app = make_app();
-            app.screen_state.adapt_screen = Some(AdaptScreen::new());
-            app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Scanning;
+            let mut screen = AdaptScreen::new();
+            screen.step = AdaptStep::Scanning;
+            crate::tui::screens::adapt::StopAfter::Full.apply(&mut screen.config);
+            let root = std::env::temp_dir().join("maestro-adapt-data-handler-tests");
+            std::fs::create_dir_all(&root).unwrap();
+            screen.config.path = root.display().to_string();
+            app.screen_state.adapt_screen = Some(screen);
             app
+        }
+
+        /// #1281: the Review step's ⏎ ⏎, as the user presses it.
+        fn press_review_write(app: &mut App) -> crate::tui::screens::ScreenAction {
+            use crate::tui::screens::Screen;
+            let screen = app.screen_state.adapt_screen.as_mut().unwrap();
+            let enter =
+                crate::tui::screens::test_helpers::key_event(crossterm::event::KeyCode::Enter);
+            let mode = crate::tui::navigation::InputMode::Normal;
+            let first = screen.handle_input(&enter, mode);
+            assert_eq!(
+                first,
+                crate::tui::screens::ScreenAction::None,
+                "the first ⏎ only arms"
+            );
+            screen.handle_input(&enter, mode)
         }
 
         #[test]
@@ -1461,7 +1484,7 @@ mod adapt_chaining_migrated_tests {
         }
 
         #[test]
-        fn plan_ok_chains_to_materialize() {
+        fn plan_ok_stops_at_review_then_chains_to_scaffold() {
             let mut app = app_with_adapt_screen();
             app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
             app.screen_state
@@ -1478,13 +1501,24 @@ mod adapt_chaining_migrated_tests {
             app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
 
             let screen = app.screen_state.adapt_screen.as_ref().unwrap();
-            assert_eq!(screen.step, AdaptStep::Scaffolding);
+            assert_eq!(
+                screen.step,
+                AdaptStep::Review,
+                "#1281: no write before Review"
+            );
             assert!(screen.results.plan.is_some());
-            assert_eq!(app.pending_commands.len(), 1);
+            assert!(app.pending_commands.is_empty(), "nothing queued before ⏎ ⏎");
+
+            let action = press_review_write(&mut app);
             assert!(matches!(
-                app.pending_commands[0],
-                TuiCommand::RunAdaptScaffold(_, _, _, _)
+                action,
+                crate::tui::screens::ScreenAction::StartAdaptPipeline(_)
             ));
+            assert_eq!(
+                app.screen_state.adapt_screen.as_ref().unwrap().step,
+                AdaptStep::Scaffolding,
+                "dispatch queues RunAdaptScaffold from this step"
+            );
         }
 
         #[test]
@@ -1603,12 +1637,25 @@ mod adapt_chaining_migrated_tests {
             app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
             assert_eq!(
                 app.screen_state.adapt_screen.as_ref().unwrap().step,
+                AdaptStep::Review
+            );
+            assert!(
+                app.pending_commands.is_empty(),
+                "#1281: Review pauses the run"
+            );
+
+            // Phase 3.25: Review ⏎ ⏎ (dispatch then queues RunAdaptScaffold)
+            let action = press_review_write(&mut app);
+            assert!(matches!(
+                action,
+                crate::tui::screens::ScreenAction::StartAdaptPipeline(_)
+            ));
+            assert_eq!(
+                app.screen_state.adapt_screen.as_ref().unwrap().step,
                 AdaptStep::Scaffolding
             );
 
             // Phase 3.5: Scaffold
-            let cmd = app.pending_commands.pop().unwrap();
-            assert!(matches!(cmd, TuiCommand::RunAdaptScaffold(_, _, _, _)));
             use crate::adapt::types::ScaffoldResult;
             app.handle_data_event(TuiDataEvent::AdaptScaffoldResult(Ok(ScaffoldResult {
                 files: vec![],

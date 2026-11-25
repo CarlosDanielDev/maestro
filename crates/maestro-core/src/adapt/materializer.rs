@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use tokio_util::sync::CancellationToken;
 
 use super::types::*;
 use crate::provider::{CreateOutcome, RepoProvider, types::ProviderKind};
@@ -49,6 +50,7 @@ pub trait PlanMaterializer: Send + Sync {
 pub struct RepoMaterializer<'a> {
     provider: &'a dyn RepoProvider,
     provider_kind: ProviderKind,
+    cancel: CancellationToken,
 }
 
 impl<'a> RepoMaterializer<'a> {
@@ -56,7 +58,16 @@ impl<'a> RepoMaterializer<'a> {
         Self {
             provider,
             provider_kind,
+            cancel: CancellationToken::new(),
         }
+    }
+
+    /// Stop between items once `cancel` fires (#1281): the write in flight
+    /// finishes, nothing after it starts, and the result lists what was
+    /// written.
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Ensure all labels referenced in the plan (and tech-debt catalog) exist on
@@ -117,6 +128,9 @@ impl PlanMaterializer for RepoMaterializer<'_> {
         let mut title_to_number: HashMap<String, u64> = HashMap::new();
 
         for milestone in &plan.milestones {
+            if self.cancel.is_cancelled() {
+                break;
+            }
             let ms_outcome = self
                 .provider
                 .create_milestone(&milestone.title, &milestone.description)
@@ -131,6 +145,9 @@ impl PlanMaterializer for RepoMaterializer<'_> {
             });
 
             for issue in &milestone.issues {
+                if self.cancel.is_cancelled() {
+                    break;
+                }
                 let body = resolve_blocked_by(
                     self.provider_kind,
                     &issue.body,
@@ -167,7 +184,7 @@ impl PlanMaterializer for RepoMaterializer<'_> {
         }
 
         // Generate tech debt catalog issue (#95)
-        let tech_debt_issue = if !report.tech_debt_items.is_empty() {
+        let tech_debt_issue = if !report.tech_debt_items.is_empty() && !self.cancel.is_cancelled() {
             let body = build_tech_debt_catalog_body(&report.tech_debt_items);
             let first_ms = milestones_created.first().map(|m| m.number);
             let outcome = self
@@ -370,6 +387,8 @@ mod tests {
         created_issues: Vec<Issue>,
         create_issue_calls: Vec<CreateIssueRecord>,
         issue_counter: u64,
+        /// Fired by the first `create_issue` (#1281 cancel test).
+        cancel_on_create_issue: Option<CancellationToken>,
     }
 
     #[derive(Clone, Default)]
@@ -529,6 +548,9 @@ mod tests {
                 });
             }
 
+            if let Some(token) = state.cancel_on_create_issue.take() {
+                token.cancel();
+            }
             state.issue_counter += 1;
             let number = state.issue_counter;
             state.create_issue_calls.push(CreateIssueRecord {
@@ -685,6 +707,46 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[tokio::test]
+    async fn adapt_cancel_between_items() {
+        let client = FakeProvider::new();
+        let cancel = CancellationToken::new();
+        client.state.lock().unwrap().cancel_on_create_issue = Some(cancel.clone());
+        let mut plan = sample_plan();
+        plan.milestones.push(PlannedMilestone {
+            title: "M1: Next".into(),
+            description: "Later".into(),
+            issues: vec![],
+        });
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client).with_cancel(cancel);
+
+        let result = materializer
+            .materialize(&plan, &sample_report_with_debt(), false)
+            .await
+            .unwrap();
+
+        // The issue in flight when cancel fired finishes; nothing after it.
+        assert_eq!(
+            client.create_issue_calls().len(),
+            1,
+            "no issue after cancel"
+        );
+        assert_eq!(
+            client.create_milestone_calls().len(),
+            1,
+            "no milestone after cancel"
+        );
+        assert_eq!(
+            result.issues_created.len(),
+            1,
+            "the result lists what was written"
+        );
+        assert!(
+            result.tech_debt_issue.is_none(),
+            "no tech-debt issue after cancel"
+        );
     }
 
     #[tokio::test]
