@@ -10,6 +10,9 @@ use std::collections::BTreeSet;
 /// inside the wizard) trigger the same fetch/launch side effects as a
 /// fresh Push. Idempotent — guarded by the wizard's own `entered_*` checks.
 pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
+    // Before the issue-wizard early return, which used to make the
+    // milestone block unreachable (#1284).
+    tick_milestone_wizard_hooks(app);
     if app.tui_mode != app::TuiMode::IssueWizard {
         return;
     }
@@ -85,7 +88,10 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
                 .push(app::TuiCommand::CreateIssue(payload));
         }
     }
+}
 
+/// Milestone wizard: AiStructuring planning launch + Materializing creation.
+fn tick_milestone_wizard_hooks(app: &mut app::App) {
     // Milestone wizard: AiStructuring auto-launch + Materializing creation.
     if app.tui_mode == app::TuiMode::MilestoneWizard {
         let (start_planning, start_creating) =

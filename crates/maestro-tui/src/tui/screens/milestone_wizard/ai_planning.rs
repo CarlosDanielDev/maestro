@@ -94,6 +94,7 @@ pub fn parse_planning_response(raw: &str) -> Result<AiGeneratedPlan, String> {
         milestone_title: title,
         milestone_description: description,
         issues,
+        written: None,
     })
 }
 

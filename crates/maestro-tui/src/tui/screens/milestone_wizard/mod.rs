@@ -1,10 +1,14 @@
 pub mod ai_planning;
+mod create;
 mod draw;
 pub mod types;
 
 use crate::provider::types::ProviderKind;
 pub use ai_planning::{build_planning_prompt, parse_planning_response};
-pub use types::{AiGeneratedPlan, AiProposedIssue, MilestonePlanPayload, MilestoneWizardStep};
+pub use types::{
+    AiGeneratedPlan, AiProposedIssue, MilestonePlanPayload, MilestoneWizardStep, PlanWritten,
+    WizardPhase, stranded,
+};
 
 /// Result of a successful milestone+issues materialization (#297, updated #455).
 ///
@@ -26,6 +30,22 @@ pub enum MilestoneCreationResult {
         new_issue_numbers: Vec<u64>,
         skipped_issue_numbers: Vec<u64>,
     },
+    /// The milestone exists but an issue create failed partway (#1284).
+    /// `issue_numbers` are the issues there before the failure, in
+    /// creation order; `existed` is the part of them that was already there
+    /// (a title match or an earlier run), the rest were created now.
+    /// `not_created` are the titles of the failed issue and every one after
+    /// it; `written` is what a retry reuses. Never an `Err`: the numbers
+    /// must survive.
+    Partial {
+        milestone_number: u64,
+        milestone_existed: bool,
+        issue_numbers: Vec<u64>,
+        existed: Vec<u64>,
+        not_created: Vec<String>,
+        written: PlanWritten,
+        error: String,
+    },
 }
 
 impl MilestoneCreationResult {
@@ -38,6 +58,9 @@ impl MilestoneCreationResult {
             Self::Reused {
                 milestone_number, ..
             } => *milestone_number,
+            Self::Partial {
+                milestone_number, ..
+            } => *milestone_number,
         }
     }
 
@@ -46,7 +69,9 @@ impl MilestoneCreationResult {
     #[allow(dead_code)]
     pub fn all_issue_numbers(&self) -> Vec<u64> {
         match self {
-            Self::Created { issue_numbers, .. } => issue_numbers.clone(),
+            Self::Created { issue_numbers, .. } | Self::Partial { issue_numbers, .. } => {
+                issue_numbers.clone()
+            }
             Self::Reused {
                 new_issue_numbers,
                 skipped_issue_numbers,
@@ -113,48 +138,79 @@ pub async fn materialize_plan_with_client<G: crate::provider::github::client::Re
 ) -> Result<MilestoneCreationResult, String> {
     use crate::provider::github::client::CreateOutcome;
 
-    let ms_outcome = client
-        .create_milestone(&plan.milestone_title, &plan.milestone_description)
-        .await
-        .map_err(|e| format!("create_milestone failed: {e}"))?;
-    let milestone_number = ms_outcome.number();
-    let milestone_reused = ms_outcome.is_existed();
+    // A retry after a partial create reuses what it wrote, by number.
+    let (milestone_number, milestone_reused) = match &plan.written {
+        Some(w) => (w.milestone_number, true),
+        None => {
+            let ms_outcome = client
+                .create_milestone(&plan.milestone_title, &plan.milestone_description)
+                .await
+                .map_err(|e| format!("create_milestone failed: {e}"))?;
+            (ms_outcome.number(), ms_outcome.is_existed())
+        }
+    };
+    let earlier = plan.written.as_ref().map(|w| &w.issues);
 
-    let buckets = level_buckets(&plan.issues);
-    let mut number_for_index: std::collections::HashMap<usize, u64> =
-        std::collections::HashMap::new();
+    let order: Vec<usize> = level_buckets(&plan.issues).into_iter().flatten().collect();
+    let mut number_for_index: std::collections::BTreeMap<usize, u64> =
+        std::collections::BTreeMap::new();
     let mut new_numbers: Vec<u64> = Vec::new();
     let mut skipped_numbers: Vec<u64> = Vec::new();
 
-    for level in buckets {
-        for idx in level {
-            let issue = &plan.issues[idx];
-            let blocked_lines: Vec<String> = issue
-                .blocked_by
-                .iter()
-                .filter_map(|d| number_for_index.get(d).map(|n| format!("- #{}", n)))
-                .collect();
-            let blocked_by_section = if blocked_lines.is_empty() {
-                "## Blocked By\n\n- None\n".to_string()
-            } else {
-                format!("## Blocked By\n\n{}\n", blocked_lines.join("\n"))
-            };
-            let body = format!(
-                "## Overview\n\n{}\n\n{}",
-                issue.overview.trim(),
-                blocked_by_section
-            );
-            let labels = vec!["enhancement".to_string(), "maestro:ready".to_string()];
-            let outcome = client
-                .create_issue(&issue.title, &body, &labels, Some(milestone_number))
-                .await
-                .map_err(|e| format!("create_issue '{}' failed: {e}", issue.title))?;
-            let num = outcome.number();
+    for (pos, &idx) in order.iter().enumerate() {
+        let issue = &plan.issues[idx];
+        if let Some(&num) = earlier.and_then(|e| e.get(&idx)) {
             number_for_index.insert(idx, num);
-            match outcome {
-                CreateOutcome::Created(_) => new_numbers.push(num),
-                CreateOutcome::Existed { .. } => skipped_numbers.push(num),
+            skipped_numbers.push(num);
+            continue;
+        }
+        let blocked_lines: Vec<String> = issue
+            .blocked_by
+            .iter()
+            .filter_map(|d| number_for_index.get(d).map(|n| format!("- #{}", n)))
+            .collect();
+        let blocked_by_section = if blocked_lines.is_empty() {
+            "## Blocked By\n\n- None\n".to_string()
+        } else {
+            format!("## Blocked By\n\n{}\n", blocked_lines.join("\n"))
+        };
+        let body = format!(
+            "## Overview\n\n{}\n\n{}",
+            issue.overview.trim(),
+            blocked_by_section
+        );
+        let labels = vec!["enhancement".to_string(), "maestro:ready".to_string()];
+        let outcome = match client
+            .create_issue(&issue.title, &body, &labels, Some(milestone_number))
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                return Ok(MilestoneCreationResult::Partial {
+                    milestone_number,
+                    milestone_existed: milestone_reused,
+                    issue_numbers: order[..pos]
+                        .iter()
+                        .filter_map(|i| number_for_index.get(i).copied())
+                        .collect(),
+                    existed: skipped_numbers,
+                    not_created: order[pos..]
+                        .iter()
+                        .map(|&i| plan.issues[i].title.clone())
+                        .collect(),
+                    written: PlanWritten {
+                        milestone_number,
+                        issues: number_for_index,
+                    },
+                    error: format!("create_issue '{}' failed: {e}", issue.title),
+                });
             }
+        };
+        let num = outcome.number();
+        number_for_index.insert(idx, num);
+        match outcome {
+            CreateOutcome::Created(_) => new_numbers.push(num),
+            CreateOutcome::Existed { .. } => skipped_numbers.push(num),
         }
     }
 
@@ -212,12 +268,12 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::input::feed;
+use crate::tui::widgets::wizard_frame::field_block;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Modifier, Style},
-    widgets::{Block, Borders},
 };
 
 /// AI-guided wizard for milestone planning. #294 set up the scaffold
@@ -232,6 +288,9 @@ pub struct MilestoneWizardScreen {
     pub(super) doc_buffer_field: TextAreaField,
     clipboard: Box<dyn ClipboardProvider>,
     planning_in_flight: bool,
+    /// ⏎ on AI structuring asked for a plan. Entering the step never
+    /// spends: the planner runs only on this explicit request (#1284).
+    planning_requested: bool,
     generated_plan: Option<AiGeneratedPlan>,
     failure_reason: Option<String>,
     /// Index focused on the Review step.
@@ -252,6 +311,12 @@ pub struct MilestoneWizardScreen {
     pub(super) milestone_reused: bool,
     /// Numbers of pre-existing issues that were skipped during materialization.
     pub(super) skipped_issue_numbers: Vec<u64>,
+    /// Titles a partial create did not write (#1284), in creation order.
+    pub(super) not_created: Vec<String>,
+    /// Armed-Enter on Create: ⏎ arms, ⏎ within 3s writes (#1284).
+    pub(super) create_arm: crate::tui::ds::armed::ArmedEnter,
+    /// Tests pin the clock for the armed write; the app uses `now`.
+    clock: Option<std::time::Instant>,
     spinner_tick: usize,
     use_nerd_font: bool,
 }
@@ -282,6 +347,7 @@ impl MilestoneWizardScreen {
             doc_buffer_field: TextAreaField::single_line(),
             clipboard,
             planning_in_flight: false,
+            planning_requested: false,
             generated_plan: None,
             failure_reason: None,
             review_focus: 0,
@@ -291,6 +357,9 @@ impl MilestoneWizardScreen {
             created_milestone_number: None,
             milestone_reused: false,
             skipped_issue_numbers: Vec::new(),
+            not_created: Vec::new(),
+            create_arm: crate::tui::ds::armed::ArmedEnter::new(),
+            clock: None,
             spinner_tick: 0,
             use_nerd_font: false,
         }
@@ -433,6 +502,7 @@ impl MilestoneWizardScreen {
         if let Some(err) = self.plan_validation_error() {
             self.failure_reason = Some(err);
             self.step = MilestoneWizardStep::Failed;
+            self.create_arm.reset();
             return;
         }
 
@@ -447,6 +517,7 @@ impl MilestoneWizardScreen {
         self.created_milestone_number = None;
         self.milestone_reused = false;
         self.skipped_issue_numbers.clear();
+        self.not_created.clear();
         self.failure_reason = None;
         self.step = MilestoneWizardStep::Materializing;
     }
@@ -472,6 +543,7 @@ impl MilestoneWizardScreen {
     pub fn finish_materialization(&mut self, result: Result<MilestoneCreationResult, String>) {
         self.materialize_progress = None;
         self.materialize_enqueued = false;
+        self.create_arm.reset();
         match result {
             Ok(MilestoneCreationResult::Created {
                 milestone_number,
@@ -493,6 +565,31 @@ impl MilestoneWizardScreen {
                 self.milestone_reused = true;
                 self.skipped_issue_numbers = skipped_issue_numbers;
                 self.step = MilestoneWizardStep::Complete;
+            }
+            Ok(MilestoneCreationResult::Partial {
+                milestone_number,
+                milestone_existed,
+                issue_numbers,
+                existed,
+                not_created,
+                written,
+                error,
+            }) => {
+                self.created_milestone_number = Some(milestone_number);
+                // Say "created" only for what this run created.
+                self.created_issue_numbers = issue_numbers
+                    .into_iter()
+                    .filter(|n| !existed.contains(n))
+                    .collect();
+                self.milestone_reused = milestone_existed;
+                self.skipped_issue_numbers = existed;
+                self.not_created = not_created;
+                self.failure_reason = Some(error);
+                // The retry's plan carries what exists, so it reuses it.
+                if let Some(plan) = self.generated_plan.as_mut() {
+                    plan.written = Some(written);
+                }
+                self.step = MilestoneWizardStep::Failed;
             }
             Err(e) => {
                 self.failure_reason = Some(e);
@@ -526,12 +623,13 @@ impl MilestoneWizardScreen {
 
     fn entered_ai_structuring(&self) -> bool {
         matches!(self.step, MilestoneWizardStep::AiStructuring)
+            && self.planning_requested
             && !self.planning_in_flight
             && self.generated_plan.is_none()
             && self.failure_reason.is_none()
     }
 
-    /// Whether the AI Structuring step's automatic launch should fire.
+    /// Whether the AI Structuring step's requested launch should fire.
     pub fn entered_ai_structuring_step(&self) -> bool {
         self.entered_ai_structuring()
     }
@@ -585,12 +683,19 @@ impl MilestoneWizardScreen {
             MilestoneWizardStep::AiStructuring if self.planning_in_flight => {
                 Some("AI is still working — please wait")
             }
+            MilestoneWizardStep::ReviewPlan => self.plan_block_reason(),
             _ => None,
         }
     }
 
     pub fn try_advance(&mut self) -> bool {
         self.sync_fields_into_payload();
+        if self.step == MilestoneWizardStep::ReviewPlan
+            && let Some(&(first, _)) = self.stranded_issues().first()
+        {
+            self.review_focus = first;
+            return false;
+        }
         if self.validation_error().is_some() {
             return false;
         }
@@ -638,6 +743,7 @@ impl MilestoneWizardScreen {
     /// for actually spawning the work via `TuiCommand::LaunchAiPlanning`.
     pub fn start_planning(&mut self) {
         self.sync_fields_into_payload();
+        self.planning_requested = false;
         self.planning_in_flight = true;
         self.generated_plan = None;
         self.failure_reason = None;
@@ -670,27 +776,26 @@ impl MilestoneWizardScreen {
         }
     }
 
-    /// Refresh the border style on the active textarea to match focus
-    /// visuals (focused = LightCyan + BOLD). Called from `Screen::draw`
+    /// Refresh the border on the active textarea (`field_block`: Thick
+    /// when focused, the error on the bottom border). Called from `Screen::draw`
     /// before rendering so `draw_impl` can stay `&self`.
     pub(super) fn refresh_field_blocks(&mut self, theme: &Theme) {
-        let border_style = Style::default()
-            .fg(theme.border_active)
-            .add_modifier(Modifier::BOLD);
-        let block = |title: &'static str| {
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(title)
-        };
         match self.step {
             MilestoneWizardStep::GoalDefinition => {
-                self.goal_field.area_mut().set_block(block("Your goals"));
+                // The footer is gone (`draw_stepped`): the error sits on
+                // the field border.
+                let error = self.validation_error();
+                self.goal_field
+                    .area_mut()
+                    .set_block(field_block("Your goals", true, error, theme));
             }
             MilestoneWizardStep::NonGoals => {
-                self.non_goals_field
-                    .area_mut()
-                    .set_block(block("Non-goals"));
+                self.non_goals_field.area_mut().set_block(field_block(
+                    "Non-goals",
+                    true,
+                    None,
+                    theme,
+                ));
             }
             _ => {}
         }
@@ -715,23 +820,15 @@ impl Default for MilestoneWizardScreen {
 }
 
 impl KeymapProvider for MilestoneWizardScreen {
+    /// j k a x r and Enter are in the registry `MilestoneWizard` block
+    /// (#1284); Esc is the Global back. This lists the one key it lacks.
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
             title: "Wizard",
-            bindings: vec![
-                KeyBinding {
-                    key: "Enter",
-                    description: "Next step / commit doc reference",
-                },
-                KeyBinding {
-                    key: "Shift+Enter",
-                    description: "Newline in goal/non-goal fields, or advance from Doc References",
-                },
-                KeyBinding {
-                    key: "Esc",
-                    description: "Previous step (or close)",
-                },
-            ],
+            bindings: vec![KeyBinding {
+                key: "Shift+Enter",
+                description: "Newline in goals / non-goals; next step on References",
+            }],
         }]
     }
 }
@@ -758,7 +855,37 @@ impl Screen for MilestoneWizardScreen {
             return ScreenAction::None;
         }
 
+        // Armed Create: any key but ⏎ only disarms (Esc included).
+        if self.step == MilestoneWizardStep::Preview
+            && *code != KeyCode::Enter
+            && matches!(
+                self.create_arm.state(),
+                crate::tui::ds::armed::ArmedState::Armed(_)
+            )
+        {
+            self.create_arm.disarm();
+            return ScreenAction::None;
+        }
+
         match (self.step, code, *modifiers) {
+            // A write is in flight: no key leaves it or starts another
+            // (#1284). The result moves the screen on.
+            (MilestoneWizardStep::Materializing, _, _) => {}
+            // Back from a failed write is Create, never the Complete step
+            // that `retreat` would show as a success (#1284).
+            (MilestoneWizardStep::Failed, KeyCode::Esc, _) if self.has_generated_plan() => {
+                self.failure_reason = None;
+                self.step = MilestoneWizardStep::Preview;
+            }
+            // A planning failure stays on Plan: Esc goes back to AI
+            // structuring, `r` asks the planner again.
+            (MilestoneWizardStep::Failed, KeyCode::Esc | KeyCode::Char('r'), _)
+                if !self.has_generated_plan() =>
+            {
+                self.failure_reason = None;
+                self.planning_requested = *code == KeyCode::Char('r');
+                self.step = MilestoneWizardStep::AiStructuring;
+            }
             (_, KeyCode::Esc, _) => {
                 if self.step.is_first() {
                     return ScreenAction::Pop;
@@ -780,12 +907,20 @@ impl Screen for MilestoneWizardScreen {
                 self.review_toggle_focused(false);
             }
             (MilestoneWizardStep::Preview, KeyCode::Enter, _) => {
-                self.begin_materialization();
+                self.on_create_enter();
                 return ScreenAction::None;
             }
             (MilestoneWizardStep::Failed, KeyCode::Char('r'), _) => {
                 self.failure_reason = None;
                 self.step = MilestoneWizardStep::Preview;
+            }
+            // No plan yet: ⏎ asks for one (the hook launches it); with a
+            // plan, ⏎ goes on to Plan.
+            (MilestoneWizardStep::AiStructuring, KeyCode::Enter, _)
+                if self.generated_plan.is_none() && !self.planning_in_flight =>
+            {
+                self.failure_reason = None;
+                self.planning_requested = true;
             }
             (MilestoneWizardStep::Complete, KeyCode::Enter, _) => {
                 return ScreenAction::Pop;
@@ -830,8 +965,13 @@ impl Screen for MilestoneWizardScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.create_arm.tick(self.now());
         self.refresh_field_blocks(theme);
         self.draw_impl(f, area, theme);
+    }
+
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        draw::footer_hints(self)
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {
@@ -997,6 +1137,7 @@ mod tests {
             milestone_title: "v0.20.0".into(),
             milestone_description: "desc".into(),
             issues: Vec::new(),
+            written: None,
         };
         s.apply_planning_result(Ok(plan));
         assert!(!s.is_planning_in_flight());
@@ -1120,6 +1261,7 @@ mod tests {
                 blocked_by: vec![],
                 accepted: true,
             }],
+            written: None,
         }
     }
 
@@ -1204,6 +1346,7 @@ mod tests {
             milestone_title: "   ".into(),
             milestone_description: "d".into(),
             issues: vec![],
+            written: None,
         }));
         assert!(s.plan_validation_error().is_some());
     }
@@ -1220,6 +1363,7 @@ mod tests {
                 blocked_by: vec![],
                 accepted: true,
             }],
+            written: None,
         }));
         assert!(s.plan_validation_error().is_some());
     }
@@ -1236,6 +1380,7 @@ mod tests {
                 blocked_by: vec![],
                 accepted: true,
             }],
+            written: None,
         }));
         assert!(s.plan_validation_error().is_none());
     }
@@ -1247,6 +1392,7 @@ mod tests {
             milestone_title: "   ".into(),
             milestone_description: "d".into(),
             issues: vec![],
+            written: None,
         }));
         s.begin_materialization();
         assert_eq!(s.step(), MilestoneWizardStep::Failed);

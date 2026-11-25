@@ -2,9 +2,7 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/milestone_wizard.rs
 expression: terminal.backend()
 ---
-"┌─────────────────────────────────────────────[ Step 4/9: AI Structuring ]─────────────────────────────────────────────┐"
-"│                                                                                                                      │"
-"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
+" ✓ Goals ─ ✓ References ─ ● Plan ─ ○ Create                                                         nothing written yet "
 "┌──────────────────────────────────────────────────[ AI structuring ]──────────────────────────────────────────────────┐"
 "│                                                                                                                      │"
 "│                                            ⠸ AI is structuring your goals…                                           │"
@@ -39,6 +37,8 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"                                            AI is still working — please wait                                           "
-"                                      [Enter] launch/continue AI plan   [Esc] back                                      "

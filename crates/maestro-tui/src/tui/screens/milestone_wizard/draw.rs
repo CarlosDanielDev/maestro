@@ -1,6 +1,11 @@
-use super::{MilestoneWizardScreen, MilestoneWizardStep};
+use super::{MilestoneWizardScreen, MilestoneWizardStep, WizardPhase};
+use crate::provider::types::ProviderKind;
+use crate::tui::ds::armed::ArmedState;
+use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::{BrailleSpinner, WizardFrame, WizardFrameFooter, WizardFrameHeader};
+use crate::tui::widgets::armed_bar::{ARMED_BAR_HEIGHT, ArmedBar};
+use crate::tui::widgets::wizard_frame::{WizardStepHeader, field_block};
+use crate::tui::widgets::{BrailleSpinner, WizardFrame};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -20,19 +25,29 @@ const NON_GOAL_PROMPT_SUFFIX: &str =
 impl MilestoneWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let step = self.step();
-        WizardFrame::draw(
+        // A planning failure stays on Plan; a write failure is Create's.
+        let phase = if step == MilestoneWizardStep::Failed && !self.has_generated_plan() {
+            WizardPhase::Plan
+        } else {
+            step.phase()
+        };
+        let current = phase.position();
+        let errors = [current];
+        let failed = step == MilestoneWizardStep::Failed;
+        WizardFrame::draw_stepped(
             f,
             area,
             theme,
-            WizardFrameHeader {
-                step_index: step.index(),
-                step_total: MilestoneWizardStep::total(),
-                step_label: step.label(),
+            WizardStepHeader {
+                steps: &WizardPhase::LABELS,
+                current,
+                errors: if failed { &errors[..] } else { &[] },
+                state: Some(Span::styled(
+                    self.writes_ledger(),
+                    Style::default().fg(theme.text_secondary),
+                )),
             },
-            WizardFrameFooter {
-                validation_error: self.validation_error(),
-                hints: milestone_footer_hints(step),
-            },
+            None,
             |f, body_area| match step {
                 MilestoneWizardStep::GoalDefinition => self.draw_goal_step(f, body_area, theme),
                 MilestoneWizardStep::NonGoals => self.draw_non_goals_step(f, body_area, theme),
@@ -182,10 +197,7 @@ impl MilestoneWizardScreen {
     }
 
     fn draw_review_step(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block(
-            "Review Plan  (j/k: navigate, a: accept, x: reject, Enter: continue)",
-            false,
-        );
+        let block = field_block("Proposed issues", true, self.validation_error(), theme);
         let inner = block.inner(area);
         f.render_widget(block, area);
         let Some(plan) = self.generated_plan() else {
@@ -198,6 +210,7 @@ impl MilestoneWizardScreen {
             );
             return;
         };
+        let stranded = self.stranded_issues();
         let lines: Vec<Line> = plan
             .issues
             .iter()
@@ -205,7 +218,17 @@ impl MilestoneWizardScreen {
             .map(|(i, issue)| {
                 let selected = i == self.review_focus();
                 let style = selection_style(theme, selected, theme.text_primary);
-                let mark = if issue.accepted {
+                let needs = stranded.iter().find(|(s, _)| *s == i).map(|(_, d)| d);
+                let mark = if needs.is_some() {
+                    Span::styled(
+                        "[!]",
+                        if selected {
+                            style
+                        } else {
+                            style.fg(theme.accent_warning)
+                        },
+                    )
+                } else if issue.accepted {
                     Span::styled(
                         "[a]",
                         if selected {
@@ -224,11 +247,18 @@ impl MilestoneWizardScreen {
                         },
                     )
                 };
-                Line::from(vec![
+                let mut spans = vec![
                     Span::styled("  ", style),
                     mark,
-                    Span::styled(format!(" {}", issue.title), style),
-                ])
+                    Span::styled(format!(" {}", sanitize_for_terminal(&issue.title)), style),
+                ];
+                if let Some(deps) = needs {
+                    spans.push(Span::styled(
+                        format!("  needs deselected {}", blocker_titles(&plan.issues, deps)),
+                        Style::default().fg(theme.accent_warning),
+                    ));
+                }
+                Line::from(spans)
             })
             .collect();
         let count_accepted = plan.issues.iter().filter(|i| i.accepted).count();
@@ -243,7 +273,21 @@ impl MilestoneWizardScreen {
     }
 
     fn draw_preview_step(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Preview  (Enter confirms and creates)", false);
+        let [area, bar] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(ARMED_BAR_HEIGHT)])
+                .areas(area);
+        let place = match self.provider_kind {
+            ProviderKind::AzureDevops => "Azure DevOps",
+            _ => "GitHub",
+        };
+        let what = self.create_description();
+        let exists = self.already_written_note();
+        let mut armed_bar = ArmedBar::new(&self.create_arm, &what, self.now()).to(place);
+        if let Some(note) = exists.as_deref() {
+            armed_bar = armed_bar.already_written(note);
+        }
+        armed_bar.render(f, bar, theme);
+        let block = theme.styled_block("Creation order", true);
         let inner = block.inner(area);
         f.render_widget(block, area);
         let Some(plan) = self.generated_plan() else {
@@ -315,6 +359,11 @@ impl MilestoneWizardScreen {
             Paragraph::new(vec![
                 Line::from(""),
                 BrailleSpinner::render(self.spinner_tick(), label, self.use_nerd_font(), theme),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "writing… wait: keys are off until the write returns",
+                    Style::default().fg(theme.text_secondary),
+                )),
             ])
             .alignment(Alignment::Center),
             inner,
@@ -385,18 +434,68 @@ impl MilestoneWizardScreen {
         let block = theme.styled_block("Failed", false);
         let inner = block.inner(area);
         f.render_widget(block, area);
-        let lines = vec![
+        let mut lines = vec![
             Line::from(""),
             Line::from(Span::styled(
-                self.failure_reason().unwrap_or("Unknown error"),
+                sanitize_for_terminal(self.failure_reason().unwrap_or("Unknown error")),
                 Style::default().fg(theme.accent_error),
             )),
             Line::from(""),
-            Line::from(Span::styled(
+        ];
+        // A partial create: say what exists and what does not (#1284).
+        if let Some(num) = self.created_milestone_number() {
+            let nums = |ns: &[u64]| {
+                if ns.is_empty() {
+                    "none".to_string()
+                } else {
+                    ns.iter()
+                        .map(|n| format!("#{n}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "✓ {} #{num} {}",
+                    self.milestone_label(),
+                    if self.milestone_was_reused() {
+                        "already existed"
+                    } else {
+                        "created"
+                    }
+                ),
+                Style::default().fg(theme.accent_success),
+            )));
+            lines.push(Line::from(Span::styled(
+                format!("✓ issues created: {}", nums(self.created_issue_numbers())),
+                Style::default().fg(theme.accent_success),
+            )));
+            if !self.skipped_issue_numbers().is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "✓ issues already there: {}",
+                        nums(self.skipped_issue_numbers())
+                    ),
+                    Style::default().fg(theme.accent_success),
+                )));
+            }
+            for title in self.not_created() {
+                lines.push(Line::from(Span::styled(
+                    format!("○ not created: {}", sanitize_for_terminal(title)),
+                    Style::default().fg(theme.accent_warning),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "r goes back to Create: the retry reuses these numbers and creates the rest.",
+                Style::default().fg(theme.text_secondary),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
                 "Press r to retry, Esc to go back.",
                 Style::default().fg(theme.text_secondary),
-            )),
-        ];
+            )));
+        }
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
@@ -438,24 +537,52 @@ fn selection_style(theme: &Theme, selected: bool, default_fg: Color) -> Style {
     }
 }
 
-fn milestone_footer_hints(step: MilestoneWizardStep) -> Option<&'static str> {
-    match step {
-        MilestoneWizardStep::DocReferences => {
-            Some("[Enter] add reference   [Shift+Enter] next   [Esc] back")
+/// Blocker titles for a stranded row: `"feat: schema", "feat: api"`.
+fn blocker_titles(issues: &[super::AiProposedIssue], deps: &[usize]) -> String {
+    deps.iter()
+        .map(|&d| match issues.get(d) {
+            Some(dep) => format!("\"{}\"", sanitize_for_terminal(&dep.title)),
+            None => format!("#{d} (not in the plan)"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Shell footer keys per step (`draw_stepped` has no footer row).
+pub(super) fn footer_hints(s: &MilestoneWizardScreen) -> Vec<(&'static str, &'static str)> {
+    match s.step() {
+        MilestoneWizardStep::GoalDefinition => vec![
+            ("Enter", "next"),
+            ("Shift+Enter", "newline"),
+            ("Esc", "back"),
+        ],
+        MilestoneWizardStep::NonGoals => vec![
+            ("Enter", "next"),
+            ("Shift+Enter", "newline"),
+            ("Esc", "back"),
+        ],
+        MilestoneWizardStep::DocReferences => vec![
+            ("Enter", "add reference"),
+            ("Shift+Enter", "next"),
+            ("Esc", "back"),
+        ],
+        MilestoneWizardStep::AiStructuring if !s.has_generated_plan() => {
+            vec![("Enter", "run AI planner"), ("Esc", "back")]
         }
-        MilestoneWizardStep::AiStructuring => Some("[Enter] launch/continue AI plan   [Esc] back"),
-        MilestoneWizardStep::ReviewPlan => {
-            Some("[j/k ↑/↓] move   [a] accept   [x] reject   [Enter] next   [Esc] back")
-        }
-        MilestoneWizardStep::Preview => Some("[Enter] create milestone and issues   [Esc] revise"),
-        MilestoneWizardStep::Materializing => Some("Creating milestone and issues…"),
-        MilestoneWizardStep::Complete => Some("[Enter] return to Landing"),
-        MilestoneWizardStep::Failed => Some("[r] retry   [Esc] back"),
-        MilestoneWizardStep::GoalDefinition => {
-            Some("[Shift+Enter] newline in goals   [Enter] next   [Esc] back")
-        }
-        MilestoneWizardStep::NonGoals => {
-            Some("[Shift+Enter] newline in non-goals   [Enter] next   [Esc] back")
-        }
+        MilestoneWizardStep::AiStructuring => vec![("Enter", "continue"), ("Esc", "back")],
+        MilestoneWizardStep::ReviewPlan => vec![
+            ("j k", "move"),
+            ("a", "select"),
+            ("x", "deselect"),
+            ("Enter", "next"),
+            ("Esc", "back"),
+        ],
+        MilestoneWizardStep::Preview => match s.create_arm_state() {
+            ArmedState::Armed(_) => vec![("Enter", "create now"), ("Esc", "disarm")],
+            _ => vec![("Enter", "arm create"), ("Esc", "back")],
+        },
+        MilestoneWizardStep::Materializing => Vec::new(),
+        MilestoneWizardStep::Complete => vec![("Enter", "return")],
+        MilestoneWizardStep::Failed => vec![("r", "retry"), ("Esc", "back")],
     }
 }
