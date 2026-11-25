@@ -10,7 +10,7 @@ use crate::tui::input_handler::handle_key;
 
 /// Modals take keys before (or instead of) the global `Ctrl+L` / `Esc`, so
 /// an open drawer must never cover them: e.g. the BudgetPreSpawn spend
-/// confirm still takes `y`/`n`.
+/// confirm still takes `S` / `b` / `n`.
 #[test]
 fn log_drawer_hidden_under_modals() {
     let nil = uuid::Uuid::nil();

@@ -258,7 +258,8 @@ async fn ctrl_b_warning_keeps_the_session_scope() {
     )
     .await;
 
+    // #1276: the ⌃B text says it writes nothing (run-only scope).
     let screen = drawn_at(&mut app, 80, 24);
-    assert!(screen.contains("THIS session only"), "{screen}");
+    assert!(screen.contains("maestro.toml is not written"), "{screen}");
     assert!(!screen.contains("maestro.toml (committed)"), "{screen}");
 }
