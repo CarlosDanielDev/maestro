@@ -47,6 +47,9 @@ pub struct GateView {
     pub cap: f64,
     /// The gate's own `Block`: `S` does nothing.
     pub blocked: bool,
+    /// The gate now says `Allow` (e.g. `b` raised the cap): no warning
+    /// applies any more.
+    pub fits: bool,
 }
 
 impl GateView {
@@ -70,12 +73,10 @@ pub fn gate_view(app: &crate::tui::app::App, session_id: uuid::Uuid) -> GateView
         .zip(app.budget_projector.as_ref())
         .map(|(s, p)| p.projected_turn_cost(s))
         .unwrap_or(0.0);
-    let blocked = session.is_some_and(|s| {
-        matches!(
-            app.pre_spawn_decision(s),
-            crate::budget::PreSpawnDecision::Block { .. }
-        )
-    });
+    use crate::budget::PreSpawnDecision;
+    let decision = session.map(|s| app.pre_spawn_decision(s));
+    let blocked = matches!(decision, Some(PreSpawnDecision::Block { .. }));
+    let fits = matches!(decision, Some(PreSpawnDecision::Allow));
     // The enforcer the gate decides with, so the rows match its Block.
     let enforcer = app.budget_enforcer.as_ref();
     GateView {
@@ -87,6 +88,7 @@ pub fn gate_view(app: &crate::tui::app::App, session_id: uuid::Uuid) -> GateView
         per_session: enforcer.map_or(0.0, |e| e.per_session_limit()),
         cap: enforcer.map_or(0.0, |e| e.total_limit()),
         blocked,
+        fits,
     }
 }
 
@@ -118,6 +120,8 @@ pub fn draw_gate(
 pub fn draw(f: &mut Frame, view: &GateView, cap_what: &str, area: Rect, theme: &Theme) {
     let (focus, chip, chip_color) = if view.blocked {
         (Focus::Danger, " BLOCK ", theme.accent_error)
+    } else if view.fits {
+        (Focus::Overlay, " OK ", theme.accent_success)
     } else {
         (Focus::Overlay, " WARN ", theme.accent_warning)
     };
@@ -138,6 +142,8 @@ pub fn draw(f: &mut Frame, view: &GateView, cap_what: &str, area: Rect, theme: &
     let label = |s: &str| Span::styled(format!("{s:<8}"), muted);
     let outcome = if view.blocked {
         "would pass the budget cap".to_string()
+    } else if view.fits {
+        "now fits the budget".to_string()
     } else if view.cap > 0.0 {
         format!(
             "would use {:.0}% of the budget",
@@ -176,6 +182,13 @@ pub fn draw(f: &mut Frame, view: &GateView, cap_what: &str, area: Rect, theme: &
                 .add_modifier(Modifier::BOLD),
         )
     };
+    // Below 80x24 the SizeGuard hides Settings, so `b` is not offered
+    // (input_handler ignores it there too).
+    let mut keys_row = vec![spawn];
+    if !crate::tui::ds::size_guard::is_shown(f.area()) {
+        keys_row.extend([Span::raw("   "), key("b"), Span::styled(" raise cap", text)]);
+    }
+    keys_row.extend([Span::raw("   "), key("n"), Span::styled(" drop", text)]);
     let lines = vec![
         Line::from(vec![
             Span::styled(
@@ -223,15 +236,7 @@ pub fn draw(f: &mut Frame, view: &GateView, cap_what: &str, area: Rect, theme: &
             Span::styled(format!("{cap_what}; new spawns wait"), text),
         ]),
         Line::from(""),
-        Line::from(vec![
-            spawn,
-            Span::raw("   "),
-            key("b"),
-            Span::styled(" raise cap", text),
-            Span::raw("   "),
-            key("n"),
-            Span::styled(" drop", text),
-        ]),
+        Line::from(keys_row),
     ];
     f.render_widget(Paragraph::new(lines), inner);
 }

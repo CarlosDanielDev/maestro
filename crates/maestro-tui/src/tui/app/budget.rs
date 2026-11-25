@@ -88,6 +88,20 @@ impl App {
                 PreSpawnDecision::Block { .. }
             )
         });
+        // #1276: answer only a session still parked in its pool slot. A
+        // gate reached again for a session that started or was dropped
+        // (e.g. through a stale back entry) closes and says so; it never
+        // spawns twice.
+        if !self.is_parked_at_gate(session_id) {
+            self.tui_mode = TuiMode::Overview;
+            self.drop_stale_gates_from_nav_stack();
+            let toast = crate::tui::ds::toast::Toast::new(
+                crate::tui::ds::toast::Severity::Info,
+                "That session already started or left the queue: nothing to answer",
+            );
+            self.push_toast(toast, std::time::Instant::now());
+            return;
+        }
         match chord {
             'S' if blocked => {}
             'b' => {
@@ -121,6 +135,7 @@ impl App {
                         );
                     }
                 }
+                self.drop_stale_gates_from_nav_stack();
             }
             'n' => {
                 self.tui_mode = TuiMode::Overview;
@@ -135,6 +150,7 @@ impl App {
                     "Spawn cancelled by budget gate".into(),
                     LogLevel::Warn,
                 );
+                self.drop_stale_gates_from_nav_stack();
             }
             _ => {}
         }
@@ -149,6 +165,7 @@ impl App {
     /// this while a text field or the palette has the keys.
     pub(crate) fn restore_budget_gate(&mut self) {
         use crate::tui::app::types::TuiMode;
+        self.drop_stale_gates_from_nav_stack();
         let Some(id) = self.budget_gate_return else {
             return;
         };
@@ -165,10 +182,35 @@ impl App {
             _ => {}
         }
         self.budget_gate_return = None;
-        let parked = (self.pool.get_active_mut(id))
-            .is_some_and(|m| m.session.status == SessionStatus::Queued);
-        if parked {
+        if self.is_parked_at_gate(id) {
             self.tui_mode = TuiMode::BudgetPreSpawn { session_id: id };
+        }
+    }
+
+    /// True while `id` waits at the gate: still Queued in its pool slot
+    /// (promoted, never spawned).
+    fn is_parked_at_gate(&mut self, id: uuid::Uuid) -> bool {
+        (self.pool.get_active_mut(id)).is_some_and(|m| m.session.status == SessionStatus::Queued)
+    }
+
+    /// #1276: `b` pushes the gate on the back stack (so `Esc` in Settings
+    /// returns to it). Drop every gate entry whose session is no longer
+    /// parked, so no later back step reopens a gate for a session that
+    /// started or was dropped.
+    fn drop_stale_gates_from_nav_stack(&mut self) {
+        use crate::tui::app::types::TuiMode;
+        let stack = self.nav_stack.breadcrumbs().to_vec();
+        let kept: Vec<TuiMode> = (stack.iter().copied())
+            .filter(|m| match *m {
+                TuiMode::BudgetPreSpawn { session_id } => self.is_parked_at_gate(session_id),
+                _ => true,
+            })
+            .collect();
+        if kept.len() != stack.len() {
+            self.nav_stack.clear();
+            for mode in kept {
+                self.nav_stack.push(mode);
+            }
         }
     }
 

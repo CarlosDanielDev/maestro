@@ -532,7 +532,7 @@ pub fn mode_keymap(
             }],
         ),
         TuiMode::Sanitize => (
-            "Sanitize",
+            "Code health",
             FKeyVis::Minimal,
             &[InlineHint {
                 key: "Esc",

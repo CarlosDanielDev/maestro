@@ -37,6 +37,11 @@ pub(super) async fn handle_key_under_size_guard(
     Some(match app.tui_mode {
         app::TuiMode::ConfirmExit => handle_confirm_exit(app, &key),
         app::TuiMode::ConfirmKill(id) => handle_confirm_kill(app, &key, id).await,
+        // #1276: `b` would open Settings, which the guard hides; below
+        // 80x24 only `S` / `n` answer the gate.
+        app::TuiMode::BudgetPreSpawn { .. } if key.code == KeyCode::Char('b') => {
+            KeyAction::Consumed
+        }
         app::TuiMode::BudgetPreSpawn { session_id } => {
             handle_budget_prespawn(app, &key, session_id).await
         }

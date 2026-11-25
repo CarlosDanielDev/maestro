@@ -15,7 +15,7 @@ expression: terminal.backend()
 "        ║ file   maestro.toml is not written (Settings writes it)      ║        "
 "        ║ trust  workspace trust still applies                         ║        "
 "        ║ Turns off when                                               ║        "
-"        ║ off    you press Ctrl+B, or a PR review cycle ends           ║        "
+"        ║ off    Ctrl+B, a Settings save, or the end of a PR review    ║        "
 "        ║                                                              ║        "
 "        ║ Type CONFIRM to confirm:                                     ║        "
 "        ║ › CONFIRM                                             7 of 7 ║        "

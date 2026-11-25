@@ -177,3 +177,96 @@ async fn budget_gate_return_waits_for_text_fields_and_confirm_exit() {
         app.tui_mode
     );
 }
+
+fn esc() -> KeyEvent {
+    KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+}
+
+/// Spawns the gate started (one log line per `S` that spawned).
+fn gate_spawns(app: &App) -> usize {
+    (app.activity_log.entries().iter())
+        .filter(|e| e.message.contains("post budget gate"))
+        .count()
+}
+
+fn gates_on_stack(app: &App) -> usize {
+    (app.nav_stack.breadcrumbs().iter())
+        .filter(|m| matches!(m, TuiMode::BudgetPreSpawn { .. }))
+        .count()
+}
+
+/// The real non-Esc exit from Settings: gate(A) → `b` → a second session C
+/// is promoted and its gate opens over Settings → C is answered → gate(A)
+/// comes back → `answer` on A. Afterwards no back step reopens a gate and
+/// A spawned at most once.
+async fn gate_over_settings_route(answer: char) -> (App, TempDir, uuid::Uuid) {
+    let (mut app, dir, a) = warn_app().await;
+    handle_key(&mut app, key('b')).await;
+    assert_eq!(app.tui_mode, TuiMode::Settings);
+    let c = fresh_session();
+    let c_id = c.id;
+    app.add_session(c).await.unwrap();
+    assert!(
+        matches!(app.tui_mode, TuiMode::BudgetPreSpawn { session_id } if session_id == c_id),
+        "setup: C's gate opens over Settings; got {:?}",
+        app.tui_mode
+    );
+    handle_key(&mut app, key('n')).await;
+    assert!(
+        matches!(app.tui_mode, TuiMode::BudgetPreSpawn { session_id } if session_id == a),
+        "A's gate is back after C is answered; got {:?}",
+        app.tui_mode
+    );
+    handle_key(&mut app, key(answer)).await;
+    assert!(!matches!(app.tui_mode, TuiMode::BudgetPreSpawn { .. }));
+    assert_eq!(gates_on_stack(&app), 0, "no gate left on the back stack");
+    for _ in 0..4 {
+        handle_key(&mut app, esc()).await;
+        assert!(
+            !matches!(app.tui_mode, TuiMode::BudgetPreSpawn { .. }),
+            "a back step reopened a gate: {:?}",
+            app.tui_mode
+        );
+    }
+    (app, dir, a)
+}
+
+/// #1449 blocker: `S` after the route above spawns A exactly once.
+#[tokio::test]
+async fn budget_gate_route_spawns_once() {
+    let (app, _dir, a) = gate_over_settings_route('S').await;
+    assert_eq!(gate_spawns(&app), 1, "A spawned exactly once");
+    assert_ne!(
+        app.pool.get_session(a).map(|s| s.status),
+        Some(SessionStatus::Queued)
+    );
+}
+
+/// Same route with `n`: A is dropped and nothing spawns.
+#[tokio::test]
+async fn budget_gate_route_drop_never_spawns() {
+    let (app, _dir, a) = gate_over_settings_route('n').await;
+    assert_eq!(gate_spawns(&app), 0, "nothing spawned");
+    assert_eq!(
+        app.pool.get_session(a).map(|s| s.status),
+        Some(SessionStatus::Killed)
+    );
+}
+
+/// Defence for (b): if a gate is ever shown for a session that already
+/// started (a stale back entry from a route not known today, seeded here
+/// by hand because the real routes no longer leave one), it closes with a
+/// toast and `S` never spawns again.
+#[tokio::test]
+async fn budget_gate_never_answers_a_session_that_already_started() {
+    let (mut app, _dir, a) = warn_app().await;
+    handle_key(&mut app, key('S')).await;
+    assert_eq!(gate_spawns(&app), 1);
+    app.nav_stack
+        .push(TuiMode::BudgetPreSpawn { session_id: a });
+    app.tui_mode = TuiMode::BudgetPreSpawn { session_id: a };
+    handle_key(&mut app, key('S')).await;
+    assert_eq!(gate_spawns(&app), 1, "no second spawn");
+    assert!(!matches!(app.tui_mode, TuiMode::BudgetPreSpawn { .. }));
+    assert_eq!(gates_on_stack(&app), 0);
+}

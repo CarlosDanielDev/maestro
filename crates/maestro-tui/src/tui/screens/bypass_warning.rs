@@ -43,7 +43,7 @@ impl BypassWarningState {
                 row("file", "maestro.toml is not written (Settings writes it)"),
                 row("trust", "workspace trust still applies"),
                 row("", "Turns off when"),
-                row("off", "you press Ctrl+B, or a PR review cycle ends"),
+                row("off", "Ctrl+B, a Settings save, or the end of a PR review"),
             ],
         )
     }

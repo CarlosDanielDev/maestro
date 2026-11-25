@@ -15,6 +15,7 @@ fn view(spent: f64, blocked: bool) -> GateView {
         per_session: 10.0,
         cap: 50.0,
         blocked,
+        fits: false,
     }
 }
 
@@ -66,6 +67,20 @@ fn budget_prespawn_modal_block_shows_projected_and_limit() {
         assert!(output.contains(want), "missing {want:?}:\n{output}");
     }
     assert_snapshot!(terminal.backend());
+}
+
+/// After `b` raised the cap the gate says the session now fits: no WARN
+/// chip for a warning that no longer applies.
+#[test]
+fn budget_prespawn_modal_after_cap_raise_says_it_fits() {
+    let mut v = view(10.0, false);
+    v.fits = true;
+    let output = format!("{}", render(&v).backend());
+    assert!(
+        output.contains(" OK ") && output.contains("now fits the budget"),
+        "{output}"
+    );
+    assert!(!output.contains("WARN"), "{output}");
 }
 
 /// The frame is `ds::panel` (no `branding_bg` surface): Double (danger)
