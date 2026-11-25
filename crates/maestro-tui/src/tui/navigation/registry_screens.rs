@@ -216,6 +216,31 @@ pub(super) fn blocks() -> Vec<Binding> {
         )
         .hidden(),
     );
+    // #1284: the milestone wizard (`screens::milestone_wizard`). j k a x
+    // act on Plan, r on a failure, ⏎ ⏎ writes on Create. Typed letters on
+    // Goals and References are text, not these keys.
+    let mwiz = Scope::Screen(TuiMode::MilestoneWizard);
+    v.extend([
+        s(mwiz, ch('j'), A::ScrollDown, "move (Plan)"),
+        s(mwiz, ch('k'), A::ScrollUp, "move (Plan)"),
+        s(
+            mwiz,
+            Chord::key(KeyCode::Down),
+            A::ScrollDown,
+            "move (Plan)",
+        )
+        .hidden(),
+        s(mwiz, Chord::key(KeyCode::Up), A::ScrollUp, "move (Plan)").hidden(),
+        s(mwiz, ch('a'), A::Expand, "select issue (Plan)"),
+        s(mwiz, ch('x'), A::Expand, "deselect issue (Plan)"),
+        s(mwiz, ch('r'), A::Expand, "retry (Failed)"),
+        s(
+            mwiz,
+            Chord::key(KeyCode::Enter),
+            A::Expand,
+            "next · add reference · ⏎ ⏎ creates on Create",
+        ),
+    ]);
     v
 }
 

@@ -160,4 +160,16 @@ pub struct AiGeneratedPlan {
     pub milestone_title: String,
     pub milestone_description: String,
     pub issues: Vec<AiProposedIssue>,
+    /// What an earlier, partial create already wrote (#1284). A retry
+    /// reuses these by number, never by title, and creates only the rest.
+    pub written: Option<PlanWritten>,
+}
+
+/// The milestone and the issues (plan index → number) a partial create
+/// wrote. Kept on the plan so the retry's `CreateMilestoneWithIssues`
+/// carries it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlanWritten {
+    pub milestone_number: u64,
+    pub issues: std::collections::BTreeMap<usize, u64>,
 }

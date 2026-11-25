@@ -199,6 +199,7 @@ fn shown_for(mode: TuiMode) -> Vec<KeyBindingGroup> {
         TuiMode::Interaction => {
             crate::tui::screens::interaction::InteractionScreen::new().keybindings()
         }
+        TuiMode::MilestoneWizard => crate::tui::screens::MilestoneWizardScreen::new().keybindings(),
         _ => vec![],
     };
     shown_groups(&mode_keymap(mode, None, &screen, false).help_groups)
@@ -279,6 +280,8 @@ fn help_never_gives_one_key_two_actions() {
             id: nil,
             view: crate::tui::app::SessionView::Detail,
         },
+        // #1284: the milestone wizard's footer keys.
+        TuiMode::MilestoneWizard,
     ];
     for mode in modes {
         let groups = shown_for(mode);

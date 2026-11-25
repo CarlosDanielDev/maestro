@@ -51,14 +51,52 @@ impl MilestoneWizardScreen {
             .unwrap_or(0)
     }
 
-    /// The exact write, for the armed bar: `creates 1 milestone + 2 issues`.
+    /// Selected issues an earlier partial create already wrote.
+    fn selected_already_written(&self) -> usize {
+        self.generated_plan()
+            .and_then(|p| {
+                let w = p.written.as_ref()?;
+                Some(
+                    p.issues
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, it)| it.accepted && w.issues.contains_key(i))
+                        .count(),
+                )
+            })
+            .unwrap_or(0)
+    }
+
+    /// The exact write, for the armed bar: `creates 1 milestone + 2 issues`,
+    /// or after a partial create `creates 2 issues · reuses milestone #9 and
+    /// 1 issue` (#1284).
     pub fn create_description(&self) -> String {
+        let plural = |n: usize| if n == 1 { "" } else { "s" };
         let n = self.selected_issue_count();
-        format!(
-            "creates 1 {} + {n} issue{}",
-            self.milestone_label_lowercase(),
-            if n == 1 { "" } else { "s" }
-        )
+        let label = self.milestone_label_lowercase();
+        match self.generated_plan().and_then(|p| p.written.as_ref()) {
+            Some(w) => {
+                let k = self.selected_already_written();
+                let new = n - k;
+                format!(
+                    "creates {new} issue{} · reuses {label} #{} and {k} issue{}",
+                    plural(new),
+                    w.milestone_number,
+                    plural(k)
+                )
+            }
+            None => format!("creates 1 {label} + {n} issue{}", plural(n)),
+        }
+    }
+
+    /// For the armed bar after a partial create: `1 of 3 issues already exist`.
+    pub(super) fn already_written_note(&self) -> Option<String> {
+        self.generated_plan()?.written.as_ref()?;
+        Some(format!(
+            "{} of {} issues already exist",
+            self.selected_already_written(),
+            self.selected_issue_count()
+        ))
     }
 
     pub fn create_arm_state(&self) -> &ArmedState {
@@ -81,19 +119,23 @@ impl MilestoneWizardScreen {
 
     /// Right of the stepper: what has reached the provider so far.
     pub(super) fn writes_ledger(&self) -> String {
-        let written = self.created_issue_numbers().len();
+        let in_place = self.created_issue_numbers().len() + self.skipped_issue_numbers().len();
+        let armed = matches!(self.create_arm_state(), ArmedState::Armed(_));
+        let earlier = self.generated_plan().and_then(|p| p.written.as_ref());
         match self.step() {
-            MilestoneWizardStep::Complete => format!("{written} issues written"),
+            MilestoneWizardStep::Complete => format!("{in_place} issues written"),
             MilestoneWizardStep::Materializing => "writing…".to_string(),
             MilestoneWizardStep::Failed if self.created_milestone_number().is_some() => {
-                let total = written + self.not_created.len();
-                format!("{written} of {total} issues written")
+                let total = in_place + self.not_created.len();
+                format!("{in_place} of {total} issues exist")
             }
-            MilestoneWizardStep::Preview
-                if matches!(self.create_arm_state(), ArmedState::Armed(_)) =>
-            {
-                "armed · nothing written yet".to_string()
-            }
+            MilestoneWizardStep::Preview if earlier.is_some() => format!(
+                "{}{} of {} issues exist",
+                if armed { "armed · " } else { "" },
+                self.selected_already_written(),
+                self.selected_issue_count()
+            ),
+            MilestoneWizardStep::Preview if armed => "armed · nothing written yet".to_string(),
             _ => "nothing written yet".to_string(),
         }
     }
@@ -102,3 +144,7 @@ impl MilestoneWizardScreen {
 #[cfg(test)]
 #[path = "create_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "retry_tests.rs"]
+mod retry_tests;

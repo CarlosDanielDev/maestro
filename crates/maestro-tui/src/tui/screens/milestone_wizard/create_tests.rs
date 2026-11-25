@@ -15,7 +15,7 @@ use crate::tui::ds::armed::ArmedState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::{Duration, Instant};
 
-fn issue(title: &str, blocked_by: Vec<usize>) -> AiProposedIssue {
+pub(super) fn issue(title: &str, blocked_by: Vec<usize>) -> AiProposedIssue {
     AiProposedIssue {
         title: title.into(),
         overview: format!("{title} overview"),
@@ -25,7 +25,7 @@ fn issue(title: &str, blocked_by: Vec<usize>) -> AiProposedIssue {
 }
 
 /// P0 schema ← P1 api, P2 guide (no blockers).
-fn chain_plan() -> AiGeneratedPlan {
+pub(super) fn chain_plan() -> AiGeneratedPlan {
     AiGeneratedPlan {
         milestone_title: "M1: API".into(),
         milestone_description: "Ship the API.".into(),
@@ -34,10 +34,11 @@ fn chain_plan() -> AiGeneratedPlan {
             issue("feat: api", vec![0]),
             issue("docs: guide", vec![]),
         ],
+        written: None,
     }
 }
 
-fn app_on(step: MilestoneWizardStep, plan: AiGeneratedPlan) -> App {
+pub(super) fn app_on(step: MilestoneWizardStep, plan: AiGeneratedPlan) -> App {
     let mut screen = MilestoneWizardScreen::new();
     screen.apply_planning_result(Ok(plan));
     screen.set_step_for_tests(step);
@@ -47,18 +48,18 @@ fn app_on(step: MilestoneWizardStep, plan: AiGeneratedPlan) -> App {
     app
 }
 
-fn wizard(app: &mut App) -> &mut MilestoneWizardScreen {
+pub(super) fn wizard(app: &mut App) -> &mut MilestoneWizardScreen {
     app.screen_state
         .milestone_wizard_screen
         .as_mut()
         .expect("wizard")
 }
 
-async fn press(app: &mut App, code: KeyCode) {
+pub(super) async fn press(app: &mut App, code: KeyCode) {
     crate::tui::input_handler::handle_key(app, KeyEvent::new(code, KeyModifiers::NONE)).await;
 }
 
-fn screen_text(app: &mut App) -> String {
+pub(super) fn screen_text(app: &mut App) -> String {
     let backend = ratatui::backend::TestBackend::new(80, 24);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     terminal.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
@@ -73,18 +74,18 @@ fn screen_text(app: &mut App) -> String {
         .join("\n")
 }
 
-fn create_queued(app: &App) -> bool {
+pub(super) fn create_queued(app: &App) -> bool {
     creates_queued(app) > 0
 }
 
-fn creates_queued(app: &App) -> usize {
+pub(super) fn creates_queued(app: &App) -> usize {
     app.pending_commands
         .iter()
         .filter(|c| matches!(c, TuiCommand::CreateMilestoneWithIssues(_)))
         .count()
 }
 
-fn plannings_queued(app: &App) -> usize {
+pub(super) fn plannings_queued(app: &App) -> usize {
     app.pending_commands
         .iter()
         .filter(|c| matches!(c, TuiCommand::LaunchAiPlanning(_)))
@@ -160,6 +161,7 @@ fn a_blocker_loop_blocks_advancing() {
         milestone_title: "M".into(),
         milestone_description: String::new(),
         issues: vec![issue("a", vec![1]), issue("b", vec![0])],
+        written: None,
     };
     let mut s = MilestoneWizardScreen::new();
     s.apply_planning_result(Ok(plan));
@@ -249,6 +251,7 @@ async fn materialize_partial_keeps_numbers() {
             issue("", vec![]),
             issue("feat: four", vec![]),
         ],
+        written: None,
     };
     let client = MockGitHubClient::new();
     let result = materialize_plan_with_client(&plan, &client)
@@ -266,6 +269,7 @@ async fn materialize_partial_keeps_numbers() {
         issue_numbers,
         not_created,
         error,
+        ..
     } = result.clone()
     else {
         panic!("expected Partial, got {result:?}");
@@ -294,59 +298,5 @@ async fn materialize_partial_keeps_numbers() {
         screen.contains("not created: feat: four"),
         "what was not created:\n{screen}"
     );
-    assert!(
-        screen.contains("2 of 4 issues written"),
-        "ledger:\n{screen}"
-    );
-}
-
-#[tokio::test]
-async fn esc_after_a_partial_create_goes_to_create_not_complete() {
-    let mut app = app_on(MilestoneWizardStep::Materializing, chain_plan());
-    wizard(&mut app).finish_materialization(Ok(MilestoneCreationResult::Partial {
-        milestone_number: 9,
-        issue_numbers: vec![31],
-        not_created: vec!["feat: api".into(), "docs: guide".into()],
-        error: "create_issue 'feat: api' failed: HTTP 502".into(),
-    }));
-    press(&mut app, KeyCode::Esc).await;
-    assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::Preview);
-    assert!(!create_queued(&app));
-}
-
-#[tokio::test]
-async fn one_confirm_queues_one_create_across_ticks() {
-    let mut app = app_on(MilestoneWizardStep::Preview, chain_plan());
-    let t0 = Instant::now();
-    wizard(&mut app).set_clock_for_test(t0);
-    press(&mut app, KeyCode::Enter).await;
-    assert_eq!(creates_queued(&app), 0, "arming queues nothing");
-    wizard(&mut app).set_clock_for_test(t0 + Duration::from_secs(1));
-    press(&mut app, KeyCode::Enter).await;
-    crate::tui::screen_dispatch::tick_wizard_step_hooks(&mut app);
-    crate::tui::screen_dispatch::tick_wizard_step_hooks(&mut app);
-    assert_eq!(creates_queued(&app), 1, "one confirm, one create");
-}
-
-#[tokio::test]
-async fn entering_ai_structuring_spends_nothing_until_enter() {
-    let mut screen = MilestoneWizardScreen::new();
-    screen.set_step_for_tests(MilestoneWizardStep::DocReferences);
-    let mut app = crate::tui::make_test_app("milestone-wizard-1284-plan");
-    app.tui_mode = TuiMode::MilestoneWizard;
-    app.screen_state.milestone_wizard_screen = Some(screen);
-    crate::tui::input_handler::handle_key(
-        &mut app,
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
-    )
-    .await;
-    assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::AiStructuring);
-    crate::tui::screen_dispatch::tick_wizard_step_hooks(&mut app);
-    assert_eq!(plannings_queued(&app), 0, "entering the step never spends");
-
-    press(&mut app, KeyCode::Enter).await;
-    crate::tui::screen_dispatch::tick_wizard_step_hooks(&mut app);
-    assert_eq!(plannings_queued(&app), 1, "one ⏎, one planner run");
-    assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::AiStructuring);
-    assert!(wizard(&mut app).is_planning_in_flight());
+    assert!(screen.contains("2 of 4 issues exist"), "ledger:\n{screen}");
 }

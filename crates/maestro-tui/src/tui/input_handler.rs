@@ -1221,6 +1221,18 @@ pub(crate) fn has_live_work(app: &App) -> bool {
             .as_ref()
             .is_some_and(|q| !q.is_finished())
         || team_run_live(app)
+        || milestone_write_live(app)
+}
+
+/// A milestone wizard create in flight (#1284): quitting would cut it off
+/// partway.
+fn milestone_write_live(app: &App) -> bool {
+    app.screen_state
+        .milestone_wizard_screen
+        .as_ref()
+        .is_some_and(|w| {
+            w.step() == crate::tui::screens::milestone_wizard::MilestoneWizardStep::Materializing
+        })
 }
 
 /// A team run (`run_team_until`, detached) until its result lands; between
@@ -1247,6 +1259,8 @@ pub(crate) fn live_work_question(app: &App) -> String {
         "A queue is waiting for your decision. Exit anyway?".into()
     } else if team_run_live(app) {
         "A team run is between waves. Exit anyway?".into()
+    } else if milestone_write_live(app) {
+        "A milestone create is still writing. Exit anyway?".into()
     } else {
         "A queue or PR job is still running. Exit anyway?".into()
     }

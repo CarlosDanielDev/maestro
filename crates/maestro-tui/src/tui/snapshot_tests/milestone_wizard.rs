@@ -18,6 +18,7 @@ fn sample_plan() -> AiGeneratedPlan {
         milestone_title: "M0: Foundation".into(),
         milestone_description: "Set up the core workflow.".into(),
         issues: vec![],
+        written: None,
     }
 }
 
@@ -174,6 +175,7 @@ fn stranded_plan() -> AiGeneratedPlan {
             issue("feat: api", vec![0], true),
             issue("docs: guide", vec![], true),
         ],
+        written: None,
     }
 }
 

@@ -281,9 +281,12 @@ impl MilestoneWizardScreen {
             _ => "GitHub",
         };
         let what = self.create_description();
-        ArmedBar::new(&self.create_arm, &what, self.now())
-            .to(place)
-            .render(f, bar, theme);
+        let exists = self.already_written_note();
+        let mut armed_bar = ArmedBar::new(&self.create_arm, &what, self.now()).to(place);
+        if let Some(note) = exists.as_deref() {
+            armed_bar = armed_bar.already_written(note);
+        }
+        armed_bar.render(f, bar, theme);
         let block = theme.styled_block("Creation order", true);
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -356,6 +359,11 @@ impl MilestoneWizardScreen {
             Paragraph::new(vec![
                 Line::from(""),
                 BrailleSpinner::render(self.spinner_tick(), label, self.use_nerd_font(), theme),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "writing… wait: keys are off until the write returns",
+                    Style::default().fg(theme.text_secondary),
+                )),
             ])
             .alignment(Alignment::Center),
             inner,
@@ -436,21 +444,41 @@ impl MilestoneWizardScreen {
         ];
         // A partial create: say what exists and what does not (#1284).
         if let Some(num) = self.created_milestone_number() {
-            let created: Vec<String> = self
-                .created_issue_numbers()
-                .iter()
-                .map(|n| format!("#{n}"))
-                .collect();
+            let nums = |ns: &[u64]| {
+                if ns.is_empty() {
+                    "none".to_string()
+                } else {
+                    ns.iter()
+                        .map(|n| format!("#{n}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            };
             lines.push(Line::from(Span::styled(
                 format!(
-                    "✓ {} #{num} · {} issue{} created {}",
+                    "✓ {} #{num} {}",
                     self.milestone_label(),
-                    created.len(),
-                    if created.len() == 1 { "" } else { "s" },
-                    created.join(" ")
+                    if self.milestone_was_reused() {
+                        "already existed"
+                    } else {
+                        "created"
+                    }
                 ),
                 Style::default().fg(theme.accent_success),
             )));
+            lines.push(Line::from(Span::styled(
+                format!("✓ issues created: {}", nums(self.created_issue_numbers())),
+                Style::default().fg(theme.accent_success),
+            )));
+            if !self.skipped_issue_numbers().is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "✓ issues already there: {}",
+                        nums(self.skipped_issue_numbers())
+                    ),
+                    Style::default().fg(theme.accent_success),
+                )));
+            }
             for title in self.not_created() {
                 lines.push(Line::from(Span::styled(
                     format!("○ not created: {}", sanitize_for_terminal(title)),
@@ -459,7 +487,7 @@ impl MilestoneWizardScreen {
             }
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "r goes back to Create: title matching reuses what already exists.",
+                "r goes back to Create: the retry reuses these numbers and creates the rest.",
                 Style::default().fg(theme.text_secondary),
             )));
         } else {
