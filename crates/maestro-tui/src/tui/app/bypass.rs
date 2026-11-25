@@ -99,25 +99,24 @@ impl App {
         );
     }
 
-    /// Begin a TUI toggle: if the warning has not yet been acknowledged
-    /// this session, push the BypassWarning screen; otherwise toggle
-    /// directly. Returns true when the caller should push the warning.
+    /// Begin a TUI toggle: off is one key; on always pushes the
+    /// BypassWarning screen (#1276), even after a typed CONFIRM earlier
+    /// this run, so a reflex ⌃B never turns bypass on silently.
+    /// `bypass_warning_acknowledged` is not read here. Returns true when
+    /// the caller should push the warning.
     pub fn request_bypass_toggle(&mut self) -> bool {
         self.drop_settings_bypass_request();
         if self.bypass_active {
             self.deactivate_bypass("tui");
             return false;
         }
-        if !self.bypass_warning_acknowledged {
-            self.open_bypass_warning();
-            return true;
-        }
-        self.confirm_bypass_activation("tui");
-        false
+        self.open_bypass_warning();
+        true
     }
 
     fn open_bypass_warning(&mut self) {
-        self.screen_state.bypass_warning_screen = Some(BypassWarningState::new());
+        let warning = BypassWarningState::tui(self.pool.active_count(), self.pool.queued_count());
+        self.screen_state.bypass_warning_screen = Some(warning);
     }
 
     /// #1239: the Settings › Sessions bypass toggle was flipped on. It
@@ -332,13 +331,15 @@ mod tests {
         assert!(!app.bypass_active);
     }
 
+    /// #1276: the acknowledged flag no longer skips the warning in the TUI.
     #[test]
-    fn request_toggle_after_ack_activates_directly() {
+    fn request_toggle_after_ack_still_pushes_warning() {
         let mut app = make_app();
         app.bypass_warning_acknowledged = true;
         let pushed = app.request_bypass_toggle();
-        assert!(!pushed);
-        assert!(app.bypass_active);
+        assert!(pushed);
+        assert!(app.screen_state.bypass_warning_screen.is_some());
+        assert!(!app.bypass_active);
     }
 
     #[test]

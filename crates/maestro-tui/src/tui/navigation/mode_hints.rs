@@ -532,7 +532,7 @@ pub fn mode_keymap(
             }],
         ),
         TuiMode::Sanitize => (
-            "Sanitize",
+            "Code health",
             FKeyVis::Minimal,
             &[InlineHint {
                 key: "Esc",
@@ -713,22 +713,22 @@ pub fn mode_keymap(
             ],
         ),
         TuiMode::BudgetPreSpawn { .. } => (
-            "Budget Alert",
+            "Budget gate",
             FKeyVis::Minimal,
             &[
                 InlineHint {
-                    key: "y",
-                    action: "Proceed",
+                    key: "S",
+                    action: "spawn",
                     priority: 0,
                 },
                 InlineHint {
-                    key: "n",
-                    action: "Cancel",
+                    key: "b",
+                    action: "raise cap",
                     priority: 1,
                 },
                 InlineHint {
-                    key: "s",
-                    action: "Skip-once",
+                    key: "n",
+                    action: "drop",
                     priority: 2,
                 },
             ],

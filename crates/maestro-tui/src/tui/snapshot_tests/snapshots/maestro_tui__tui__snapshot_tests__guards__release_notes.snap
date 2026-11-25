@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/guards.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Home › Release Notes                                          Esc back  ? help "
+"┌──────────────────────────────[ Release Notes ]───────────────────────────────┐"
+"│# Changelog                                                                   │"
+"│                                                                              │"
+"│                                                                              │"
+"│## [1.2.0] - 2026-11-20                                                       │"
+"│                                                                              │"
+"│                                                                              │"
+"│### Added                                                                     │"
+"│                                                                              │"
+"│• A thing you can now do (#1)                                                 │"
+"│                                                                              │"
+"│                                                                              │"
+"│### Fixed                                                                     │"
+"│                                                                              │"
+"│• A crash on start (#2)                                                       │"
+"│                                                                              │"
+"│                                                                              │"
+"│## [1.1.0] - 2026-11-01                                                       │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" j/k Scroll   PgDn/PgUp Page   Home/End Jump   Esc Back                 ⌃Q quit "

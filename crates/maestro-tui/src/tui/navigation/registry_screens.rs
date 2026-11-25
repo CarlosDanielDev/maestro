@@ -216,6 +216,17 @@ pub(super) fn blocks() -> Vec<Binding> {
         )
         .hidden(),
     );
+    // #1276: the budget gate (`budget_prespawn::chord`). `S` spends money,
+    // so it is uppercase; on Block it does nothing and ui.rs drops it from
+    // the footer. `n` drops a parked session that never started.
+    let gate = Scope::Screen(TuiMode::BudgetPreSpawn {
+        session_id: uuid::Uuid::nil(),
+    });
+    v.extend([
+        Binding::new(ch('S'), gate, A::Spawn, Danger::Destructive, "spawn"),
+        s(gate, ch('b'), A::RaiseCap, "raise cap"),
+        s(gate, ch('n'), A::Dismiss, "drop"),
+    ]);
     // #1281: Adapt (`screens::adapt`). `← →` / Space choose Stop after on
     // Configure; ⏎ starts the chosen run there and arms, then writes, on
     // Review. Hidden: the screen's footer draws them per step.
@@ -250,6 +261,8 @@ pub enum PaletteCommand {
     ReviewConcerns,
     PrPipeline,
     AgentGraph,
+    /// Code health, `TuiMode::Sanitize` (#1276): the local scan, no AI.
+    CodeHealth,
 }
 
 /// The key that runs a palette command outside the palette, and the one
@@ -279,4 +292,5 @@ pub const PALETTE_COMMANDS: &[(&str, PaletteCommand, KeyOn)] = &[
         PaletteCommand::AgentGraph,
         None,
     ),
+    ("code health (local scan)", PaletteCommand::CodeHealth, None),
 ];

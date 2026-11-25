@@ -126,13 +126,15 @@ async fn prespawn_gate_fires_with_default_projector() {
     );
     let out = draw(&mut app);
     assert!(
-        out.contains("Budget Alert") && out.contains("exceeds the configured budget"),
+        out.contains("Budget gate") && out.contains("would pass the budget cap"),
         "the gate modal must be drawn:\n{out}"
     );
 }
 
+/// #1276 (§02.24): `S` is the only spawn key, and on Block it is locked.
+/// The old `y` / `s` twins do nothing anywhere.
 #[tokio::test]
-async fn prespawn_block_ignores_spawn_keys() {
+async fn budget_gate_spawn_locked_on_block() {
     let (mut app, _dir, id) = blocked_app().await;
     assert!(matches!(app.tui_mode, TuiMode::BudgetPreSpawn { .. }));
 
@@ -164,10 +166,14 @@ async fn prespawn_block_ignores_spawn_keys() {
         "no spawn attempt may be logged on Block"
     );
     let out = draw(&mut app);
-    assert!(
-        out.contains("[n]o") && !out.contains("[y]es") && !out.contains("[s]kip"),
-        "on Block the modal must offer only [n]o:\n{out}"
-    );
+    for want in [
+        "BLOCK",
+        "S spawn (locked: over the cap)",
+        "b raise cap",
+        "n drop",
+    ] {
+        assert!(out.contains(want), "Block gate must show {want:?}:\n{out}");
+    }
 }
 
 /// #1266: at 100% of `total_usd` the app keeps running, the running agent
@@ -386,3 +392,7 @@ async fn cap_stop_is_not_retried_and_keeps_worktree() {
         "the branch must survive"
     );
 }
+
+/// #1276: the gate's Warn and `b` keys.
+#[path = "budget_gate_keys_tests.rs"]
+mod gate_keys;

@@ -163,7 +163,7 @@ fn other_confirms_stay_visible_over_the_size_guard_at_60x15() {
     let id = Uuid::nil();
     let cases = [
         (TuiMode::ConfirmKill(id), "Kill session"),
-        (TuiMode::BudgetPreSpawn { session_id: id }, "[y]es"),
+        (TuiMode::BudgetPreSpawn { session_id: id }, "Budget gate"),
     ];
     for (mode, text) in cases {
         let out = format!("{}", draw_mode(mode, 60, 15).backend());
