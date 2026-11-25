@@ -121,6 +121,7 @@ impl App {
     /// Process a data event from a background fetch task.
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
+            TuiDataEvent::CodeHealthScanned(result) => self.finish_code_health(result),
             TuiDataEvent::Issues(Ok(issues)) => {
                 self.note_gh_auth_ok();
                 // Mirror the fetched list into the Team Wizard's

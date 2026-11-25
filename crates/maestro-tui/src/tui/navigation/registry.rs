@@ -169,6 +169,11 @@ pub enum Action {
     /// `⌃O` shows the file in Deps › files.
     PauseOther,
     ShowFile,
+    /// Start the session parked at the budget gate (`S`, #1276): Warn
+    /// only, locked on Block.
+    Spawn,
+    /// Open Settings › Budget from the budget gate (`b`, #1276).
+    RaiseCap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

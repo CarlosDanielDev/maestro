@@ -51,7 +51,8 @@ impl SeverityFilter {
     }
 }
 
-/// TUI screen for browsing sanitize results.
+/// Code health (`TuiMode::Sanitize`, §02.24): browse a `RustScanner`
+/// report. Opened from the ⌃K palette (#1276).
 pub struct SanitizeScreen {
     pub report: SanitizeReport,
     pub severity_filter: SeverityFilter,
@@ -60,10 +61,18 @@ pub struct SanitizeScreen {
     sorted_findings: Vec<Finding>,
     /// Indices into sorted_findings that pass the current filter.
     filtered_indices: Vec<usize>,
+    /// Shown instead of the findings: the scan is running, or it failed.
+    pub status: Option<String>,
 }
 
-#[allow(dead_code)] // Reason: sanitize TUI screen — to be wired into screen dispatch
 impl SanitizeScreen {
+    /// An empty screen that says `status` (e.g. the scan is running).
+    pub fn with_status(status: impl Into<String>) -> Self {
+        let mut screen = Self::new(SanitizeReport::default());
+        screen.status = Some(status.into());
+        screen
+    }
+
     pub fn new(report: SanitizeReport) -> Self {
         let sorted_findings: Vec<Finding> = {
             let refs = report.all_findings();
@@ -75,6 +84,7 @@ impl SanitizeScreen {
             selected_index: 0,
             sorted_findings,
             filtered_indices: Vec::new(),
+            status: None,
         };
         screen.rebuild_filter();
         screen
@@ -113,7 +123,8 @@ impl Screen for SanitizeScreen {
         }) = event
         {
             match code {
-                KeyCode::Char('q') | KeyCode::Esc => return ScreenAction::Pop,
+                // `q` is the global quit, not back (§02.24).
+                KeyCode::Esc => return ScreenAction::Pop,
                 KeyCode::Char('j') | KeyCode::Down if !self.filtered_indices.is_empty() => {
                     self.selected_index =
                         (self.selected_index + 1).min(self.filtered_indices.len() - 1);
@@ -135,13 +146,12 @@ impl Screen for SanitizeScreen {
         let total = self.sorted_findings.len();
         let dead_lines = self.report.total_dead_lines();
 
-        // Layout: header + content + footer
+        // Layout: header + content; the shell draws the footer.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // header
                 Constraint::Min(5),    // content
-                Constraint::Length(1), // footer
             ])
             .split(area);
 
@@ -155,7 +165,7 @@ impl Screen for SanitizeScreen {
         );
         let header = Paragraph::new(Line::from(vec![
             Span::styled(
-                " SANITIZE ",
+                " CODE HEALTH ",
                 Style::default()
                     .fg(theme.branding_fg)
                     .bg(theme.accent_info)
@@ -173,7 +183,8 @@ impl Screen for SanitizeScreen {
 
         // Content: two-panel layout
         if self.filtered_indices.is_empty() {
-            let empty = Paragraph::new("No findings matching filter.")
+            let message = (self.status.as_deref()).unwrap_or("No findings matching filter.");
+            let empty = Paragraph::new(message)
                 .style(Style::default().fg(theme.text_muted))
                 .block(
                     Block::default()
@@ -294,24 +305,17 @@ impl Screen for SanitizeScreen {
             );
             f.render_widget(detail_widget, panels[1]);
         }
+    }
 
-        // Footer: keybindings
-        let footer = Line::from(vec![
-            Span::styled("[s]", Style::default().fg(theme.keybind_key)),
-            Span::raw("everity "),
-            Span::styled("[j/k]", Style::default().fg(theme.keybind_key)),
-            Span::raw("navigate "),
-            Span::styled("[q/Esc]", Style::default().fg(theme.keybind_key)),
-            Span::raw("back"),
-        ]);
-        f.render_widget(Paragraph::new(footer), chunks[2]);
+    fn footer_hints(&self) -> Vec<(&'static str, &'static str)> {
+        vec![("s", "severity"), ("j/k", "move"), ("Esc", "back")]
     }
 }
 
 impl KeymapProvider for SanitizeScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
-            title: "Sanitize",
+            title: "Code health",
             bindings: vec![
                 KeyBinding {
                     key: "s",
@@ -322,8 +326,8 @@ impl KeymapProvider for SanitizeScreen {
                     description: "Navigate findings",
                 },
                 KeyBinding {
-                    key: "q/Esc",
-                    description: "Back to dashboard",
+                    key: "Esc",
+                    description: "Back",
                 },
             ],
         }]
@@ -460,10 +464,11 @@ mod tests {
     }
 
     #[test]
-    fn q_returns_pop_action() {
+    fn q_is_not_back() {
+        // `q` is the global quit (§02.24: "q is not back anywhere else").
         let mut screen = SanitizeScreen::new(SanitizeReport::default());
         let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Pop);
+        assert_eq!(action, ScreenAction::None);
     }
 
     #[test]

@@ -350,12 +350,8 @@ impl SettingsScreen {
         self.flags_selected = 0;
     }
 
-    /// Test helper: jump to a named tab without relying on Tab keystroke
-    /// counts. After switching to alphabetical Tab navigation the
-    /// `for _ in 0..N { Tab }` pattern across the test suite became
-    /// fragile, so production code paths still use next_tab/prev_tab
-    /// while tests use this direct setter.
-    #[cfg(test)]
+    /// Jump to a named tab: the budget gate's `b` opens Budget (#1276).
+    /// Tests use it too, instead of counting Tab keystrokes.
     pub(crate) fn jump_to_tab(&mut self, tab: SettingsTab) {
         if let Some(idx) = SettingsTab::ALL.iter().position(|t| *t == tab) {
             self.active_tab = idx;

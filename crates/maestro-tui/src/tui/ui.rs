@@ -1,4 +1,3 @@
-use crate::budget::BudgetEnforcer;
 use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
 use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
@@ -613,15 +612,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
                 spinner_tick,
             );
-            let (projected_total, limit) = budget_prespawn_values(app, session_id);
-            let area = crate::tui::budget_prespawn::modal_rect(chunks[1]);
-            crate::tui::budget_prespawn::draw_budget_prespawn(
-                f,
-                projected_total,
-                limit,
-                area,
-                &theme,
-            );
+            crate::tui::budget_prespawn::draw_gate(f, app, session_id, chunks[1], &theme);
         }
     }
 
@@ -922,29 +913,6 @@ fn dashboard_mascot_layout(style: MascotStyle) -> DashboardMascotLayout {
     }
 }
 
-/// Compute (projected_total, limit) for the pre-spawn modal (#776/#850).
-/// Reads `App.budget_projector` against the parked session and
-/// `App.budget_enforcer.total_limit()`. Returns `(0.0, 0.0)` when either
-/// side is missing — the gate dispatch path only opens the modal when
-/// both are present, so this branch is defensive only.
-fn budget_prespawn_values(app: &App, session_id: uuid::Uuid) -> (f64, f64) {
-    let projected = app
-        .pool
-        .get_session(session_id)
-        .and_then(|session| {
-            app.budget_projector
-                .as_ref()
-                .map(|proj| proj.projected_turn_cost(session))
-        })
-        .unwrap_or(0.0);
-    let limit = app
-        .budget_enforcer
-        .as_ref()
-        .map(BudgetEnforcer::total_limit)
-        .unwrap_or(0.0);
-    (app.total_cost + projected, limit)
-}
-
 fn should_show_dashboard_mascot_panel(
     log_area: Rect,
     show_mascot: bool,
@@ -1096,7 +1064,7 @@ fn draw_footer(
     if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
         hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
     }
-    // #1382: on a budget Block `y` / `s` do nothing (#1243); only `n` acts.
+    // #1382: on a budget Block `S` does nothing (#1243, #1276); `b` and `n` act.
     if let TuiMode::BudgetPreSpawn { session_id } = app.tui_mode
         && app.pool.get_session(session_id).is_some_and(|s| {
             matches!(
@@ -1105,7 +1073,7 @@ fn draw_footer(
             )
         })
     {
-        hints = key_hints::from_pairs(&[("n", "Cancel")]);
+        hints = key_hints::from_pairs(&[("b", "raise cap"), ("n", "drop")]);
     }
     // #1289: in Cost / Tokens ⏎ only opens a session.
     crate::tui::screens::dashboard::dispatch::usage_footer(app, &mut hints);
@@ -1169,19 +1137,11 @@ fn draw_size_guard(f: &mut Frame, app: &App) {
     let area = f.area();
     let theme = app.active_theme();
     size_guard::draw(f, area, theme);
-    let popup = crate::tui::budget_prespawn::modal_rect(area);
     match app.tui_mode {
         TuiMode::ConfirmExit => draw_confirm_exit_popup(f, app, area, theme),
         TuiMode::ConfirmKill(id) => draw_confirm_kill_popup(f, id, app, area, theme),
         TuiMode::BudgetPreSpawn { session_id } => {
-            let (projected_total, limit) = budget_prespawn_values(app, session_id);
-            crate::tui::budget_prespawn::draw_budget_prespawn(
-                f,
-                projected_total,
-                limit,
-                popup,
-                theme,
-            );
+            crate::tui::budget_prespawn::draw_gate(f, app, session_id, area, theme);
         }
         _ => {}
     }
