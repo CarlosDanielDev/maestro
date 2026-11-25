@@ -71,6 +71,58 @@ impl MilestoneWizardStep {
     pub fn is_first(&self) -> bool {
         matches!(self, Self::GoalDefinition)
     }
+
+    /// The stepper phase this step belongs to (§02.3: four real steps).
+    /// Non-goals is part of Goals; AI structuring is Plan's loading state;
+    /// creating, done and failed are states of Create.
+    pub const fn phase(&self) -> WizardPhase {
+        match self {
+            Self::GoalDefinition | Self::NonGoals => WizardPhase::Goals,
+            Self::DocReferences => WizardPhase::References,
+            Self::AiStructuring | Self::ReviewPlan => WizardPhase::Plan,
+            Self::Preview | Self::Materializing | Self::Complete | Self::Failed => {
+                WizardPhase::Create
+            }
+        }
+    }
+}
+
+/// The four phases the stepper shows (`MilestoneWizardStep::phase`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WizardPhase {
+    Goals,
+    References,
+    Plan,
+    Create,
+}
+
+impl WizardPhase {
+    pub const LABELS: [&'static str; 4] = ["Goals", "References", "Plan", "Create"];
+
+    /// 0-based position in [`Self::LABELS`].
+    pub const fn position(self) -> usize {
+        self as usize
+    }
+}
+
+/// Selected issues that `level_buckets()` would never place: each entry is
+/// `(issue, blockers)` where every blocker is deselected or out of range.
+/// Advancing past the Plan step is blocked while this is non-empty.
+pub fn stranded(issues: &[AiProposedIssue]) -> Vec<(usize, Vec<usize>)> {
+    issues
+        .iter()
+        .enumerate()
+        .filter(|(_, it)| it.accepted)
+        .filter_map(|(i, it)| {
+            let missing: Vec<usize> = it
+                .blocked_by
+                .iter()
+                .copied()
+                .filter(|&d| issues.get(d).is_none_or(|dep| !dep.accepted))
+                .collect();
+            (!missing.is_empty()).then_some((i, missing))
+        })
+        .collect()
 }
 
 /// Inputs the user has supplied so far. Sent to `claude --print` during
@@ -108,4 +160,16 @@ pub struct AiGeneratedPlan {
     pub milestone_title: String,
     pub milestone_description: String,
     pub issues: Vec<AiProposedIssue>,
+    /// What an earlier, partial create already wrote (#1284). A retry
+    /// reuses these by number, never by title, and creates only the rest.
+    pub written: Option<PlanWritten>,
+}
+
+/// The milestone and the issues (plan index → number) a partial create
+/// wrote. Kept on the plan so the retry's `CreateMilestoneWithIssues`
+/// carries it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlanWritten {
+    pub milestone_number: u64,
+    pub issues: std::collections::BTreeMap<usize, u64>,
 }

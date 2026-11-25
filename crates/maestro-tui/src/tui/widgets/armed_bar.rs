@@ -28,6 +28,9 @@ pub struct ArmedBar<'a> {
     now: Instant,
     /// Where the write lands, for the title and the working/done lines.
     place: &'a str,
+    /// What an earlier run already wrote (`1 of 3 issues already exist`):
+    /// replaces `nothing written yet` and follows the armed countdown.
+    written: Option<&'a str>,
 }
 
 impl<'a> ArmedBar<'a> {
@@ -37,7 +40,15 @@ impl<'a> ArmedBar<'a> {
             description,
             now,
             place: "GitHub",
+            written: None,
         }
+    }
+
+    /// The write retries one that stopped partway: say what already
+    /// exists instead of `nothing written yet` (#1284).
+    pub fn already_written(mut self, note: &'a str) -> Self {
+        self.written = Some(note);
+        self
     }
 
     /// Name where the write lands when it is not GitHub (`disk` for a
@@ -64,7 +75,10 @@ impl<'a> ArmedBar<'a> {
                 IconId::Play,
                 "READY",
                 theme.accent_success,
-                format!("{enter} to arm · nothing written yet"),
+                format!(
+                    "{enter} to arm · {}",
+                    sanitize_for_terminal(self.written.unwrap_or("nothing written yet"))
+                ),
             ),
             ArmedState::Armed(_) => {
                 let left = self.armed.remaining(self.now).unwrap_or_default();
@@ -73,7 +87,13 @@ impl<'a> ArmedBar<'a> {
                     IconId::Hourglass,
                     "ARMED",
                     theme.accent_warning,
-                    format!("{enter} again to write · {secs}s · Esc disarms"),
+                    match self.written {
+                        Some(note) => format!(
+                            "{enter} again to write · {secs}s · Esc disarms · {}",
+                            sanitize_for_terminal(note)
+                        ),
+                        None => format!("{enter} again to write · {secs}s · Esc disarms"),
+                    },
                 )
             }
             ArmedState::Working => (
@@ -217,6 +237,39 @@ mod tests {
             assert!(text.contains('\u{23ce}'), "no ⏎ in nerd mode: {text:?}");
             assert!(!text.contains("Enter"), "key word in nerd mode: {text:?}");
         }
+    }
+
+    #[test]
+    fn armed_bar_already_written_replaces_nothing_written_yet() {
+        let t0 = Instant::now();
+        let mut armed = ArmedEnter::new();
+        let text = |armed: &ArmedEnter| {
+            let mut terminal = Terminal::new(TestBackend::new(72, ARMED_BAR_HEIGHT)).unwrap();
+            let theme = Theme::dark();
+            terminal
+                .draw(|f| {
+                    ArmedBar::new(armed, WRITE, t0)
+                        .already_written("1 of 3 issues already exist")
+                        .render_in_mode(f, f.area(), &theme, false)
+                })
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .collect::<String>()
+        };
+        let ready = text(&armed);
+        assert!(ready.contains("1 of 3 issues already exist"), "{ready:?}");
+        assert!(!ready.contains("nothing written yet"), "{ready:?}");
+        armed.on_enter(t0);
+        let armed_text = text(&armed);
+        assert!(
+            armed_text.contains("Esc disarms · 1 of 3"),
+            "{armed_text:?}"
+        );
     }
 
     #[test]

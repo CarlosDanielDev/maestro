@@ -181,6 +181,7 @@ calls a GitHub write on a single key. Screens adopt it in their own issues.
 | `ArmedState` | same | `Blocked(reason)` → `Ready` → `Armed(at)` → `Working` → `Done` / `Failed(fix)` |
 | `ARM_WINDOW` | same | The 3 s window, in one place. Second Enter at `<= ARM_WINDOW` commits; later re-arms |
 | `ArmedBar::new(&armed, description, now).render(f, area, theme)` | `widgets/armed_bar` | Glyph + word + the exact write (`creates 1 issue in owner/repo`); second line = reason, countdown, or fix. Height `ARMED_BAR_HEIGHT` |
+| `ArmedBar::already_written(note)` | `widgets/armed_bar` | A retry of a write that stopped partway (#1284): `note` (`1 of 3 issues already exist`) replaces `nothing written yet` on Ready and follows the armed countdown. Without it the bar is unchanged |
 
 Rules: Blocked is inert (Enter returns `Ignored`), so show the fix in the
 reason. On `EnterOutcome::Commit` start the write, then call `finish`.
@@ -627,6 +628,20 @@ Implements `docs/design-system/index.html` §02.2 Create issue (Reimagined; Scre
 | `Decision` · `improve_sections.rs` | AI improve per section (`FieldId::ALL` order): `j k` section, `↑↓` scroll inside it (wrapped; `↓ n more rows` when cut), `a` accept, `d` keep mine, ⏎ merges only `Accepted` (undecided keeps your text), `r` re-runs the AI call (paid), each row flags the proposal's `[TODO:` count. Only the 8 text fields merge, so `parse_improve_response`'s trusted seats never move |
 
 Rules: Preview's body is `ds::md_block` (TODO chips). The footer is `Screen::footer_hints` per focused element. Keys are declared once, in the registry IssueWizard block (Help reads it); `keybindings()` holds only `Shift+Enter`. AI review: `i` improve and `r` retry are paid AI calls, `e` revise, `s` skip. Esc on Basics with a typed draft asks first (`LEAVE_WINDOW`, `ds::confirm::WINDOW`). Tests: `screens/issue_wizard/flow_tests.rs` (`issue_create_blocked_by_placeholder`, `issue_create_armed`, `blocked_by_filter_keeps_selection`, `ai_review_per_section_accept`, `issue_create_blocked_by_an_empty_required_field`, `esc_on_basics_with_a_draft_asks_before_closing`, `ai_diff_scrolls_inside_the_focused_section`, `blocked_by_round_trips_through_the_body`), `snapshot_tests/issue_wizard.rs` (`issue_wizard_basics_wide`, `issue_wizard_basics_compact_80x24`).
+
+### Create milestone wizard (`screens/milestone_wizard/`, #1284)
+
+Implements `§02.3 Create milestone (wizard)` of `docs/design-system/index.html` (Reimagined: Stepper, Proposed issues, Create gate, Result; Implementation: Steps, Review, Create, Progress and partial failure). Decision: `docs/design-system/decisions.md` (2026-11-24, Create milestone in four phases).
+
+| Item | For |
+|---|---|
+| `MilestoneWizardStep::phase() -> WizardPhase` | The nine-variant state machine stays (tests use it); the stepper shows four phases `Goals · References · Plan · Create` on `WizardFrame::draw_stepped`. Non-goals is part of Goals, AI structuring is Plan's loading state, creating / done / failed are states of Create. A planning failure marks Plan `✗`, a write failure Create `✗` |
+| `milestone_wizard::stranded(issues) -> Vec<(issue, blockers)>` | Selected issues whose blocker is deselected or out of range: drawn `[!] … needs deselected "title"`, the reason on the Proposed issues border, `⏎` refused and focus moved to the first one. A loop of selected blockers (`level_buckets` cannot place it) blocks too. Nothing is dropped silently |
+| `create_arm: ArmedEnter` + `ArmedBar` | Create is armed: `⏎` arms (`creates 1 milestone + N issues`, `iteration` on Azure DevOps), `⏎` within 3 s writes. Any other key, Esc included, only disarms |
+| `MilestoneCreationResult::Partial { milestone_number, issue_numbers, not_created, error }` | An issue create that fails after the milestone exists returns `Partial` (never `Err`): Failed lists the milestone (created / already existed), `issues created: #…`, `issues already there: #…` and `○ not created: …`. The written numbers stay on the plan (`AiGeneratedPlan::written`), so `r` → Create says `k of N issues exist` · `creates N−k issues · reuses milestone #M and k issues`, and the retry reuses them by number |
+| `writes_ledger()` | The stepper's state slot: `nothing written yet`, `armed · nothing written yet`, `writing…`, `k of N issues written`, `N issues written` |
+
+Rules: keys come from `Screen::footer_hints` (`draw::footer_hints`) and are declared in the registry `MilestoneWizard` block (j k a x r ⏎); no new keys. A write in flight takes no keys (`writing… wait`). The AI planner runs only on `⏎` on AI structuring (entering the step spends nothing); `tick_milestone_wizard_hooks` queues the plan and the create. Errors sit on the field / panel border (`field_block`). Not built (see the decision): Goals + Non-goals on one screen, `c` / `b` stranded fixes, `e` / `t` title edits, `R` re-plan, the Draft checklist, progress events per item, retry of only the remaining items. Tests: `milestone_wizard/create_tests.rs`, `snapshot_tests/milestone_wizard.rs` (`milestone_wizard_plan`, `milestone_wizard_create`).
 
 ### Adapt run: Stop after, This run will, Review (`screens/adapt/`, #1281)
 
