@@ -172,3 +172,45 @@ async fn review_enter_enter_dispatches_the_scaffold() {
         "the second ⏎ queues exactly the scaffold"
     );
 }
+
+const ADAPT_WRITING: &str = "An Adapt run is still writing. Exit anyway?";
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
+/// An Adapt write in flight is live work: ⌃Q and ⌃C open Confirm Exit
+/// (naming the Adapt write) instead of quitting mid-write.
+#[tokio::test]
+async fn adapt_write_in_flight_counts_as_live_work() {
+    use crate::tui::input_handler::KeyAction;
+    for step in [AdaptStep::Scaffolding, AdaptStep::Materializing] {
+        for chord in [ctrl('q'), ctrl('c')] {
+            let mut app = adapt_app();
+            app.screen_state.quit_hints.ctrl_q_shown = true;
+            screen_mut(&mut app).step = step;
+            let action = handle_key(&mut app, chord).await;
+            assert!(
+                matches!(action, KeyAction::Consumed),
+                "{step:?} {chord:?} quit mid-write"
+            );
+            assert!(app.running, "{step:?} {chord:?}");
+            assert_eq!(app.tui_mode, TuiMode::ConfirmExit, "{step:?} {chord:?}");
+            let out = text(&mut app, 80, 24);
+            assert!(out.contains(ADAPT_WRITING), "{step:?} {chord:?}:\n{out}");
+        }
+    }
+}
+
+/// Review writes nothing yet: ⌃Q quits at once there.
+#[tokio::test]
+async fn adapt_review_is_not_live_work() {
+    use crate::tui::input_handler::KeyAction;
+    let mut app = review_app();
+    app.screen_state.quit_hints.ctrl_q_shown = true;
+    let action = handle_key(&mut app, ctrl('q')).await;
+    assert!(
+        matches!(action, KeyAction::Quit),
+        "nothing is being written"
+    );
+}
