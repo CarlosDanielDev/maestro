@@ -41,8 +41,8 @@ impl App {
             // Pre-spawn budget gate (#776/#850). Park the session in the
             // pool without calling `managed.spawn` when the projection
             // crosses `alert_threshold_pct` or exceeds `total_usd`. The
-            // modal in `TuiMode::BudgetPreSpawn` lets the user proceed
-            // (y), cancel (n), or skip-once (s).
+            // modal in `TuiMode::BudgetPreSpawn` lets the user spawn (S,
+            // Warn only), raise the cap (b) or drop the session (n).
             if self.try_enter_prespawn_gate(id) {
                 break;
             }

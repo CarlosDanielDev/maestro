@@ -435,6 +435,15 @@ async fn event_loop(
         let commands = std::mem::take(&mut app.pending_commands);
         for cmd in commands {
             match cmd {
+                app::TuiCommand::ScanCodeHealth => {
+                    use crate::sanitize::CodeScanner;
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let path = std::path::Path::new(".");
+                        let result = crate::sanitize::RustScanner::new().scan(path).await;
+                        let _ = tx.send(app::TuiDataEvent::CodeHealthScanned(result));
+                    });
+                }
                 app::TuiCommand::FetchIssues => {
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);

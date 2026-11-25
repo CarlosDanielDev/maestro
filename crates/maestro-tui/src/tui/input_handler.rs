@@ -37,6 +37,11 @@ pub(super) async fn handle_key_under_size_guard(
     Some(match app.tui_mode {
         app::TuiMode::ConfirmExit => handle_confirm_exit(app, &key),
         app::TuiMode::ConfirmKill(id) => handle_confirm_kill(app, &key, id).await,
+        // #1276: `b` would open Settings, which the guard hides; below
+        // 80x24 only `S` / `n` answer the gate.
+        app::TuiMode::BudgetPreSpawn { .. } if key.code == KeyCode::Char('b') => {
+            KeyAction::Consumed
+        }
         app::TuiMode::BudgetPreSpawn { session_id } => {
             handle_budget_prespawn(app, &key, session_id).await
         }
@@ -45,8 +50,19 @@ pub(super) async fn handle_key_under_size_guard(
 }
 
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
-/// global shortcuts, and screen dispatch in priority order.
+/// global shortcuts, and screen dispatch in priority order. After every
+/// key, a session the budget gate's `b` left parked gets its gate back
+/// once Settings is left, by any route (#1276); never while a text field,
+/// the palette or a typed confirm has the keys.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+    let action = dispatch_key(app, key).await;
+    if !is_text_input_mode(app) {
+        app.restore_budget_gate();
+    }
+    action
+}
+
+async fn dispatch_key(app: &mut App, key: KeyEvent) -> KeyAction {
     // #1280: a key the Dashboard does not take disarms its armed PR row.
     screens::dashboard::dispatch::note_key(app, &key);
     // If confirm exit dialog is showing, handle it
@@ -340,14 +356,10 @@ async fn handle_budget_prespawn(
     key: &KeyEvent,
     session_id: uuid::Uuid,
 ) -> KeyAction {
-    use crossterm::event::KeyCode;
-    let chord = match key.code {
-        KeyCode::Char('y') | KeyCode::Char('Y') => 'y',
-        KeyCode::Char('n') | KeyCode::Char('N') => 'n',
-        KeyCode::Char('s') | KeyCode::Char('S') => 's',
-        // Modal MUST consume reserved Dashboard chords without dispatching.
-        // Anything else stays in the modal — no fall-through to outer chords.
-        _ => return KeyAction::Consumed,
+    // #1276: `S` spawn, `b` raise cap, `n` drop. The modal consumes every
+    // other key: no fall-through to outer chords.
+    let Some(chord) = crate::tui::budget_prespawn::chord(key) else {
+        return KeyAction::Consumed;
     };
     app.resolve_budget_prespawn(chord, session_id).await;
     KeyAction::Consumed
@@ -971,6 +983,11 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         // #1280: the Agent graph was Overview's `g`; Esc comes back.
         Some(Run::Command(PaletteCommand::AgentGraph)) => {
             app.navigate_to(app::TuiMode::AgentGraph);
+            KeyAction::Consumed
+        }
+        // #1276: Code health (TuiMode::Sanitize) with a background scan.
+        Some(Run::Command(PaletteCommand::CodeHealth)) => {
+            app.open_code_health();
             KeyAction::Consumed
         }
         Some(Run::Command(PaletteCommand::PrPipeline)) => {

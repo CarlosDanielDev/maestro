@@ -204,7 +204,7 @@ token; `Esc` cancels and is the default.
 Token rule (the #1261 ADR): the issue number for a per-session action
 (kill), a word for a global one (bypass: `CONFIRM`). Users today: kill
 (`App::open_kill_confirm`, state in `ScreenState::kill_confirm`) and the
-bypass warning (`BypassWarningState::confirm`; `new()` is the `⌃B` session-only text, `with_text(title, consequences)` keeps `CONFIRM` with another text). `ui::draw_typed_confirm`
+bypass warning (`BypassWarningState::confirm`; `tui(running, queued)` is the `⌃B` run-only text, see Guards below; `with_text(title, consequences)` keeps `CONFIRM` with another text). `ui::draw_typed_confirm`
 draws both last, over the whole frame. Both modes are text-input modes
 (`is_text_input_mode`), so typed `q`, `M`, digits never reach a global key.
 
@@ -596,6 +596,22 @@ Implements `docs/design-system/index.html` §02.20 (Agent graph → Deps files l
 | `agent_graph::conflict_toast` (`App::raise_conflict_toast`, `App::conflict_toast_key`) | The first conflict of a (file, agent) pair raises a sticky error `ds::toast` (`file held by #407 · #409 edits it too`, no key named: the toast is drawn on every screen); later edits only log. While it is the visible toast on a tab screen (no modal, no text field), `⌃P` pauses the agent without the claim (`App::pause_session`: a failed SIGSTOP is never recorded Paused and the toast says why; `⌃Z` resumes) and `⌃O` opens Deps › files on the file. Chords scoped to the seven tab screens (hidden bindings: Help lists them there, the palette does not), shown first in the footer only while they act (`conflict_toast::footer`). Under the `pause` / `kill` policies only `⌃O` is offered. Prompts are bounded and `Esc` forgets the dismissed one. |
 
 Rules: `TuiMode::AgentGraph` is an alias (like `CostDashboard`): `usage::resolve` (in `screens/dashboard/alias.rs`) maps it to Dashboard › Deps › files; `navigate_to` still redirects it when the flag is off. Deps takes every key it gets (nothing reaches the launcher letters); `X` acts only on a drawn agent row. Its footer is `deps::footer` (only the keys of the drawn lens and column). Every colour is a `Theme` token: `screens_use_theme_colors_only` scans `agent_graph/` too. Tests: `screens/dashboard/deps_tests.rs`, `agent_graph/model_tests.rs`, `app/conflict_toast_tests.rs`, `snapshot_tests/files_lens.rs`.
+
+### Guards: bypass warning, budget gate, Code health, Release notes (#1276)
+
+Implements `docs/design-system/index.html` §02.24.
+
+| Item | For |
+|---|---|
+| `App::request_bypass_toggle` | `⌃B`: off is one key; on **always** opens the warning, also after a typed CONFIRM this run. `bypass_warning_acknowledged` is not read on the TUI path |
+| `BypassWarningState::tui(running, queued)` | The `⌃B` text: `What it turns off` (Claude's permission prompts, `bypassPermissions`; the review step), `What stays` (running sessions keep their mode, queued ones get bypass, `maestro.toml` not written, workspace trust), `Turns off when`. `new()` = `tui(0, 0)` |
+| `budget_prespawn::gate_view(app, id)` → `GateView` | The gate's numbers from `[budget]` and the projector: `spent`, `next`, `after()`, `worst()` (spent + one per-session cap), `left()`, `blocked` (the gate's own Block) |
+| `budget_prespawn::draw_gate(f, app, id, area, theme)` / `draw(f, &GateView, cap_what, area, theme)` | `BLOCK` / `WARN` chip + `#n would pass the budget cap` / `would use n% of the budget`, SPEND rows (`ds::money`, `ds::gauge` spent bar), `at cap` = the Usage "What happens" line (`usage::budget_thresholds`), keys row. Block: `ds::panel` Danger; Warn: Overlay |
+| `budget_prespawn::chord(key)` | `S` spawn (Warn only; locked on Block), `b` Settings › Budget (Esc comes back to the gate), `n` drop. No `y` / `s` / case twins |
+| `App::open_code_health()` | ⌃K `code health`: `TuiMode::Sanitize` on a `SanitizeScreen::with_status(SCANNING)` screen and `TuiCommand::ScanCodeHealth` (local `RustScanner` on `.`, no AI, free); the result arrives as `TuiDataEvent::CodeHealthScanned` → `App::finish_code_health` |
+| `ReleaseNotesScreen::with_source(md)` | Release notes over a given changelog (tests use a fixture, so a release never moves the snapshot). Re-wraps on resize |
+
+Tests: `snapshot_tests/guards.rs` (`bypass_warning`, `budget_gate_block`, `release_notes`, `palette_opens_code_health`), `app/bypass_ctrl_b_tests.rs` (`bypass_warning_always_on_tui`), `app/budget_tests.rs` (`budget_gate_spawn_locked_on_block`), `app/budget_gate_keys_tests.rs`.
 
 ### Create milestone wizard (`screens/milestone_wizard/`, #1284)
 

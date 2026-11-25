@@ -194,7 +194,7 @@ impl TuiMode {
             Self::QueueExecution => "Executing",
             Self::HollowRetry => "Retry",
             Self::TokenDashboard => "Tokens",
-            Self::Sanitize => "Sanitize",
+            Self::Sanitize => "Code health",
             Self::Settings => "Settings",
             Self::SessionSwitcher => "Switcher",
             Self::AdaptWizard => "Adapt",
@@ -213,7 +213,7 @@ impl TuiMode {
             Self::MilestoneHealth => "Milestone Health",
             Self::CiErrorReview => "CI Error Review",
             Self::TeamWizard => "Teams",
-            Self::BudgetPreSpawn { .. } => "Budget Alert",
+            Self::BudgetPreSpawn { .. } => "Budget gate",
             Self::Session { view, .. } => match view {
                 SessionView::Detail => "Detail",
                 SessionView::Output => "Fullscreen",
@@ -501,6 +501,9 @@ pub enum TuiCommand {
         prompt: String,
         model: String,
     },
+    /// Run the local Code health scan (`RustScanner` on `.`, #1276); the
+    /// result lands as [`TuiDataEvent::CodeHealthScanned`].
+    ScanCodeHealth,
 }
 
 /// One milestone fetch (#1269).
@@ -614,6 +617,8 @@ pub enum TuiDataEvent {
         issue_number: u64,
         result: Result<(), String>,
     },
+    /// The Code health scan finished (#1276).
+    CodeHealthScanned(anyhow::Result<crate::sanitize::ScanResult>),
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

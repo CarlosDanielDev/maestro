@@ -12,14 +12,26 @@ pub struct ReleaseNotesScreen {
     pub(super) scroll_offset: u16,
     pub(super) cached_content: Option<Text<'static>>,
     pub(super) total_lines: u16,
+    /// The width `cached_content` was wrapped at; a resize re-wraps it.
+    pub(super) cached_width: u16,
+    /// The changelog Markdown: the compiled-in `CHANGELOG.md`.
+    pub(super) source: &'static str,
 }
 
 impl ReleaseNotesScreen {
     pub fn new() -> Self {
+        Self::with_source(crate::changelog::changelog_raw())
+    }
+
+    /// The screen over another changelog (a test fixture, so a release
+    /// does not change its snapshot).
+    pub fn with_source(source: &'static str) -> Self {
         Self {
             scroll_offset: 0,
             cached_content: None,
             total_lines: 0,
+            cached_width: 0,
+            source,
         }
     }
 
@@ -237,5 +249,25 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].title, "Navigation");
         assert_eq!(groups[1].title, "Actions");
+    }
+
+    /// §02.24 audit #10: the notes were wrapped once, at the first width.
+    #[test]
+    fn resize_rewraps_the_notes() {
+        let long = "## [1.0.0]\n\n### Added\n\n- one two three four five six seven eight nine ten eleven twelve\n";
+        let mut screen = ReleaseNotesScreen::with_source(long);
+        let theme = Theme::dark();
+        let mut lines_at = |w: u16| {
+            let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, 20))
+                .expect("terminal");
+            t.draw(|f| screen.draw(f, f.area(), &theme)).expect("draw");
+            screen.total_lines
+        };
+        let wide = lines_at(100);
+        let narrow = lines_at(30);
+        assert!(
+            narrow > wide,
+            "30 cols wraps more than 100: {narrow} vs {wide}"
+        );
     }
 }
