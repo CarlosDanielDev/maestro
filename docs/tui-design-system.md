@@ -596,6 +596,20 @@ Implements `docs/design-system/index.html` §02.20 (Agent graph → Deps files l
 
 Rules: `TuiMode::AgentGraph` is an alias (like `CostDashboard`): `usage::resolve` (in `screens/dashboard/alias.rs`) maps it to Dashboard › Deps › files; `navigate_to` still redirects it when the flag is off. Deps takes every key it gets (nothing reaches the launcher letters); `X` acts only on a drawn agent row. Its footer is `deps::footer` (only the keys of the drawn lens and column). Every colour is a `Theme` token: `screens_use_theme_colors_only` scans `agent_graph/` too. Tests: `screens/dashboard/deps_tests.rs`, `agent_graph/model_tests.rs`, `app/conflict_toast_tests.rs`, `snapshot_tests/files_lens.rs`.
 
+### Create milestone wizard (`screens/milestone_wizard/`, #1284)
+
+Implements `§02.3 Create milestone (wizard)` of `docs/design-system/index.html` (Reimagined: Stepper, Proposed issues, Create gate, Result; Implementation: Steps, Review, Create, Progress and partial failure). Decision: `docs/design-system/decisions.md` (2026-11-24, Create milestone in four phases).
+
+| Item | For |
+|---|---|
+| `MilestoneWizardStep::phase() -> WizardPhase` | The nine-variant state machine stays (tests use it); the stepper shows four phases `Goals · References · Plan · Create` on `WizardFrame::draw_stepped`. Non-goals is part of Goals, AI structuring is Plan's loading state, creating / done / failed are states of Create. A planning failure marks Plan `✗`, a write failure Create `✗` |
+| `milestone_wizard::stranded(issues) -> Vec<(issue, blockers)>` | Selected issues whose blocker is deselected or out of range: drawn `[!] … needs deselected "title"`, the reason on the Proposed issues border, `⏎` refused and focus moved to the first one. A loop of selected blockers (`level_buckets` cannot place it) blocks too. Nothing is dropped silently |
+| `create_arm: ArmedEnter` + `ArmedBar` | Create is armed: `⏎` arms (`creates 1 milestone + N issues`, `iteration` on Azure DevOps), `⏎` within 3 s writes. Any other key, Esc included, only disarms |
+| `MilestoneCreationResult::Partial { milestone_number, issue_numbers, not_created, error }` | An issue create that fails after the milestone exists returns `Partial` (never `Err`): Failed lists `✓ Milestone #n · k issues created #…`, `○ not created: …`, and says `r` goes back to Create where title matching reuses what exists |
+| `writes_ledger()` | The stepper's state slot: `nothing written yet`, `armed · nothing written yet`, `writing…`, `k of N issues written`, `N issues written` |
+
+Rules: keys come from `Screen::footer_hints` (`draw::footer_hints`); no new keys. The AI planner runs only on `⏎` on AI structuring (entering the step spends nothing); `tick_milestone_wizard_hooks` queues the plan and the create. Errors sit on the field / panel border (`field_block`). Not built (see the decision): Goals + Non-goals on one screen, `c` / `b` stranded fixes, `e` / `t` title edits, `R` re-plan, the Draft checklist, progress events per item, retry of only the remaining items. Tests: `milestone_wizard/create_tests.rs`, `snapshot_tests/milestone_wizard.rs` (`milestone_wizard_plan`, `milestone_wizard_create`).
+
 ## 3. Screens — `crates/maestro-tui/src/tui/screens/`
 
 ### Contract
