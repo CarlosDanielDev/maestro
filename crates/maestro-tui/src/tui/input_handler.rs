@@ -1712,12 +1712,12 @@ mod tests {
     }
 
     #[test]
-    fn is_text_input_mode_false_for_issue_wizard_on_type_select() {
-        // TypeSelect requests Normal input — `q` should still route to
+    fn is_text_input_mode_false_for_issue_wizard_on_type_row() {
+        // The Type row requests Normal input — `q` should still route to
         // ConfirmExit because nothing is being typed here.
         let mut app = make_app();
         let mut wizard = crate::tui::screens::IssueWizardScreen::new();
-        wizard.try_advance(); // Context → TypeSelect
+        wizard.focus_type_row(); // Basics › Type row (NORMAL mode)
         app.screen_state.issue_wizard_screen = Some(wizard);
         app.tui_mode = TuiMode::IssueWizard;
         assert!(!is_text_input_mode(&app));
