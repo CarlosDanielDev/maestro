@@ -80,3 +80,27 @@ Format:
 **What worked:** rerun alone (3/3 pass) / `gh run rerun --failed`; both unrelated to the change.
 **Note for next time:** both are known-flaky; worth a follow-up issue (timing budget under load; write-then-exec race in the mock CLI helper).
 **Fixed (#1356):** the timing half. `syntax_highlighting_200_lines_performance` and `scan_120_transcripts_completes_under_1s` are now `#[ignore = "perf: ..."]`, so the gate's nextest skips them; CI runs them alone (shard 1, step "Run perf tests alone", `--run-ignored only --test-threads 1`). A 10x slowdown still fails that step (mutation-checked: 3759 ms vs 500 ms, 1.05 s vs 200 ms). Run locally: same command as that CI step. New wall-clock tests: follow the same pattern, do not put them in the gate.
+
+---
+
+## 2026-11-24 — wave merge gate missed a maestro-tui test-build break
+
+**What didn't work:** after merging main into a PR branch, `wave resolve --continue` reported the gate green, but `text_surfaces() -> [Surface; 17]` now had 18 entries (two PRs each added one) and the maestro-tui test build failed. The `.wave.json` gate runs `cargo test` / `cargo clippy` without `--workspace`, so it never compiles maestro-tui tests.
+**What worked:** a round judge counted the entries; the agent fixed N and ran the full workspace gate (`cargo nextest run --workspace --locked`, `cargo clippy --workspace --all-targets`).
+**Note for next time:** after any merge of main into a PR, run the full workspace gate (or wait for CI) — the resolve gate line is not proof. Fixed-size arrays in shared test lists: set N to the entry count after every merge.
+
+---
+
+## 2026-11-24 — hand-merging two appended registry blocks dropped a `]);`
+
+**What didn't work:** two PRs appended `v.extend([ ... ]);` blocks at the same spot in `navigation/registry_screens.rs`. The closing `]);` sat in the common text below the conflict, so "keep both sides" left one block unclosed.
+**What worked:** put `]);` back after the first block and compare against main before `--continue`.
+**Note for next time:** when both sides append a bracketed block, check every block closes; the shared closing line belongs to only one side.
+
+---
+
+## 2026-11-24 — worktree cleanup while an agent was still running its gate
+
+**What didn't work:** `wave cleanup` removed a merged PR's worktree while its agent was still mid-gate. The agent's `cd <worktree>; step; step` chain then ran the remaining read-only steps in the main checkout.
+**What worked:** nothing lost (read-only checks, build output only); the agent was stopped.
+**Note for next time:** stop every agent before `wave cleanup`; agents run one gate step per call with absolute paths and never chain steps after `cd` with `;`. Separately, an unknown process on this machine deleted the handoffs folder and one live worktree mid-wave (2026-11-24 ~21:30); work survived only because it was committed and pushed. Commit and push at every checkpoint, and never run cleanup while any wave is live on the machine.
