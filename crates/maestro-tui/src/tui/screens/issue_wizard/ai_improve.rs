@@ -31,6 +31,11 @@ struct ImproveResponse {
     test_hints: String,
 }
 
+/// #1282: asks the model not to invent placeholders. It helps, but the
+/// placeholder lint on the create gate stays the control.
+pub const IMPROVE_KEEP_UNKNOWN: &str =
+    "If a fact is unknown, keep the user's text instead of writing a placeholder.\n\n";
+
 /// Build the structured prompt sent to `claude --print` for the AI
 /// improve step. Embeds the current draft plus the previous critique,
 /// asks for a JSON object with exactly 8 string fields.
@@ -42,9 +47,8 @@ pub fn build_improve_prompt(payload: &IssueCreationPayload, critique: &str) -> S
     s.push_str(
         "Apply the critique. Improve clarity, completeness, testability, and acceptance criteria.\n",
     );
-    s.push_str(
-        "Preserve the user's intent — do not change the scope or the chosen issue type.\n\n",
-    );
+    s.push_str("Preserve the user's intent — do not change the scope or the chosen issue type.\n");
+    s.push_str(IMPROVE_KEEP_UNKNOWN);
     s.push_str(
         "Output ONLY a JSON object with this exact shape, no markdown fences, no commentary:\n",
     );
@@ -160,6 +164,15 @@ mod tests {
         let out = build_improve_prompt(&p, "c");
         assert!(out.contains("JSON"));
         assert!(out.contains("no markdown"));
+    }
+
+    #[test]
+    fn build_improve_prompt_asks_to_keep_user_text_for_unknown_facts() {
+        let out = build_improve_prompt(&sample_payload_full(), "c");
+        assert!(
+            out.contains("If a fact is unknown, keep the user's text"),
+            "{out}"
+        );
     }
 
     #[test]

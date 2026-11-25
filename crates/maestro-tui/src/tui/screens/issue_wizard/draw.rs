@@ -1,6 +1,8 @@
 use super::{FieldId, IssueType, IssueWizardScreen, IssueWizardStep};
+use crate::tui::ds::checklist::CheckItem;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::{BrailleSpinner, WizardFrame, WizardFrameFooter, WizardFrameHeader};
+use crate::tui::widgets::wizard_frame::field_block;
+use crate::tui::widgets::{BrailleSpinner, WizardChecklist, WizardFrame, WizardStepHeader};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -12,24 +14,38 @@ use ratatui::{
 impl IssueWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let step = self.step();
-        WizardFrame::draw(
+        let labels = IssueWizardStep::STEPPER.map(|s| s.label());
+        let errors = self.stepper_errors();
+        let kind = match self.payload().issue_type {
+            IssueType::Feature => "feature",
+            IssueType::Bug => "bug",
+        };
+        let rows = self.checklist_rows();
+        let items: Vec<CheckItem> = rows
+            .iter()
+            .map(|(label, state, note)| CheckItem {
+                label,
+                state: *state,
+                note: note.as_deref(),
+            })
+            .collect();
+        WizardFrame::draw_stepped(
             f,
             area,
             theme,
-            WizardFrameHeader {
-                step_index: step.index(),
-                step_total: IssueWizardStep::total(),
-                step_label: step.label(),
+            WizardStepHeader {
+                steps: &labels,
+                current: step.stepper_index(),
+                errors: &errors,
+                state: Some(Span::styled(kind, Style::default().fg(theme.text_muted))),
             },
-            WizardFrameFooter {
-                validation_error: self.validation_error(),
-                hints: issue_footer_hints(step),
-            },
+            Some(WizardChecklist {
+                title: "Draft",
+                items: &items,
+            }),
             |f, body_area| match step {
-                IssueWizardStep::Context => self.draw_context(f, body_area, theme),
-                IssueWizardStep::TypeSelect => self.draw_type_select(f, body_area, theme),
-                IssueWizardStep::BasicInfo => self.draw_basic_info(f, body_area),
-                IssueWizardStep::DorFields => self.draw_dor_fields(f, body_area),
+                IssueWizardStep::BasicInfo => self.draw_basic_info(f, body_area, theme),
+                IssueWizardStep::DorFields => self.draw_dor_fields(f, body_area, theme),
                 IssueWizardStep::Dependencies => self.draw_dependencies(f, body_area, theme),
                 IssueWizardStep::AiReview => self.draw_ai_review(f, body_area, theme),
                 IssueWizardStep::Preview => self.draw_preview(f, body_area, theme),
@@ -122,108 +138,67 @@ impl IssueWizardScreen {
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
-    fn draw_context(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Issue Creation Contract", false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let lines = vec![
-            Line::from(vec![
-                Span::styled(
-                    "Maestro issues are execution contracts. ",
+    /// Basics: Title, the Type row, Overview (Tab order too).
+    fn draw_basic_info(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let [title, kind, overview] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(3),
+        ])
+        .areas(area);
+        self.draw_field(f, title, FieldId::Title, theme);
+        self.draw_type_row(f, kind, theme);
+        self.draw_field(f, overview, FieldId::Overview, theme);
+        if self.leave_armed() {
+            // On the Overview bottom border: what the second Esc does.
+            let row = Rect {
+                y: overview.bottom().saturating_sub(1),
+                height: 1,
+                ..overview
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    " Esc again closes and drops this draft · any other key keeps it ",
                     Style::default()
-                        .fg(theme.text_primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "Write the smallest useful unit an agent can ship, test, and review.",
-                    Style::default().fg(theme.text_secondary),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("1. ", Style::default().fg(theme.accent_identifier)),
-                Span::styled("Classify", Style::default().fg(theme.text_primary)),
-                Span::styled(
-                    " the work as feature or bug so the right DOR fields appear.",
-                    Style::default().fg(theme.text_secondary),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("2. ", Style::default().fg(theme.accent_identifier)),
-                Span::styled("Describe", Style::default().fg(theme.text_primary)),
-                Span::styled(
-                    " expected behavior, acceptance criteria, files, and test hints.",
-                    Style::default().fg(theme.text_secondary),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("3. ", Style::default().fg(theme.accent_identifier)),
-                Span::styled("Connect blockers", Style::default().fg(theme.text_primary)),
-                Span::styled(
-                    " so the queue respects sequencing instead of guessing.",
-                    Style::default().fg(theme.text_secondary),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("4. ", Style::default().fg(theme.accent_identifier)),
-                Span::styled("Review", Style::default().fg(theme.text_primary)),
-                Span::styled(
-                    " the final markdown before it is sent to GitHub.",
-                    Style::default().fg(theme.text_secondary),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Press Enter when the issue should become clear enough for another session to execute.",
+                        .fg(theme.accent_warning)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                )))
+                .alignment(Alignment::Center),
+                row,
+            );
+        }
+    }
+
+    /// The Type control: `● Feature  ○ Bug` and what Bug adds.
+    fn draw_type_row(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let focused = self.type_focused;
+        let bug = self.payload().issue_type == IssueType::Bug;
+        let pick = |label: &'static str, on: bool| {
+            let glyph = if on { "● " } else { "○ " };
+            let style = if on {
                 Style::default()
-                    .fg(theme.accent_warning)
-                    .add_modifier(Modifier::BOLD),
-            )),
-        ];
-        f.render_widget(
-            Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }),
-            inner,
-        );
-    }
-
-    fn draw_type_select(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(centered_rect(area, 60, 7));
-
-        let pick = |label: &'static str, selected: bool| -> Paragraph<'static> {
-            let style = selection_style(theme, selected, theme.text_primary);
-            Paragraph::new(vec![
-                Line::from(""),
-                Line::from(Span::styled(label, style)),
-                Line::from(""),
-            ])
-            .alignment(Alignment::Center)
-            .block(theme.styled_block(label, selected))
+                    .fg(theme.text_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_secondary)
+            };
+            Span::styled(format!("{glyph}{label}"), style)
         };
-
-        f.render_widget(
-            pick("Feature", self.payload().issue_type == IssueType::Feature),
-            chunks[0],
-        );
-        f.render_widget(
-            pick("Bug", self.payload().issue_type == IssueType::Bug),
-            chunks[1],
-        );
+        let line = Line::from(vec![
+            Span::raw(" "),
+            pick("Feature", !bug),
+            Span::raw("   "),
+            pick("Bug", bug),
+            Span::styled(
+                "   Bug adds Current behavior, Steps to reproduce and the bug label",
+                Style::default().fg(theme.text_muted),
+            ),
+        ]);
+        let block = theme.styled_block("Type  (←/→ f/b)", focused);
+        f.render_widget(Paragraph::new(line).block(block), area);
     }
 
-    fn draw_basic_info(&self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(3)])
-            .split(area);
-        self.draw_field(f, chunks[0], FieldId::Title);
-        self.draw_field(f, chunks[1], FieldId::Overview);
-    }
-
-    fn draw_dor_fields(&self, f: &mut Frame, area: Rect) {
+    fn draw_dor_fields(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let fields = self.step_fields();
         if fields.is_empty() {
             return;
@@ -243,45 +218,8 @@ impl IssueWizardScreen {
             .constraints(constraints)
             .split(area);
         for (i, field) in fields.iter().enumerate() {
-            self.draw_field(f, chunks[i], *field);
+            self.draw_field(f, chunks[i], *field, theme);
         }
-    }
-
-    fn draw_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Preview  (Enter creates on GitHub, Esc revises)", false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let mut lines: Vec<Line> = Vec::new();
-        lines.push(Line::from(Span::styled(
-            self.payload().title.clone(),
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )));
-        let labels = self.render_labels();
-        lines.push(Line::from(vec![
-            Span::styled("Labels: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(labels.join(", "), Style::default().fg(theme.accent_info)),
-        ]));
-        if let Some(m) = self.payload().milestone {
-            lines.push(Line::from(vec![
-                Span::styled("Milestone: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(
-                    format!("#{}", m),
-                    Style::default().fg(theme.accent_identifier),
-                ),
-            ]));
-        }
-        lines.push(Line::from(""));
-        for raw in self
-            .render_body_markdown()
-            .lines()
-            .take(inner.height.saturating_sub(4) as usize)
-        {
-            lines.push(Line::from(raw.to_string()));
-        }
-        f.render_widget(Paragraph::new(lines), inner);
     }
 
     fn draw_creating(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -333,111 +271,16 @@ impl IssueWizardScreen {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "r: retry  Esc: back to Preview",
+                "Esc: back to the create gate (⏎ ⏎ retries)",
                 Style::default().fg(theme.text_secondary),
             )),
         ];
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
-    fn draw_dependencies(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block(
-            "Blocked By  (Space toggles, j/k navigates, Enter advances)",
-            false,
-        );
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        if self.dep_loading() {
-            f.render_widget(
-                Paragraph::new(BrailleSpinner::render(
-                    self.spinner_tick(),
-                    "Loading open issues…",
-                    self.use_nerd_font(),
-                    theme,
-                )),
-                inner,
-            );
-            return;
-        }
-
-        let Some(issues) = self.dep_issues() else {
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    "  Press Enter to continue without dependencies.",
-                    Style::default().fg(theme.text_secondary),
-                )),
-                inner,
-            );
-            return;
-        };
-
-        if issues.is_empty() {
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    "  No open issues found.",
-                    Style::default().fg(theme.text_secondary),
-                )),
-                inner,
-            );
-            return;
-        }
-
-        let lines: Vec<Line> = issues
-            .iter()
-            .enumerate()
-            .take(inner.height as usize)
-            .map(|(i, issue)| {
-                let selected = i == self.dep_selected();
-                let style = selection_style(theme, selected, theme.text_primary);
-                let check = if self.dep_is_checked(issue.number) {
-                    "[x]"
-                } else {
-                    "[ ]"
-                };
-                let labels = if issue.labels.is_empty() {
-                    String::new()
-                } else {
-                    let names: Vec<&str> =
-                        issue.labels.iter().map(|s| s.as_str()).take(3).collect();
-                    format!("  ({})", names.join(", "))
-                };
-                Line::from(vec![
-                    Span::styled("  ", style),
-                    Span::styled(
-                        check.to_string(),
-                        if selected {
-                            style
-                        } else {
-                            style.fg(theme.accent_success)
-                        },
-                    ),
-                    Span::styled(
-                        format!(" #{} ", issue.number),
-                        if selected {
-                            style
-                        } else {
-                            style.fg(theme.accent_identifier)
-                        },
-                    ),
-                    Span::styled(issue.title.clone(), style),
-                    Span::styled(
-                        labels,
-                        if selected {
-                            style
-                        } else {
-                            style.fg(theme.text_secondary)
-                        },
-                    ),
-                ])
-            })
-            .collect();
-        f.render_widget(Paragraph::new(lines), inner);
-    }
-
-    fn draw_field(&self, f: &mut Frame, area: Rect, field: FieldId) {
-        // The textarea owns its own block (set by `refresh_field_blocks`
-        // on the mutable draw entry point) and its own cursor rendering.
+    /// A form field: `field_block` (Thick on focus, `*` on required labels,
+    /// the error on the bottom border once touched) around its textarea.
+    fn draw_field(&self, f: &mut Frame, area: Rect, field: FieldId, theme: &Theme) {
         let step_fields = self.step_fields();
         let Some(idx) = step_fields.iter().position(|f| *f == field) else {
             return;
@@ -445,11 +288,27 @@ impl IssueWizardScreen {
         let Some(ta_field) = self.fields.get(idx) else {
             return;
         };
-        f.render_widget(ta_field.area(), area);
+        let focused = !self.type_focused && self.fields.focus() == idx;
+        let error = self.field_error(field);
+        let block = field_block(form_label(field), focused, error.as_deref(), theme);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(ta_field.area(), inner);
     }
 }
 
-fn selection_style(theme: &Theme, selected: bool, default_fg: Color) -> Style {
+/// Field label with `*` on the required ones.
+fn form_label(field: FieldId) -> &'static str {
+    match field {
+        FieldId::Title => "Title *",
+        FieldId::Overview => "Overview *",
+        FieldId::ExpectedBehavior => "Expected Behavior *",
+        FieldId::AcceptanceCriteria => "Acceptance Criteria *",
+        other => other.label(),
+    }
+}
+
+pub(super) fn selection_style(theme: &Theme, selected: bool, default_fg: Color) -> Style {
     if selected {
         Style::default()
             .fg(theme.selection_fg)
@@ -460,33 +319,78 @@ fn selection_style(theme: &Theme, selected: bool, default_fg: Color) -> Style {
     }
 }
 
-fn issue_footer_hints(step: IssueWizardStep) -> Option<&'static str> {
-    match step {
-        IssueWizardStep::Context => Some("[Enter] start issue contract   [Esc] back"),
-        IssueWizardStep::TypeSelect => {
-            Some("[←/→ h/l] choose Feature or Bug   [Enter] next   [Esc] back")
+/// Shell footer keys for the focused element only (`Screen::footer_hints`).
+pub(super) fn footer_hints(s: &IssueWizardScreen) -> Vec<(&'static str, &'static str)> {
+    use crate::tui::ds::armed::ArmedState;
+    match s.step() {
+        IssueWizardStep::BasicInfo if s.leave_armed() => {
+            vec![("Esc", "close, drop the draft"), ("any key", "keep it")]
         }
-        IssueWizardStep::Dependencies => {
-            Some("[j/k ↑/↓] move   [Space] toggle blocker   [Enter] next   [Esc] back")
+        IssueWizardStep::BasicInfo if s.type_focused => vec![
+            ("←→ f b", "type"),
+            ("Tab", "Overview"),
+            ("Enter", "next"),
+            ("Esc", "close"),
+        ],
+        IssueWizardStep::BasicInfo => vec![
+            ("Tab", "field / type"),
+            ("Shift+Enter", "newline"),
+            ("Enter", "next"),
+            ("Esc", "close"),
+        ],
+        IssueWizardStep::DorFields => vec![
+            ("Tab", "field"),
+            ("Shift+Enter", "newline"),
+            ("Enter", "next"),
+            ("Esc", "back"),
+        ],
+        IssueWizardStep::Dependencies if s.dep_filter_editing() => vec![
+            ("↑↓", "move"),
+            ("Enter", "keep filter"),
+            ("Esc", "clear filter"),
+        ],
+        IssueWizardStep::Dependencies => vec![
+            ("/", "filter"),
+            ("j k", "move"),
+            ("Space", "toggle"),
+            ("Enter", "next"),
+            ("Esc", "back"),
+        ],
+        IssueWizardStep::AiReview if s.improve_candidate().is_some() => vec![
+            ("j k", "section"),
+            ("↑↓", "scroll"),
+            ("a", "accept"),
+            ("d", "keep mine"),
+            ("Enter", "merge accepted"),
+            ("r", "re-run (paid)"),
+            ("Esc", "discard all"),
+        ],
+        IssueWizardStep::AiReview if s.review_error().is_some() || s.improve_error().is_some() => {
+            vec![
+                ("r", "retry (paid AI call)"),
+                ("s", "skip"),
+                ("e", "revise"),
+                ("Esc", "back"),
+            ]
         }
-        IssueWizardStep::AiReview => {
-            Some("[r] revise   [s] skip   [i] improve   [Enter] next   [Esc] back")
+        // While a call runs, `i` and Enter do nothing, so they are not shown.
+        IssueWizardStep::AiReview if s.review_loading() || s.improve_loading() => {
+            vec![("e", "revise"), ("s", "skip"), ("Esc", "back")]
         }
-        IssueWizardStep::Preview => Some("[Enter] create on GitHub   [Esc] revise"),
-        IssueWizardStep::Creating => Some("Creating issue on GitHub…"),
-        IssueWizardStep::Complete => Some("[Enter] create another   [Esc] return to Landing"),
-        IssueWizardStep::Failed => Some("[r] retry   [Esc] back to Preview"),
-        IssueWizardStep::BasicInfo => Some(
-            "[Tab/BackTab] switch Title/Overview   [Shift+Enter] newline in Overview   [Enter] next   [Esc] back",
-        ),
-        IssueWizardStep::DorFields => Some(
-            "[Tab/BackTab] switch DOR fields   [Shift+Enter] newline   [Enter] next   [Esc] back",
-        ),
+        IssueWizardStep::AiReview => vec![
+            ("i", "improve (paid AI call)"),
+            ("e", "revise"),
+            ("s", "skip"),
+            ("Enter", "next"),
+            ("Esc", "back"),
+        ],
+        IssueWizardStep::Preview => match s.create_gate().state() {
+            ArmedState::Blocked(_) => vec![("Enter", "go to the problem"), ("Esc", "back")],
+            ArmedState::Armed(_) => vec![("Enter", "create on GitHub"), ("Esc", "disarm")],
+            _ => vec![("Enter", "arm create"), ("Esc", "back")],
+        },
+        IssueWizardStep::Creating => Vec::new(),
+        IssueWizardStep::Complete => vec![("Enter", "create another"), ("Esc", "Landing")],
+        IssueWizardStep::Failed => vec![("Esc", "back to the gate")],
     }
-}
-
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let x = area.x + area.width.saturating_sub(width) / 2;
-    let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect::new(x, y, width.min(area.width), height.min(area.height))
 }

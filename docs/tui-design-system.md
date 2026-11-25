@@ -612,6 +612,22 @@ Implements `docs/design-system/index.html` §02.24.
 
 Tests: `snapshot_tests/guards.rs` (`bypass_warning`, `budget_gate_block`, `release_notes`, `palette_opens_code_health`), `app/bypass_ctrl_b_tests.rs` (`bypass_warning_always_on_tui`), `app/budget_tests.rs` (`budget_gate_spawn_locked_on_block`), `app/budget_gate_keys_tests.rs`.
 
+### Issue wizard (`screens/issue_wizard/`, #1282)
+
+Implements `docs/design-system/index.html` §02.2 Create issue (Reimagined; Screen components: Type control, Blocked-by picker, Create gate; Poka-yoke; Implementation). First wizard on `WizardFrame::draw_stepped`. Decision: `docs/design-system/decisions.md` (2026-11-24, Issue wizard in five steps).
+
+| Item | For |
+|---|---|
+| `IssueWizardStep::STEPPER` · `stepper_index()` | The five steps `Basics · Details · Blocked by · AI review · Preview`. `Creating`, `Complete`, `Failed` stay states and sit on Preview's stepper slot. Context and TypeSelect are gone; the issue type is the stepper's state slot |
+| Type row (`type_focused`) | One NORMAL-mode stop between Title and Overview on Basics (Tab order Title → Type → Overview): `← f` Feature, `→ b` Bug, and a line on what Bug adds |
+| `validation_errors() -> Vec<(FieldId, Cow<str>)>` · `touched` · `checklist_rows()` | Every error at once: `field_block` borders (touched fields only), the `Draft` checklist (`ds::checklist`, future-step fields `○`), the stepper `✗`, and `try_advance` (⏎ focuses the first invalid field). Required: Title (`util::validate_title`), Overview, Expected Behavior, Acceptance Criteria (`*` on their labels) |
+| `issue_wizard::lint::placeholders(&payload)` | The create gate's lint over the 8 text fields (`[TODO:`); also the checklist row `No [TODO] placeholders` |
+| Create gate (`gate.rs`, `draw_gate.rs`) | `ds::armed::ArmedEnter` + `widgets::armed_bar`: Blocked while `validation_errors()` has an error or a placeholder is left (`lint::total`, the same count as the checklist; ⏎ goes to the first problem), else ⏎ arms and ⏎ within 3 s calls `begin_create`. Esc or any other key disarms; Esc on Failed goes back to the gate (no one-key retry). Clock injected (`set_clock_for_test`) |
+| Blocked-by filter (`deps.rs`, `draw_deps.rs`) | `/` types into a `TextAreaField` (INSERT, via `widgets::input::feed`) that narrows `dep_visible()` by `#number`, title or label; `dep_checked` is never touched, and the `Selected n` chips list every checked issue, filtered out or not. Esc in the filter clears the text, never the selection |
+| `Decision` · `improve_sections.rs` | AI improve per section (`FieldId::ALL` order): `j k` section, `↑↓` scroll inside it (wrapped; `↓ n more rows` when cut), `a` accept, `d` keep mine, ⏎ merges only `Accepted` (undecided keeps your text), `r` re-runs the AI call (paid), each row flags the proposal's `[TODO:` count. Only the 8 text fields merge, so `parse_improve_response`'s trusted seats never move |
+
+Rules: Preview's body is `ds::md_block` (TODO chips). The footer is `Screen::footer_hints` per focused element. Keys are declared once, in the registry IssueWizard block (Help reads it); `keybindings()` holds only `Shift+Enter`. AI review: `i` improve and `r` retry are paid AI calls, `e` revise, `s` skip. Esc on Basics with a typed draft asks first (`LEAVE_WINDOW`, `ds::confirm::WINDOW`). Tests: `screens/issue_wizard/flow_tests.rs` (`issue_create_blocked_by_placeholder`, `issue_create_armed`, `blocked_by_filter_keeps_selection`, `ai_review_per_section_accept`, `issue_create_blocked_by_an_empty_required_field`, `esc_on_basics_with_a_draft_asks_before_closing`, `ai_diff_scrolls_inside_the_focused_section`, `blocked_by_round_trips_through_the_body`), `snapshot_tests/issue_wizard.rs` (`issue_wizard_basics_wide`, `issue_wizard_basics_compact_80x24`).
+
 ### Adapt run: Stop after, This run will, Review (`screens/adapt/`, #1281)
 
 Implements `docs/design-system/index.html` §02.11 (Adapt project: Stop after picker, RunPlan, the Review pause). Decision: `docs/design-system/decisions.md` (2026-11-24, Adapt as a predictable run).

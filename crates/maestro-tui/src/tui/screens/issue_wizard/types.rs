@@ -1,5 +1,6 @@
-/// Issue type the user is creating. Drives conditional fields in the
-/// `DorFields` step (Bug shows extra fields that Feature does not).
+/// Issue type the user is creating, set on the Basics Type row. Drives
+/// conditional fields in the `DorFields` step (Bug shows extra fields that
+/// Feature does not).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IssueType {
     #[default]
@@ -7,16 +8,13 @@ pub enum IssueType {
     Bug,
 }
 
-/// Linear step machine for the Issue Wizard. Order is the displayed order
-/// — `Self::ALL.iter().position(|s| s == self)` gives the step number.
+/// Step machine for the Issue Wizard (§02.2). The five real steps are
+/// [`Self::STEPPER`]; `Creating`, `Complete` and `Failed` are states of the
+/// create gate on Preview, not steps of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IssueWizardStep {
-    /// Brief intro / context for the wizard.
+    /// Title, the Type row (Feature or Bug) and Overview.
     #[default]
-    Context,
-    /// Pick Feature vs Bug.
-    TypeSelect,
-    /// Title + Overview.
     BasicInfo,
     /// Multi-field DOR form.
     DorFields,
@@ -24,7 +22,7 @@ pub enum IssueWizardStep {
     Dependencies,
     /// Optional AI review companion (#296).
     AiReview,
-    /// Markdown preview before submit.
+    /// Markdown preview and the create gate.
     Preview,
     /// Submitting to GitHub.
     Creating,
@@ -35,27 +33,21 @@ pub enum IssueWizardStep {
 }
 
 impl IssueWizardStep {
-    pub const ALL: &'static [Self] = &[
-        Self::Context,
-        Self::TypeSelect,
+    /// The steps the stepper shows, in order.
+    pub const STEPPER: [Self; 5] = [
         Self::BasicInfo,
         Self::DorFields,
         Self::Dependencies,
         Self::AiReview,
         Self::Preview,
-        Self::Creating,
-        Self::Complete,
-        Self::Failed,
     ];
 
     pub const fn label(&self) -> &'static str {
         match self {
-            Self::Context => "Context",
-            Self::TypeSelect => "Type Select",
-            Self::BasicInfo => "Basic Info",
-            Self::DorFields => "DOR Fields",
-            Self::Dependencies => "Dependencies",
-            Self::AiReview => "AI Review",
+            Self::BasicInfo => "Basics",
+            Self::DorFields => "Details",
+            Self::Dependencies => "Blocked by",
+            Self::AiReview => "AI review",
             Self::Preview => "Preview",
             Self::Creating => "Creating",
             Self::Complete => "Complete",
@@ -63,37 +55,29 @@ impl IssueWizardStep {
         }
     }
 
-    /// 1-based step index for the progress indicator.
-    pub fn index(&self) -> usize {
-        Self::ALL
+    /// 0-based position on the stepper. The create states sit on Preview.
+    pub fn stepper_index(&self) -> usize {
+        Self::STEPPER
             .iter()
             .position(|s| s == self)
-            .map(|i| i + 1)
-            .unwrap_or(1)
+            .unwrap_or(Self::STEPPER.len() - 1)
     }
 
-    pub const fn total() -> usize {
-        Self::ALL.len()
-    }
-
-    /// The next step in the linear flow, or `None` if already at the end.
+    /// The next step in the linear flow, or `None` on Preview and after.
     pub fn next(&self) -> Option<Self> {
-        let idx = Self::ALL.iter().position(|s| s == self)?;
-        Self::ALL.get(idx + 1).copied()
+        let idx = Self::STEPPER.iter().position(|s| s == self)?;
+        Self::STEPPER.get(idx + 1).copied()
     }
 
-    /// The previous step, or `None` if already at `Context`.
+    /// The previous step, or `None` on Basics.
     pub fn previous(&self) -> Option<Self> {
-        let idx = Self::ALL.iter().position(|s| s == self)?;
-        if idx == 0 {
-            None
-        } else {
-            Self::ALL.get(idx - 1).copied()
-        }
+        let idx = Self::STEPPER.iter().position(|s| s == self)?;
+        idx.checked_sub(1)
+            .and_then(|i| Self::STEPPER.get(i).copied())
     }
 
     pub fn is_first(&self) -> bool {
-        matches!(self, Self::Context)
+        matches!(self, Self::BasicInfo)
     }
 }
 
