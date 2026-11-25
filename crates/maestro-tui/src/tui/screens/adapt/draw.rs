@@ -19,7 +19,7 @@ pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme:
         AdaptStep::Review => super::draw_run::draw_review(screen, f, area, theme),
         step if step.is_progress() => draw_progress(screen, f, area, theme),
         AdaptStep::Complete => draw_complete(screen, f, area, theme),
-        AdaptStep::Failed => draw_failed(screen, f, area, theme),
+        AdaptStep::Failed => super::draw_failed::draw_failed(screen, f, area, theme),
         _ => {}
     }
 }
@@ -283,31 +283,6 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         .scroll((screen.scroll_offset, 0))
         .alignment(Alignment::Left);
     f.render_widget(paragraph, inner);
-}
-
-fn draw_failed(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = theme
-        .styled_block("Adapt Failed", false)
-        .border_style(Style::default().fg(theme.accent_error));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let mut lines = Vec::new();
-    if let Some(ref error) = screen.error {
-        lines.push(Line::from(Span::styled(
-            format!("Failed during: {:?}", error.phase),
-            Style::default()
-                .fg(theme.accent_error)
-                .add_modifier(Modifier::BOLD),
-        )));
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            sanitize_for_terminal(&error.message),
-            Style::default().fg(theme.text_primary),
-        )));
-    }
-
-    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {

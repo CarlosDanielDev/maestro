@@ -7,7 +7,7 @@ use crate::adapt::types::*;
 use crate::tui::screens::test_helpers::key_event;
 use std::path::Path;
 
-fn screen_in(dir: &Path) -> AdaptScreen {
+pub(crate) fn screen_in(dir: &Path) -> AdaptScreen {
     let mut s = AdaptScreen::new();
     s.results = AdaptResults::default();
     s.loaded_from_cache = false;
@@ -15,7 +15,7 @@ fn screen_in(dir: &Path) -> AdaptScreen {
     s
 }
 
-fn profile(root: &Path) -> ProjectProfile {
+pub(crate) fn profile(root: &Path) -> ProjectProfile {
     ProjectProfile {
         name: "t".into(),
         root: root.to_path_buf(),

@@ -1,4 +1,5 @@
 mod draw;
+mod draw_failed;
 mod draw_run;
 mod stop_after;
 pub mod types;
@@ -49,27 +50,54 @@ impl AdaptScreen {
     }
 
     pub fn with_provider_kind(provider_kind: ProviderKind) -> Self {
-        let config = AdaptWizardConfig::default();
-        let (results, loaded_from_cache) =
-            match AdaptResults::load_cache(std::path::Path::new(&config.path)) {
-                Some(cached) => (cached, true),
-                None => (AdaptResults::default(), false),
-            };
-        Self {
+        let mut screen = Self {
             provider_kind,
             step: AdaptStep::Configure,
-            config,
+            config: AdaptWizardConfig::default(),
             selected_field: 0,
-            results,
+            results: AdaptResults::default(),
             error: None,
             spinner_tick: 0,
             scroll_offset: 0,
             cancelled: false,
-            loaded_from_cache,
+            loaded_from_cache: false,
             pending_clear: false,
             cancel: crate::session::team_runner::CancellationToken::new(),
             review: crate::tui::ds::armed::ArmedEnter::new(),
+        };
+        screen.reload_cache();
+        screen
+    }
+
+    /// The cache of the chosen Project only (#1281): called on open and on
+    /// every Project edit, so a cache from another folder never resumes.
+    fn reload_cache(&mut self) {
+        self.pending_clear = false;
+        match AdaptResults::load_cache(&self.root()) {
+            Some(cached) => {
+                self.results = cached;
+                self.loaded_from_cache = true;
+            }
+            None => {
+                self.results = AdaptResults::default();
+                self.loaded_from_cache = false;
+            }
         }
+    }
+
+    /// A fresh token for a new run (#1281): a token cancelled by an
+    /// earlier Esc must not stop a retry.
+    fn fresh_cancel(&mut self) {
+        self.cancel = crate::session::team_runner::CancellationToken::new();
+    }
+
+    /// A failed materialize (#1281): keep what was written before the
+    /// failure (`PartialMaterialize`) so the Failed screen lists it.
+    pub fn fail_materialize(&mut self, e: anyhow::Error) {
+        if let Some(partial) = e.downcast_ref::<crate::adapt::materializer::PartialMaterialize>() {
+            self.results.materialize = Some(partial.written.clone());
+        }
+        self.set_error(AdaptStep::Materializing, format!("{e}"));
     }
 
     pub fn milestone_label(&self) -> &'static str {
@@ -267,6 +295,7 @@ impl AdaptScreen {
         if let Some(ref error) = self.error {
             self.step = error.phase;
             self.error = None;
+            self.fresh_cancel();
             Some(ScreenAction::StartAdaptPipeline(self.build_adapt_config()))
         } else {
             None
@@ -280,6 +309,7 @@ impl AdaptScreen {
         match code {
             KeyCode::Enter => {
                 if self.review.on_enter(std::time::Instant::now()) == EnterOutcome::Commit {
+                    self.fresh_cancel();
                     self.step = if self.results.scaffold.is_some() {
                         AdaptStep::Materializing
                     } else {
@@ -323,9 +353,12 @@ impl AdaptScreen {
             KeyCode::Left if self.selected_field == 1 => {
                 self.config.stop_after.prev().apply(&mut self.config);
             }
+            // Space never types into Project or Model (a model name has none).
+            KeyCode::Char(' ') => {}
             KeyCode::Backspace => match self.selected_field {
                 0 => {
                     self.config.path.pop();
+                    self.reload_cache();
                 }
                 2 => {
                     self.config.model.pop();
@@ -334,6 +367,7 @@ impl AdaptScreen {
             },
             KeyCode::Char(c) if self.selected_field == 0 => {
                 self.config.path.push(c);
+                self.reload_cache();
             }
             KeyCode::Char(c) if self.selected_field == 2 => {
                 self.config.model.push(c);
@@ -352,17 +386,22 @@ impl AdaptScreen {
                     }
                     self.step = step;
                 }
+                self.fresh_cancel();
                 return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
             }
+            // The clear chord acts only off the text fields (#1281): on
+            // Project or Model, `x` is a letter.
             KeyCode::Delete | KeyCode::Char('x')
-                if self.loaded_from_cache && self.pending_clear =>
+                if self.selected_field == 1 && self.loaded_from_cache && self.pending_clear =>
             {
                 self.results = AdaptResults::default();
                 self.clear_cache();
                 self.loaded_from_cache = false;
                 self.pending_clear = false;
             }
-            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
+            KeyCode::Delete | KeyCode::Char('x')
+                if self.selected_field == 1 && self.loaded_from_cache =>
+            {
                 // Poka-yoke (#9): first press only arms — the wipe needs a second.
                 self.pending_clear = true;
             }
@@ -370,6 +409,16 @@ impl AdaptScreen {
             _ => {}
         }
         ScreenAction::None
+    }
+}
+
+/// Leaving the screen while it writes stops the run after the item in
+/// flight (#1281): the result would have no screen to land on.
+impl Drop for AdaptScreen {
+    fn drop(&mut self) {
+        if matches!(self.step, AdaptStep::Scaffolding | AdaptStep::Materializing) {
+            self.cancel.cancel();
+        }
     }
 }
 
@@ -397,7 +446,8 @@ impl KeymapProvider for AdaptScreen {
                         },
                     },
                 ];
-                if self.loaded_from_cache {
+                // `x` is a letter on Project and Model (#1281).
+                if self.loaded_from_cache && self.selected_field == 1 {
                     action_bindings.push(KeyBinding {
                         key: "x",
                         description: if self.pending_clear {
@@ -553,9 +603,9 @@ impl Screen for AdaptScreen {
 }
 
 #[cfg(test)]
-mod draw_tests;
+mod guard_tests;
 #[cfg(test)]
-mod run_tests;
+pub(crate) mod run_tests;
 
 #[cfg(test)]
 mod tests {
@@ -739,8 +789,13 @@ mod tests {
     #[test]
     fn configure_space_on_path_does_nothing() {
         let mut screen = test_screen();
+        let path = screen.config.path.clone();
         screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
         assert_eq!(screen.config.stop_after, StopAfter::Plan);
+        assert_eq!(screen.config.path, path, "Space never types into Project");
+        screen.selected_field = 2;
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert_eq!(screen.config.model, "sonnet", "nor into Model");
     }
 
     #[test]

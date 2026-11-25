@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/adapt.rs
+expression: t.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" Dashboard › Adapt                                             Esc back  ? help "
+"┏━━━━━━━━━━━━━━━━━━━━━━[ Review · ○ nothing written yet ]━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃Plan · Milestones: 1 · Issues: 2                                              ┃"
+"┃  M0: Foundation                                                              ┃"
+"┃    • feat: setup  [enhancement]                                              ┃"
+"┃    • test: add tests  [testing]  ← feat: setup                               ┃"
+"┃                                                                              ┃"
+"┃Will write                                                                    ┃"
+"┃WRITE LOCALLY                                                                 ┃"
+"┃  .maestro/adapt-cache.json (resume cache)                                    ┃"
+"┃  docs/PRD.md if missing, after Review                                        ┃"
+"┃  .claude/ files, existing never overwritten                                  ┃"
+"┃                                                                              ┃"
+"┃CREATE ON REMOTE                                                              ┃"
+"┃  labels, milestones, issues, tech-debt issue · after ⏎ ⏎ at Review           ┃"
+"┃  not atomic: a failed create stops the run; the result lists what was created┃"
+"┃                                                                              ┃"
+"┃┌────────────────────────────[ Write to GitHub ]─────────────────────────────┐┃"
+"┃│ READY  writes .claude/ files, then 1 milestone(s) and 2 issues on GitHub  │┃"
+"┃│⏎ to arm · nothing written yet                                              │┃"
+"┃└────────────────────────────────────────────────────────────────────────────┘┃"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+" Enter Arm · again writes   j/k Scroll   Esc Disarm · back              ⌃Q quit "

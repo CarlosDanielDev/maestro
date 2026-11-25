@@ -1,7 +1,9 @@
 ---
-source: crates/maestro-tui/src/tui/screens/adapt/draw_tests.rs
+source: crates/maestro-tui/src/tui/snapshot_tests/adapt.rs
 expression: t.backend()
 ---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                                                                                                                   "
+" Dashboard › Adapt                                                                                                                                     Esc back  ? help "
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Adapt project ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌────────────────────────────────[ This run will ]─────────────────────────────────┐"
 "┃ Project: .                                                                      ┃│READ                                                                              │"
 "┃                                                                                  ┃│  local files under .                                                             │"
@@ -40,7 +42,5 @@ expression: t.backend()
 "┃                                                                                  ┃│                                                                                  │"
 "┃                                                                                  ┃│                                                                                  │"
 "┃                                                                                  ┃│                                                                                  │"
-"┃                                                                                  ┃│                                                                                  │"
-"┃                                                                                  ┃│                                                                                  │"
-"┃                                                                                  ┃│                                                                                  │"
 "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────────────────────────────────────────┘"
+" Enter Start dry run   ←→ Stop after   j/k Navigate   Esc Back                                                                                                  ⌃Q quit "

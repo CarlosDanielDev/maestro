@@ -119,12 +119,37 @@ impl PlanMaterializer for RepoMaterializer<'_> {
             return Ok(build_dry_run_result(plan));
         }
 
+        let mut out = MaterializeResult {
+            milestones_created: Vec::new(),
+            issues_created: Vec::new(),
+            issues_skipped: Vec::new(),
+            tech_debt_issue: None,
+            dry_run: false,
+        };
+        match self.write_all(plan, report, &mut out).await {
+            Ok(()) => Ok(out),
+            // #1281: not atomic. A failed create keeps what was written.
+            Err(source) => Err(PartialMaterialize {
+                written: out,
+                source,
+            }
+            .into()),
+        }
+    }
+}
+
+impl RepoMaterializer<'_> {
+    /// The writes, in order; `out` holds every item created so far, also
+    /// when a later create fails.
+    async fn write_all(
+        &self,
+        plan: &AdaptPlan,
+        report: &AdaptReport,
+        out: &mut MaterializeResult,
+    ) -> anyhow::Result<()> {
         // Ensure all labels exist before creating issues (#348)
         self.ensure_labels(plan, report).await?;
 
-        let mut milestones_created = Vec::new();
-        let mut issues_created = Vec::new();
-        let mut issues_skipped: Vec<SkippedIssue> = Vec::new();
         let mut title_to_number: HashMap<String, u64> = HashMap::new();
 
         for milestone in &plan.milestones {
@@ -138,7 +163,7 @@ impl PlanMaterializer for RepoMaterializer<'_> {
             let ms_number = ms_outcome.number();
             let ms_reused = ms_outcome.is_existed();
 
-            milestones_created.push(CreatedMilestone {
+            out.milestones_created.push(CreatedMilestone {
                 number: ms_number,
                 title: milestone.title.clone(),
                 reused: ms_reused,
@@ -166,14 +191,14 @@ impl PlanMaterializer for RepoMaterializer<'_> {
 
                 match outcome {
                     CreateOutcome::Created(_) => {
-                        issues_created.push(CreatedIssue {
+                        out.issues_created.push(CreatedIssue {
                             number: issue_number,
                             title: issue.title.clone(),
                             milestone_number: Some(ms_number),
                         });
                     }
                     CreateOutcome::Existed { .. } => {
-                        issues_skipped.push(SkippedIssue {
+                        out.issues_skipped.push(SkippedIssue {
                             number: issue_number,
                             title: issue.title.clone(),
                             reason: SkipReason::DuplicateTitle,
@@ -184,9 +209,9 @@ impl PlanMaterializer for RepoMaterializer<'_> {
         }
 
         // Generate tech debt catalog issue (#95)
-        let tech_debt_issue = if !report.tech_debt_items.is_empty() && !self.cancel.is_cancelled() {
+        out.tech_debt_issue = if !report.tech_debt_items.is_empty() && !self.cancel.is_cancelled() {
             let body = build_tech_debt_catalog_body(&report.tech_debt_items);
-            let first_ms = milestones_created.first().map(|m| m.number);
+            let first_ms = out.milestones_created.first().map(|m| m.number);
             let outcome = self
                 .provider
                 .create_issue(
@@ -203,7 +228,7 @@ impl PlanMaterializer for RepoMaterializer<'_> {
                     milestone_number: first_ms,
                 }),
                 CreateOutcome::Existed { number, .. } => {
-                    issues_skipped.push(SkippedIssue {
+                    out.issues_skipped.push(SkippedIssue {
                         number,
                         title: "chore: Tech debt catalog".into(),
                         reason: SkipReason::DuplicateTitle,
@@ -214,14 +239,34 @@ impl PlanMaterializer for RepoMaterializer<'_> {
         } else {
             None
         };
+        Ok(())
+    }
+}
 
-        Ok(MaterializeResult {
-            milestones_created,
-            issues_created,
-            issues_skipped,
-            tech_debt_issue,
-            dry_run: false,
-        })
+/// A failed materialize that already wrote some items (#1281). Carried as
+/// the `anyhow::Error`, so callers can `downcast_ref` it to list them.
+#[derive(Debug)]
+pub struct PartialMaterialize {
+    pub written: MaterializeResult,
+    pub source: anyhow::Error,
+}
+
+impl std::fmt::Display for PartialMaterialize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let w = &self.written;
+        write!(
+            f,
+            "{:#} (written before the failure: {} milestones, {} issues)",
+            self.source,
+            w.milestones_created.len(),
+            w.issues_created.len() + usize::from(w.tech_debt_issue.is_some())
+        )
+    }
+}
+
+impl std::error::Error for PartialMaterialize {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
     }
 }
 
@@ -389,6 +434,8 @@ mod tests {
         issue_counter: u64,
         /// Fired by the first `create_issue` (#1281 cancel test).
         cancel_on_create_issue: Option<CancellationToken>,
+        /// The n-th new `create_issue` call fails (#1281 partial test).
+        fail_create_issue_at: Option<usize>,
     }
 
     #[derive(Clone, Default)]
@@ -548,6 +595,9 @@ mod tests {
                 });
             }
 
+            if state.fail_create_issue_at == Some(state.create_issue_calls.len() + 1) {
+                anyhow::bail!("HTTP 502 from the fake provider");
+            }
             if let Some(token) = state.cancel_on_create_issue.take() {
                 token.cancel();
             }
@@ -747,6 +797,36 @@ mod tests {
             result.tech_debt_issue.is_none(),
             "no tech-debt issue after cancel"
         );
+    }
+
+    #[tokio::test]
+    async fn adapt_failed_create_keeps_what_was_written() {
+        let client = FakeProvider::new();
+        client.state.lock().unwrap().fail_create_issue_at = Some(2);
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
+
+        let err = materializer
+            .materialize(&sample_plan(), &sample_report(), false)
+            .await
+            .unwrap_err();
+
+        let partial = err
+            .downcast_ref::<PartialMaterialize>()
+            .expect("a failed create carries what was written");
+        assert_eq!(partial.written.milestones_created.len(), 1);
+        let titles: Vec<_> = partial
+            .written
+            .issues_created
+            .iter()
+            .map(|i| &i.title)
+            .collect();
+        assert_eq!(titles, ["feat: setup"], "the first issue was written");
+        let text = err.to_string();
+        assert!(
+            text.contains("HTTP 502"),
+            "the cause stays in the message: {text}"
+        );
+        assert!(text.contains("1 milestones, 1 issues"), "{text}");
     }
 
     #[tokio::test]

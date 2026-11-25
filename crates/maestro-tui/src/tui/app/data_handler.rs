@@ -497,12 +497,8 @@ impl App {
                         Ok(mat_result) => {
                             screen.complete_materialize(mat_result);
                         }
-                        Err(e) => {
-                            screen.set_error(
-                                crate::tui::screens::adapt::AdaptStep::Materializing,
-                                format!("{}", e),
-                            );
-                        }
+                        // #1281: keeps what was written before the failure.
+                        Err(e) => screen.fail_materialize(e),
                     }
                 }
             }
