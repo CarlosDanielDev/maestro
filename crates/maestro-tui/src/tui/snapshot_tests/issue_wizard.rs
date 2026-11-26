@@ -141,8 +141,11 @@ async fn issue_wizard_ai_review_idle() -> Result<(), Box<dyn std::error::Error>>
     let mut app = crate::tui::make_test_app("issue-wizard-1454");
     app.tui_mode = TuiMode::IssueWizard;
     app.screen_state.issue_wizard_screen = Some(screen);
-    crate::tui::input_handler::handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-        .await;
+    crate::tui::input_handler::handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
     let mut terminal = Terminal::new(TestBackend::new(80, 24))?;
     terminal.draw(|f| crate::tui::ui::draw(f, &mut app))?;
     let text = buffer_text(terminal.backend().buffer());
