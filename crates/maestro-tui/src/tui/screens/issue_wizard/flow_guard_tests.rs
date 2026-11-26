@@ -209,3 +209,61 @@ async fn r_after_a_review_error_queues_exactly_one_review() {
         .apply_ai_review(Ok("critique".into()));
     assert!(wizard(&app).can_begin_improve());
 }
+
+/// #1454: the wizard at AI review with a ready draft, reached through
+/// `handle_key` (⏎ on an empty Blocked-by list), so the step-entry hook runs.
+async fn entered_ai_review() -> App {
+    let mut w = IssueWizardScreen::new();
+    *w.payload_mut() = ready_payload();
+    w.set_step_for_tests(IssueWizardStep::Dependencies);
+    w.begin_dependency_fetch();
+    w.apply_dep_issues(Vec::new());
+    let mut app = app_with(w);
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(wizard(&app).step(), IssueWizardStep::AiReview);
+    app
+}
+
+#[tokio::test]
+async fn entering_ai_review_spends_nothing() {
+    let mut app = entered_ai_review().await;
+    assert_eq!(review_launches(&app), 0, "entering the step sends no call");
+    assert!(!wizard(&app).review_loading());
+    let out = screen_text(&mut app);
+    assert!(out.contains("r runs the review"), "names the key:\n{out}");
+    assert!(out.contains("paid AI call"), "names the cost:\n{out}");
+    assert!(
+        !out.contains("i improve"),
+        "i does nothing before a critique, so it is not shown:\n{out}"
+    );
+
+    // `e` revise and `s` skip still work, and still send nothing.
+    press(&mut app, KeyCode::Char('e')).await;
+    assert_eq!(wizard(&app).step(), IssueWizardStep::BasicInfo);
+    let mut app = entered_ai_review().await;
+    press(&mut app, KeyCode::Char('s')).await;
+    assert_eq!(wizard(&app).step(), IssueWizardStep::Preview);
+    assert_eq!(review_launches(&app), 0, "skip sends no call");
+}
+
+#[tokio::test]
+async fn review_key_queues_one_review() {
+    let mut app = entered_ai_review().await;
+    press(&mut app, KeyCode::Char('r')).await;
+    assert_eq!(review_launches(&app), 1, "r sends one AI review");
+    assert!(wizard(&app).review_loading());
+    let out = screen_text(&mut app);
+    assert!(out.contains("AI is reviewing your issue"), "{out}");
+
+    press(&mut app, KeyCode::Char('r')).await;
+    assert_eq!(review_launches(&app), 1, "r while loading sends nothing");
+
+    app.screen_state
+        .issue_wizard_screen
+        .as_mut()
+        .unwrap()
+        .apply_ai_review(Ok("critique".into()));
+    press(&mut app, KeyCode::Char('r')).await;
+    assert_eq!(review_launches(&app), 1, "r with a critique sends nothing");
+    assert_eq!(wizard(&app).review_text(), Some("critique"));
+}
