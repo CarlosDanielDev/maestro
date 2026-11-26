@@ -30,7 +30,11 @@ impl App {
     /// The dialog for `session_id`. The token is the issue number; a
     /// session with no issue uses the first 8 characters of its id.
     /// What happens to the worktree comes from [`Self::kill_teardown_rows`].
-    fn kill_confirm_with(&self, session_id: uuid::Uuid, uncommitted: Option<usize>) -> TypedConfirm {
+    fn kill_confirm_with(
+        &self,
+        session_id: uuid::Uuid,
+        uncommitted: Option<usize>,
+    ) -> TypedConfirm {
         let short = session_id.to_string()[..8].to_string();
         let session = self.pool.get_session(session_id);
         let label = session

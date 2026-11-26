@@ -114,6 +114,8 @@ async fn kill_confirm_lost_row() {
     }
     let managed = app.pool.get_active_mut(id).expect("promoted");
     managed.worktree_path = Some(worktree.path().to_path_buf());
+    // The promote line carries a wall-clock stamp: keep the frame stable.
+    managed.session.activity_log.clear();
     let _ = handle_key(
         &mut app,
         KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE),

@@ -190,7 +190,10 @@ async fn run_loop_stop_tells_the_truth_about_worktrees() {
 
     chord(&mut app, 'S').await;
     let out = frame(&mut app);
-    assert!(out.contains("gone   its worktree, once it completes"), "{out}");
+    assert!(
+        out.contains("gone   its worktree, once it completes"),
+        "{out}"
+    );
     assert!(out.contains("failed runs' worktrees"), "{out}");
     assert!(!out.contains("lost "), "drain loses nothing:\n{out}");
 
