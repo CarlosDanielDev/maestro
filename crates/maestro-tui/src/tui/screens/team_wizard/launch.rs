@@ -8,7 +8,6 @@ use super::types::{LaunchInputKind, LaunchPhase, LaunchStep};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
 use crate::budget::PreSpawnDecision;
 use crate::orchestration::types::TeamInput;
-use crate::tui::ds::armed::EnterOutcome;
 use crate::tui::ds::money::money;
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
@@ -56,10 +55,7 @@ impl TeamWizardScreen {
             },
             LaunchPhase::Dialog => match code {
                 KeyCode::Enter => return self.launch_dialog_enter(),
-                KeyCode::Esc => {
-                    self.launch.arm.reset();
-                    self.launch_phase = LaunchPhase::Editing;
-                }
+                KeyCode::Esc => self.launch_phase = LaunchPhase::Editing,
                 _ => {}
             },
             LaunchPhase::Editing => return self.handle_launch_step(event, code, modifiers),
@@ -272,46 +268,42 @@ impl TeamWizardScreen {
     fn launch_open_dialog(&mut self) {
         match self.validate_launch_step() {
             Some(e) => self.launch.error = Some(e),
-            None => {
-                self.launch.arm.reset();
-                self.launch_phase = LaunchPhase::Dialog;
-            }
+            None => self.launch_phase = LaunchPhase::Dialog,
         }
     }
 
-    /// Why the dialog cannot launch at all: the pre-spawn gate's projected
-    /// `Block`, the same lock as the shared launch dialog (`check_pre_spawn`).
+    /// Why the dialog cannot launch at all, with the way out: the pre-spawn
+    /// gate's projected `Block` (the shared launch dialog's lock,
+    /// `check_pre_spawn`), or a worst case over the budget left (#1448:
+    /// never launch above it, `Cost::over`).
     pub(super) fn launch_block_reason(&self) -> Option<String> {
-        match self.launch_budget.decision() {
-            PreSpawnDecision::Block {
-                projected_total,
-                limit,
-            } => Some(format!(
-                "over the cap ({} of {})",
+        if let PreSpawnDecision::Block {
+            projected_total,
+            limit,
+        } = self.launch_budget.decision()
+        {
+            return Some(format!(
+                "over the cap ({} of {}) · raise [budget] total_usd in Settings to launch",
                 money(Some(projected_total)),
                 money(Some(limit)),
-            )),
-            _ => None,
+            ));
         }
+        let cost = Cost::of(self.launch.plan.as_ref()?, &self.launch_budget);
+        cost.over().then(|| {
+            format!(
+                "worst case {} is over the {} left · pick fewer issues or raise [budget] total_usd in Settings",
+                money(cost.worst_case),
+                money(cost.left),
+            )
+        })
     }
 
-    /// The worst case is more than the budget left (`Cost::over`).
-    pub(super) fn launch_over_budget(&self) -> bool {
-        (self.launch.plan.as_ref()).is_some_and(|p| Cost::of(p, &self.launch_budget).over())
-    }
-
-    /// Dialog `Enter`: locked on a projected Block; over the budget left it
-    /// is armed (⏎ ⏎ within 3 s, §02.17 "Launch dialog"); else it launches.
+    /// Dialog `Enter`: locked while `launch_block_reason` names a reason
+    /// (no Enter, single or repeated, launches); else one `Enter` launches.
     fn launch_dialog_enter(&mut self) -> ScreenAction {
         if self.launch_block_reason().is_some() {
-            self.launch.error = Some("Over the cap · raise [budget] total_usd in Settings");
             return ScreenAction::None;
         }
-        if self.launch_over_budget() && self.launch.arm.on_enter(self.now()) != EnterOutcome::Commit
-        {
-            return ScreenAction::None;
-        }
-        self.launch.arm.reset();
         self.launch_dispatch()
     }
 

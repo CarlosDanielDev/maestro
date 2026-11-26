@@ -1,7 +1,7 @@
 //! #1290 judge round: blockers come from the real Issues event (each body's
 //! `## Blocked By`), a closed issue is never planned, and the launch dialog
-//! never launches on one `Enter` when the worst case is over the budget
-//! left (and never at all on the pre-spawn gate's projected Block).
+//! never launches on the pre-spawn gate's projected Block (over the budget
+//! left: `launch_tests::team_launch_over_budget_locked`, #1448).
 
 use super::test_helpers::{make_issue_meta, make_test_team};
 use super::types::{LaunchInputKind, LaunchPhase, LaunchStep, TeamLaunchInput, TeamWizardMode};
@@ -17,7 +17,7 @@ use crate::tui::widgets::launch_dialog::LaunchBudget;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 fn team() -> crate::orchestration::team::ResolvedTeam {
     make_test_team(
@@ -184,32 +184,6 @@ fn budget(total_usd: f64, spent: f64) -> LaunchBudget {
 
 fn enter(s: &mut TeamWizardScreen) -> ScreenAction {
     s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal)
-}
-
-#[test]
-fn team_launch_over_budget_needs_two_enters() {
-    let now = Instant::now();
-    // $15.00 worst case, $8.00 left: one Enter only arms.
-    let mut s = dialog(budget(20.0, 12.0), now);
-    assert_eq!(enter(&mut s), ScreenAction::None);
-    assert_eq!(
-        s.launch_phase(),
-        LaunchPhase::Dialog,
-        "one Enter never launches"
-    );
-    assert!(matches!(enter(&mut s), ScreenAction::LaunchTeam { .. }));
-    assert_eq!(s.launch_phase(), LaunchPhase::Executing);
-
-    // A second Enter after the 3 s window only re-arms.
-    let mut s = dialog(budget(20.0, 12.0), now);
-    enter(&mut s);
-    s.set_clock_for_test(now + Duration::from_secs(4));
-    assert_eq!(enter(&mut s), ScreenAction::None);
-    assert_eq!(s.launch_phase(), LaunchPhase::Dialog);
-
-    // Under the budget left: one Enter launches, as before.
-    let mut s = dialog(budget(50.0, 12.0), now);
-    assert!(matches!(enter(&mut s), ScreenAction::LaunchTeam { .. }));
 }
 
 /// The pre-spawn gate's projected Block locks the dialog like the shared one.
