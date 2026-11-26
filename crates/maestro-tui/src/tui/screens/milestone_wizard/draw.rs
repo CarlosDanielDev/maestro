@@ -197,7 +197,8 @@ impl MilestoneWizardScreen {
     }
 
     fn draw_review_step(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = field_block("Proposed issues", true, self.validation_error(), theme);
+        let reason = self.plan_border_reason();
+        let block = field_block("Proposed issues", true, reason.as_deref(), theme);
         let inner = block.inner(area);
         f.render_widget(block, area);
         let Some(plan) = self.generated_plan() else {
@@ -211,6 +212,7 @@ impl MilestoneWizardScreen {
             return;
         };
         let stranded = self.stranded_issues();
+        let repeats = self.duplicate_issues();
         let lines: Vec<Line> = plan
             .issues
             .iter()
@@ -219,7 +221,8 @@ impl MilestoneWizardScreen {
                 let selected = i == self.review_focus();
                 let style = selection_style(theme, selected, theme.text_primary);
                 let needs = stranded.iter().find(|(s, _)| *s == i).map(|(_, d)| d);
-                let mark = if needs.is_some() {
+                let repeat = repeats.iter().any(|(r, _)| *r == i);
+                let mark = if needs.is_some() || repeat {
                     Span::styled(
                         "[!]",
                         if selected {
@@ -255,6 +258,12 @@ impl MilestoneWizardScreen {
                 if let Some(deps) = needs {
                     spans.push(Span::styled(
                         format!("  needs deselected {}", blocker_titles(&plan.issues, deps)),
+                        Style::default().fg(theme.accent_warning),
+                    ));
+                }
+                if repeat {
+                    spans.push(Span::styled(
+                        "  planned twice",
                         Style::default().fg(theme.accent_warning),
                     ));
                 }

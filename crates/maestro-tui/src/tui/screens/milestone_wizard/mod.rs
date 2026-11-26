@@ -696,6 +696,13 @@ impl MilestoneWizardScreen {
             self.review_focus = first;
             return false;
         }
+        // #1455: focus the repeated row, so `x` drops the one marked.
+        if self.step == MilestoneWizardStep::ReviewPlan
+            && let Some(&(repeat, _)) = self.duplicate_issues().first()
+        {
+            self.review_focus = repeat;
+            return false;
+        }
         if self.validation_error().is_some() {
             return false;
         }
