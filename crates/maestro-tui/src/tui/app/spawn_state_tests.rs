@@ -220,8 +220,8 @@ async fn refused_spawn_is_visible() {
 
 /// Judge round: a first turn that fails to start gets no extra spawn
 /// report from this PR (only the turn's own failure surfaces it), and the
-/// chat shows a System turn. On main this path already raises an ERR for
-/// the session error and a WARN "turn failed"; this PR leaves that as is.
+/// chat shows a System turn. #1470 trims that path to one alert; see
+/// `failed_first_turn_raises_one_alert`.
 #[tokio::test]
 async fn failed_first_turn_adds_no_spawn_report() {
     use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedTurn};
@@ -250,5 +250,67 @@ async fn failed_first_turn_adds_no_spawn_report() {
     assert!(
         (managed.session.turns.iter()).any(|t| t.role == TurnRole::System),
         "the failure must show as a System turn in the chat"
+    );
+}
+
+/// #1470: a first turn whose provider fails to start raises one alert
+/// (the WARN "turn failed", which names the cause) and one System turn,
+/// not an extra ERR for the same failure.
+#[tokio::test]
+async fn failed_first_turn_raises_one_alert() {
+    use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedTurn};
+    use crate::session::interaction::TurnRole;
+    use crate::tui::app::interaction_pipeline_tests::{app_with_interaction, pump_session_events};
+    let failing = ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::SpawnFail,
+    };
+    let (mut app, _provider) = app_with_interaction("one-alert-1470", 1470, vec![failing]);
+
+    app.dispatch_interaction_turn(1470, "do the work".into(), "opus".into())
+        .await;
+    pump_session_events(&mut app).await;
+
+    let alerts = app.activity_log.take_alerts();
+    assert_eq!(alerts.len(), 1, "one failure, one alert: {alerts:?}");
+    assert!(
+        alerts[0].message.contains("turn failed")
+            && alerts[0].message.contains("scripted spawn failure"),
+        "the one alert must say what failed: {alerts:?}"
+    );
+    let managed = app.pool.interactive_managed(1470).expect("interaction");
+    let system_turns = (managed.session.turns.iter())
+        .filter(|t| t.role == TurnRole::System)
+        .count();
+    assert_eq!(system_turns, 1, "one System turn in the chat");
+}
+
+/// #1470: a one-shot session whose provider fails to start still raises
+/// its ERR alert.
+#[tokio::test]
+async fn non_interaction_spawn_failure_still_alerts() {
+    use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+    use crate::tui::activity_log::LogLevel;
+    use crate::tui::app::interaction_pipeline_tests::pump_session_events;
+    let mut app = crate::tui::make_test_app("one-shot-fail-1470");
+    let failing = ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::SpawnFail,
+    };
+    app.pool
+        .set_provider(std::sync::Arc::new(ScriptedProvider::new(vec![failing])));
+    let session = fresh_session();
+    let id = session.id;
+
+    app.add_session(session).await.unwrap();
+    pump_session_events(&mut app).await;
+
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Errored), "setup: the spawn failed");
+    let alerts = app.activity_log.take_alerts();
+    assert!(
+        (alerts.iter()).any(|e| e.level == LogLevel::Error
+            && e.message.contains("scripted spawn failure")),
+        "the one-shot spawn failure must still alert: {alerts:?}"
     );
 }

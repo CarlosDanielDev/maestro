@@ -216,16 +216,21 @@ impl App {
                 }
                 StreamEvent::Error { message } => {
                     let desktop_label = label.clone();
-                    self.activity_log.push_simple(
-                        label,
-                        format!("ERROR: {}", message),
-                        LogLevel::Error,
-                    );
+                    let interactive = managed.session.session_mode
+                        == crate::session::types::SessionMode::Interactive;
+                    // #1470: an interaction's error already surfaces once,
+                    // as the "turn failed" line + System turn from
+                    // forward_interactive_stream_event below.
+                    if !(interactive && managed.session.issue_number.is_some()) {
+                        self.activity_log.push_simple(
+                            label,
+                            format!("ERROR: {}", message),
+                            LogLevel::Error,
+                        );
+                    }
                     // Interactive failure stays alive for discuss + retry
                     // (#947, spec §4.3) — same exemption as Completed.
-                    if managed.session.session_mode
-                        != crate::session::types::SessionMode::Interactive
-                    {
+                    if !interactive {
                         self.prompt_history.update_outcome(
                             managed.session.id,
                             crate::state::prompt_history::PromptOutcome::Errored,
