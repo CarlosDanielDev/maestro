@@ -128,6 +128,7 @@ async fn kill_dialog_on_a_clean_worktree_counts_no_files() {
     let out = draw(&mut app);
     assert!(out.contains("lost   the turn in progress"), "{out}");
     assert!(!out.contains("uncommitted"), "{out}");
+    assert!(!out.contains("ignored"), "no ignored file, no row:\n{out}");
     assert!(out.contains("gone   the worktree"), "{out}");
 }
 
@@ -255,7 +256,7 @@ async fn kill_count_times_out() {
         slow.args(["hash-object", "--stdin"])
             .current_dir(worktree)
             .stdin(Stdio::piped());
-        super::count_lines_within(slow, Duration::from_millis(50))
+        super::count_status_within(slow, Duration::from_millis(50))
     });
     assert!(
         started.elapsed() < Duration::from_secs(5),
@@ -270,7 +271,9 @@ async fn kill_count_times_out() {
 }
 
 /// #1471: teardown deletes git-ignored files too (a local secrets file,
-/// an ignored folder), so the lost row counts them, one per file.
+/// an ignored folder). They get their own row, a folder counted once, so
+/// build output never reads as lost work; the untracked files are still
+/// counted one per file.
 #[tokio::test]
 async fn kill_count_includes_ignored_files() {
     let repo = repo();
@@ -279,15 +282,22 @@ async fn kill_count_includes_ignored_files() {
     assert!(git(&worktree, &["add", ".gitignore"]));
     assert!(git(&worktree, &["commit", "-q", "-m", "ignore"]));
     std::fs::write(worktree.join("secrets.local"), "token").unwrap();
-    std::fs::create_dir(worktree.join("cache")).unwrap();
+    std::fs::create_dir_all(worktree.join("cache/deep")).unwrap();
     std::fs::write(worktree.join("cache/a"), "a").unwrap();
-    std::fs::write(worktree.join("cache/b"), "b").unwrap();
+    std::fs::write(worktree.join("cache/deep/b"), "b").unwrap();
+    std::fs::create_dir(worktree.join("notes")).unwrap();
+    std::fs::write(worktree.join("notes/n.txt"), "n").unwrap();
+    std::fs::write(worktree.join("work.txt"), "w").unwrap();
 
     press(&mut app, KeyCode::Char('X')).await;
     assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     let out = draw(&mut app);
     assert!(
-        out.contains("lost   3 uncommitted files, the turn in progress"),
-        "the ignored files are listed as lost:\n{out}"
+        out.contains("lost   2 uncommitted files, the turn in progress"),
+        "untracked files count one per file, ignored ones not among them:\n{out}"
+    );
+    assert!(
+        out.contains("also   2 ignored files or folders, deleted"),
+        "the ignored file and the ignored folder are listed apart:\n{out}"
     );
 }

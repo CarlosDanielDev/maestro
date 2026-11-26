@@ -722,11 +722,11 @@ first. One entry per decision.
 - **Differs from the target:** three crumb bars drawn by tests that press keys before any draw read `Dashboard › …` instead of `Overview › …` (at runtime the first draw already made it Dashboard). From Home, `⏎` on a Needs-you session row now opens the Dashboard on Ops; before, the alias kept the last Dashboard view, where the row might not be shown.
 - **Source:** #1294.
 
-## 2026-11-26 — The Kill dialog's git count has a timeout and counts ignored files
+## 2026-11-26 — The Kill dialog's git count has a timeout and lists ignored files apart
 
-- **What:** the uncommitted count in the Kill dialog (`X`) and Stop › Kill is now `git --no-optional-locks status --porcelain --untracked-files=all --ignored`, one per line, so git-ignored files (a local secrets file, each file in an ignored folder) are counted as lost. Git gets 500 ms; past that it is killed and the row reads `lost   uncommitted files (count unknown), turn in progress`, as for a worktree git cannot read. The row text is unchanged.
-- **Why:** #1471. The count ran with no timeout in the key handler, so a stuck git froze the TUI; teardown (`git worktree remove --force`) deletes ignored files, but the row did not count them.
+- **What:** the count in the Kill dialog (`X`) and Stop › Kill is now `git --no-optional-locks status --porcelain --untracked-files=all --ignored=matching`. Changed and untracked files stay in `lost   N uncommitted files, the turn in progress` (one per file). Git-ignored files get their own row, `also   M ignored files or folders, deleted`, shown only when M > 0; an ignored folder (`target/`, `node_modules/`) counts once. Git gets 500 ms; past that it is killed and the lost row reads `lost   uncommitted files (count unknown), turn in progress`, as for a worktree git cannot read (no `also` row then).
+- **Why:** #1471. The count ran with no timeout in the key handler, so a stuck git froze the TUI; teardown (`git worktree remove --force`) deletes ignored files, but no row said so.
 - **Section:** `§02.1` Dashboard kill dialog (`dashboard.killDialog`) and `§02.22` Run loop ("Stop the run?").
-- **ADR (one count, row text kept):** ignored files join the one "uncommitted files" count, one per file. Rejected: a separate `N ignored` phrase (two counts do not fit the 53 value columns of `ds::confirm` at 80x24), and `--ignored=matching` (counts an ignored folder as one file: an undercount on a destructive action). A worktree with a big ignored folder (for example `target/`) may pass the timeout and read "count unknown": that still warns and never reads as nothing lost.
-- **Differs from the target:** nothing new; the target's kill dialog has no file count.
+- **ADR (a separate row, folders counted once):** a worktree with a cargo build holds tens of thousands of ignored files; adding them to the uncommitted count reads "lost 24,000 files", true but scary and useless. A separate `also` row says they go without calling build output lost work. Rejected: one combined count (`--ignored` with `-uall` lists every file in `target/`), and `--ignored` without `-uall` (it also folds untracked folders, so the uncommitted count would drop).
+- **Differs from the target:** the target's kill dialog has no file count and no ignored row.
 - **Source:** #1471.

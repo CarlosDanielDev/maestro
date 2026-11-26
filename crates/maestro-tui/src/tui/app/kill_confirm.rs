@@ -1,7 +1,7 @@
 //! The kill dialog (#1261, design §05 "Killing the wrong agent"): type the
 //! session's issue number before `⏎` kills it.
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -34,7 +34,7 @@ impl App {
     fn open_kill_confirm_counting(
         &mut self,
         session_id: uuid::Uuid,
-        count: impl FnOnce(&Path) -> Option<usize>,
+        count: impl FnOnce(&Path) -> Option<LostFiles>,
     ) {
         if let Some(status) = self.unkillable_status(session_id) {
             let label = (self.pool.get_session(session_id))
@@ -66,7 +66,7 @@ impl App {
     fn kill_confirm_with(
         &self,
         session_id: uuid::Uuid,
-        uncommitted: Option<usize>,
+        uncommitted: Option<LostFiles>,
         unpushed: Option<usize>,
     ) -> TypedConfirm {
         let short = session_id.to_string()[..8].to_string();
@@ -111,7 +111,7 @@ impl App {
     pub(crate) fn kill_teardown_rows(
         &self,
         session_id: uuid::Uuid,
-        uncommitted: Option<usize>,
+        uncommitted: Option<LostFiles>,
         unpushed: Option<usize>,
     ) -> Vec<(String, String)> {
         if let Some(status) = self.unkillable_status(session_id) {
@@ -147,19 +147,27 @@ impl App {
                 ]
             }
         };
-        let lost = match uncommitted {
+        let lost = match uncommitted.map(|l| l.uncommitted) {
             Some(0) => "the turn in progress".to_string(),
             Some(1) => "1 uncommitted file, the turn in progress".to_string(),
             Some(n) => format!("{n} uncommitted files, the turn in progress"),
             None => "uncommitted files (count unknown), turn in progress".to_string(),
         };
         rows.push(("lost".into(), lost));
+        // #1471: teardown deletes git-ignored files too. Their own row, so
+        // build output (`target/`, one entry per folder) never reads as
+        // lost work.
+        match uncommitted.map(|l| l.ignored) {
+            None | Some(0) => {}
+            Some(1) => rows.push(("also".into(), "1 ignored file or folder, deleted".into())),
+            Some(n) => rows.push(("also".into(), format!("{n} ignored files or folders, deleted"))),
+        }
         rows
     }
 
-    /// How many uncommitted files Kill throws away in `session_id`'s
+    /// The uncommitted and ignored files Kill throws away in `session_id`'s
     /// worktree. Runs git: call it once, when a dialog opens.
-    pub(crate) fn uncommitted_files(&self, session_id: uuid::Uuid) -> Option<usize> {
+    pub(crate) fn uncommitted_files(&self, session_id: uuid::Uuid) -> Option<LostFiles> {
         count_uncommitted(self.torn_down_worktree(session_id)?)
     }
 
@@ -191,18 +199,26 @@ impl App {
     }
 }
 
-/// One per file teardown deletes that no commit holds: changed, untracked
-/// and, #1471, git-ignored (`--ignored` with `--untracked-files=all` lists
-/// each file in an ignored folder). `None` when git cannot tell (the path
-/// is gone, not a repo) or does not answer in [`GIT_COUNT_TIMEOUT`]: the
-/// dialog says unknown.
-fn count_uncommitted(worktree: &Path) -> Option<usize> {
-    count_lines_within(git_status(worktree), GIT_COUNT_TIMEOUT)
+/// What teardown deletes that no commit holds, one per `git status` line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LostFiles {
+    /// Changed and untracked files, one per file.
+    pub(crate) uncommitted: usize,
+    /// #1471: git-ignored files, an ignored folder counted once.
+    pub(crate) ignored: usize,
+}
+
+/// `None` when git cannot tell (the path is gone, not a repo) or does not
+/// answer in [`GIT_COUNT_TIMEOUT`]: the dialog says unknown.
+fn count_uncommitted(worktree: &Path) -> Option<LostFiles> {
+    count_status_within(git_status(worktree), GIT_COUNT_TIMEOUT)
 }
 
 /// How long the dialog waits for git before it says "count unknown".
 const GIT_COUNT_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// `--untracked-files=all` lists each untracked file; `--ignored=matching`
+/// lists an ignored folder (`target/`) as one `!!` line, not its files.
 /// `--no-optional-locks`: a count must not take `index.lock`, so a git
 /// killed at the timeout leaves no lock behind for teardown to trip on.
 fn git_status(worktree: &Path) -> Command {
@@ -212,43 +228,45 @@ fn git_status(worktree: &Path) -> Command {
         "status",
         "--porcelain",
         "--untracked-files=all",
-        "--ignored",
+        "--ignored=matching",
     ])
     .current_dir(worktree)
     .stdin(Stdio::null());
     git
 }
 
-/// The lines `command` prints, when it exits with success within
-/// `timeout`. Otherwise `None`, and a command still running is killed:
-/// the UI never waits longer than `timeout`. The output is counted as it
-/// streams, never stored, so a huge listing costs no memory.
-fn count_lines_within(mut command: Command, timeout: Duration) -> Option<usize> {
+/// The `git status --porcelain` lines `command` prints, when it exits with
+/// success within `timeout`. Otherwise `None`, and a command still running
+/// is killed: the UI never waits longer than `timeout`. The output is
+/// counted as it streams, never stored whole.
+fn count_status_within(mut command: Command, timeout: Duration) -> Option<LostFiles> {
     let mut child = (command.stdout(Stdio::piped()).stderr(Stdio::null()))
         .spawn()
         .ok()?;
     let stdout = child.stdout.take();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(stdout.and_then(count_newlines));
+        let _ = tx.send(stdout.and_then(count_status_lines));
     });
-    let lines = rx.recv_timeout(timeout).ok().flatten();
-    if lines.is_none() {
+    let lost = rx.recv_timeout(timeout).ok().flatten();
+    if lost.is_none() {
         let _ = child.kill();
     }
     let status = child.wait().ok()?;
-    status.success().then_some(lines).flatten()
+    status.success().then_some(lost).flatten()
 }
 
-fn count_newlines(mut out: impl Read) -> Option<usize> {
-    let mut buf = [0u8; 8192];
-    let mut lines = 0;
-    loop {
-        match out.read(&mut buf) {
-            Ok(0) => return Some(lines),
-            Ok(n) => lines += buf[..n].iter().filter(|&&b| b == b'\n').count(),
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(_) => return None,
+fn count_status_lines(out: impl Read) -> Option<LostFiles> {
+    let mut lost = LostFiles {
+        uncommitted: 0,
+        ignored: 0,
+    };
+    for line in BufReader::new(out).split(b'\n') {
+        if line.ok()?.starts_with(b"!! ") {
+            lost.ignored += 1;
+        } else {
+            lost.uncommitted += 1;
         }
     }
+    Some(lost)
 }
