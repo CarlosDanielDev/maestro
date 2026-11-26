@@ -1,8 +1,10 @@
 //! The kill dialog (#1261, design §05 "Killing the wrong agent"): type the
 //! session's issue number before `⏎` kills it.
 
+use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use super::App;
@@ -189,8 +191,11 @@ impl App {
     }
 }
 
-/// One per `git status --porcelain --untracked-files=all` line. `None` when
-/// git cannot tell (the path is gone, not a repo): the dialog says unknown.
+/// One per file teardown deletes that no commit holds: changed, untracked
+/// and, #1471, git-ignored (`--ignored` with `--untracked-files=all` lists
+/// each file in an ignored folder). `None` when git cannot tell (the path
+/// is gone, not a repo) or does not answer in [`GIT_COUNT_TIMEOUT`]: the
+/// dialog says unknown.
 fn count_uncommitted(worktree: &Path) -> Option<usize> {
     count_lines_within(git_status(worktree), GIT_COUNT_TIMEOUT)
 }
@@ -198,17 +203,52 @@ fn count_uncommitted(worktree: &Path) -> Option<usize> {
 /// How long the dialog waits for git before it says "count unknown".
 const GIT_COUNT_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// `--no-optional-locks`: a count must not take `index.lock`, so a git
+/// killed at the timeout leaves no lock behind for teardown to trip on.
 fn git_status(worktree: &Path) -> Command {
     let mut git = Command::new("git");
-    git.args(["status", "--porcelain", "--untracked-files=all"])
-        .current_dir(worktree)
-        .stdin(Stdio::null());
+    git.args([
+        "--no-optional-locks",
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--ignored",
+    ])
+    .current_dir(worktree)
+    .stdin(Stdio::null());
     git
 }
 
-fn count_lines_within(mut command: Command, _timeout: Duration) -> Option<usize> {
-    let out = command.output().ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).lines().count())
+/// The lines `command` prints, when it exits with success within
+/// `timeout`. Otherwise `None`, and a command still running is killed:
+/// the UI never waits longer than `timeout`. The output is counted as it
+/// streams, never stored, so a huge listing costs no memory.
+fn count_lines_within(mut command: Command, timeout: Duration) -> Option<usize> {
+    let mut child = (command.stdout(Stdio::piped()).stderr(Stdio::null()))
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(stdout.and_then(count_newlines));
+    });
+    let lines = rx.recv_timeout(timeout).ok().flatten();
+    if lines.is_none() {
+        let _ = child.kill();
+    }
+    let status = child.wait().ok()?;
+    status.success().then_some(lines).flatten()
+}
+
+fn count_newlines(mut out: impl Read) -> Option<usize> {
+    let mut buf = [0u8; 8192];
+    let mut lines = 0;
+    loop {
+        match out.read(&mut buf) {
+            Ok(0) => return Some(lines),
+            Ok(n) => lines += buf[..n].iter().filter(|&&b| b == b'\n').count(),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
+        }
+    }
 }

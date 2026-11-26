@@ -721,3 +721,12 @@ first. One entry per decision.
 - **ADR (remove now vs after one release):** remove now. Nothing saves a `TuiMode` (the nav stack lives in memory and no state or config file names a mode), and no user-visible key or label named an alias, so a release of grace protects nothing; the only saved field tied to an old mode, `[views] agent_graph_enabled`, still loads and still gates Deps › files (`legacy_mode_state_loads`). Rejected: waiting one release (the issue's recommendation), because it keeps dead code with no user it protects.
 - **Differs from the target:** three crumb bars drawn by tests that press keys before any draw read `Dashboard › …` instead of `Overview › …` (at runtime the first draw already made it Dashboard). From Home, `⏎` on a Needs-you session row now opens the Dashboard on Ops; before, the alias kept the last Dashboard view, where the row might not be shown.
 - **Source:** #1294.
+
+## 2026-11-26 — The Kill dialog's git count has a timeout and counts ignored files
+
+- **What:** the uncommitted count in the Kill dialog (`X`) and Stop › Kill is now `git --no-optional-locks status --porcelain --untracked-files=all --ignored`, one per line, so git-ignored files (a local secrets file, each file in an ignored folder) are counted as lost. Git gets 500 ms; past that it is killed and the row reads `lost   uncommitted files (count unknown), turn in progress`, as for a worktree git cannot read. The row text is unchanged.
+- **Why:** #1471. The count ran with no timeout in the key handler, so a stuck git froze the TUI; teardown (`git worktree remove --force`) deletes ignored files, but the row did not count them.
+- **Section:** `§02.1` Dashboard kill dialog (`dashboard.killDialog`) and `§02.22` Run loop ("Stop the run?").
+- **ADR (one count, row text kept):** ignored files join the one "uncommitted files" count, one per file. Rejected: a separate `N ignored` phrase (two counts do not fit the 53 value columns of `ds::confirm` at 80x24), and `--ignored=matching` (counts an ignored folder as one file: an undercount on a destructive action). A worktree with a big ignored folder (for example `target/`) may pass the timeout and read "count unknown": that still warns and never reads as nothing lost.
+- **Differs from the target:** nothing new; the target's kill dialog has no file count.
+- **Source:** #1471.
