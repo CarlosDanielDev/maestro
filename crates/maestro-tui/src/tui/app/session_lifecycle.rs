@@ -69,11 +69,7 @@ impl App {
                     LogLevel::Info,
                 );
                 if let Err(e) = managed.spawn(tx.clone()).await {
-                    self.activity_log.push_simple(
-                        session_label,
-                        format!("Spawn failed: {}", e),
-                        LogLevel::Error,
-                    );
+                    self.report_spawn_failure(session_label, &e);
                 } else {
                     self.activity_log.push_simple(
                         session_label,
