@@ -58,20 +58,32 @@ pub struct StopDialog {
     not_started: usize,
     /// The most the running sessions can still cost (`None`: no cap).
     most: Option<f64>,
+    /// What Kill does to the running session's work (#1456,
+    /// `App::kill_teardown_rows`): empty while it has no session yet.
+    kill_rows: Vec<(String, String)>,
     pub confirm: TypedConfirm,
 }
 
 impl StopDialog {
     pub fn new(running: usize, starting: bool, not_started: usize, most: Option<f64>) -> Self {
-        let confirm = Self::confirm(false, running, starting, not_started, most);
-        Self {
+        let mut dialog = Self {
             kill: false,
             running,
             starting,
             not_started,
             most,
-            confirm,
-        }
+            kill_rows: Vec::new(),
+            confirm: TypedConfirm::new("", "", "", vec![]),
+        };
+        dialog.confirm = dialog.confirm();
+        dialog
+    }
+
+    /// The dialog with what Kill does to the running session's work.
+    pub fn with_kill_rows(mut self, kill_rows: Vec<(String, String)>) -> Self {
+        self.kill_rows = kill_rows;
+        self.confirm = self.confirm();
+        self
     }
 
     /// `↑↓`: switch between drain and kill. Kill needs something running.
@@ -81,23 +93,12 @@ impl StopDialog {
         let kill = !self.kill && self.running > 0;
         if kill != self.kill {
             self.kill = kill;
-            self.confirm = Self::confirm(
-                kill,
-                self.running,
-                self.starting,
-                self.not_started,
-                self.most,
-            );
+            self.confirm = self.confirm();
         }
     }
 
-    fn confirm(
-        kill: bool,
-        running: usize,
-        starting: bool,
-        not_started: usize,
-        most: Option<f64>,
-    ) -> TypedConfirm {
+    fn confirm(&self) -> TypedConfirm {
+        let (kill, running, not_started) = (self.kill, self.running, self.not_started);
         let mark = |on: bool| if on { "▸ ●" } else { "  ○" };
         let mut rows = vec![
             (
@@ -106,7 +107,7 @@ impl StopDialog {
             ),
             (
                 String::new(),
-                if starting {
+                if self.starting {
                     format!("{} Kill the {running} starting: it never runs", mark(kill))
                 } else if running > 0 {
                     format!("{} Kill the {running} running now (as X does)", mark(kill))
@@ -119,16 +120,27 @@ impl StopDialog {
                 "nothing new starts · ↑↓ picks".to_string(),
             ),
         ];
-        if let Some(m) = most.filter(|_| !kill) {
+        if let Some(m) = self.most.filter(|_| !kill) {
             rows.push((
                 "cost".to_string(),
                 format!("at most {} more", money(Some(m))),
             ));
         }
+        // #1456: say what the teardown does. `pool.finalize` deletes a
+        // completed or killed session's worktree and keeps the worktree of
+        // a FailedGates or Errored one.
+        if kill {
+            rows.extend(self.kill_rows.iter().cloned());
+        } else if running > 0 {
+            rows.push((
+                "gone".to_string(),
+                "its worktree, once it completes".to_string(),
+            ));
+        }
         rows.extend([
             (
                 "kept".to_string(),
-                "opened PRs, labels already written, worktrees".to_string(),
+                "opened PRs, labels written, failed runs' worktrees".to_string(),
             ),
             (
                 "open".to_string(),

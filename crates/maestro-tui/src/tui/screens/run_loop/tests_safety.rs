@@ -169,3 +169,39 @@ async fn run_loop_hold_blocks_auto_retry() {
         assert_eq!(attempts, usize::from(!held), "held = {held}");
     }
 }
+
+/// #1456: "Stop the run?" says what each choice does to the running
+/// session's worktree. Drain deletes it once it completes; Kill deletes it
+/// now (the same rows as `X`), with its uncommitted files lost.
+#[tokio::test]
+async fn run_loop_stop_tells_the_truth_about_worktrees() {
+    let mut app = queue_app(&[5, 6]);
+    let id = run_item(&mut app, 5, SessionStatus::Running, 0.42);
+    let worktree = tempfile::tempdir().unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(worktree.path())
+        .status()
+        .expect("git must be on PATH");
+    assert!(init.success());
+    std::fs::write(worktree.path().join("a.txt"), "a").unwrap();
+    std::fs::write(worktree.path().join("b.txt"), "b").unwrap();
+    app.pool.get_active_mut(id).unwrap().worktree_path = Some(worktree.path().to_path_buf());
+
+    chord(&mut app, 'S').await;
+    let out = frame(&mut app);
+    assert!(out.contains("gone   its worktree, once it completes"), "{out}");
+    assert!(out.contains("failed runs' worktrees"), "{out}");
+    assert!(!out.contains("lost "), "drain loses nothing:\n{out}");
+
+    key(&mut app, KeyCode::Down).await;
+    let out = frame(&mut app);
+    assert!(
+        out.contains("gone   the worktree and branch maestro/issue-5"),
+        "{out}"
+    );
+    assert!(
+        out.contains("lost   2 uncommitted files, the turn in progress"),
+        "{out}"
+    );
+}

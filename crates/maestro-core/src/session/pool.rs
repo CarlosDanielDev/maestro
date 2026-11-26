@@ -460,6 +460,11 @@ impl SessionPool {
             .or_else(|| self.queue.iter().find(|s| s.id == session_id))
     }
 
+    /// Read access to a managed session by ID (active only).
+    pub fn get_active(&self, session_id: Uuid) -> Option<&ManagedSession> {
+        self.active.iter().find(|m| m.session.id == session_id)
+    }
+
     /// Mutable access to a managed session by ID (active only).
     pub fn get_active_mut(&mut self, session_id: Uuid) -> Option<&mut ManagedSession> {
         self.active.iter_mut().find(|m| m.session.id == session_id)
