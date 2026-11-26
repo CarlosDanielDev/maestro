@@ -112,7 +112,7 @@ fn open_stop(app: &mut App) {
         && running_id.is_none();
     // Counted once, here: git never runs per frame.
     let kill_rows = running_id.map_or_else(Vec::new, |id| {
-        app.kill_teardown_rows(id, app.uncommitted_files(id))
+        app.kill_teardown_rows(id, app.uncommitted_files(id), app.unpushed_commits(id))
     });
     let dialog = StopDialog::new(view.running, starting, view.not_started, most);
     app.screen_state.run_loop.stop = Some(dialog.with_kill_rows(kill_rows));

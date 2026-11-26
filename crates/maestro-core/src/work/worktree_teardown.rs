@@ -18,6 +18,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::unique_commits::unique_commit_count;
+
 /// Typed failure modes for [`wipe_worktree`]. No path here ever panics; every
 /// fallible step maps to one of these variants.
 #[derive(Debug, thiserror::Error)]
@@ -61,6 +63,18 @@ pub fn wipe_worktree(
     branch: &str,
     worktree_root: &Path,
 ) -> Result<(), TeardownError> {
+    wipe(issue_number, path, branch, worktree_root, false)
+}
+
+/// [`wipe_worktree`], keeping `branch` when `keep_unpushed` and it holds
+/// unpushed commits (#1469, `wipe_worktree_keeping_unpushed`).
+pub(super) fn wipe(
+    issue_number: u64,
+    path: &Path,
+    branch: &str,
+    worktree_root: &Path,
+    keep_unpushed: bool,
+) -> Result<(), TeardownError> {
     // Lifecycle span (#742): every git call below runs inside it, and the
     // outcome is recorded before return.
     let span = tracing::info_span!(
@@ -86,12 +100,12 @@ pub fn wipe_worktree(
             // Path already gone (idempotent re-entry). Still attempt the branch
             // delete — it may have survived a partial earlier teardown.
             tracing::warn!(issue_number, path = %path.display(), "worktree path already absent; skipping remove");
-            run_git_branch_delete(worktree_root, branch, true)?;
+            delete_branch(worktree_root, branch, keep_unpushed)?;
             Ok(())
         }
         Some(canon_path) => {
             run_git_worktree_remove(worktree_root, &canon_path)?;
-            run_git_branch_delete(worktree_root, branch, true)?;
+            delete_branch(worktree_root, branch, keep_unpushed)?;
             if canon_path.exists() {
                 return Err(TeardownError::PathStillExists(canon_path));
             }
@@ -191,6 +205,16 @@ fn run_git_worktree_remove(repo_dir: &Path, path: &Path) -> Result<(), TeardownE
         stderr: stderr.into_owned(),
         status: output.status.code().unwrap_or(-1),
     })
+}
+
+/// Force-delete `branch`; with `keep`, only when it holds no
+/// commit another ref lacks (#1469): an uncountable branch stays too.
+fn delete_branch(repo_dir: &Path, branch: &str, keep: bool) -> Result<(), TeardownError> {
+    if keep && unique_commit_count(repo_dir, branch) != Some(0) {
+        tracing::info!(branch, "branch holds unpushed commits; keeping it");
+        return Ok(());
+    }
+    run_git_branch_delete(repo_dir, branch, true)
 }
 
 /// `git branch -D|-d <branch>`, run from `repo_dir`. Idempotent: a

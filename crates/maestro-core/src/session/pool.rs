@@ -801,6 +801,10 @@ pub fn session_slug(session: &Session) -> String {
 }
 
 #[cfg(test)]
+#[path = "pool_teardown_tests.rs"]
+mod teardown_tests;
+
+#[cfg(test)]
 pub(in crate::session) mod tests {
     use super::*;
     use crate::session::worktree::MockWorktreeManager;

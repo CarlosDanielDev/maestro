@@ -113,7 +113,7 @@ async fn kill_dialog_tells_the_truth_about_worktrees() {
             repo.path(),
             &["rev-parse", "--verify", "-q", "maestro/issue-1456"]
         ),
-        "the local branch is deleted"
+        "the local branch, with no commit of its own, is deleted"
     );
 }
 
@@ -146,6 +146,52 @@ async fn kill_dialog_with_an_unreadable_worktree_says_unknown() {
         "{out}"
     );
     assert!(out.contains("gone   the worktree"), "{out}");
+    // #1469: git cannot count the unpushed commits either, and teardown
+    // keeps a branch it cannot count: never "the branch goes".
+    assert!(!out.contains("and branch"), "{out}");
+    assert!(
+        out.contains("kept   branch maestro/issue-1458 if it has unpushed commits"),
+        "{out}"
+    );
+}
+
+/// #1469: a session that committed but never pushed. The dialog says the
+/// worktree goes and the branch is kept, and the real teardown agrees.
+#[tokio::test]
+async fn kill_dialog_keeps_a_branch_with_unpushed_commits() {
+    let repo = repo();
+    let (mut app, _id, worktree) = running_in(repo.path(), 1461);
+    assert!(git(
+        &worktree,
+        &["commit", "-q", "--allow-empty", "-m", "work"]
+    ));
+
+    press(&mut app, KeyCode::Char('X')).await;
+    let out = draw(&mut app);
+    assert!(
+        !out.contains("and branch"),
+        "the branch is not deleted:\n{out}"
+    );
+    assert!(out.contains("gone   the worktree"), "{out}");
+    assert!(
+        out.contains("kept   branch maestro/issue-1461, 1 unpushed commit"),
+        "the dialog says the branch and its commit stay:\n{out}"
+    );
+
+    for c in "1461".chars() {
+        press(&mut app, KeyCode::Char(c)).await;
+    }
+    press(&mut app, KeyCode::Enter).await;
+    app.check_completions().await.unwrap();
+
+    assert!(!worktree.exists(), "the worktree is deleted");
+    assert!(
+        git(
+            repo.path(),
+            &["rev-parse", "--verify", "-q", "maestro/issue-1461"]
+        ),
+        "the branch with the unpushed commit is kept"
+    );
 }
 
 /// Judge (#1468): an interaction whose worktree failed runs in `.`, the
