@@ -310,11 +310,15 @@ async fn non_interaction_spawn_failure_still_alerts() {
     pump_session_events(&mut app).await;
 
     let status = app.pool.get_session(id).map(|s| s.status);
-    assert_eq!(status, Some(SessionStatus::Errored), "setup: the spawn failed");
+    assert_eq!(
+        status,
+        Some(SessionStatus::Errored),
+        "setup: the spawn failed"
+    );
     let alerts = app.activity_log.take_alerts();
     assert!(
-        (alerts.iter()).any(|e| e.level == LogLevel::Error
-            && e.message.contains("scripted spawn failure")),
+        (alerts.iter())
+            .any(|e| e.level == LogLevel::Error && e.message.contains("scripted spawn failure")),
         "the one-shot spawn failure must still alert: {alerts:?}"
     );
 }
