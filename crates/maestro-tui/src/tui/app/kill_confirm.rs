@@ -95,7 +95,10 @@ impl App {
         uncommitted: Option<usize>,
     ) -> Vec<(String, String)> {
         if let Some(status) = self.unkillable_status(session_id) {
-            let text = format!("it is {}: Kill leaves it as it is", status.label().to_lowercase());
+            let text = format!(
+                "it is {}: Kill leaves it as it is",
+                status.label().to_lowercase()
+            );
             return vec![("skips".into(), text)];
         }
         let managed = self.pool.get_active(session_id);

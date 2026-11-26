@@ -160,7 +160,10 @@ async fn kill_dialog_in_the_main_checkout_promises_no_worktree_loss() {
     assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     let out = draw(&mut app);
     assert!(!out.contains("gone "), "no worktree goes:\n{out}");
-    assert!(!out.contains("uncommitted"), "the checkout loses nothing:\n{out}");
+    assert!(
+        !out.contains("uncommitted"),
+        "the checkout loses nothing:\n{out}"
+    );
     assert!(out.contains("lost   the turn in progress"), "{out}");
 }
 
