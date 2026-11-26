@@ -2,6 +2,8 @@
 //! session's issue number before `⏎` kills it.
 
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use super::App;
 use super::helpers::session_label;
@@ -22,6 +24,16 @@ impl App {
     /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
     /// `Killed` transition) gets a toast instead: Kill would do nothing.
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
+        self.open_kill_confirm_counting(session_id, count_uncommitted);
+    }
+
+    /// [`Self::open_kill_confirm`] with the uncommitted count injected, so
+    /// a test can stand in a git that never answers.
+    fn open_kill_confirm_counting(
+        &mut self,
+        session_id: uuid::Uuid,
+        count: impl FnOnce(&Path) -> Option<usize>,
+    ) {
         if let Some(status) = self.unkillable_status(session_id) {
             let label = (self.pool.get_session(session_id))
                 .map_or_else(|| "The session".to_string(), session_label);
@@ -33,7 +45,7 @@ impl App {
             self.push_toast(toast, std::time::Instant::now());
             return;
         }
-        let uncommitted = self.uncommitted_files(session_id);
+        let uncommitted = self.torn_down_worktree(session_id).and_then(count);
         let unpushed = self.unpushed_commits(session_id);
         let confirm = self.kill_confirm_with(session_id, uncommitted, unpushed);
         self.screen_state.kill_confirm = Some((session_id, confirm));
@@ -180,11 +192,22 @@ impl App {
 /// One per `git status --porcelain --untracked-files=all` line. `None` when
 /// git cannot tell (the path is gone, not a repo): the dialog says unknown.
 fn count_uncommitted(worktree: &Path) -> Option<usize> {
-    let out = std::process::Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=all"])
+    count_lines_within(git_status(worktree), GIT_COUNT_TIMEOUT)
+}
+
+/// How long the dialog waits for git before it says "count unknown".
+const GIT_COUNT_TIMEOUT: Duration = Duration::from_millis(500);
+
+fn git_status(worktree: &Path) -> Command {
+    let mut git = Command::new("git");
+    git.args(["status", "--porcelain", "--untracked-files=all"])
         .current_dir(worktree)
-        .output()
-        .ok()?;
+        .stdin(Stdio::null());
+    git
+}
+
+fn count_lines_within(mut command: Command, _timeout: Duration) -> Option<usize> {
+    let out = command.output().ok()?;
     out.status
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).lines().count())
