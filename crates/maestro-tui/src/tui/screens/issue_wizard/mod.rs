@@ -153,6 +153,10 @@ pub struct IssueWizardScreen {
     pub(super) review_loading: bool,
     pub(super) review_text: Option<String>,
     pub(super) review_error: Option<String>,
+    /// #1454: `r` asked for a review; the dispatch hook queues the one
+    /// `LaunchAiReview` and `begin_ai_review` clears it. Entering the step
+    /// never sets it, so no paid call starts unasked.
+    pub(super) review_requested: bool,
     /// #450 AI Improve sub-state (layered on top of AiReview). When a
     /// candidate is present the draw layer swaps the review-text view
     /// for the diff view; when loading, the spinner renders; when
@@ -231,6 +235,7 @@ impl IssueWizardScreen {
             review_loading: false,
             review_text: None,
             review_error: None,
+            review_requested: false,
             improve_loading: false,
             improve_candidate: None,
             improve_error: None,
@@ -403,17 +408,28 @@ impl IssueWizardScreen {
 
     // ---- #296 AI Review ----
 
-    /// `r` after a failed review: clear the error so the step-entry hook
-    /// (`tick_wizard_step_hooks`, the one queuer of `LaunchAiReview`) sees
-    /// `entered_ai_review_step()` and queues exactly one new call.
+    /// `r` before the first review or after a failed one: clear the error
+    /// and ask for a review, so the dispatch hook (`tick_wizard_step_hooks`,
+    /// the one queuer of `LaunchAiReview`) sees `ai_review_requested()` and
+    /// queues exactly one call.
     pub fn retry_ai_review(&mut self) {
         self.review_error = None;
         self.review_text = None;
         self.review_loading = false;
+        self.review_requested = true;
+    }
+
+    /// #1454: AI review before any call — no critique, no spinner, no error.
+    pub fn review_idle(&self) -> bool {
+        self.review_text.is_none()
+            && !self.review_loading
+            && self.review_error.is_none()
+            && !self.review_requested
     }
 
     pub fn begin_ai_review(&mut self) {
         self.sync_fields_into_payload();
+        self.review_requested = false;
         self.review_loading = true;
         self.review_text = None;
         self.review_error = None;
@@ -445,11 +461,10 @@ impl IssueWizardScreen {
         self.review_error.as_deref()
     }
 
-    pub fn entered_ai_review_step(&self) -> bool {
+    pub fn ai_review_requested(&self) -> bool {
         matches!(self.step, IssueWizardStep::AiReview)
-            && self.review_text.is_none()
+            && self.review_requested
             && !self.review_loading
-            && self.review_error.is_none()
     }
 
     // ---- #450 AI Improve ----
@@ -1096,12 +1111,13 @@ impl Screen for IssueWizardScreen {
                 KeyCode::Char('i') if self.can_begin_improve() => {
                     self.begin_improve();
                 }
-                // `r` has one meaning: re-run the failed AI call (paid).
+                // `r` has one meaning: run the AI call (paid) — the first
+                // review, or again after a failure (#1454).
                 KeyCode::Char('r') if self.improve_error.is_some() => {
                     self.improve_error = None;
                     self.begin_improve();
                 }
-                KeyCode::Char('r') if self.review_error.is_some() => {
+                KeyCode::Char('r') if self.review_error.is_some() || self.review_idle() => {
                     self.retry_ai_review();
                 }
                 KeyCode::Char('e') => {

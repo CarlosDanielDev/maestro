@@ -684,6 +684,15 @@ first. One entry per decision.
 - **Differs from the target:** the target's over-budget dialog arms; here it is locked. "wave 1 only" is not offered as a way out (out of scope for #1448), so the dialog does not name it.
 - **Source:** #1448.
 
+## 2026-11-26 — Issue wizard AI review starts only on `r`
+
+- **What:** entering the AI review step sends no call. The step shows an idle state (what the review checks, `a paid AI call (claude --print)`, `r runs the review`) and `r` queues exactly one `LaunchAiReview`; `r` after a failure re-runs it the same way. `s` skip, `e` revise and ⏎ next work with no call. The idle footer drops `i improve`, which does nothing before a critique.
+- **Why:** #1454: owner rule "no unasked spend". The step-entry hook queued the paid critique as soon as the step was entered (left open by #1450).
+- **Section:** `§02.2` Create issue (Screen components: AI review states; Keymap `r`; Metrics "Meanings of `r` on AI review: 1").
+- **ADR (which key):** `r` = "run the paid AI call", for the first run and for a retry, so `r` keeps one meaning. A new letter would give two keys for one action. Rejected: start on ⏎ (⏎ is "next" on every step), auto-start with a confirm (still a call nobody asked for).
+- **Differs from the target:** the target's review states have no idle state (loading starts on entry); this adds one. `s` skip stays (the target removes it).
+- **Source:** #1454.
+
 ## 2026-11-26 — Kill and Stop dialogs say the worktree is deleted
 
 - **What:** the Dashboard kill dialog (`X`) and the run loop "Stop the run?" dialog no longer list the worktree as kept. Kill reads `gone   the worktree and branch maestro/<slug>` and `lost   N uncommitted files, the turn in progress` (the count is `git status --porcelain --untracked-files=all` in the session's worktree, counted once when the dialog opens, never per frame; `uncommitted files (count unknown)` when git cannot tell, so it never reads as nothing lost). `kept` is the transcript. Stop › Kill shows the same rows (`App::kill_teardown_rows`); Stop › Drain shows `gone   its worktree, once it completes`, and `kept` lists opened PRs, labels written and failed runs' worktrees.

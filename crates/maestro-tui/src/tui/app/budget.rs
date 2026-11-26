@@ -128,11 +128,7 @@ impl App {
                         LogLevel::Info,
                     );
                     if let Err(e) = managed.spawn(tx).await {
-                        self.activity_log.push_simple(
-                            label,
-                            format!("Spawn failed: {}", e),
-                            LogLevel::Error,
-                        );
+                        self.report_spawn_failure(label, &e);
                     }
                 }
                 self.drop_stale_gates_from_nav_stack();

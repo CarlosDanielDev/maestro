@@ -377,6 +377,15 @@ pub(super) fn footer_hints(s: &IssueWizardScreen) -> Vec<(&'static str, &'static
         IssueWizardStep::AiReview if s.review_loading() || s.improve_loading() => {
             vec![("e", "revise"), ("s", "skip"), ("Esc", "back")]
         }
+        // #1454: before any review, `r` starts the paid call; `i` needs a
+        // critique, so it is not shown yet.
+        IssueWizardStep::AiReview if s.review_idle() => vec![
+            ("r", "run review (paid AI call)"),
+            ("e", "revise"),
+            ("s", "skip"),
+            ("Enter", "next"),
+            ("Esc", "back"),
+        ],
         IssueWizardStep::AiReview => vec![
             ("i", "improve (paid AI call)"),
             ("e", "revise"),
