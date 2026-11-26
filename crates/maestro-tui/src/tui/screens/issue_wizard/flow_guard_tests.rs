@@ -249,6 +249,7 @@ async fn entering_ai_review_spends_nothing() {
 #[tokio::test]
 async fn review_key_queues_one_review() {
     let mut app = entered_ai_review().await;
+    assert_eq!(review_launches(&app), 0, "nothing before the key");
     press(&mut app, KeyCode::Char('r')).await;
     assert_eq!(review_launches(&app), 1, "r sends one AI review");
     assert!(wizard(&app).review_loading());

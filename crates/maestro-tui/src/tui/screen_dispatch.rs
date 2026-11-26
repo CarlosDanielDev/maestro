@@ -20,7 +20,7 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
         match app.screen_state.issue_wizard_screen.as_ref() {
             Some(s) => (
                 s.entered_dependencies_step(),
-                s.entered_ai_review_step(),
+                s.ai_review_requested(),
                 s.improve_requested(),
             ),
             None => (false, false, false),
