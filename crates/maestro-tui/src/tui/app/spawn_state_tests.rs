@@ -271,11 +271,15 @@ async fn failed_first_turn_raises_one_alert() {
         .await;
     pump_session_events(&mut app).await;
 
+    // Other alerts (e.g. the bypass-mode notice at launch) are not about
+    // this failure; count only the ones that are.
     let alerts = app.activity_log.take_alerts();
-    assert_eq!(alerts.len(), 1, "one failure, one alert: {alerts:?}");
+    let failure: Vec<_> = (alerts.iter())
+        .filter(|e| e.message.contains("scripted spawn failure"))
+        .collect();
+    assert_eq!(failure.len(), 1, "one failure, one alert: {alerts:?}");
     assert!(
-        alerts[0].message.contains("turn failed")
-            && alerts[0].message.contains("scripted spawn failure"),
+        failure[0].message.contains("turn failed"),
         "the one alert must say what failed: {alerts:?}"
     );
     let managed = app.pool.interactive_managed(1470).expect("interaction");
