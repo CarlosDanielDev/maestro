@@ -243,3 +243,120 @@ async fn team_launch_cost_reads_the_launch_dialog_budget() {
     assert!(screen.contains("$5.00 (1 × $5.00 cap)"), "{screen}");
     assert!(screen.contains("$38.00 left now"), "{screen}");
 }
+
+/// #1448: the app on Teams › Launch › Plan for #10 #11 #12 (3 × $5.00 cap =
+/// $15.00 worst case), `[budget] total_usd` and $12.00 spent, so the budget
+/// comes from `budget_prespawn::launch_budget` as in production.
+fn launch_app(name: &str, total_usd: f64) -> crate::tui::app::App {
+    let toml = format!(
+        "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n[sessions]\n\
+         [budget]\nper_session_usd = 5.0\ntotal_usd = {total_usd}\nalert_threshold_pct = 80\n\
+         [github]\n[notifications]\nslack_webhook_url = \"\"\n"
+    );
+    let mut app = crate::tui::make_test_app(name);
+    app.config = Some(toml::from_str(&toml).expect("config parses"));
+    app.total_cost = 12.0;
+    app.tui_mode = crate::tui::app::TuiMode::TeamWizard;
+    let metas: HashMap<u64, IssueMeta> = [10, 11, 12]
+        .iter()
+        .map(|n| (*n, make_issue_meta(*n, IssueState::Open, Some(1), &[])))
+        .collect();
+    let s = planned(&[10, 11, 12], &metas, LaunchBudget::default());
+    app.screen_state.team_wizard_screen = Some(s);
+    app
+}
+
+/// One frame through `ui::draw` at 80x24 (the smallest size with no
+/// SizeGuard), as rows.
+fn frame_80x24(app: &mut crate::tui::app::App) -> String {
+    let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
+    let buf = t.backend().buffer().clone();
+    (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A key through `handle_key`, then a frame (the loop draws between keys).
+async fn press(app: &mut crate::tui::app::App, kind: crossterm::event::KeyEventKind) {
+    let key = crossterm::event::KeyEvent::new_with_kind(
+        KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+        kind,
+    );
+    crate::tui::input_handler::handle_key(app, key).await;
+    frame_80x24(app);
+}
+
+fn run_team_queued(app: &crate::tui::app::App) -> bool {
+    (app.pending_commands.iter()).any(|c| matches!(c, crate::tui::app::TuiCommand::RunTeam { .. }))
+}
+
+fn wizard(app: &crate::tui::app::App) -> &TeamWizardScreen {
+    app.screen_state.team_wizard_screen.as_ref().expect("wizard")
+}
+
+/// Worst case $15.00 over $8.00 left (the pre-spawn gate only warns): no
+/// Enter, single, double within 3 s or held, launches. The dialog says why
+/// and the way out; the footer and Help offer no Enter there.
+#[tokio::test]
+async fn team_launch_over_budget_locked() {
+    use crossterm::event::KeyEventKind::{Press, Repeat};
+    let mut app = launch_app("team-launch-over-budget", 20.0);
+    frame_80x24(&mut app);
+    press(&mut app, Press).await;
+    assert_eq!(wizard(&app).launch_phase(), LaunchPhase::Dialog);
+    assert!(
+        !matches!(
+            wizard(&app).launch_budget.decision(),
+            crate::budget::PreSpawnDecision::Block { .. }
+        ),
+        "the case the gate alone lets through"
+    );
+
+    for kind in [Press, Press, Repeat, Repeat, Repeat, Press] {
+        press(&mut app, kind).await;
+        assert!(!run_team_queued(&app), "Enter ({kind:?}) never launches");
+        assert_eq!(wizard(&app).launch_phase(), LaunchPhase::Dialog);
+    }
+
+    assert_eq!(wizard(&app).footer_hints(), vec![("Esc", "back to plan")]);
+    use crate::tui::navigation::registry::{Scope, registry};
+    let teams = Scope::Screen(crate::tui::app::TuiMode::TeamWizard);
+    let teams_enter = (registry().iter())
+        .filter(|b| b.scope == teams && b.chord.code == KeyCode::Enter);
+    for b in teams_enter {
+        assert!(!b.label.contains("launch"), "Help: {}", b.label);
+    }
+
+    let screen = frame_80x24(&mut app);
+    for want in ["$15.00", "$8.00", "fewer issues", "Settings", "Esc"] {
+        assert!(screen.contains(want), "{want} missing:\n{screen}");
+    }
+    for never in ["Enter arms", "launch now", "ARMED"] {
+        assert!(!screen.contains(never), "{never}:\n{screen}");
+    }
+    insta::assert_snapshot!("team_launch_over_budget_locked", screen);
+}
+
+/// Worst case $15.00 within $38.00 left: one Enter on the dialog launches.
+#[tokio::test]
+async fn team_launch_within_budget_one_enter() {
+    use crossterm::event::KeyEventKind::Press;
+    let mut app = launch_app("team-launch-within-budget", 50.0);
+    frame_80x24(&mut app);
+    press(&mut app, Press).await;
+    assert_eq!(wizard(&app).launch_phase(), LaunchPhase::Dialog);
+    assert_eq!(
+        wizard(&app).footer_hints(),
+        vec![("Enter", "launch"), ("Esc", "back to plan")]
+    );
+    assert!(!run_team_queued(&app));
+    press(&mut app, Press).await;
+    assert!(run_team_queued(&app), "one Enter launches");
+}

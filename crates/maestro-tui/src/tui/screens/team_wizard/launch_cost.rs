@@ -97,7 +97,7 @@ pub(super) fn cost_lines(
     let mut lines = vec![worst];
     if cost.over() {
         lines.push(Line::from(Span::styled(
-            "! worst case is over the budget left · the total cap can stop this run",
+            "! worst case is over the budget left · launch is locked until it fits",
             Style::default().fg(theme.accent_warning),
         )));
     }
