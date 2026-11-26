@@ -5,7 +5,10 @@ use std::path::Path;
 
 use super::App;
 use super::helpers::session_label;
+use crate::session::pool::session_slug;
+use crate::session::types::SessionStatus;
 use crate::tui::ds::confirm::TypedConfirm;
+use crate::tui::ds::toast::{Severity, Toast};
 
 #[cfg(test)]
 #[path = "kill_confirm_tests.rs"]
@@ -14,7 +17,20 @@ mod tests;
 impl App {
     /// Open the kill dialog for `session_id` with an empty field. The
     /// uncommitted files are counted here, once, never per frame.
+    /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
+    /// `Killed` transition) gets a toast instead: Kill would do nothing.
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
+        if let Some(status) = self.unkillable_status(session_id) {
+            let label = (self.pool.get_session(session_id))
+                .map_or_else(|| "The session".to_string(), session_label);
+            let text = format!(
+                "{label} is {}: Kill cannot stop it, nothing changes",
+                status.label().to_lowercase()
+            );
+            let toast = Toast::new(Severity::Info, text);
+            self.push_toast(toast, std::time::Instant::now());
+            return;
+        }
         let uncommitted = self.uncommitted_files(session_id);
         let confirm = self.kill_confirm_with(session_id, uncommitted);
         self.screen_state.kill_confirm = Some((session_id, confirm));
@@ -78,8 +94,12 @@ impl App {
         session_id: uuid::Uuid,
         uncommitted: Option<usize>,
     ) -> Vec<(String, String)> {
+        if let Some(status) = self.unkillable_status(session_id) {
+            let text = format!("it is {}: Kill leaves it as it is", status.label().to_lowercase());
+            return vec![("skips".into(), text)];
+        }
         let managed = self.pool.get_active(session_id);
-        if managed.and_then(|m| m.worktree_path.as_ref()).is_none() {
+        if self.torn_down_worktree(session_id).is_none() {
             return vec![("lost".into(), "the turn in progress".into())];
         }
         let gone = match managed.and_then(|m| m.branch_name.as_deref()) {
@@ -98,8 +118,25 @@ impl App {
     /// How many uncommitted files Kill throws away in `session_id`'s
     /// worktree. Runs git: call it once, when a dialog opens.
     pub(crate) fn uncommitted_files(&self, session_id: uuid::Uuid) -> Option<usize> {
+        count_uncommitted(self.torn_down_worktree(session_id)?)
+    }
+
+    /// The session's worktree when it is the one teardown removes:
+    /// `wipe_worktree` acts on `.maestro/worktrees/<session_slug>` only. A
+    /// session in cwd (`None`, or `.` for an interaction whose worktree
+    /// failed: the main checkout) loses no worktree and no files to Kill.
+    fn torn_down_worktree(&self, session_id: uuid::Uuid) -> Option<&Path> {
         let managed = self.pool.get_active(session_id)?;
-        count_uncommitted(managed.worktree_path.as_deref()?)
+        let path = managed.worktree_path.as_deref()?;
+        let slug = session_slug(&managed.session);
+        path.ends_with(Path::new(".maestro").join("worktrees").join(slug))
+            .then_some(path)
+    }
+
+    /// The status of a session Kill cannot move to `Killed`, if it is one.
+    fn unkillable_status(&self, session_id: uuid::Uuid) -> Option<SessionStatus> {
+        let status = self.pool.get_session(session_id)?.status;
+        (!status.can_transition_to(SessionStatus::Killed)).then_some(status)
     }
 }
 

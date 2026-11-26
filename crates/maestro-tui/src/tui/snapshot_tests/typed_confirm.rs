@@ -102,18 +102,21 @@ async fn kill_confirm_lost_row() {
     let id = session.id;
     app.pool.enqueue(session);
     let _ = app.pool.try_promote();
-    let worktree = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    // The path teardown removes: `.maestro/worktrees/<slug>`.
+    let worktree = root.path().join(".maestro/worktrees/issue-407");
+    std::fs::create_dir_all(&worktree).unwrap();
     let init = std::process::Command::new("git")
         .args(["init", "-q"])
-        .current_dir(worktree.path())
+        .current_dir(&worktree)
         .status()
         .expect("git must be on PATH");
     assert!(init.success());
     for name in ["a.rs", "b.rs", "c.rs"] {
-        std::fs::write(worktree.path().join(name), "edit").unwrap();
+        std::fs::write(worktree.join(name), "edit").unwrap();
     }
     let managed = app.pool.get_active_mut(id).expect("promoted");
-    managed.worktree_path = Some(worktree.path().to_path_buf());
+    managed.worktree_path = Some(worktree.clone());
     // The promote line carries a wall-clock stamp: keep the frame stable.
     managed.session.activity_log.clear();
     let _ = handle_key(

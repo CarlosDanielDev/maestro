@@ -136,7 +136,9 @@ async fn kill_dialog_with_an_unreadable_worktree_says_unknown() {
     let repo = repo();
     let (mut app, id, _worktree) = running_in(repo.path(), 1458);
     let managed = app.pool.get_active_mut(id).unwrap();
-    managed.worktree_path = Some(repo.path().join("gone-1458"));
+    // The teardown path shape, but gone from disk: git cannot read it.
+    let gone = repo.path().join("moved/.maestro/worktrees/issue-1458");
+    managed.worktree_path = Some(gone);
     press(&mut app, KeyCode::Char('X')).await;
     let out = draw(&mut app);
     assert!(
@@ -144,4 +146,46 @@ async fn kill_dialog_with_an_unreadable_worktree_says_unknown() {
         "{out}"
     );
     assert!(out.contains("gone   the worktree"), "{out}");
+}
+
+/// Judge (#1468): an interaction whose worktree failed runs in `.`, the
+/// main checkout. Teardown removes `.maestro/worktrees/<slug>` only, so the
+/// dialog must not say a worktree goes, nor count the checkout's files.
+#[tokio::test]
+async fn kill_dialog_in_the_main_checkout_promises_no_worktree_loss() {
+    let repo = repo();
+    let (mut app, id, _worktree) = running_in(repo.path(), 1459);
+    app.pool.get_active_mut(id).unwrap().worktree_path = Some(PathBuf::from("."));
+    press(&mut app, KeyCode::Char('X')).await;
+    assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    let out = draw(&mut app);
+    assert!(!out.contains("gone "), "no worktree goes:\n{out}");
+    assert!(!out.contains("uncommitted"), "the checkout loses nothing:\n{out}");
+    assert!(out.contains("lost   the turn in progress"), "{out}");
+}
+
+/// Judge (#1468): `Errored` has no `Killed` transition, so Kill would do
+/// nothing and teardown keeps the worktree. `X` says so and opens no
+/// dialog that promises a deletion.
+#[tokio::test]
+async fn kill_on_an_errored_session_says_nothing_changes() {
+    let repo = repo();
+    let (mut app, id, worktree) = running_in(repo.path(), 1460);
+    let managed = app.pool.get_active_mut(id).unwrap();
+    managed
+        .session
+        .transition_to(SessionStatus::Errored, TransitionReason::StreamError)
+        .unwrap();
+    press(&mut app, KeyCode::Char('X')).await;
+    assert!(
+        !matches!(app.tui_mode, TuiMode::ConfirmKill(_)),
+        "no kill dialog for a session Kill cannot end"
+    );
+    let out = draw(&mut app);
+    assert!(out.contains("Kill cannot stop it"), "{out}");
+
+    app.check_completions().await.unwrap();
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Errored));
+    assert!(worktree.exists(), "teardown keeps an errored worktree");
 }

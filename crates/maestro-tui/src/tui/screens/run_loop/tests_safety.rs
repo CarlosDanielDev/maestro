@@ -170,6 +170,14 @@ async fn run_loop_hold_blocks_auto_retry() {
     }
 }
 
+/// The repo minimum size: the Stop dialog's rows must fit it.
+fn frame_80x24(app: &mut App) -> String {
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut t = ratatui::Terminal::new(backend).unwrap();
+    t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
+    format!("{}", t.backend())
+}
+
 /// #1456: "Stop the run?" says what each choice does to the running
 /// session's worktree. Drain deletes it once it completes; Kill deletes it
 /// now (the same rows as `X`), with its uncommitted files lost.
@@ -177,19 +185,22 @@ async fn run_loop_hold_blocks_auto_retry() {
 async fn run_loop_stop_tells_the_truth_about_worktrees() {
     let mut app = queue_app(&[5, 6]);
     let id = run_item(&mut app, 5, SessionStatus::Running, 0.42);
-    let worktree = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    // The path teardown removes: `.maestro/worktrees/<slug>`.
+    let worktree = root.path().join(".maestro/worktrees/issue-5");
+    std::fs::create_dir_all(&worktree).unwrap();
     let init = std::process::Command::new("git")
         .args(["init", "-q"])
-        .current_dir(worktree.path())
+        .current_dir(&worktree)
         .status()
         .expect("git must be on PATH");
     assert!(init.success());
-    std::fs::write(worktree.path().join("a.txt"), "a").unwrap();
-    std::fs::write(worktree.path().join("b.txt"), "b").unwrap();
-    app.pool.get_active_mut(id).unwrap().worktree_path = Some(worktree.path().to_path_buf());
+    std::fs::write(worktree.join("a.txt"), "a").unwrap();
+    std::fs::write(worktree.join("b.txt"), "b").unwrap();
+    app.pool.get_active_mut(id).unwrap().worktree_path = Some(worktree.clone());
 
     chord(&mut app, 'S').await;
-    let out = frame(&mut app);
+    let out = frame_80x24(&mut app);
     assert!(
         out.contains("gone   its worktree, once it completes"),
         "{out}"
@@ -198,7 +209,7 @@ async fn run_loop_stop_tells_the_truth_about_worktrees() {
     assert!(!out.contains("lost "), "drain loses nothing:\n{out}");
 
     key(&mut app, KeyCode::Down).await;
-    let out = frame(&mut app);
+    let out = frame_80x24(&mut app);
     assert!(
         out.contains("gone   the worktree and branch maestro/issue-5"),
         "{out}"
