@@ -4,8 +4,9 @@
 //! the milestone and the issue count.
 
 use super::types::stranded;
-use super::{MilestoneWizardScreen, MilestoneWizardStep, level_buckets};
+use super::{AiProposedIssue, MilestoneWizardScreen, MilestoneWizardStep, level_buckets};
 use crate::tui::ds::armed::{ArmedState, EnterOutcome};
+use crate::tui::screens::sanitize_for_terminal;
 use std::time::Instant;
 
 /// Shown on the Plan border while a selected issue needs a deselected one.
@@ -13,6 +14,10 @@ pub(super) const STRANDED_REASON: &str =
     "a selected issue needs a deselected one · select it with a, or drop this one with x";
 /// Shown when selected issues block each other in a loop: no creation order.
 pub(super) const CYCLE_REASON: &str = "selected issues block each other in a loop";
+/// Shown after the repeated title when two selected issues have
+/// equivalent titles (#1455): the provider reuses an issue by title, so one
+/// of them would be lost. The border reads `"title" is planned twice · …`.
+pub(super) const DUPLICATE_REASON: &str = "is planned twice · drop one with x";
 
 impl MilestoneWizardScreen {
     pub(super) fn now(&self) -> Instant {
@@ -32,16 +37,47 @@ impl MilestoneWizardScreen {
             .unwrap_or_default()
     }
 
-    /// Why the Plan step cannot advance: a stranded issue, or a selected
-    /// issue `level_buckets` cannot place (a loop of blockers).
+    /// Why the Plan step cannot advance: a stranded issue, two selected
+    /// issues with equivalent titles, or a selected issue `level_buckets`
+    /// cannot place (a loop of blockers).
     pub(super) fn plan_block_reason(&self) -> Option<&'static str> {
         let plan = self.generated_plan()?;
         if !stranded(&plan.issues).is_empty() {
             return Some(STRANDED_REASON);
         }
+        if !duplicates(&plan.issues).is_empty() {
+            return Some(DUPLICATE_REASON);
+        }
         let placed: usize = level_buckets(&plan.issues).iter().map(Vec::len).sum();
         let selected = plan.issues.iter().filter(|i| i.accepted).count();
         (placed != selected).then_some(CYCLE_REASON)
+    }
+
+    /// Selected issues that repeat the title of an earlier selected one,
+    /// with that earlier issue (#1455). Empty without a plan.
+    pub fn duplicate_issues(&self) -> Vec<(usize, usize)> {
+        self.generated_plan()
+            .map(|p| duplicates(&p.issues))
+            .unwrap_or_default()
+    }
+
+    /// The Plan border text: the block reason, naming the repeated title
+    /// when two selected issues share one.
+    pub(super) fn plan_border_reason(&self) -> Option<String> {
+        let reason = self.validation_error()?;
+        if reason != DUPLICATE_REASON {
+            return Some(reason.to_string());
+        }
+        let (_, first) = *self.duplicate_issues().first()?;
+        let title = &self.generated_plan()?.issues[first].title;
+        let mut short: String = title.trim().chars().take(30).collect();
+        if title.trim().chars().count() > 30 {
+            short.push('…');
+        }
+        Some(format!(
+            "\"{}\" {DUPLICATE_REASON}",
+            sanitize_for_terminal(&short)
+        ))
     }
 
     /// Selected issues: what Create writes besides the milestone.
@@ -141,6 +177,21 @@ impl MilestoneWizardScreen {
     }
 }
 
+/// Selected issues whose title is equivalent (`util::titles_equivalent`,
+/// the provider's own match) to an earlier selected issue, each with the
+/// first such issue. Dropping these leaves one issue per title.
+pub fn duplicates(issues: &[AiProposedIssue]) -> Vec<(usize, usize)> {
+    let selected = || issues.iter().enumerate().filter(|(_, it)| it.accepted);
+    selected()
+        .filter_map(|(i, it)| {
+            selected()
+                .take_while(|(j, _)| *j < i)
+                .find(|(_, earlier)| crate::util::titles_equivalent(&earlier.title, &it.title))
+                .map(|(j, _)| (i, j))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "create_tests.rs"]
 mod tests;
@@ -148,3 +199,7 @@ mod tests;
 #[cfg(test)]
 #[path = "retry_tests.rs"]
 mod retry_tests;
+
+#[cfg(test)]
+#[path = "duplicate_tests.rs"]
+mod duplicate_tests;

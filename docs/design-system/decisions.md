@@ -730,3 +730,12 @@ first. One entry per decision.
 - **ADR (a separate row, folders counted once):** a worktree with a cargo build holds tens of thousands of ignored files; adding them to the uncommitted count reads "lost 24,000 files", true but scary and useless. A separate `also` row says they go without calling build output lost work. Rejected: one combined count (`--ignored` with `-uall` lists every file in `target/`), and `--ignored` without `-uall` (it also folds untracked folders, so the uncommitted count would drop).
 - **Differs from the target:** the target's kill dialog has no file count and no ignored row.
 - **Source:** #1471.
+
+## 2026-11-26 — Create milestone blocks two selected issues with the same title
+
+- **What:** on Plan, a selected issue whose title is equivalent under `util::titles_equivalent` (trimmed, inner spaces collapsed, ASCII case ignored: the match `create_issue` uses) to an earlier selected issue blocks advancing to Create. `duplicates()` lists each repeat with the first issue of that title; the repeat row draws `[!] … planned twice`, the Proposed issues border reads `"title" is planned twice · drop one with x` (the first issue's title, cut at 30 characters), and `⏎` stays on Plan and focuses the first repeat, like a stranded issue. `x` on it clears the block.
+- **Why:** #1455: `create_issue` reuses an existing issue by title, so the second planned issue became the first one, silently, and its Blocked By edges pointed at it.
+- **Section:** `§02.3` Create milestone (wizard): Create gate (`⊘ CREATE BLOCKED` lists invalid titles among its causes), Proposed issues (the stranded `[!]` row).
+- **ADR (where to stop it):** block on Plan with the existing `x` fix, never rename or merge. Auto-suffixing a title would write text the operator did not choose; merging two issues would drop one of them. Rejected: a second check in `begin_materialization` (Create is only reachable through Plan, and a retry reuses by number), and a planner-side dedupe (the AI can still return two equal titles, and the operator must see it).
+- **Differs from the target:** no title edit (`e` / `t` are not built), so the only fix is `x`. Only the repeat is marked, not the first issue of the title, so `x` on any marked row keeps one issue per title.
+- **Source:** #1455.
