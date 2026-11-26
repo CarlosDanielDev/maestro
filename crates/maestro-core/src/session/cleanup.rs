@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::session::pool::session_slug;
 use crate::session::types::Session;
 use crate::state::types::MaestroState;
-use crate::work::worktree_teardown::wipe_worktree;
+use crate::work::unique_commits::{unique_commit_count, wipe_worktree_keeping_unpushed};
 
 /// Manages cleanup of orphaned worktrees left by crashed processes.
 pub struct CleanupManager {
@@ -133,7 +133,7 @@ impl CleanupManager {
 
     /// Remove orphaned worktrees. Returns the count removed.
     ///
-    /// #938: each removal routes through the hardened [`wipe_worktree`]
+    /// #938: each removal routes through the hardened `wipe_worktree`
     /// primitive (rooted at `self.worktree_dir`), so it inherits the root
     /// sanity-check (refuses `/` / `$HOME`, canonicalized containment) and the
     /// leading-dash injection guard. The previous raw `git worktree remove`
@@ -159,12 +159,23 @@ impl CleanupManager {
     /// [`Self::remove_orphans`] so callers can react to individual
     /// failures (#1149: a session whose worktree wipe failed stays stale
     /// for retry instead of being marked `Killed` blind). Same #938
-    /// hardening as the batch form — the branch is `maestro/<name>` and
-    /// [`wipe_worktree`] is idempotent, so a missing branch is treated as
-    /// success.
+    /// hardening as the batch form — the branch is `maestro/<name>` and the
+    /// teardown is idempotent, so a missing branch is treated as success.
+    /// #1473: a branch holding commits no other ref has (or whose count
+    /// cannot be read) is kept, as on Kill — a crashed session's committed
+    /// work must not go with its worktree.
     pub fn remove_orphan(&self, orphan: &OrphanWorktree) -> Result<()> {
         let branch = format!("maestro/{}", orphan.name);
-        wipe_worktree(0, &orphan.path, &branch, &self.worktree_dir)?;
+        // Count before teardown: a deleted branch has nothing left to count.
+        let unique = unique_commit_count(&self.worktree_dir, &branch);
+        wipe_worktree_keeping_unpushed(0, &orphan.path, &branch, &self.worktree_dir)?;
+        if let Some(n) = unique.filter(|&n| n > 0) {
+            tracing::warn!(
+                branch,
+                unique_commits = n,
+                "orphan cleanup kept branch: it holds commits no other ref has"
+            );
+        }
         Ok(())
     }
 }
