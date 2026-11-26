@@ -9,7 +9,7 @@ use super::super::{
     AiGeneratedPlan, AiProposedIssue, MilestoneCreationResult, MilestoneWizardScreen,
     MilestoneWizardStep, level_buckets, materialize_plan_with_client, stranded,
 };
-use super::{CYCLE_REASON, STRANDED_REASON};
+use super::{CYCLE_REASON, DUPLICATE_REASON, STRANDED_REASON};
 use crate::tui::app::{App, TuiCommand, TuiMode};
 use crate::tui::ds::armed::ArmedState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -299,4 +299,85 @@ async fn materialize_partial_keeps_numbers() {
         "what was not created:\n{screen}"
     );
     assert!(screen.contains("2 of 4 issues exist"), "ledger:\n{screen}");
+}
+
+/// #1455 Done when: "duplicate titles in one plan block Create with a
+/// reason on the Plan step". The provider reuses an issue by title, so two
+/// selected issues with equivalent titles would become one issue.
+#[tokio::test]
+async fn duplicate_titles_block_create() {
+    let mut plan = chain_plan();
+    plan.issues[2].title = " Feat:  Schema ".into(); // equivalent to P0
+    let mut app = app_on(MilestoneWizardStep::ReviewPlan, plan);
+    assert_eq!(wizard(&mut app).validation_error(), Some(DUPLICATE_REASON));
+
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(
+        wizard(&mut app).step(),
+        MilestoneWizardStep::ReviewPlan,
+        "⏎ never reaches Create while two selected issues share a title"
+    );
+    let screen = screen_text(&mut app);
+    assert!(
+        screen.contains(DUPLICATE_REASON),
+        "reason on the Plan border:\n{screen}"
+    );
+
+    // Dropping one of the two clears the block; the create counts 2.
+    press(&mut app, KeyCode::Down).await;
+    press(&mut app, KeyCode::Down).await;
+    press(&mut app, KeyCode::Char('x')).await;
+    assert_eq!(wizard(&mut app).validation_error(), None);
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::Preview);
+    assert!(!create_queued(&app), "advancing to Create writes nothing");
+    assert_eq!(wizard(&mut app).create_description(), "creates 1 milestone + 2 issues");
+}
+
+/// A deselected issue is not written, so its title never blocks.
+#[test]
+fn a_deselected_duplicate_does_not_block() {
+    let mut plan = chain_plan();
+    plan.issues[2].title = "feat: schema".into();
+    plan.issues[2].accepted = false;
+    let mut s = MilestoneWizardScreen::new();
+    s.apply_planning_result(Ok(plan));
+    s.set_step_for_tests(MilestoneWizardStep::ReviewPlan);
+    assert_eq!(s.validation_error(), None);
+}
+
+/// #1455 Done when: "with distinct titles, N planned issues create N
+/// issues on the mock client".
+#[tokio::test]
+async fn distinct_titles_create_all() {
+    use crate::provider::github::client::mock::MockGitHubClient;
+
+    let plan = AiGeneratedPlan {
+        milestone_title: "M3: Distinct".into(),
+        milestone_description: "d".into(),
+        issues: vec![
+            issue("feat: api", vec![]),
+            issue("feat: api v2", vec![0]),
+            issue("docs: api", vec![]),
+            issue("feat: api client", vec![1]),
+        ],
+        written: None,
+    };
+    let mut s = MilestoneWizardScreen::new();
+    s.apply_planning_result(Ok(plan.clone()));
+    s.set_step_for_tests(MilestoneWizardStep::ReviewPlan);
+    assert_eq!(s.validation_error(), None, "distinct titles never block");
+
+    let client = MockGitHubClient::new();
+    let result = materialize_plan_with_client(&plan, &client)
+        .await
+        .expect("create");
+    assert_eq!(client.create_issue_calls().len(), 4, "one create per issue");
+    let MilestoneCreationResult::Created { issue_numbers, .. } = result else {
+        panic!("expected Created, got {result:?}");
+    };
+    let mut unique = issue_numbers.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), 4, "4 distinct issues: {issue_numbers:?}");
 }

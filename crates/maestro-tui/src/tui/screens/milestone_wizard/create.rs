@@ -13,6 +13,9 @@ pub(super) const STRANDED_REASON: &str =
     "a selected issue needs a deselected one · select it with a, or drop this one with x";
 /// Shown when selected issues block each other in a loop: no creation order.
 pub(super) const CYCLE_REASON: &str = "selected issues block each other in a loop";
+/// Shown when two selected issues have equivalent titles (#1455): the
+/// provider reuses an issue by title, so one of them would be lost.
+pub(super) const DUPLICATE_REASON: &str = "two selected issues share a title · drop one with x";
 
 impl MilestoneWizardScreen {
     pub(super) fn now(&self) -> Instant {
