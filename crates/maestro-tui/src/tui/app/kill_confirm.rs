@@ -9,6 +9,7 @@ use crate::session::pool::session_slug;
 use crate::session::types::SessionStatus;
 use crate::tui::ds::confirm::TypedConfirm;
 use crate::tui::ds::toast::{Severity, Toast};
+use crate::work::unique_commits::unique_commit_count;
 
 #[cfg(test)]
 #[path = "kill_confirm_tests.rs"]
@@ -16,7 +17,8 @@ mod tests;
 
 impl App {
     /// Open the kill dialog for `session_id` with an empty field. The
-    /// uncommitted files are counted here, once, never per frame.
+    /// uncommitted files and unpushed commits are counted here, once,
+    /// never per frame.
     /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
     /// `Killed` transition) gets a toast instead: Kill would do nothing.
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
@@ -32,15 +34,16 @@ impl App {
             return;
         }
         let uncommitted = self.uncommitted_files(session_id);
-        let confirm = self.kill_confirm_with(session_id, uncommitted);
+        let unpushed = self.unpushed_commits(session_id);
+        let confirm = self.kill_confirm_with(session_id, uncommitted, unpushed);
         self.screen_state.kill_confirm = Some((session_id, confirm));
         self.navigate_to(super::TuiMode::ConfirmKill(session_id));
     }
 
     /// The dialog for `session_id` without running git (the draw fallback):
-    /// the uncommitted count reads as unknown, and still warns.
+    /// both counts read as unknown, and still warn.
     pub fn kill_confirm(&self, session_id: uuid::Uuid) -> TypedConfirm {
-        self.kill_confirm_with(session_id, None)
+        self.kill_confirm_with(session_id, None, None)
     }
 
     /// The dialog for `session_id`. The token is the issue number; a
@@ -50,6 +53,7 @@ impl App {
         &self,
         session_id: uuid::Uuid,
         uncommitted: Option<usize>,
+        unpushed: Option<usize>,
     ) -> TypedConfirm {
         let short = session_id.to_string()[..8].to_string();
         let session = self.pool.get_session(session_id);
@@ -74,7 +78,7 @@ impl App {
             (String::new(), "Stops the agent now.".into()),
             (String::new(), String::new()),
         ];
-        rows.extend(self.kill_teardown_rows(session_id, uncommitted));
+        rows.extend(self.kill_teardown_rows(session_id, uncommitted, unpushed));
         rows.extend([
             ("kept".into(), "the transcript".into()),
             ("other".into(), other),
@@ -85,14 +89,16 @@ impl App {
     /// #1456: what Kill does to the session's work, read from the real
     /// teardown. A Killed session is finalized on the next tick, and
     /// `pool.finalize` keeps the worktree only for FailedGates and Errored,
-    /// so its worktree (`git worktree remove --force`) and local branch
-    /// (force-deleted) go, and its uncommitted files with them.
-    /// `uncommitted` is [`Self::uncommitted_files`]; `None` reads "count
-    /// unknown" and never "nothing lost".
+    /// so its worktree (`git worktree remove --force`) goes, and its
+    /// uncommitted files with it. #1469: the local branch is deleted only
+    /// when it holds no unpushed commit; otherwise it is kept.
+    /// `uncommitted` is [`Self::uncommitted_files`] and `unpushed`
+    /// [`Self::unpushed_commits`]; `None` reads "unknown", never "nothing".
     pub(crate) fn kill_teardown_rows(
         &self,
         session_id: uuid::Uuid,
         uncommitted: Option<usize>,
+        unpushed: Option<usize>,
     ) -> Vec<(String, String)> {
         if let Some(status) = self.unkillable_status(session_id) {
             let text = format!(
@@ -105,9 +111,27 @@ impl App {
         if self.torn_down_worktree(session_id).is_none() {
             return vec![("lost".into(), "the turn in progress".into())];
         }
-        let gone = match managed.and_then(|m| m.branch_name.as_deref()) {
-            Some(branch) => format!("the worktree and branch {branch}"),
-            None => "the worktree and its branch".to_string(),
+        let branch = match managed.and_then(|m| m.branch_name.as_deref()) {
+            Some(branch) => format!("branch {branch}"),
+            None => "its branch".to_string(),
+        };
+        let mut rows = match unpushed {
+            Some(0) => vec![("gone".into(), format!("the worktree and {branch}"))],
+            Some(n) => {
+                let s = if n == 1 { "" } else { "s" };
+                let kept = format!("{branch}, {n} unpushed commit{s}");
+                vec![
+                    ("gone".into(), "the worktree".into()),
+                    ("kept".into(), kept),
+                ]
+            }
+            None => {
+                let kept = format!("{branch} if it has unpushed commits");
+                vec![
+                    ("gone".into(), "the worktree".into()),
+                    ("kept".into(), kept),
+                ]
+            }
         };
         let lost = match uncommitted {
             Some(0) => "the turn in progress".to_string(),
@@ -115,13 +139,23 @@ impl App {
             Some(n) => format!("{n} uncommitted files, the turn in progress"),
             None => "uncommitted files (count unknown), turn in progress".to_string(),
         };
-        vec![("gone".into(), gone), ("lost".into(), lost)]
+        rows.push(("lost".into(), lost));
+        rows
     }
 
     /// How many uncommitted files Kill throws away in `session_id`'s
     /// worktree. Runs git: call it once, when a dialog opens.
     pub(crate) fn uncommitted_files(&self, session_id: uuid::Uuid) -> Option<usize> {
         count_uncommitted(self.torn_down_worktree(session_id)?)
+    }
+
+    /// How many commits only the session's branch holds: teardown keeps
+    /// the branch unless this is `Some(0)`. Runs git: call it once.
+    pub(crate) fn unpushed_commits(&self, session_id: uuid::Uuid) -> Option<usize> {
+        let worktree = self.torn_down_worktree(session_id)?;
+        let managed = self.pool.get_active(session_id)?;
+        let branch = format!("maestro/{}", session_slug(&managed.session));
+        unique_commit_count(worktree, &branch)
     }
 
     /// The session's worktree when it is the one teardown removes:

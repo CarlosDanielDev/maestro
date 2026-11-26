@@ -210,8 +210,11 @@ async fn run_loop_stop_tells_the_truth_about_worktrees() {
 
     key(&mut app, KeyCode::Down).await;
     let out = frame_80x24(&mut app);
+    // #1469: this worktree's repo has no `maestro/issue-5` branch, so git
+    // cannot count its unpushed commits and teardown keeps it.
+    assert!(out.contains("gone   the worktree "), "{out}");
     assert!(
-        out.contains("gone   the worktree and branch maestro/issue-5"),
+        out.contains("kept   branch maestro/issue-5 if it has unpushed commits"),
         "{out}"
     );
     assert!(

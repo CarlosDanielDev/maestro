@@ -2,7 +2,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::util::validate_slug;
-use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
+use crate::work::unique_commits::wipe_worktree_keeping_unpushed;
+use crate::work::worktree_teardown::TeardownError;
 
 /// Trait for managing git worktrees. Mockable in tests.
 pub trait WorktreeManager: Send {
@@ -42,7 +43,8 @@ impl GitWorktreeManager {
 
     /// Guarded teardown step used by [`WorktreeManager::remove`] (#938). Routes
     /// the worktree + branch removal through the sanity-checked
-    /// [`wipe_worktree`] primitive. `issue_number` is unattributed here (the
+    /// [`wipe_worktree_keeping_unpushed`] primitive: a branch with unpushed
+    /// commits is kept (#1469). `issue_number` is unattributed here (the
     /// slug, not an issue id, owns these worktrees), so `0` is passed for the
     /// tracing field only. Returns the typed error so the caller can choose to
     /// warn-and-continue (best-effort cleanup).
@@ -51,7 +53,7 @@ impl GitWorktreeManager {
         branch: &str,
         worktree_root: &Path,
     ) -> Result<(), TeardownError> {
-        wipe_worktree(0, path, branch, worktree_root)
+        wipe_worktree_keeping_unpushed(0, path, branch, worktree_root)
     }
 }
 

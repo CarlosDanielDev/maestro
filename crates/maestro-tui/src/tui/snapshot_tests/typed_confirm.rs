@@ -94,7 +94,8 @@ async fn typed_confirm_counter_counts_matching_chars() {
 }
 
 /// #1456: a session with uncommitted files in its worktree. Before `⏎`
-/// the dialog says the worktree and branch go and the files are lost.
+/// the dialog says the worktree goes and the files are lost. #1469: git
+/// cannot count this branch's unpushed commits, so the branch reads kept.
 #[tokio::test]
 async fn kill_confirm_lost_row() {
     let mut app = log_app(TuiMode::Overview);

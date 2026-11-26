@@ -7,4 +7,5 @@ pub mod pr_marker;
 pub mod queue;
 pub mod run_plan;
 pub mod types;
+pub mod unique_commits;
 pub mod worktree_teardown;
