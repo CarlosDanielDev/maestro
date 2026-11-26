@@ -18,6 +18,11 @@ async fn type_text(app: &mut App, text: &str) {
     }
 }
 
+/// The session screen on `view`.
+fn at(id: uuid::Uuid, view: SessionView) -> TuiMode {
+    TuiMode::Session { id, view }
+}
+
 fn draw(app: &mut App, w: u16, h: u16) -> String {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
     terminal.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
@@ -86,10 +91,7 @@ async fn session_header_matches_dashboard_pane() {
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(
         app.tui_mode,
-        TuiMode::Session {
-            id,
-            view: SessionView::Detail
-        },
+        at(id, SessionView::Detail),
         "⏎ opens the session"
     );
     let screen = draw(&mut app, w, h);
@@ -110,19 +112,9 @@ async fn session_header_matches_dashboard_pane() {
 #[tokio::test]
 async fn output_follow_toggle() {
     let (mut app, id) = one_session();
-    app.tui_mode = TuiMode::Session {
-        id,
-        view: SessionView::Detail,
-    };
+    app.tui_mode = at(id, SessionView::Detail);
     press(&mut app, KeyCode::Char('f')).await;
-    assert_eq!(
-        app.tui_mode,
-        TuiMode::Session {
-            id,
-            view: SessionView::Output
-        },
-        "f opens Output"
-    );
+    assert_eq!(app.tui_mode, at(id, SessionView::Output), "f opens Output");
     let out = draw(&mut app, 80, 24);
     assert!(out.contains("row 40"), "follows the tail:\n{out}");
     assert!(out.contains("following"), "says it follows:\n{out}");
@@ -153,10 +145,7 @@ async fn strip_keys_switch_views_and_act_on_the_mode_id() {
     let id = b.id;
     let mut app = app_with(vec![a, b]);
     app.nav_stack.push(TuiMode::Dashboard);
-    app.tui_mode = TuiMode::Session {
-        id,
-        view: SessionView::Detail,
-    };
+    app.tui_mode = at(id, SessionView::Detail);
     for (key, view) in [
         ('f', SessionView::Output),
         ('l', SessionView::Log),
@@ -184,10 +173,7 @@ async fn switcher_filter_keeps_selection() {
     let c = session(0x500, 500, "docs-site");
     let want = b.id;
     let mut app = app_with(vec![a, b, c]);
-    app.tui_mode = TuiMode::Session {
-        id: want,
-        view: SessionView::Detail,
-    };
+    app.tui_mode = at(want, SessionView::Detail);
     press(&mut app, KeyCode::Char('w')).await;
     assert_eq!(app.tui_mode, TuiMode::SessionSwitcher);
 
@@ -224,13 +210,7 @@ async fn switcher_filter_keeps_selection() {
     press(&mut app, KeyCode::Backspace).await;
 
     press(&mut app, KeyCode::Enter).await;
-    assert_eq!(
-        app.tui_mode,
-        TuiMode::Session {
-            id: want,
-            view: SessionView::Detail
-        }
-    );
+    assert_eq!(app.tui_mode, at(want, SessionView::Detail));
 }
 
 /// `session_{detail,output,log,gates,events}`: every view at 80x24.
@@ -275,51 +255,25 @@ async fn fkeys_on_the_session_screen_act_on_the_shown_session() {
                 press(&mut app, KeyCode::Enter).await;
             }
             "log" => {
-                app.navigate_to(TuiMode::Session {
-                    id: b_id,
-                    view: SessionView::Log,
-                });
+                app.navigate_to(at(b_id, SessionView::Log));
                 press(&mut app, KeyCode::Char('d')).await;
             }
             "gates" => {
-                app.tui_mode = TuiMode::Session {
-                    id: b_id,
-                    view: SessionView::Gates,
-                };
+                app.tui_mode = at(b_id, SessionView::Gates);
                 press(&mut app, KeyCode::Char('d')).await;
             }
-            _ => app.navigate_to(TuiMode::Session {
-                id: b_id,
-                view: SessionView::Detail,
-            }),
+            _ => app.navigate_to(at(b_id, SessionView::Detail)),
         }
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::Session {
-                id: b_id,
-                view: SessionView::Detail
-            },
-            "{entry}"
-        );
+        assert_eq!(app.tui_mode, at(b_id, SessionView::Detail), "{entry}");
         draw(&mut app, 120, 36);
 
         press(&mut app, KeyCode::F(10)).await;
         assert_eq!(app.tui_mode, TuiMode::ConfirmKill(b_id), "{entry}: F10");
         press(&mut app, KeyCode::Esc).await;
-        app.tui_mode = TuiMode::Session {
-            id: b_id,
-            view: SessionView::Detail,
-        };
+        app.tui_mode = at(b_id, SessionView::Detail);
         draw(&mut app, 120, 36);
         press(&mut app, KeyCode::F(3)).await;
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::Session {
-                id: b_id,
-                view: SessionView::Output
-            },
-            "{entry}: F3"
-        );
+        assert_eq!(app.tui_mode, at(b_id, SessionView::Output), "{entry}: F3");
     }
 }
 
@@ -379,10 +333,7 @@ error: test failed, to rerun pass `--lib`
             gate("test", false, "cargo test", 41_000, tests_out),
         ];
     }
-    app.tui_mode = TuiMode::Session {
-        id,
-        view: SessionView::Gates,
-    };
+    app.tui_mode = at(id, SessionView::Gates);
     let out = draw(&mut app, 100, 40);
     for want in [
         "fmt",
