@@ -756,15 +756,17 @@ impl App {
                 }
             }
             TuiDataEvent::InteractionTurnEvent {
-                issue_number: _,
+                issue_number,
                 event,
             } => {
                 // Apply the streaming event to the live screen, then surface
                 // any activity-log line it produced (TurnFinished) (#738).
+                // Only the screen for this issue takes it (#1470).
                 let action = self
                     .screen_state
                     .interaction_screen
                     .as_mut()
+                    .filter(|screen| screen.is_for_issue(issue_number))
                     .map(|screen| screen.log_turn_event(&event));
                 if let Some(crate::tui::screens::ScreenAction::LogActivity {
                     tag,

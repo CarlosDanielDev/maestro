@@ -3,6 +3,8 @@
 //! through the real keys and checks the teardown against what it said.
 
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -126,6 +128,7 @@ async fn kill_dialog_on_a_clean_worktree_counts_no_files() {
     let out = draw(&mut app);
     assert!(out.contains("lost   the turn in progress"), "{out}");
     assert!(!out.contains("uncommitted"), "{out}");
+    assert!(!out.contains("ignored"), "no ignored file, no row:\n{out}");
     assert!(out.contains("gone   the worktree"), "{out}");
 }
 
@@ -237,4 +240,70 @@ async fn kill_on_an_errored_session_says_nothing_changes() {
     let status = app.pool.get_session(id).map(|s| s.status);
     assert_eq!(status, Some(SessionStatus::Errored));
     assert!(worktree.exists(), "teardown keeps an errored worktree");
+}
+
+/// #1471: a git that never answers. The count gives up at the timeout, the
+/// dialog still opens and warns with the count unknown. The slow runner is
+/// `git hash-object` on a FIFO no one writes to: its `open` blocks until
+/// git is killed (closing its stdin does not free it), so the test needs
+/// no sleep.
+#[cfg(unix)]
+#[tokio::test]
+async fn kill_count_times_out() {
+    let repo = repo();
+    let (mut app, id, _worktree) = running_in(repo.path(), 1471);
+    let fifo = repo.path().join("never-written-1471");
+    let made = Command::new("mkfifo").arg(&fifo).status().unwrap();
+    assert!(made.success(), "mkfifo");
+    let started = Instant::now();
+    app.open_kill_confirm_counting(id, |worktree| {
+        let mut slow = Command::new("git");
+        slow.arg("hash-object")
+            .arg(&fifo)
+            .current_dir(worktree)
+            .stdin(Stdio::null());
+        super::count_status_within(slow, Duration::from_millis(50))
+    });
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the dialog does not wait for git"
+    );
+    assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    let out = draw(&mut app);
+    assert!(
+        out.contains("lost   uncommitted files (count unknown), turn in progress"),
+        "a git that does not answer reads unknown, never nothing:\n{out}"
+    );
+}
+
+/// #1471: teardown deletes git-ignored files too (a local secrets file,
+/// an ignored folder). They get their own row, a folder counted once, so
+/// build output never reads as lost work; the untracked files are still
+/// counted one per file.
+#[tokio::test]
+async fn kill_count_includes_ignored_files() {
+    let repo = repo();
+    let (mut app, _id, worktree) = running_in(repo.path(), 1472);
+    std::fs::write(worktree.join(".gitignore"), "secrets.local\ncache/\n").unwrap();
+    assert!(git(&worktree, &["add", ".gitignore"]));
+    assert!(git(&worktree, &["commit", "-q", "-m", "ignore"]));
+    std::fs::write(worktree.join("secrets.local"), "token").unwrap();
+    std::fs::create_dir_all(worktree.join("cache/deep")).unwrap();
+    std::fs::write(worktree.join("cache/a"), "a").unwrap();
+    std::fs::write(worktree.join("cache/deep/b"), "b").unwrap();
+    std::fs::create_dir(worktree.join("notes")).unwrap();
+    std::fs::write(worktree.join("notes/n.txt"), "n").unwrap();
+    std::fs::write(worktree.join("work.txt"), "w").unwrap();
+
+    press(&mut app, KeyCode::Char('X')).await;
+    assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    let out = draw(&mut app);
+    assert!(
+        out.contains("lost   2 uncommitted files, the turn in progress"),
+        "untracked files count one per file, ignored ones not among them:\n{out}"
+    );
+    assert!(
+        out.contains("also   2 ignored files or folders, deleted"),
+        "the ignored file and the ignored folder are listed apart:\n{out}"
+    );
 }

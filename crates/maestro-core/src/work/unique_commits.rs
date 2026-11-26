@@ -9,9 +9,9 @@ use super::worktree_teardown::{TeardownError, wipe};
 
 /// Session teardown (Kill and every other `pool.finalize`, #1469): the
 /// guarded [`super::worktree_teardown::wipe_worktree`], except the branch is
-/// kept when [`unique_commit_count`] is not `Some(0)`. The interaction quit
-/// (its dialog says unpushed commits are lost) and orphan cleanup still
-/// call `wipe_worktree`.
+/// kept when [`unique_commit_count`] is not `Some(0)`. Orphan cleanup uses
+/// it too (#1473); the interaction quit (its dialog says unpushed commits
+/// are lost) still calls `wipe_worktree`.
 pub fn wipe_worktree_keeping_unpushed(
     issue_number: u64,
     path: &Path,

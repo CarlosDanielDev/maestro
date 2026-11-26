@@ -220,8 +220,8 @@ async fn refused_spawn_is_visible() {
 
 /// Judge round: a first turn that fails to start gets no extra spawn
 /// report from this PR (only the turn's own failure surfaces it), and the
-/// chat shows a System turn. On main this path already raises an ERR for
-/// the session error and a WARN "turn failed"; this PR leaves that as is.
+/// chat shows a System turn. #1470 trims that path to one alert; see
+/// `failed_first_turn_raises_one_alert`.
 #[tokio::test]
 async fn failed_first_turn_adds_no_spawn_report() {
     use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedTurn};

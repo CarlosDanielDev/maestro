@@ -216,16 +216,27 @@ impl App {
                 }
                 StreamEvent::Error { message } => {
                     let desktop_label = label.clone();
-                    self.activity_log.push_simple(
-                        label,
-                        format!("ERROR: {}", message),
-                        LogLevel::Error,
-                    );
+                    let interactive = managed.session.session_mode
+                        == crate::session::types::SessionMode::Interactive;
+                    // #1470: while the chat for this interaction is open, its
+                    // error surfaces once as the screen's "turn failed" line
+                    // (forward_interactive_stream_event below). In the
+                    // background no screen writes that line: keep the ERR.
+                    let chat_open = interactive
+                        && managed.session.issue_number.is_some_and(|issue| {
+                            (self.screen_state.interaction_screen.as_ref())
+                                .is_some_and(|screen| screen.is_for_issue(issue))
+                        });
+                    if !chat_open {
+                        self.activity_log.push_simple(
+                            label,
+                            format!("ERROR: {}", message),
+                            LogLevel::Error,
+                        );
+                    }
                     // Interactive failure stays alive for discuss + retry
                     // (#947, spec §4.3) — same exemption as Completed.
-                    if managed.session.session_mode
-                        != crate::session::types::SessionMode::Interactive
-                    {
+                    if !interactive {
                         self.prompt_history.update_outcome(
                             managed.session.id,
                             crate::state::prompt_history::PromptOutcome::Errored,
@@ -323,3 +334,7 @@ impl App {
 #[cfg(test)]
 #[path = "event_handler_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "one_alert_tests.rs"]
+mod one_alert_tests;
