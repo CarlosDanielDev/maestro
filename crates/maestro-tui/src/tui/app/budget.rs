@@ -183,15 +183,6 @@ impl App {
         }
     }
 
-    /// #1453: a spawn the session state machine refused (or any other
-    /// spawn error) is never silent. The ERR entry shows in the Activity
-    /// pane, and off the log screens it raises an error toast (#1263).
-    pub(crate) fn report_spawn_failure(&mut self, label: String, err: &anyhow::Error) {
-        tracing::warn!(session = %label, error = %err, "spawn refused");
-        self.activity_log
-            .push_simple(label, format!("Spawn failed: {err}"), LogLevel::Error);
-    }
-
     /// True while `id` waits at the gate: still Queued in its pool slot
     /// (promoted, never spawned).
     fn is_parked_at_gate(&mut self, id: uuid::Uuid) -> bool {
@@ -312,7 +303,3 @@ impl App {
 #[cfg(test)]
 #[path = "budget_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "spawn_state_tests.rs"]
-mod spawn_state_tests;

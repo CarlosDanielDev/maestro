@@ -165,10 +165,12 @@ impl ManagedSession {
     /// with no visible "connecting…" feedback. Now the existing
     /// `Spawning` animation in `spinner.rs` is visible during the wait.
     ///
-    /// **Refuses** (#1453) when the state machine refuses `Spawning` — a
-    /// session already `Spawning` or `Running` returns the
-    /// `IllegalTransition` error and starts no provider task, so a stale
-    /// caller can never start a second agent for a live session.
+    /// **Refuses** (#1453) when the state machine refuses `Spawning`: the
+    /// only legal sources are `Queued`, `Retrying`, `CiFix` and
+    /// `ConflictFix`. From any other status (`Spawning`, `Running`, a
+    /// terminal one, …) it returns the `IllegalTransition` error and
+    /// starts no provider task, so a stale caller can never start a
+    /// second agent for a live session.
     pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
         use crate::session::transition::TransitionReason;
         self.session
@@ -874,24 +876,39 @@ mod tests {
         assert_eq!(bound.as_deref(), Some("bound-id-1"));
     }
 
-    /// #1453: `spawn` honors the state machine. From `Running` or
-    /// `Spawning` it returns the `IllegalTransition` error, leaves the
-    /// status alone and starts no provider task.
+    /// #1453: `spawn` honors the state machine. From a live, paused or
+    /// settled status it returns the `IllegalTransition` error, starts no
+    /// provider task, and changes nothing on the session (status,
+    /// `started_at`, transition history).
     #[tokio::test]
     async fn spawn_refuses_illegal_transition() {
         use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
         use crate::session::transition::TransitionReason;
+        use SessionStatus::*;
 
-        for live in [SessionStatus::Spawning, SessionStatus::Running] {
+        // Each status, reached by legal steps from Queued.
+        let paths: &[&[SessionStatus]] = &[
+            &[Spawning],
+            &[Spawning, Running],
+            &[Spawning, Running, Paused],
+            &[Spawning, Running, Stalled],
+            &[Spawning, Running, Completed],
+            &[Spawning, Running, GatesRunning, NeedsReview],
+            &[Spawning, Running, GatesRunning, FailedGates],
+            &[Spawning, Running, Interactive],
+            &[Spawning, Errored],
+            &[Killed],
+        ];
+        for path in paths {
             let mut ms = make_managed("p");
-            ms.session
-                .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
-                .unwrap();
-            if live == SessionStatus::Running {
+            for to in *path {
                 ms.session
-                    .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+                    .transition_to(*to, TransitionReason::Promoted)
                     .unwrap();
             }
+            let live = ms.session.status;
+            let started_at = ms.session.started_at;
+            let history = ms.session.transition_history.len();
             let fake = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
                 events: vec![],
                 end: ScriptedEnd::Ok {
@@ -908,7 +925,9 @@ mod tests {
             let first = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
                 .await
                 .expect("channel settles within timeout");
-            let err = result.expect_err("spawn on a live session must be refused");
+            let Err(err) = result else {
+                panic!("spawn must be refused from {live:?}");
+            };
             assert!(
                 err.downcast_ref::<crate::session::transition::IllegalTransition>()
                     .is_some(),
@@ -918,6 +937,12 @@ mod tests {
             assert_eq!(fake.requests.lock().unwrap().len(), 0, "{live:?}: no run");
             assert!(!ms.has_live_turn(), "{live:?}: no turn may be armed");
             assert_eq!(ms.session.status, live, "status must not change");
+            assert_eq!(ms.session.started_at, started_at, "{live:?}: started_at");
+            assert_eq!(
+                ms.session.transition_history.len(),
+                history,
+                "{live:?}: no transition may be recorded"
+            );
         }
     }
 

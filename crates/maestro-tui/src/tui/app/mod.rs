@@ -42,6 +42,7 @@ mod review;
 mod session_lifecycle;
 mod session_pause;
 mod session_spawners;
+mod spawn_report;
 mod settings_actions;
 pub(crate) mod toasts;
 pub mod types;
