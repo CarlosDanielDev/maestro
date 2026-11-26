@@ -136,12 +136,18 @@ fn orphan_cleanup_logs_kept_branch() {
             .expect("orphan cleanup must succeed");
     });
 
-    let log = String::from_utf8(captured.0.lock().expect("log buffer lock").clone())
-        .expect("utf-8 log");
+    let log =
+        String::from_utf8(captured.0.lock().expect("log buffer lock").clone()).expect("utf-8 log");
     let line = log
         .lines()
         .find(|l| l.contains("orphan cleanup kept branch"))
         .unwrap_or_else(|| panic!("no kept-branch log line: {log}"));
-    assert!(line.contains("maestro/issue-7"), "branch name missing: {line}");
-    assert!(line.contains("unique_commits=2"), "commit count missing: {line}");
+    assert!(
+        line.contains("maestro/issue-7"),
+        "branch name missing: {line}"
+    );
+    assert!(
+        line.contains("unique_commits=2"),
+        "commit count missing: {line}"
+    );
 }
