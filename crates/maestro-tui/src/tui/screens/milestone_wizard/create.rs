@@ -5,8 +5,8 @@
 
 use super::types::stranded;
 use super::{AiProposedIssue, MilestoneWizardScreen, MilestoneWizardStep, level_buckets};
-use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::ds::armed::{ArmedState, EnterOutcome};
+use crate::tui::screens::sanitize_for_terminal;
 use std::time::Instant;
 
 /// Shown on the Plan border while a selected issue needs a deselected one.
@@ -74,7 +74,10 @@ impl MilestoneWizardScreen {
         if title.trim().chars().count() > 30 {
             short.push('…');
         }
-        Some(format!("\"{}\" {DUPLICATE_REASON}", sanitize_for_terminal(&short)))
+        Some(format!(
+            "\"{}\" {DUPLICATE_REASON}",
+            sanitize_for_terminal(&short)
+        ))
     }
 
     /// Selected issues: what Create writes besides the milestone.

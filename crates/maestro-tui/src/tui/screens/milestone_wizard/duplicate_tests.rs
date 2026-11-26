@@ -9,8 +9,8 @@ use super::super::{
     AiGeneratedPlan, MilestoneCreationResult, MilestoneWizardScreen, MilestoneWizardStep,
     materialize_plan_with_client,
 };
-use super::{DUPLICATE_REASON, duplicates};
 use super::tests::{app_on, chain_plan, create_queued, issue, press, screen_text, wizard};
+use super::{DUPLICATE_REASON, duplicates};
 use crossterm::event::KeyCode;
 use std::time::{Duration, Instant};
 
@@ -108,7 +108,10 @@ async fn distinct_titles_create_all() {
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::Preview);
     let screen = screen_text(&mut app);
-    assert!(!screen.contains("planned twice"), "no false mark:\n{screen}");
+    assert!(
+        !screen.contains("planned twice"),
+        "no false mark:\n{screen}"
+    );
     press(&mut app, KeyCode::Enter).await;
     wizard(&mut app).set_clock_for_test(t0 + Duration::from_secs(1));
     press(&mut app, KeyCode::Enter).await;
