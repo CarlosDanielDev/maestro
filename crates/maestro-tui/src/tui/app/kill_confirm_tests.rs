@@ -244,18 +244,24 @@ async fn kill_on_an_errored_session_says_nothing_changes() {
 
 /// #1471: a git that never answers. The count gives up at the timeout, the
 /// dialog still opens and warns with the count unknown. The slow runner is
-/// `git hash-object --stdin` with its stdin held open: it waits until it is
-/// killed, so the test needs no sleep.
+/// `git hash-object` on a FIFO no one writes to: its `open` blocks until
+/// git is killed (closing its stdin does not free it), so the test needs
+/// no sleep.
+#[cfg(unix)]
 #[tokio::test]
 async fn kill_count_times_out() {
     let repo = repo();
     let (mut app, id, _worktree) = running_in(repo.path(), 1471);
+    let fifo = repo.path().join("never-written-1471");
+    let made = Command::new("mkfifo").arg(&fifo).status().unwrap();
+    assert!(made.success(), "mkfifo");
     let started = Instant::now();
     app.open_kill_confirm_counting(id, |worktree| {
         let mut slow = Command::new("git");
-        slow.args(["hash-object", "--stdin"])
+        slow.arg("hash-object")
+            .arg(&fifo)
             .current_dir(worktree)
-            .stdin(Stdio::piped());
+            .stdin(Stdio::null());
         super::count_status_within(slow, Duration::from_millis(50))
     });
     assert!(
