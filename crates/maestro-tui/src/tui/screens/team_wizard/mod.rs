@@ -308,7 +308,6 @@ impl TeamWizardScreen {
             );
         if on_plan && self.launch.plan.is_some() {
             self.build_plan_preview();
-            self.launch.arm.reset();
             self.launch_phase = LaunchPhase::Editing;
         }
     }
@@ -664,7 +663,6 @@ impl Screen for TeamWizardScreen {
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let now = self.now();
         self.compose.save.tick(now);
-        self.launch.arm.tick(now);
         self.draw_impl(f, area, theme);
     }
 

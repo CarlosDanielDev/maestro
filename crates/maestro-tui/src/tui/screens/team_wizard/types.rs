@@ -293,8 +293,6 @@ pub struct LaunchPayload {
     /// Focused match in `autocomplete_candidates()`. Reset on every edit;
     /// moved by `Up`/`Down`; `Enter` picks it (#876, #1290).
     pub autocomplete_focus: Option<usize>,
-    /// The dialog's armed Enter when the worst case is over the budget left.
-    pub arm: ArmedEnter,
     /// Shown after an `Enter` the current step refused; cleared on the
     /// next key. Never shown on entry (§02.17 finding 9).
     pub error: Option<&'static str>,

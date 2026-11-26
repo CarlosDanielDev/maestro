@@ -7,7 +7,6 @@ use super::draw_launch::text;
 use super::launch_cost::cost_lines;
 use super::types::{IssueMetaMap, PlanPreview, role_label};
 use crate::orchestration::types::TeamRole;
-use crate::tui::ds::armed::ArmedState;
 use crate::tui::screens::milestone_plan::is_other_repo;
 use crate::tui::screens::sanitize_for_terminal;
 use crate::tui::theme::Theme;
@@ -182,7 +181,7 @@ impl TeamWizardScreen {
     }
 
     /// Plan `Enter` (§02.17 "Launch dialog"): what runs, what it can cost,
-    /// where it works. One `Enter` here launches.
+    /// where it works. One `Enter` here launches, unless it is locked.
     pub(super) fn draw_launch_dialog(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = theme.styled_block("Launch team run", true);
         let Some(plan) = &self.launch.plan else {
@@ -230,33 +229,17 @@ impl TeamWizardScreen {
 }
 
 impl TeamWizardScreen {
-    /// Why `Enter` here does not simply launch: locked by the pre-spawn
-    /// gate, or armed when the worst case is over the budget left. `None`
-    /// when one `Enter` launches (the footer says so).
+    /// Why `Enter` here does not launch (#1448: the pre-spawn gate's
+    /// `Block`, or a worst case over the budget left) and the way out.
+    /// `None` when one `Enter` launches (the footer says so).
     fn dialog_gate_line(&self, theme: &Theme) -> Option<Line<'static>> {
-        if let Some(reason) = self.launch_block_reason() {
-            return Some(text(
-                format!("⊘ {reason} · raise [budget] total_usd in Settings to launch"),
-                Style::default()
-                    .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-        if !self.launch_over_budget() {
-            return None;
-        }
-        Some(match self.launch.arm.state() {
-            ArmedState::Armed(_) => text(
-                "ARMED · Enter again within 3 s launches · Esc backs out",
-                Style::default()
-                    .fg(theme.accent_warning)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            _ => text(
-                "! over the budget left · Enter arms, Enter again within 3 s launches",
-                Style::default().fg(theme.accent_warning),
-            ),
-        })
+        let reason = self.launch_block_reason()?;
+        Some(text(
+            format!("⊘ {reason}"),
+            Style::default()
+                .fg(theme.accent_error)
+                .add_modifier(Modifier::BOLD),
+        ))
     }
 }
 
