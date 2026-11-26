@@ -8,10 +8,10 @@ use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedT
 use crate::session::interaction::TurnRole;
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::activity_log::{LogEntry, LogLevel};
+use crate::tui::app::App;
 use crate::tui::app::interaction_pipeline_tests::{
     app_with_interaction, pump_session_events, scripted_turn,
 };
-use crate::tui::app::App;
 use crate::tui::input_handler::handle_key;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
