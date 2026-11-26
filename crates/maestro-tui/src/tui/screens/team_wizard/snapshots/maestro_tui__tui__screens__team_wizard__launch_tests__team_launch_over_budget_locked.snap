@@ -1,0 +1,29 @@
+---
+source: crates/maestro-tui/src/tui/screens/team_wizard/launch_tests.rs
+assertion_line: 347
+expression: screen
+---
+ MAESTRO  0.33.1 │ ○ no agents │ $12.00 spent │ TQ:OFF                          
+ Teams                                                         Esc back  ? help 
+ Step 3/3 · Plan & launch   ✓✓●                        default-coder · 3 issues 
+ Preflight 4/4 ready                                                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Launch team run ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃WHAT   3 sessions across 1 wave                                               ┃
+┃TEAM   default-coder                                                          ┃
+┃WHERE  3 worktrees .maestro/worktrees/issue-{10,11,12}                        ┃
+┃                                                                              ┃
+┃worst case ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ $15.00 (3 × $5.00 cap)  ·  $8.00 left now         ┃
+┃! worst case is over the budget left · launch is locked until it fits         ┃
+┃estimate not available  ·  no run history for this team                       ┃
+┃                                                                              ┃
+┃⊘ worst case $15.00 is over the $8.00 left · pick fewer issues or raise       ┃
+┃[budget] total_usd in Settings                                                ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┃                                                                              ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Esc back to plan                                                       ⌃Q quit

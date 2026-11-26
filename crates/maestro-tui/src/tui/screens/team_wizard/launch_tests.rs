@@ -298,7 +298,10 @@ fn run_team_queued(app: &crate::tui::app::App) -> bool {
 }
 
 fn wizard(app: &crate::tui::app::App) -> &TeamWizardScreen {
-    app.screen_state.team_wizard_screen.as_ref().expect("wizard")
+    app.screen_state
+        .team_wizard_screen
+        .as_ref()
+        .expect("wizard")
 }
 
 /// Worst case $15.00 over $8.00 left (the pre-spawn gate only warns): no
@@ -328,8 +331,8 @@ async fn team_launch_over_budget_locked() {
     assert_eq!(wizard(&app).footer_hints(), vec![("Esc", "back to plan")]);
     use crate::tui::navigation::registry::{Scope, registry};
     let teams = Scope::Screen(crate::tui::app::TuiMode::TeamWizard);
-    let teams_enter = (registry().iter())
-        .filter(|b| b.scope == teams && b.chord.code == KeyCode::Enter);
+    let teams_enter =
+        (registry().iter()).filter(|b| b.scope == teams && b.chord.code == KeyCode::Enter);
     for b in teams_enter {
         assert!(!b.label.contains("launch"), "Help: {}", b.label);
     }
