@@ -131,6 +131,11 @@ fn orphan_cleanup_logs_kept_branch() {
         .with_writer(move || writer.clone())
         .finish();
     tracing::subscriber::with_default(subscriber, || {
+        // Plain `cargo test` runs many tests in one process: a test on
+        // another thread can register the kept-branch callsite while no
+        // subscriber is live and cache `Interest::never`, so this scoped
+        // subscriber never sees the event. Rebuild with it live.
+        tracing::callsite::rebuild_interest_cache();
         CleanupManager::new(&repo)
             .remove_orphan(&orphan)
             .expect("orphan cleanup must succeed");
