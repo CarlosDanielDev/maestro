@@ -218,10 +218,16 @@ impl App {
                     let desktop_label = label.clone();
                     let interactive = managed.session.session_mode
                         == crate::session::types::SessionMode::Interactive;
-                    // #1470: an interaction's error already surfaces once,
-                    // as the "turn failed" line + System turn from
-                    // forward_interactive_stream_event below.
-                    if !(interactive && managed.session.issue_number.is_some()) {
+                    // #1470: while the chat for this interaction is open, its
+                    // error surfaces once as the screen's "turn failed" line
+                    // (forward_interactive_stream_event below). In the
+                    // background no screen writes that line: keep the ERR.
+                    let chat_open = interactive
+                        && managed.session.issue_number.is_some_and(|issue| {
+                            (self.screen_state.interaction_screen.as_ref())
+                                .is_some_and(|screen| screen.is_for_issue(issue))
+                        });
+                    if !chat_open {
                         self.activity_log.push_simple(
                             label,
                             format!("ERROR: {}", message),
@@ -328,3 +334,7 @@ impl App {
 #[cfg(test)]
 #[path = "event_handler_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "one_alert_tests.rs"]
+mod one_alert_tests;
