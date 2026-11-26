@@ -115,6 +115,9 @@ impl App {
             None => return,
         };
         if let Err(e) = result {
+            if first_turn {
+                self.report_spawn_failure(format!("#{issue_number}"), &e);
+            }
             self.fail_interaction_turn(issue_number, format!("failed to start turn: {e}"));
         }
     }

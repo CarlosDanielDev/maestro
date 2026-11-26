@@ -164,11 +164,15 @@ impl ManagedSession {
     /// the round-trip completed, then snap the screen to the session view
     /// with no visible "connecting…" feedback. Now the existing
     /// `Spawning` animation in `spinner.rs` is visible during the wait.
+    ///
+    /// **Refuses** (#1453) when the state machine refuses `Spawning` — a
+    /// session already `Spawning` or `Running` returns the
+    /// `IllegalTransition` error and starts no provider task, so a stale
+    /// caller can never start a second agent for a live session.
     pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
         use crate::session::transition::TransitionReason;
-        let _ = self
-            .session
-            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted);
+        self.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)?;
         self.session.started_at = Some(Utc::now());
 
         let request = self.build_request();
@@ -868,6 +872,53 @@ mod tests {
             }
         }
         assert_eq!(bound.as_deref(), Some("bound-id-1"));
+    }
+
+    /// #1453: `spawn` honors the state machine. From `Running` or
+    /// `Spawning` it returns the `IllegalTransition` error, leaves the
+    /// status alone and starts no provider task.
+    #[tokio::test]
+    async fn spawn_refuses_illegal_transition() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+        use crate::session::transition::TransitionReason;
+
+        for live in [SessionStatus::Spawning, SessionStatus::Running] {
+            let mut ms = make_managed("p");
+            ms.session
+                .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+                .unwrap();
+            if live == SessionStatus::Running {
+                ms.session
+                    .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+                    .unwrap();
+            }
+            let fake = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+                events: vec![],
+                end: ScriptedEnd::Ok {
+                    exit_code: Some(0),
+                    session_id: None,
+                },
+            }]));
+            ms.set_provider(fake.clone());
+            let (tx, mut rx) = mpsc::unbounded_channel();
+
+            let result = ms.spawn(tx).await;
+
+            // A refused spawn drops `tx`; a started one forwards events.
+            let first = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                .await
+                .expect("channel settles within timeout");
+            let err = result.expect_err("spawn on a live session must be refused");
+            assert!(
+                err.downcast_ref::<crate::session::transition::IllegalTransition>()
+                    .is_some(),
+                "the error must be the state machine's IllegalTransition, got {err}"
+            );
+            assert!(first.is_none(), "{live:?}: no event may arrive");
+            assert_eq!(fake.requests.lock().unwrap().len(), 0, "{live:?}: no run");
+            assert!(!ms.has_live_turn(), "{live:?}: no turn may be armed");
+            assert_eq!(ms.session.status, live, "status must not change");
+        }
     }
 
     // --- Issue #948: interaction terminator on the unified session ---

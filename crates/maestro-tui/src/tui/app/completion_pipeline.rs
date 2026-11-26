@@ -345,11 +345,7 @@ impl App {
                         LogLevel::Info,
                     );
                     if let Err(e) = managed.spawn(tx.clone()).await {
-                        self.activity_log.push_simple(
-                            label,
-                            format!("Spawn failed: {}", e),
-                            LogLevel::Error,
-                        );
+                        self.report_spawn_failure(label, &e);
                     } else {
                         self.activity_log.push_simple(
                             label,
