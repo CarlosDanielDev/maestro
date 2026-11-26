@@ -12,7 +12,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::rows::WorkKey;
 use super::usage::{Usage, View};
 use super::{Dashboard, DashboardView, pr_lock_reason};
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::armed::{ArmedState, EnterOutcome};
 use crate::tui::screens::ScreenAction;
 
@@ -171,7 +171,10 @@ fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<Screen
         KeyCode::Char('l') => {
             if let Some(id) = list.selected_session() {
                 app.log_viewer_scroll = 0;
-                app.navigate_to(TuiMode::LogViewer(id));
+                app.navigate_to(TuiMode::Session {
+                    id,
+                    view: SessionView::Log,
+                });
             }
         }
         KeyCode::Char('D') => app.dismiss_all_completed(),
@@ -225,7 +228,10 @@ pub(super) fn show_usage(app: &mut App, view: View) {
 fn enter(app: &mut App) -> ScreenAction {
     let selected = app.screen_state.dashboard.list.selected;
     match selected {
-        Some(WorkKey::Session(id)) => app.navigate_to(TuiMode::Detail(id)),
+        Some(WorkKey::Session(id)) => app.navigate_to(TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        }),
         Some(WorkKey::OpenPr(_)) => return ScreenAction::Push(TuiMode::PrReview),
         Some(WorkKey::PendingPr(issue)) if arm_or_commit(app, issue) => {
             app.trigger_manual_pr_retry(issue);

@@ -25,7 +25,7 @@ fn screen(app: &mut App) -> ratatui::Terminal<ratatui::backend::TestBackend> {
 
 #[tokio::test]
 async fn typed_confirm_kill() {
-    let mut app = log_app(TuiMode::Overview);
+    let mut app = log_app(TuiMode::Dashboard);
     app.pool
         .enqueue(make_session(SessionStatus::Running, Some(407)));
     let _ = handle_key(
@@ -51,7 +51,7 @@ async fn typed_confirm_kill() {
 /// warning could never be confirmed.
 #[tokio::test]
 async fn typed_confirm_bypass() {
-    let mut app = log_app(TuiMode::Overview);
+    let mut app = log_app(TuiMode::Dashboard);
     let modal_before = app.config.as_ref().map(|c| c.tui.modal_on_complete);
     let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
     let _ = handle_key(&mut app, ctrl_b).await;
@@ -80,7 +80,7 @@ async fn typed_confirm_bypass() {
 /// wrong letter never reads complete.
 #[tokio::test]
 async fn typed_confirm_counter_counts_matching_chars() {
-    let mut app = log_app(TuiMode::Overview);
+    let mut app = log_app(TuiMode::Dashboard);
     let ctrl_b = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
     let _ = handle_key(&mut app, ctrl_b).await;
     assert_eq!(app.tui_mode, TuiMode::BypassWarning);
@@ -98,7 +98,7 @@ async fn typed_confirm_counter_counts_matching_chars() {
 /// cannot count this branch's unpushed commits, so the branch reads kept.
 #[tokio::test]
 async fn kill_confirm_lost_row() {
-    let mut app = log_app(TuiMode::Overview);
+    let mut app = log_app(TuiMode::Dashboard);
     let session = make_session(SessionStatus::Running, Some(407));
     let id = session.id;
     app.pool.enqueue(session);

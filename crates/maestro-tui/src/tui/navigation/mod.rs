@@ -2,7 +2,6 @@ pub mod focus;
 pub mod keymap;
 pub(crate) mod mode_hints;
 pub mod registry;
-pub mod sidebar_state;
 
 /// Vim-style input mode for the entire application.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -3,7 +3,7 @@ source: crates/maestro-tui/src/tui/snapshot_tests/typed_confirm.rs
 expression: terminal.backend()
 ---
 " MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
-" Overview › Confirm Kill                                       Esc back  ? help "
+" Dashboard › Confirm Kill                                      Esc back  ? help "
 "  o Ops   c Cost  t Tokens  g Deps                                              "
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Work (1) ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "┃ SESSIONS  1                                                                  ┃"

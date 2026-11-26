@@ -93,7 +93,7 @@ impl App {
         // (e.g. through a stale back entry) closes and says so; it never
         // spawns twice.
         if !self.is_parked_at_gate(session_id) {
-            self.tui_mode = TuiMode::Overview;
+            self.tui_mode = TuiMode::Dashboard;
             self.drop_stale_gates_from_nav_stack();
             let toast = crate::tui::ds::toast::Toast::new(
                 crate::tui::ds::toast::Severity::Info,
@@ -117,7 +117,7 @@ impl App {
             }
             'S' => {
                 self.budget_skip_once.insert(session_id);
-                self.tui_mode = TuiMode::Overview;
+                self.tui_mode = TuiMode::Dashboard;
                 self.note_spawn_bypass(session_id);
                 let tx = self.pool.event_tx();
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
@@ -134,7 +134,7 @@ impl App {
                 self.drop_stale_gates_from_nav_stack();
             }
             'n' => {
-                self.tui_mode = TuiMode::Overview;
+                self.tui_mode = TuiMode::Dashboard;
                 let label = self
                     .pool
                     .get_session(session_id)

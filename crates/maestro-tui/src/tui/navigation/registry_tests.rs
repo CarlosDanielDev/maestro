@@ -4,7 +4,10 @@ use ratatui::{Terminal, backend::TestBackend};
 use crate::tui::ds::key_hints::QUIT;
 use crate::tui::{make_test_app, ui};
 
-const LOG_VIEWER: Scope = Scope::Screen(TuiMode::LogViewer(uuid::Uuid::nil()));
+const LOG_VIEWER: Scope = Scope::Screen(TuiMode::Session {
+    id: uuid::Uuid::nil(),
+    view: SessionView::Log,
+});
 
 fn ch(c: char) -> Chord {
     Chord::key(KeyCode::Char(c))
@@ -132,7 +135,13 @@ fn keymap_is_poka_yoke_clean_fails_on_shadow() {
 
 #[test]
 fn keymap_is_poka_yoke_clean_fails_on_panel_shadowing_its_screen() {
-    let panel = Scope::Panel(TuiMode::LogViewer(uuid::Uuid::nil()), "body");
+    let panel = Scope::Panel(
+        TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: SessionView::Log,
+        },
+        "body",
+    );
     let bad = [
         screen(ch('g'), Action::Top, Danger::Safe),
         Binding::new(ch('g'), panel, Action::Expand, Danger::Safe, "x"),
@@ -230,7 +239,10 @@ fn footer_row(mode: TuiMode) -> String {
 #[test]
 fn footer_hints_from_registry() {
     for mode in [
-        TuiMode::LogViewer(uuid::Uuid::new_v4()),
+        TuiMode::Session {
+            id: uuid::Uuid::new_v4(),
+            view: SessionView::Log,
+        },
         TuiMode::SessionSummary,
         TuiMode::ConfirmKill(uuid::Uuid::new_v4()),
     ] {
@@ -261,7 +273,10 @@ fn footer_hints_from_registry() {
 
 #[test]
 fn footer_hints_from_registry_snapshot() {
-    let log = footer_row(TuiMode::LogViewer(uuid::Uuid::new_v4()));
+    let log = footer_row(TuiMode::Session {
+        id: uuid::Uuid::new_v4(),
+        view: SessionView::Log,
+    });
     let summary = footer_row(TuiMode::SessionSummary);
     insta::assert_snapshot!(format!("{}\n{}", log.trim_end(), summary.trim_end()));
 }
@@ -277,17 +292,28 @@ fn footer_hints_none_for_unregistered_screen() {
 #[test]
 fn session_views_are_separate_scopes() {
     let nil = uuid::Uuid::nil();
-    let output = Scope::Screen(TuiMode::Fullscreen(nil));
-    assert!(output.encloses(Scope::Screen(TuiMode::Fullscreen(uuid::Uuid::new_v4()))));
-    assert!(!output.encloses(Scope::Screen(TuiMode::Detail(nil))));
+    let output = Scope::Screen(TuiMode::Session {
+        id: nil,
+        view: SessionView::Output,
+    });
+    assert!(output.encloses(Scope::Screen(TuiMode::Session {
+        id: uuid::Uuid::new_v4(),
+        view: SessionView::Output
+    })));
+    assert!(!output.encloses(Scope::Screen(TuiMode::Session {
+        id: nil,
+        view: SessionView::Detail
+    })));
     let kill_in_output = registry()
         .iter()
         .any(|b| b.action == Action::Kill && b.scope != Scope::Global && output.encloses(b.scope));
     assert!(!kill_in_output, "Output has no kill key");
     assert!(
-        registry()
-            .iter()
-            .any(|b| b.action == Action::Kill && Scope::Screen(TuiMode::Detail(nil)) == b.scope),
+        registry().iter().any(|b| b.action == Action::Kill
+            && Scope::Screen(TuiMode::Session {
+                id: nil,
+                view: SessionView::Detail
+            }) == b.scope),
         "Detail declares X"
     );
 }

@@ -7,7 +7,7 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use super::handle_key;
 use crate::session::types::{Session, SessionStatus};
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::navigation::registry::{Action, actions_on, registry};
 
 async fn press(app: &mut App, code: KeyCode) {
@@ -78,7 +78,10 @@ fn draw(app: &mut App, w: u16, h: u16) -> String {
 async fn fullscreen_k_scrolls() {
     for (w, h) in [(80, 24), (80, 27)] {
         let (mut app, b) = app_on_202();
-        app.tui_mode = TuiMode::Fullscreen(b);
+        app.tui_mode = TuiMode::Session {
+            id: b,
+            view: SessionView::Output,
+        };
         let out = draw(&mut app, w, h);
         assert!(out.contains("row 40"), "{w}x{h} follows the tail:\n{out}");
 
@@ -87,7 +90,10 @@ async fn fullscreen_k_scrolls() {
         }
         assert_eq!(
             app.tui_mode,
-            TuiMode::Fullscreen(b),
+            TuiMode::Session {
+                id: b,
+                view: SessionView::Output
+            },
             "{w}x{h}: k is not kill"
         );
         let out = draw(&mut app, w, h);
@@ -116,7 +122,14 @@ async fn fullscreen_k_scrolls() {
         assert!(!out.contains("row 01"), "{w}x{h}: one j moves down:\n{out}");
 
         press(&mut app, KeyCode::Esc).await;
-        assert_ne!(app.tui_mode, TuiMode::Fullscreen(b), "{w}x{h}: Esc returns");
+        assert_ne!(
+            app.tui_mode,
+            TuiMode::Session {
+                id: b,
+                view: SessionView::Output
+            },
+            "{w}x{h}: Esc returns"
+        );
     }
 }
 
@@ -126,7 +139,10 @@ async fn fullscreen_k_scrolls() {
 #[tokio::test]
 async fn fullscreen_and_graph_keys_do_not_fall_through() {
     let (mut app, b) = app_on_202();
-    let mode = TuiMode::Fullscreen(b);
+    let mode = TuiMode::Session {
+        id: b,
+        view: SessionView::Output,
+    };
     app.tui_mode = mode;
     let before = app.pool.all_sessions().len();
     // Enter is an Overview key too: it proves the fall-through is closed
@@ -149,7 +165,14 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
     );
     assert!(!app.show_activity_log, "{mode:?}: d toggled the log");
     press(&mut app, KeyCode::Char('d')).await;
-    assert_eq!(app.tui_mode, TuiMode::Detail(b), "d opens Detail");
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Session {
+            id: b,
+            view: SessionView::Detail
+        },
+        "d opens Detail"
+    );
     assert!(!app.show_activity_log, "d toggled the log");
     let actions = actions_on(registry(), mode);
     assert!(
@@ -163,7 +186,10 @@ async fn fullscreen_and_graph_keys_do_not_fall_through() {
 #[tokio::test]
 async fn fullscreen_screen_footer() {
     let (mut app, b) = app_on_202();
-    app.tui_mode = TuiMode::Fullscreen(b);
+    app.tui_mode = TuiMode::Session {
+        id: b,
+        view: SessionView::Output,
+    };
     let out = draw(&mut app, 80, 24);
     for hint in ["Esc Back", "j/k Scroll", "[Esc] back"] {
         assert!(out.contains(hint), "{hint:?} missing:\n{out}");

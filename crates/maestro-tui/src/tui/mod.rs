@@ -148,13 +148,15 @@ fn completion_ready(app: &App, modal_on_complete: bool) -> bool {
         && app.queue_executor.is_none()
         && app.completion_summary.is_none()
         && !app.completion_summary_dismissed
-        && !matches!(
-            app.tui_mode,
-            app::TuiMode::Dashboard
-                | app::TuiMode::IssueBrowser
-                | app::TuiMode::PromptInput
-                | app::TuiMode::CompletionSummary
-        )
+        // #1294: `--once` has no screen (it keeps the default Dashboard).
+        && (app.once_mode
+            || !matches!(
+                app.tui_mode,
+                app::TuiMode::Dashboard
+                    | app::TuiMode::IssueBrowser
+                    | app::TuiMode::PromptInput
+                    | app::TuiMode::CompletionSummary
+            ))
 }
 
 /// Route a mouse wheel-up to the right scroll target (#988). On the
@@ -189,13 +191,14 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     let mut terminal = init_terminal(app.once_mode)?;
 
     // The legacy timed splash is replaced by the persistent Landing screen
-    // (#290). Only intercept the Dashboard boot path — session-launching
-    // subcommands (cmd_run / cmd_resume) go straight to their work view.
-    if !no_splash && matches!(app.tui_mode, app::TuiMode::Dashboard) {
-        if app.screen_state.landing_screen.is_none() {
-            app.screen_state.landing_screen = Some(screens::LandingScreen::new());
-        }
-        app.tui_mode = app::TuiMode::Landing;
+    // (#290). Only the `maestro` boot path asks for it (#1294: it sets
+    // Landing) — session-launching subcommands (cmd_run / cmd_resume) keep
+    // the default Dashboard.
+    if !no_splash
+        && app.tui_mode == app::TuiMode::Landing
+        && app.screen_state.landing_screen.is_none()
+    {
+        app.screen_state.landing_screen = Some(screens::LandingScreen::new());
     }
 
     let result = event_loop(&mut terminal, &mut app).await;

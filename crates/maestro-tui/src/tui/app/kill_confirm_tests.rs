@@ -44,7 +44,7 @@ fn running_in(repo: &Path, issue: u64) -> (App, uuid::Uuid, PathBuf) {
     let store = StateStore::new(repo.join("state-1456.json"));
     let worktrees = Box::new(GitWorktreeManager::new(repo.to_path_buf()));
     let mut app = App::new(store, 3, worktrees, "bypassPermissions".into(), vec![]);
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     let session = Session::new(
         "probe".into(),
         "opus".into(),

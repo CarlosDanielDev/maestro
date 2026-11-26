@@ -103,7 +103,7 @@ fn issue_wizard_shows_crumb_bar_not_tab_bar() {
 
 #[test]
 fn footer_pins_quit() {
-    for mode in [TuiMode::Dashboard, TuiMode::IssueWizard, TuiMode::Overview] {
+    for mode in [TuiMode::Dashboard, TuiMode::IssueWizard, TuiMode::Dashboard] {
         for w in [80u16, 100, 150] {
             let mut app = shell_app(mode);
             let t = draw(&mut app, w, 24);

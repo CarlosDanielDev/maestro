@@ -5,61 +5,6 @@ use super::keymap::{
     FKeyAction, FKeyRelevance, InlineHint, KeyBindingGroup, ModeKeyMap, global_keybindings,
 };
 
-// `c` keeps priority 1 so it survives narrow widths — the dimmed-when-disabled
-// state means the hint is the user's only signal that copy exists.
-const HINT_OV_DETAIL: InlineHint = InlineHint {
-    key: "Enter",
-    action: "Detail",
-    priority: 0,
-};
-const HINT_OV_COPY: InlineHint = InlineHint {
-    key: "c",
-    action: "Copy",
-    priority: 1,
-};
-const HINT_OV_LOG: InlineHint = InlineHint {
-    key: "d",
-    action: "Log",
-    priority: 2,
-};
-const HINT_OV_FULL: InlineHint = InlineHint {
-    key: "f",
-    action: "Full",
-    priority: 3,
-};
-const HINT_OV_SWITCHER: InlineHint = InlineHint {
-    key: "w",
-    action: "Switcher",
-    priority: 4,
-};
-const HINT_OV_CYCLE: InlineHint = InlineHint {
-    key: "Tab",
-    action: "Cycle Views",
-    priority: 5,
-};
-
-const OVERVIEW_HINTS_BASE: &[InlineHint] = &[
-    HINT_OV_DETAIL,
-    HINT_OV_COPY,
-    HINT_OV_LOG,
-    HINT_OV_FULL,
-    HINT_OV_SWITCHER,
-    HINT_OV_CYCLE,
-];
-
-/// Overview hints that act on a session; the footer dims them while the
-/// pool is empty, since they would do nothing (#1399).
-const OVERVIEW_SESSION_ONLY_KEYS: &[&str] =
-    &[HINT_OV_DETAIL.key, HINT_OV_COPY.key, HINT_OV_FULL.key];
-
-/// Keys of `mode`'s inline hints that cannot act right now.
-pub fn inactive_hint_keys(mode: TuiMode, has_sessions: bool) -> &'static [&'static str] {
-    match mode {
-        TuiMode::Overview if !has_sessions => OVERVIEW_SESSION_ONLY_KEYS,
-        _ => &[],
-    }
-}
-
 /// Keys of `mode`'s inline hints that do nothing right now, so the footer
 /// leaves them out. #1384: Compact Home has no Actions panel, so `Tab` has
 /// nowhere to go.
@@ -75,7 +20,7 @@ pub fn hidden_hint_keys(mode: TuiMode, home_actions_visible: bool) -> &'static [
 /// `screen_bindings` should come from the active screen's `KeymapProvider::keybindings()`
 /// (empty slice for modes that don't implement `Screen`).
 ///
-/// `_agent_graph_enabled` is unused since #1292: the Overview `[g] Graph`
+/// `_agent_graph_enabled` is unused since #1292: the old `[g] Graph`
 /// hint is gone (the graph is Dashboard › Deps › files, `g g`).
 pub fn mode_keymap(
     mode: TuiMode,
@@ -88,7 +33,6 @@ pub fn mode_keymap(
     let is_running = matches!(session_status, Some(SessionStatus::Running));
 
     let (mode_label, fkey_vis, hints): (&str, FKeyVis, &[InlineHint]) = match mode {
-        TuiMode::Overview => ("Overview", FKeyVis::SessionAware, OVERVIEW_HINTS_BASE),
         TuiMode::Session {
             view: SessionView::Detail,
             ..
@@ -138,12 +82,9 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        // #1289: Cost and Tokens are Dashboard views (aliases); #1292: so
-        // is the Agent graph (Deps › files).
-        TuiMode::Dashboard
-        | TuiMode::CostDashboard
-        | TuiMode::TokenDashboard
-        | TuiMode::AgentGraph => (
+        // #1289: Cost and Tokens are Dashboard views; #1292: so is the
+        // Agent graph (Deps › files).
+        TuiMode::Dashboard => (
             "Dashboard",
             FKeyVis::DashboardLike,
             &[

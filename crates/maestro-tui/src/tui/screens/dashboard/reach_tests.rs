@@ -12,7 +12,7 @@ use crate::provider::github::ci::PendingPrCheck;
 use crate::provider::github::types::{PendingPrStatus, awaiting_pending_pr};
 use crate::provider::types::{CheckConclusion, CheckRun, CheckStatus};
 use crate::session::types::{Session, SessionStatus};
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::input_handler::handle_key;
 
 async fn press(app: &mut App, code: KeyCode) {
@@ -70,7 +70,13 @@ async fn detail_from_dashboard_acts_on_the_session_it_shows() {
         let (mut app, ids) = sessions_app(2);
         press(&mut app, KeyCode::Char('j')).await;
         press(&mut app, KeyCode::Enter).await;
-        assert_eq!(app.tui_mode, TuiMode::Detail(ids[1]));
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Session {
+                id: ids[1],
+                view: SessionView::Detail
+            }
+        );
         draw(&mut app);
         press(&mut app, code).await;
         assert_eq!(app.tui_mode, TuiMode::ConfirmKill(ids[1]), "{code:?}");
@@ -81,7 +87,13 @@ async fn detail_from_dashboard_acts_on_the_session_it_shows() {
     press(&mut app, KeyCode::Char('j')).await;
     press(&mut app, KeyCode::Enter).await;
     press(&mut app, KeyCode::Char('f')).await;
-    assert_eq!(app.tui_mode, TuiMode::Fullscreen(ids[1]));
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Session {
+            id: ids[1],
+            view: SessionView::Output
+        }
+    );
 }
 
 /// `k` in Detail no longer kills: kill is `X` there too, as on the list.
@@ -89,7 +101,13 @@ async fn detail_from_dashboard_acts_on_the_session_it_shows() {
 async fn detail_k_does_not_kill() {
     let (mut app, ids) = sessions_app(2);
     press(&mut app, KeyCode::Enter).await;
-    assert_eq!(app.tui_mode, TuiMode::Detail(ids[0]));
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Session {
+            id: ids[0],
+            view: SessionView::Detail
+        }
+    );
     press(&mut app, KeyCode::Char('k')).await;
     assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
 }
@@ -110,7 +128,13 @@ async fn x_and_enter_after_moves_act_on_the_marked_row() {
     press(&mut app, KeyCode::Esc).await;
     draw(&mut app);
     press(&mut app, KeyCode::Enter).await;
-    assert_eq!(app.tui_mode, TuiMode::Detail(ids[1]));
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Session {
+            id: ids[1],
+            view: SessionView::Detail
+        }
+    );
 }
 
 /// D dismisses the finished sessions from the Dashboard.

@@ -307,7 +307,7 @@ async fn enter_opens_overview_on(runners: u128) {
     );
 
     press(&mut app, KeyCode::Enter).await;
-    assert_eq!(app.tui_mode, TuiMode::Overview);
+    assert_eq!(app.tui_mode, TuiMode::Dashboard);
     let selected = app
         .pool
         .session_at_index(app.panel_view.selected_index())

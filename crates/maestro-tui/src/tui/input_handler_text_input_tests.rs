@@ -148,7 +148,7 @@ fn on_roadmap_filter(field: FilterField) -> App {
 }
 
 fn on_help_search() -> App {
-    let mut app = base_app(TuiMode::Overview);
+    let mut app = base_app(TuiMode::Dashboard);
     let mut help = HelpOverlayState::new();
     help.search_active = true;
     app.help_state = Some(help);
@@ -178,7 +178,7 @@ fn on_run_loop_stop() -> App {
 
 /// #1255: the ⌃K palette's query field, opened over Overview.
 fn on_palette() -> App {
-    let mut app = base_app(TuiMode::Overview);
+    let mut app = base_app(TuiMode::Dashboard);
     super::open_palette(&mut app);
     app
 }
@@ -224,7 +224,7 @@ fn stale_edit_state_on_another_screen_is_not_text_input() {
     let mut app = on_prd_edit();
     let roadmap = on_roadmap_filter(FilterField::Label);
     app.screen_state.roadmap_screen = roadmap.screen_state.roadmap_screen;
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     assert!(!is_text_input_mode(&app));
 }
 
@@ -250,14 +250,14 @@ async fn ready_to_restart_y_ignored_in_text_input() {
 
 #[tokio::test]
 async fn ready_to_restart_bare_y_outside_text_input_restarts() {
-    let mut app = base_app(TuiMode::Overview);
+    let mut app = base_app(TuiMode::Dashboard);
     app.upgrade_state = ready_to_restart();
     assert!(send(&mut app, KeyCode::Char('y')).await);
 }
 
 #[test]
 fn ready_to_restart_y_chord_is_not_restart() {
-    let mut app = base_app(TuiMode::Overview);
+    let mut app = base_app(TuiMode::Dashboard);
     app.upgrade_state = ready_to_restart();
     for m in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
         assert!(!is_restart_key(&app, &KeyEvent::new(KeyCode::Char('y'), m)));
@@ -266,7 +266,7 @@ fn ready_to_restart_y_chord_is_not_restart() {
 
 #[test]
 fn y_without_pending_restart_is_not_restart() {
-    let app = base_app(TuiMode::Overview);
+    let app = base_app(TuiMode::Dashboard);
     let y = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
     assert!(!is_restart_key(&app, &y));
 }

@@ -89,7 +89,7 @@ async fn upgrade_ctrl_u_is_not_upgrade() {
 #[tokio::test]
 async fn upgrade_alt_u_is_not_upgrade_outside_text_input() {
     let mut app = crate::tui::make_test_app("upgrade-keys");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.upgrade_state = available();
     send(&mut app, KeyCode::Char('u'), KeyModifiers::ALT).await;
     send(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL).await;
@@ -99,7 +99,7 @@ async fn upgrade_alt_u_is_not_upgrade_outside_text_input() {
 #[tokio::test]
 async fn upgrade_bare_u_outside_text_input_downloads() {
     let mut app = crate::tui::make_test_app("upgrade-keys");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.upgrade_state = available();
     send(&mut app, KeyCode::Char('u'), KeyModifiers::NONE).await;
     assert!(matches!(
@@ -111,7 +111,7 @@ async fn upgrade_bare_u_outside_text_input_downloads() {
 #[tokio::test]
 async fn upgrade_bare_esc_outside_text_input_hides_chip() {
     let mut app = crate::tui::make_test_app("upgrade-keys");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.upgrade_state = available();
     send(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
     assert!(matches!(app.upgrade_state, UpgradeState::Hidden));

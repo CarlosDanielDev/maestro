@@ -2,7 +2,7 @@
 
 /// Ephemeral state for one call-log pane: cursor, expand toggle, scroll
 /// offsets for the list and the payload sub-panel. Lives on `App` because
-/// `TuiMode::CallLog(Uuid)` is a peer top-level mode (mirrors
+/// the Events view of `TuiMode::Session` is a peer top-level mode (mirrors
 /// `App.log_viewer_scroll` for the existing free-text log viewer).
 #[derive(Debug, Default, Clone)]
 pub struct CallLogState {

@@ -11,7 +11,10 @@ pub(super) fn blocks() -> Vec<Binding> {
     let ch = |c| Chord::key(KeyCode::Char(c));
     let s = |scope, chord, action, label| Binding::new(chord, scope, action, Danger::Safe, label);
     let mut v = Vec::new();
-    let log = Scope::Screen(TuiMode::LogViewer(uuid::Uuid::nil()));
+    let log = Scope::Screen(TuiMode::Session {
+        id: uuid::Uuid::nil(),
+        view: SessionView::Log,
+    });
     v.extend([
         s(log, ch('j'), A::ScrollDown, "Down"),
         s(log, ch('k'), A::ScrollUp, "Up"),
@@ -43,7 +46,10 @@ pub(super) fn blocks() -> Vec<Binding> {
     // the only ones that act. No kill, pause or dismiss: the Overview
     // selection those act on is not on screen. Hidden: their footers stay
     // the `mode_keymap` lists, which also show the Global `Esc Back`.
-    let full = Scope::Screen(TuiMode::Fullscreen(uuid::Uuid::nil()));
+    let full = Scope::Screen(TuiMode::Session {
+        id: uuid::Uuid::nil(),
+        view: SessionView::Output,
+    });
     v.extend([
         s(full, ch('j'), A::ScrollDown, "Down").hidden(),
         s(full, ch('k'), A::ScrollUp, "Up").hidden(),
@@ -64,12 +70,18 @@ pub(super) fn blocks() -> Vec<Binding> {
                 .map(|&(_, key, label)| s(scope, ch(key), A::OpenView, label).hidden()),
         );
     }
-    let detail = Scope::Screen(TuiMode::Detail(uuid::Uuid::nil()));
+    let detail = Scope::Screen(TuiMode::Session {
+        id: uuid::Uuid::nil(),
+        view: SessionView::Detail,
+    });
     v.push(Binding::new(ch('X'), detail, A::Kill, Danger::Destructive, "kill").hidden());
     v.push(s(detail, ch('w'), A::Switcher, "switch session").hidden());
     v.push(s(detail, ch('c'), A::Copy, "copy reply").hidden());
     v.push(s(full, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
-    let events = Scope::Screen(TuiMode::CallLog(uuid::Uuid::nil()));
+    let events = Scope::Screen(TuiMode::Session {
+        id: uuid::Uuid::nil(),
+        view: SessionView::Events,
+    });
     v.push(s(events, Chord::key(KeyCode::End), A::Bottom, "follow").hidden());
     // #1265: `r` reloads here as on every other screen. #1269: `R` only
     // opens the Run queue (the plan); spawning needs ⏎ in its launch dialog.

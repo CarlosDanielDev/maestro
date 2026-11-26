@@ -7,7 +7,7 @@ use crossterm::event::KeyCode;
 use ratatui::{Terminal, backend::TestBackend};
 
 use super::tests::drawn::{SIZES, draw, inner_rows, press};
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::tab_bar::tab_index;
 use crate::tui::help::shown_groups;
 use crate::tui::navigation::keymap::mode_keymap;
@@ -89,12 +89,16 @@ fn help_lists_every_registry_binding_for_mode() {
     let modes = [
         TuiMode::Landing,
         TuiMode::Dashboard,
-        TuiMode::Overview,
-        TuiMode::LogViewer(nil),
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Log,
+        },
         TuiMode::SessionSummary,
         TuiMode::ConfirmKill(nil),
-        TuiMode::Fullscreen(nil),
-        TuiMode::AgentGraph,
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Output,
+        },
         TuiMode::MilestoneView,
     ];
     for mode in modes {
@@ -226,7 +230,7 @@ fn key_tokens(key: &str) -> Vec<String> {
 }
 
 #[test]
-fn help_overview_names_session_jump_not_tabs() {
+fn help_names_digit_tabs_only_on_tab_screens() {
     let nil = uuid::Uuid::nil();
     let rows = |mode| -> Vec<(String, String)> {
         shown_for(mode)
@@ -235,18 +239,16 @@ fn help_overview_names_session_jump_not_tabs() {
             .map(|b| (b.key.to_string(), b.description.to_string()))
             .collect()
     };
-    let overview = rows(TuiMode::Overview);
-    assert!(
-        overview
-            .iter()
-            .any(|(k, d)| k == "1-9" && d.contains("Jump to session")),
-        "Overview: no 1-9 session row\n{overview:?}"
-    );
     for mode in [
-        TuiMode::Overview,
-        TuiMode::LogViewer(nil),
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Log,
+        },
         TuiMode::SessionSummary,
-        TuiMode::Fullscreen(nil),
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Output,
+        },
     ] {
         let rows = rows(mode);
         assert!(
@@ -267,12 +269,16 @@ fn help_never_gives_one_key_two_actions() {
     let modes = [
         TuiMode::Landing,
         TuiMode::Dashboard,
-        TuiMode::Overview,
-        TuiMode::LogViewer(nil),
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Log,
+        },
         TuiMode::SessionSummary,
         TuiMode::ConfirmKill(nil),
-        TuiMode::Fullscreen(nil),
-        TuiMode::AgentGraph,
+        TuiMode::Session {
+            id: nil,
+            view: SessionView::Output,
+        },
         TuiMode::MilestoneView,
         // #1292: ⌃P is Interaction's pushup; the conflict toast must not
         // name it there.

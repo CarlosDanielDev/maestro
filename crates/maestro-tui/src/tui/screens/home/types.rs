@@ -119,7 +119,7 @@ impl Suggestion {
             suggestions.push(Suggestion {
                 kind: SuggestionKind::IdleSessions,
                 message: "No sessions running — press [r] to start".to_string(),
-                action: TuiMode::Overview,
+                action: TuiMode::Dashboard,
             });
         }
 

@@ -102,7 +102,7 @@ fn picker_live_row_confirms_before_adopt() {
     assert_eq!(press(&mut picker, KeyCode::Enter), ScreenAction::None);
     assert!(picker.confirm_pending());
     assert!(adopted_sessions(&app).is_empty());
-    assert_eq!(app.tui_mode, TuiMode::Overview, "still not routed");
+    assert_eq!(app.tui_mode, TuiMode::Dashboard, "still not routed");
 
     // Cancel keeps the picker open and the pool untouched.
     assert_eq!(press(&mut picker, KeyCode::Char('n')), ScreenAction::None);

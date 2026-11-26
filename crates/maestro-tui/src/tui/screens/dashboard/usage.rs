@@ -1,8 +1,7 @@
 //! Usage views of the Dashboard (§02.14 of `docs/design-system/index.html`,
 //! #1289): `c` Cost and `t` Tokens next to `o` Ops. They share the work
-//! list selection, the scope line (this run) and the Budget rules. The old
-//! `CostDashboard` and `TokenDashboard` modes are aliases that land here
-//! (`alias_view`); the TurboQuant screen is gone (a tile and a panel in
+//! list selection, the scope line (this run) and the Budget rules
+//! (`open_view` opens one); the TurboQuant screen is gone (a tile and a panel in
 //! Tokens; its ⌃K entry opens Tokens). Every dollar goes through
 //! `ds::money`, every gauge through `ds::gauge`.
 
@@ -35,8 +34,8 @@ pub enum View {
     Deps,
 }
 
-// The alias modes (Cost, Tokens, #1292's Agent graph) route in `alias`.
-pub use super::alias::{alias_view, navigate_target, resolve, route_alias};
+// Opening a view (Cost, Tokens, #1292's Agent graph) lives in `open`.
+pub use super::open::{navigate_target, open_agent_graph, open_view};
 
 /// Width of the right column (Budget, TurboQuant) on Wide and Regular:
 /// the design's 58 and 48.

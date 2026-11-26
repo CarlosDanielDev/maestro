@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::session::types::{Session, SessionStatus};
-use crate::tui::app::TuiMode;
+
+use crate::tui::screens::dashboard::usage::View;
 use crate::tui::{make_test_app, ui};
 use ratatui::{Terminal, backend::TestBackend};
 
@@ -24,7 +25,7 @@ fn cost_view(sessions: Vec<Session>, total: f64, budget: Option<(f64, f64)>) -> 
         app.pool.enqueue(s);
     }
     app.total_cost = total;
-    app.navigate_to(TuiMode::CostDashboard);
+    crate::tui::screens::dashboard::usage::open_view(&mut app, View::Cost);
     let mut t = Terminal::new(TestBackend::new(120, 36)).unwrap();
     t.draw(|f| ui::draw(f, &mut app)).unwrap();
     format!("{}", t.backend())

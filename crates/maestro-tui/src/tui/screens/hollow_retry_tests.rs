@@ -57,7 +57,13 @@ fn esc_decides_later() {
 fn v_key_returns_push_detail() {
     let id = Uuid::new_v4();
     let action = screen(id).handle_input(&key_event(KeyCode::Char('v')), InputMode::Normal);
-    assert_eq!(action, ScreenAction::Push(TuiMode::Detail(id)));
+    assert_eq!(
+        action,
+        ScreenAction::Push(TuiMode::Session {
+            id,
+            view: SessionView::Detail
+        })
+    );
 }
 
 #[test]

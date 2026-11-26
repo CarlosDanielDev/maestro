@@ -172,7 +172,7 @@ async fn dashboard_kill_ignores_finished_sessions() {
 async fn overview_routes_to_dashboard() {
     let mut app = crate::tui::make_test_app("dashboard-1280-overview");
     app.pool.enqueue(live_session(412));
-    app.navigate_to(TuiMode::Overview);
+    app.navigate_to(TuiMode::Dashboard);
     let out = draw(&mut app);
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
     assert!(out.contains("Work (1)"), "{out}");

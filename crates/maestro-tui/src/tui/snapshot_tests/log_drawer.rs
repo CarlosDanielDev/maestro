@@ -11,7 +11,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use super::make_gh_issue;
 use crate::config::Config;
 use crate::tui::activity_log::LogLevel;
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::toast::Severity;
 use crate::tui::input_handler::handle_key;
 use crate::tui::screens::IssueBrowserScreen;
@@ -100,7 +100,7 @@ pub(super) fn esc() -> KeyEvent {
 
 #[test]
 fn activity_pane_only_on_home_and_dashboard() {
-    for mode in [TuiMode::Landing, TuiMode::Dashboard, TuiMode::Overview] {
+    for mode in [TuiMode::Landing, TuiMode::Dashboard, TuiMode::Dashboard] {
         let mut app = log_app(mode);
         let out = format!("{}", draw(&mut app, 100, 40).backend());
         assert!(out.contains(SEEDED), "{mode:?} must show the pane:\n{out}");
@@ -113,7 +113,10 @@ fn activity_pane_only_on_home_and_dashboard() {
         TuiMode::ProjectStats,
         TuiMode::Prd,
         TuiMode::IssueWizard,
-        TuiMode::Detail(uuid::Uuid::nil()),
+        TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: SessionView::Detail,
+        },
     ] {
         let mut app = log_app(mode);
         let out = format!("{}", draw(&mut app, 100, 40).backend());

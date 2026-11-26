@@ -36,15 +36,10 @@ fn shows_landing(app: &App) -> bool {
     }
 }
 
-/// #1263: the Activity pane lives on Home and Dashboard only (the session
-/// Overview is part of the Dashboard). A modal keeps the screen under it.
+/// #1263: the Activity pane lives on Home and Dashboard only. A modal
+/// keeps the screen under it.
 fn shows_log_pane(app: &App) -> bool {
-    let is_log_screen = |mode: &TuiMode| {
-        matches!(
-            mode,
-            TuiMode::Landing | TuiMode::Dashboard | TuiMode::Overview
-        )
-    };
+    let is_log_screen = |mode: &TuiMode| matches!(mode, TuiMode::Landing | TuiMode::Dashboard);
     match app.tui_mode {
         TuiMode::ConfirmKill(_) => true,
         TuiMode::ConfirmExit | TuiMode::BudgetPreSpawn { .. } => {
@@ -132,17 +127,6 @@ fn raise_log_toasts(app: &mut App, log_visible: bool) {
     }
 }
 
-/// #1280: `TuiMode::Overview` is an alias for one release (the ADR on the
-/// PR): every route to the session grid now shows the Dashboard. One event
-/// is handled per draw, so a key never sees the alias.
-fn route_overview_alias(app: &mut App) {
-    if app.tui_mode == TuiMode::Overview {
-        app.tui_mode = TuiMode::Dashboard;
-    }
-    // #1289: the old Cost and Tokens screens are Dashboard views.
-    crate::tui::screens::dashboard::usage::route_alias(app);
-}
-
 /// The Dashboard cockpit (#1280) in `area`.
 fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect, theme: &crate::tui::theme::Theme) {
     let bp = crate::tui::ds::breakpoint::Breakpoint::from_area(f.area());
@@ -160,7 +144,6 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect, theme: &crate::tui::
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
-    route_overview_alias(app);
     // Advance spinner animation on each draw cycle
     app.spinner_tick = app.spinner_tick.wrapping_add(1);
 
@@ -264,26 +247,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
     match app.tui_mode {
-        TuiMode::Overview => {
-            // #1384: the grid keys build their layout from this area.
-            app.panel_view.drawn_area = Some(chunks[1]);
-            // #1264: a Home `⏎` jump puts the grid cursor on its session.
-            app.panel_view
-                .apply_reveal(app.pool.all_sessions().len(), chunks[1]);
-            // #1384: the highlight follows `selected` after adds, dismisses
-            // and resizes, not only after a key.
-            app.panel_view
-                .sync_to_layout(app.pool.total_count(), chunks[1]);
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
-        }
         TuiMode::DependencyGraph => {
             dep_graph::draw_dep_graph(
                 f,
@@ -292,14 +255,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &app.theme,
             );
         }
-        // `route_overview_alias` turned the Usage aliases (and #1292's
-        // Agent graph) into Dashboard.
-        TuiMode::Dashboard
-        | TuiMode::CostDashboard
-        | TuiMode::TokenDashboard
-        | TuiMode::AgentGraph => {
-            draw_dashboard(f, app, chunks[1], &theme);
-        }
+        TuiMode::Dashboard => draw_dashboard(f, app, chunks[1], &theme),
         TuiMode::Landing => draw_home(f, app, chunks[1], &theme),
         TuiMode::IssueWizard => {
             if let Some(ref mut screen) = app.screen_state.issue_wizard_screen {
@@ -1050,16 +1006,6 @@ fn draw_footer(
         app.screen_state.mission_control.actions_visible,
     );
     hints.retain(|h| !hidden.contains(&h.key));
-    // #1399: session keys are dimmed while there is no session to act on.
-    // The overrides below never show these keys, so this stays right.
-    let dimmed = if pairs.is_empty() {
-        crate::tui::navigation::mode_hints::inactive_hint_keys(
-            app.tui_mode,
-            !app.pool.all_sessions().is_empty(),
-        )
-    } else {
-        &[]
-    };
     // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
     if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
         hints = key_hints::from_pairs(&[("⌃Q", "hold to quit"), ("Esc", "stay")]);
@@ -1082,7 +1028,7 @@ fn draw_footer(
         hints = key_hints::from_pairs(&[("Esc", "Close log"), ("⌃L", "close")]);
     }
     let pin_quit = app.tui_mode != TuiMode::ConfirmExit;
-    key_hints::draw_dimmed(f, area, &hints, dimmed, pin_quit, theme);
+    key_hints::draw(f, area, &hints, pin_quit, theme);
 }
 
 /// [`active_screen`] plus the screens it leaves out, for footer hints only.

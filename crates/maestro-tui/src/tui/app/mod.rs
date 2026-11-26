@@ -397,7 +397,7 @@ impl App {
             model_router: None,
             progress_tracker: ProgressTracker::new(),
             notifications: NotificationDispatcher::new(false),
-            tui_mode: TuiMode::Overview,
+            tui_mode: TuiMode::Dashboard,
             nav_stack: NavigationStack::default(),
             session_logger: SessionLogger::new(SessionLogger::default_dir()),
             ci_poller: CiPoller::default(),
@@ -407,7 +407,7 @@ impl App {
             help_state: None,
             palette: None,
             cached_mode_km: None,
-            cached_mode_km_key: (TuiMode::Overview, None, false),
+            cached_mode_km_key: (TuiMode::Dashboard, None, false),
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
             screen_state: ScreenState::default(),
@@ -810,13 +810,7 @@ impl App {
     ///   rather than [A, B, A], so `Esc` takes the user back one real
     ///   step, not one keypress).
     pub fn navigate_to(&mut self, target: TuiMode) {
-        // Defense-in-depth; canonical gate is in tui::ui::draw.
-        let target = if target == TuiMode::AgentGraph && !self.is_agent_graph_enabled() {
-            TuiMode::Overview
-        } else {
-            target
-        };
-        // #1289: Cost and Tokens are Dashboard views now.
+        // The Dashboard opens on Ops (#1289).
         let target = crate::tui::screens::dashboard::usage::navigate_target(
             target,
             &mut self.screen_state.dashboard,
@@ -1137,47 +1131,43 @@ enabled = true
     }
 
     #[test]
-    fn navigate_to_agent_graph_with_toggle_off_redirects_to_overview() {
+    fn open_agent_graph_with_toggle_off_stays_off_the_files_lens() {
         // agent_graph_enabled defaults to true; the OFF case must be set
         // explicitly rather than relying on an absent [views].
-        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = false\n");
-        app.tui_mode = TuiMode::Overview;
-        app.navigate_to(TuiMode::AgentGraph);
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::Overview,
-            "navigate_to(AgentGraph) with toggle OFF must redirect to Overview"
-        );
+        use crate::tui::screens::dashboard::{deps::Lens, usage::open_agent_graph};
+        for toml in [Some("[views]\nagent_graph_enabled = false\n"), None] {
+            let mut app = match toml {
+                Some(t) => make_app_with_views_toml(t),
+                None => make_app(),
+            };
+            app.tui_mode = TuiMode::Dashboard;
+            open_agent_graph(&mut app);
+            assert_eq!(app.tui_mode, TuiMode::Dashboard, "{toml:?}");
+            assert_ne!(
+                app.screen_state.dashboard.deps.lens,
+                Lens::Files,
+                "{toml:?}"
+            );
+        }
     }
 
     #[test]
-    fn navigate_to_agent_graph_with_toggle_on_succeeds() {
+    fn open_agent_graph_with_toggle_on_lands_on_the_files_lens() {
         let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
-        app.tui_mode = TuiMode::Overview;
-        app.navigate_to(TuiMode::AgentGraph);
+        app.tui_mode = TuiMode::IssueBrowser;
+        crate::tui::screens::dashboard::usage::open_agent_graph(&mut app);
         // #1292: the Agent graph is the Files lens of Dashboard Deps.
-        assert_eq!(
-            app.tui_mode,
-            TuiMode::Dashboard,
-            "navigate_to(AgentGraph) with toggle ON must land on Dashboard Deps"
-        );
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
         let dash = &app.screen_state.dashboard;
         assert_eq!(dash.view, crate::tui::screens::dashboard::usage::View::Deps);
         assert_eq!(
             dash.deps.lens,
             crate::tui::screens::dashboard::deps::Lens::Files
         );
-    }
-
-    #[test]
-    fn navigate_to_agent_graph_with_no_config_redirects_to_overview() {
-        let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
-        app.navigate_to(TuiMode::AgentGraph);
         assert_eq!(
-            app.tui_mode,
-            TuiMode::Overview,
-            "navigate_to(AgentGraph) with no config (None) must redirect to Overview"
+            app.nav_stack.peek(),
+            Some(&TuiMode::IssueBrowser),
+            "Esc comes back"
         );
     }
 

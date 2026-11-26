@@ -697,7 +697,7 @@ mod tests {
         // Dismiss the summary
         app.completion_summary_dismissed = true;
         app.completion_summary = None;
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
 
         // The auto-transition condition should NOT fire:
         // all_done=true, continuous_mode=None, completion_summary=None,
@@ -762,7 +762,7 @@ mod tests {
     #[test]
     fn opening_hollow_modal_pushes_prior_mode_onto_nav_stack() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         let depth_before = app.nav_stack.depth();
 
         // Simulate the modal-open code path.
@@ -779,7 +779,7 @@ mod tests {
         app.navigate_back_or_dashboard();
         assert_eq!(
             app.tui_mode,
-            TuiMode::Overview,
+            TuiMode::Dashboard,
             "Skip must return to Overview, not Dashboard"
         );
     }
@@ -790,7 +790,10 @@ mod tests {
     #[test]
     fn opening_adapt_follow_up_pushes_prior_mode_onto_nav_stack() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Detail(uuid::Uuid::nil());
+        app.tui_mode = TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: SessionView::Detail,
+        };
         let depth_before = app.nav_stack.depth();
 
         app.navigate_to(TuiMode::AdaptFollowUp);
@@ -805,7 +808,10 @@ mod tests {
         app.navigate_back_or_dashboard();
         assert_eq!(
             app.tui_mode,
-            TuiMode::Detail(uuid::Uuid::nil()),
+            TuiMode::Session {
+                id: uuid::Uuid::nil(),
+                view: SessionView::Detail
+            },
             "Esc must return to Detail, not Dashboard"
         );
     }

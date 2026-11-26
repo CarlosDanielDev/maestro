@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::{Phase, RunLoopState, RunView, StopDialog};
 use crate::tui::activity_log::LogLevel;
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::confirm::ConfirmOutcome;
 use crate::tui::ds::toast::{Severity, Toast};
 use crate::tui::widgets::decision_card::DecisionAction;
@@ -47,7 +47,10 @@ pub async fn handle(app: &mut App, key: &KeyEvent) {
                 .as_ref()
                 .and_then(|e| e.deciding_session_id());
             if let Some(id) = id {
-                app.navigate_to(TuiMode::Detail(id));
+                app.navigate_to(TuiMode::Session {
+                    id,
+                    view: SessionView::Detail,
+                });
             }
         }
         // Later never keeps a paid pick: the card reopens on the default.
@@ -216,5 +219,5 @@ fn decide_continuous(app: &mut App, retry: bool) {
             );
         }
     }
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
 }

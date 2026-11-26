@@ -87,7 +87,6 @@ mod tests {
     #[test]
     fn flows_are_not_tabs() {
         assert_eq!(tab_index(TuiMode::IssueWizard), None);
-        assert_eq!(tab_index(TuiMode::Overview), None);
         assert_eq!(tab_label(TuiMode::Landing), Some("Home"));
     }
 }

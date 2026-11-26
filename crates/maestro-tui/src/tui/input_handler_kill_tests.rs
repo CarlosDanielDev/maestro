@@ -22,7 +22,7 @@ async fn type_str(app: &mut App, s: &str) {
 /// Overview with one live session for issue #407 selected.
 fn app_with_407() -> App {
     let mut app = crate::tui::make_test_app("kill-typed-confirm");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     let mut s = Session::new(
         "auth refactor".into(),
         "claude-opus-4-5".into(),

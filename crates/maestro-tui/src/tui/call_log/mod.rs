@@ -2,7 +2,7 @@
 //!
 //! Renders the persisted [`Session::call_log`] as a chronological list of
 //! parsed stream events with an optional expanded payload pane. Reached
-//! from `TuiMode::Detail(id)` via the `L` chord.
+//! from the session strip (`TuiMode::Session`, `e`).
 
 pub mod draw;
 pub mod state;

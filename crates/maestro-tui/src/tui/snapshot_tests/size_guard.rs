@@ -4,7 +4,7 @@ use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
-use crate::tui::app::TuiMode;
+use crate::tui::app::{SessionView, TuiMode};
 use crate::tui::{make_test_app, ui};
 
 /// Every `TuiMode`. The `match` has no wildcard, so a new mode fails to
@@ -12,12 +12,15 @@ use crate::tui::{make_test_app, ui};
 fn all_modes() -> Vec<TuiMode> {
     let id = Uuid::nil();
     let modes = vec![
-        TuiMode::Overview,
-        TuiMode::Detail(id),
+        TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        },
         TuiMode::DependencyGraph,
-        TuiMode::AgentGraph,
-        TuiMode::Fullscreen(id),
-        TuiMode::CostDashboard,
+        TuiMode::Session {
+            id,
+            view: SessionView::Output,
+        },
         TuiMode::Dashboard,
         TuiMode::Landing,
         TuiMode::IssueBrowser,
@@ -29,7 +32,6 @@ fn all_modes() -> Vec<TuiMode> {
         TuiMode::QueueConfirmation,
         TuiMode::QueueExecution,
         TuiMode::HollowRetry,
-        TuiMode::TokenDashboard,
         TuiMode::Sanitize,
         TuiMode::Settings,
         TuiMode::SessionSwitcher,
@@ -39,7 +41,10 @@ fn all_modes() -> Vec<TuiMode> {
         TuiMode::IssueWizard,
         TuiMode::MilestoneWizard,
         TuiMode::ProjectStats,
-        TuiMode::LogViewer(id),
+        TuiMode::Session {
+            id,
+            view: SessionView::Log,
+        },
         TuiMode::ConfirmKill(id),
         TuiMode::ConfirmExit,
         TuiMode::SessionSummary,
@@ -48,21 +53,24 @@ fn all_modes() -> Vec<TuiMode> {
         TuiMode::Roadmap,
         TuiMode::BypassWarning,
         TuiMode::MilestoneHealth,
-        TuiMode::GateOutputViewer(id),
+        TuiMode::Session {
+            id,
+            view: SessionView::Gates,
+        },
         TuiMode::CiErrorReview,
         TuiMode::TeamWizard,
         TuiMode::BudgetPreSpawn { session_id: id },
-        TuiMode::CallLog(id),
+        TuiMode::Session {
+            id,
+            view: SessionView::Events,
+        },
         TuiMode::AdoptPicker,
         TuiMode::FleetBoard,
     ];
     for mode in &modes {
         match mode {
-            TuiMode::Overview
-            | TuiMode::Session { .. }
+            TuiMode::Session { .. }
             | TuiMode::DependencyGraph
-            | TuiMode::AgentGraph
-            | TuiMode::CostDashboard
             | TuiMode::Dashboard
             | TuiMode::Landing
             | TuiMode::IssueBrowser
@@ -74,7 +82,6 @@ fn all_modes() -> Vec<TuiMode> {
             | TuiMode::QueueConfirmation
             | TuiMode::QueueExecution
             | TuiMode::HollowRetry
-            | TuiMode::TokenDashboard
             | TuiMode::Sanitize
             | TuiMode::Settings
             | TuiMode::SessionSwitcher

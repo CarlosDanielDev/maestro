@@ -8,7 +8,7 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use super::usage::{empty_app, session, tokens};
 use crate::session::types::SessionStatus;
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::App;
 use crate::tui::ui;
 
 const GRAPH_ON: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n\
@@ -47,7 +47,7 @@ fn lens_app() -> App {
         let _ = claims.claim(path, who);
     }
     claims.record_conflict("src/auth/middleware.rs", ids[0], ids[1]);
-    app.navigate_to(TuiMode::AgentGraph);
+    crate::tui::screens::dashboard::usage::open_agent_graph(&mut app);
     app
 }
 

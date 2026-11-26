@@ -55,6 +55,13 @@ fn app(mode: TuiMode) -> App {
     app
 }
 
+/// Dashboard › Cost (#1289).
+fn cost_app() -> App {
+    let mut app = app(TuiMode::Dashboard);
+    app.screen_state.dashboard.view = crate::tui::screens::dashboard::usage::View::Cost;
+    app
+}
+
 #[test]
 fn cost_budget_label_never_prints_negative_zero() {
     for (w, h) in SIZES {
@@ -84,7 +91,7 @@ fn cost_budget_label_snaps_a_negative_zero_from_any_caller() {
 
 /// Dashboard › Cost with the `[budget]` the Budget panel reads (#1289).
 fn budget_app() -> App {
-    let mut app = app(TuiMode::CostDashboard);
+    let mut app = cost_app();
     let toml = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
                 [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
                 [github]\n[notifications]\n";
@@ -192,7 +199,7 @@ fn no_row_is_cut_mid_word_at_80_columns() {
             "{ctx} PRD hint row cuts a hint: {hint:?}"
         );
 
-        let mut cost = app(TuiMode::CostDashboard);
+        let mut cost = cost_app();
         cost.pool.enqueue(super::make_session(
             crate::session::types::SessionStatus::NeedsReview,
             Some(1399),
@@ -224,7 +231,7 @@ fn no_row_is_cut_mid_word_at_80_columns() {
 #[test]
 fn no_row_is_cut_mid_word_at_80_columns_snapshots() {
     assert_snapshot!("text_fit_prd_80x24", draw(&mut prd_app(), 80, 24).backend());
-    let mut cost = app(TuiMode::CostDashboard);
+    let mut cost = cost_app();
     cost.pool.enqueue(super::make_session(
         crate::session::types::SessionStatus::NeedsReview,
         Some(1399),
@@ -269,7 +276,7 @@ fn launch_dialog_options_wrap_80x24() {
 #[test]
 fn overview_empty_state_names_next_action() {
     for (w, h) in SIZES {
-        let mut app = app(TuiMode::Overview);
+        let mut app = app(TuiMode::Dashboard);
         let t = draw(&mut app, w, h);
         let out = rows(&t).join("\n");
         assert!(

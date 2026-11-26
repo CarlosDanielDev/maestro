@@ -7,7 +7,7 @@
 
 use super::{Screen, ScreenAction};
 use crate::session::types::Session;
-use crate::tui::app::TuiMode;
+use crate::tui::app::{SessionView, TuiMode};
 use crate::tui::ds::money::money;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -161,7 +161,10 @@ impl Screen for HollowRetryScreen {
         match self.card.handle_key(key) {
             DecisionAction::Confirm(0) => ScreenAction::SkipHollow(self.session_id),
             DecisionAction::Confirm(_) => ScreenAction::RetryHollow(self.session_id),
-            DecisionAction::Evidence => ScreenAction::Push(TuiMode::Detail(self.session_id)),
+            DecisionAction::Evidence => ScreenAction::Push(TuiMode::Session {
+                id: self.session_id,
+                view: SessionView::Detail,
+            }),
             DecisionAction::Later => ScreenAction::Pop,
             DecisionAction::Pick(_) | DecisionAction::None => ScreenAction::None,
         }

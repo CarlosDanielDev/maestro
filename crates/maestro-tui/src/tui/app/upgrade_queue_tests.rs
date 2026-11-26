@@ -32,7 +32,7 @@ fn available() -> UpgradeState {
 /// Overview with an update available and `live` queued running sessions.
 fn app_with_live(live: usize) -> App {
     let mut app = crate::tui::make_test_app("upgrade-queue-1267");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.upgrade_state = available();
     for _ in 0..live {
         app.pool.enqueue(make_session(SessionStatus::Running, None));
