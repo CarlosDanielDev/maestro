@@ -130,12 +130,14 @@ fn orphan_cleanup_logs_kept_branch() {
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
+    // Plain `cargo test` runs many tests in one process. With only one live
+    // dispatcher, tracing-core rebuilds callsite interest from the calling
+    // thread's own default, so a test on another thread that first hits the
+    // kept-branch callsite caches `Interest::never` for every thread and
+    // this scoped subscriber misses the event. A second live dispatcher
+    // makes every rebuild ask all live dispatchers, this one included.
+    let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     tracing::subscriber::with_default(subscriber, || {
-        // Plain `cargo test` runs many tests in one process: a test on
-        // another thread can register the kept-branch callsite while no
-        // subscriber is live and cache `Interest::never`, so this scoped
-        // subscriber never sees the event. Rebuild with it live.
-        tracing::callsite::rebuild_interest_cache();
         CleanupManager::new(&repo)
             .remove_orphan(&orphan)
             .expect("orphan cleanup must succeed");
