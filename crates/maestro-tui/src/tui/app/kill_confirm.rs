@@ -12,16 +12,25 @@ use crate::tui::ds::confirm::TypedConfirm;
 mod tests;
 
 impl App {
-    /// Open the kill dialog for `session_id` with an empty field.
+    /// Open the kill dialog for `session_id` with an empty field. The
+    /// uncommitted files are counted here, once, never per frame.
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
-        self.screen_state.kill_confirm = Some((session_id, self.kill_confirm(session_id)));
+        let uncommitted = self.uncommitted_files(session_id);
+        let confirm = self.kill_confirm_with(session_id, uncommitted);
+        self.screen_state.kill_confirm = Some((session_id, confirm));
         self.navigate_to(super::TuiMode::ConfirmKill(session_id));
+    }
+
+    /// The dialog for `session_id` without running git (the draw fallback):
+    /// the uncommitted count reads as unknown, and still warns.
+    pub fn kill_confirm(&self, session_id: uuid::Uuid) -> TypedConfirm {
+        self.kill_confirm_with(session_id, None)
     }
 
     /// The dialog for `session_id`. The token is the issue number; a
     /// session with no issue uses the first 8 characters of its id.
     /// What happens to the worktree comes from [`Self::kill_teardown_rows`].
-    pub fn kill_confirm(&self, session_id: uuid::Uuid) -> TypedConfirm {
+    fn kill_confirm_with(&self, session_id: uuid::Uuid, uncommitted: Option<usize>) -> TypedConfirm {
         let short = session_id.to_string()[..8].to_string();
         let session = self.pool.get_session(session_id);
         let label = session
@@ -45,7 +54,7 @@ impl App {
             (String::new(), "Stops the agent now.".into()),
             (String::new(), String::new()),
         ];
-        rows.extend(self.kill_teardown_rows(session_id));
+        rows.extend(self.kill_teardown_rows(session_id, uncommitted));
         rows.extend([
             ("kept".into(), "the transcript".into()),
             ("other".into(), other),
@@ -58,29 +67,41 @@ impl App {
     /// `pool.finalize` keeps the worktree only for FailedGates and Errored,
     /// so its worktree (`git worktree remove --force`) and local branch
     /// (force-deleted) go, and its uncommitted files with them.
-    pub(crate) fn kill_teardown_rows(&self, session_id: uuid::Uuid) -> Vec<(String, String)> {
+    /// `uncommitted` is [`Self::uncommitted_files`]; `None` reads "count
+    /// unknown" and never "nothing lost".
+    pub(crate) fn kill_teardown_rows(
+        &self,
+        session_id: uuid::Uuid,
+        uncommitted: Option<usize>,
+    ) -> Vec<(String, String)> {
         let managed = self.pool.get_active(session_id);
-        let Some(path) = managed.and_then(|m| m.worktree_path.as_deref()) else {
+        if managed.and_then(|m| m.worktree_path.as_ref()).is_none() {
             return vec![("lost".into(), "the turn in progress".into())];
-        };
+        }
         let gone = match managed.and_then(|m| m.branch_name.as_deref()) {
             Some(branch) => format!("the worktree and branch {branch}"),
             None => "the worktree and its branch".to_string(),
         };
-        let lost = match uncommitted_files(path) {
+        let lost = match uncommitted {
             Some(0) => "the turn in progress".to_string(),
             Some(1) => "1 uncommitted file, the turn in progress".to_string(),
             Some(n) => format!("{n} uncommitted files, the turn in progress"),
-            None => "any uncommitted files, the turn in progress".to_string(),
+            None => "uncommitted files (count unknown), turn in progress".to_string(),
         };
         vec![("gone".into(), gone), ("lost".into(), lost)]
     }
+
+    /// How many uncommitted files Kill throws away in `session_id`'s
+    /// worktree. Runs git: call it once, when a dialog opens.
+    pub(crate) fn uncommitted_files(&self, session_id: uuid::Uuid) -> Option<usize> {
+        let managed = self.pool.get_active(session_id)?;
+        count_uncommitted(managed.worktree_path.as_deref()?)
+    }
 }
 
-/// How many files the teardown throws away in `worktree`: one per
-/// `git status --porcelain --untracked-files=all` line. `None` when git
-/// cannot tell (the dialog then says "any").
-fn uncommitted_files(worktree: &Path) -> Option<usize> {
+/// One per `git status --porcelain --untracked-files=all` line. `None` when
+/// git cannot tell (the path is gone, not a repo): the dialog says unknown.
+fn count_uncommitted(worktree: &Path) -> Option<usize> {
     let out = std::process::Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=all"])
         .current_dir(worktree)

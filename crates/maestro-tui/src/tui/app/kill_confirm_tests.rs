@@ -128,3 +128,20 @@ async fn kill_dialog_on_a_clean_worktree_counts_no_files() {
     assert!(!out.contains("uncommitted"), "{out}");
     assert!(out.contains("gone   the worktree"), "{out}");
 }
+
+/// Git cannot read the worktree (the path is gone): the dialog still warns,
+/// with the count unknown, and never says nothing is lost.
+#[tokio::test]
+async fn kill_dialog_with_an_unreadable_worktree_says_unknown() {
+    let repo = repo();
+    let (mut app, id, _worktree) = running_in(repo.path(), 1458);
+    let managed = app.pool.get_active_mut(id).unwrap();
+    managed.worktree_path = Some(repo.path().join("gone-1458"));
+    press(&mut app, KeyCode::Char('X')).await;
+    let out = draw(&mut app);
+    assert!(
+        out.contains("lost   uncommitted files (count unknown), turn in progress"),
+        "{out}"
+    );
+    assert!(out.contains("gone   the worktree"), "{out}");
+}
