@@ -345,3 +345,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "cleanup_branch_tests.rs"]
+mod branch_tests;
