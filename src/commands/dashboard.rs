@@ -144,7 +144,8 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         recent_sessions,
         doctor_warnings,
     ));
-    app.tui_mode = crate::tui::app::TuiMode::Dashboard;
+    // The persistent Home screen (#290); `tui::run` builds it.
+    app.tui_mode = crate::tui::app::TuiMode::Landing;
 
     app.pending_commands
         .push(crate::tui::app::TuiCommand::FetchSuggestionData);

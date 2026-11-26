@@ -25,13 +25,13 @@ const CONFIG_TOML: &str = concat!(
     "[tui]\nmodal_on_complete = true\n",
 );
 
-/// Screens a retired key used to act on, plus Milestones.
-const SCREENS: [TuiMode; 5] = [
-    TuiMode::Overview,
-    TuiMode::Dashboard,
-    TuiMode::IssueBrowser,
-    TuiMode::TokenDashboard,
-    TuiMode::MilestoneView,
+/// Screens a retired key used to act on, plus Milestones. The view only
+/// matters on the Dashboard.
+const SCREENS: [(TuiMode, View); 4] = [
+    (TuiMode::Dashboard, View::Ops),
+    (TuiMode::IssueBrowser, View::Ops),
+    (TuiMode::Dashboard, View::Tokens),
+    (TuiMode::MilestoneView, View::Ops),
 ];
 
 async fn press(app: &mut App, c: char) {
@@ -42,7 +42,13 @@ async fn press(app: &mut App, c: char) {
 /// selected session #42 with a PR waiting for a retry. Drawn at 80x24, so
 /// the SizeGuard is not shown.
 fn armed_app(mode: TuiMode) -> App {
+    armed_app_on(mode, View::Ops)
+}
+
+/// [`armed_app`] with the Dashboard on `view`.
+fn armed_app_on(mode: TuiMode, view: View) -> App {
     let mut app = log_app(mode);
+    app.screen_state.dashboard.view = view;
     app.config = Some(toml::from_str(CONFIG_TOML).expect("config parses"));
     app.pending_review_report = Some(ReviewReport::new(PrNumber(7), "bot"));
     let session = Session::new(
@@ -79,12 +85,12 @@ fn retry_queued(app: &App) -> bool {
 
 #[tokio::test]
 async fn shift_globals_retired() {
-    for mode in SCREENS {
+    for (mode, on) in SCREENS {
         for c in ['Q', 'M', 'C', 'P'] {
-            let mut app = armed_app(mode);
+            let mut app = armed_app_on(mode, on);
             let view = app.screen_state.dashboard.view;
             press(&mut app, c).await;
-            let at = format!("{c} on {mode:?}");
+            let at = format!("{c} on {mode:?} {on:?}");
             // #1280: no screen takes `P`; ⏎ ⏎ on the PR row retries (below).
             // #1289: TurboQuant is a panel of Dashboard › Tokens (`t`), so
             // the Dashboard's own `Q` launcher is gone too.
@@ -111,13 +117,16 @@ async fn only_settings_writes_config() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("maestro.toml");
     std::fs::write(&path, CONFIG_TOML).expect("seed config");
-    for mode in SCREENS {
+    for (mode, on) in SCREENS {
         for c in '!'..='~' {
-            let mut app = armed_app(mode);
+            let mut app = armed_app_on(mode, on);
             app.config_path = Some(path.clone());
             press(&mut app, c).await;
             let now = std::fs::read_to_string(&path).expect("config readable");
-            assert_eq!(now, CONFIG_TOML, "{c} on {mode:?} wrote the config file");
+            assert_eq!(
+                now, CONFIG_TOML,
+                "{c} on {mode:?} {on:?} wrote the config file"
+            );
         }
     }
 }
@@ -171,11 +180,11 @@ async fn retired_actions_in_palette() {
     // Overview grid.
     use PaletteCommand::{CompleteModal, PrPipeline, ReviewConcerns, Turboquant};
     let want = [
-        (TuiMode::Overview, Turboquant, ""),
+        (TuiMode::IssueBrowser, Turboquant, ""),
         (TuiMode::Dashboard, Turboquant, "t"),
-        (TuiMode::Overview, CompleteModal, ""),
-        (TuiMode::Overview, ReviewConcerns, ""),
-        (TuiMode::Overview, PrPipeline, ""),
+        (TuiMode::IssueBrowser, CompleteModal, ""),
+        (TuiMode::IssueBrowser, ReviewConcerns, ""),
+        (TuiMode::IssueBrowser, PrPipeline, ""),
         (TuiMode::Dashboard, PrPipeline, ""),
     ];
     for (mode, cmd, key) in want {
@@ -184,7 +193,7 @@ async fn retired_actions_in_palette() {
         let e = e.unwrap_or_else(|| panic!("{cmd:?} has no palette entry"));
         assert_eq!(e.key, key, "{cmd:?} on {mode:?}");
     }
-    let list = palette::entries(registry(), TuiMode::Overview, |_| None);
+    let list = palette::entries(registry(), TuiMode::Dashboard, |_| None);
     let entry = |cmd| {
         list.iter()
             .find(|e| e.run == Run::Command(cmd))
@@ -193,12 +202,12 @@ async fn retired_actions_in_palette() {
 
     // Each entry runs its action.
     let label = |cmd| entry(cmd).label;
-    let mut app = armed_app(TuiMode::Overview);
+    let mut app = armed_app(TuiMode::Dashboard);
     run_from_palette(&mut app, label(PaletteCommand::Turboquant)).await;
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
     assert_eq!(app.screen_state.dashboard.view, View::Tokens);
 
-    let mut app = armed_app(TuiMode::Overview);
+    let mut app = armed_app(TuiMode::Dashboard);
     run_from_palette(&mut app, label(PaletteCommand::CompleteModal)).await;
     assert_eq!(
         app.tui_mode,
@@ -207,13 +216,13 @@ async fn retired_actions_in_palette() {
     );
     assert_eq!(modal_on(&app), Some(true), "opening Settings saves nothing");
 
-    let mut app = armed_app(TuiMode::Overview);
+    let mut app = armed_app(TuiMode::Dashboard);
     run_from_palette(&mut app, label(PaletteCommand::ReviewConcerns)).await;
     assert_eq!(app.tui_mode, TuiMode::PrReview);
 
     // #1280: `retry PR` opens the Dashboard on the pending PR row and writes
     // nothing; the row's armed ⏎ ⏎ is the retry. It works from any screen.
-    for mode in [TuiMode::Overview, TuiMode::IssueBrowser] {
+    for mode in [TuiMode::Dashboard, TuiMode::IssueBrowser] {
         let mut app = armed_app(mode);
         run_from_palette(&mut app, label(PaletteCommand::PrPipeline)).await;
         assert_eq!(app.tui_mode, TuiMode::Dashboard, "from {mode:?}");
@@ -244,12 +253,12 @@ async fn retired_actions_in_palette() {
     );
 }
 
-/// #1280: Shift+P is inert on the Dashboard (Overview routes there); the
+/// #1280: Shift+P is inert on the Dashboard; the
 /// PR row's armed ⏎ retries exactly the PR it shows, at 80x24 and 80x27.
 #[tokio::test]
 async fn pr_row_enter_retries_that_pr_only() {
     for (w, h) in [(80, 24), (80, 27)] {
-        let mut app = armed_app(TuiMode::Overview);
+        let mut app = armed_app(TuiMode::Dashboard);
         app.pending_prs.clear();
         for issue in [43, 44] {
             app.pending_prs.push(awaiting_pending_pr(issue));

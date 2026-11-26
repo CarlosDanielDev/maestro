@@ -37,7 +37,7 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     }
 }
 
-/// `⏎` on a Needs-you row: a session opens the session Overview with that
+/// `⏎` on a Needs-you row: a session opens the Dashboard with that
 /// row selected and highlighted (the grid cursor moves at the next draw); doctor, gh auth, budget and quota rows open Dashboard,
 /// where the warnings and the spend live.
 fn open(app: &mut App, item: &AttentionItem) -> ScreenAction {
@@ -47,5 +47,5 @@ fn open(app: &mut App, item: &AttentionItem) -> ScreenAction {
     if let Some(index) = app.pool.all_sessions().iter().position(|s| s.id == id) {
         app.panel_view.reveal(index);
     }
-    ScreenAction::Push(TuiMode::Overview)
+    ScreenAction::Push(TuiMode::Dashboard)
 }

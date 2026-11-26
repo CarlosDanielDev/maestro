@@ -8,7 +8,7 @@ use super::{Column, Lens};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
-use crate::tui::screens::dashboard::usage::View;
+use crate::tui::screens::dashboard::usage::{View, open_agent_graph};
 
 fn config(enabled: bool) -> crate::config::Config {
     let toml = format!(
@@ -91,7 +91,7 @@ async fn deps_lens_toggle() {
 
     // The old Agent graph lands on the files lens.
     press(&mut app, KeyCode::Char('o')).await;
-    app.navigate_to(TuiMode::AgentGraph);
+    open_agent_graph(&mut app);
     assert_eq!(shown(&app), (TuiMode::Dashboard, View::Deps, Lens::Files));
     assert!(draw(&mut app).contains("Files · worktrees merged"));
     press(&mut app, KeyCode::Esc).await;
@@ -99,7 +99,7 @@ async fn deps_lens_toggle() {
 }
 
 /// With `views.agent_graph_enabled = false`, `g` stays on issues, the
-/// strip says why, and `navigate_to(AgentGraph)` keeps its redirect.
+/// strip says why, and the ⌃K Agent graph entry keeps its redirect.
 #[tokio::test]
 async fn deps_files_lens_off_stays_on_issues() {
     let (mut app, _) = app(false);
@@ -109,14 +109,14 @@ async fn deps_files_lens_off_stays_on_issues() {
     let out = draw(&mut app);
     assert!(out.contains("⊘ off in [views]"), "strip:\n{out}");
     assert!(!out.contains("Files · worktrees merged"));
-    app.navigate_to(TuiMode::AgentGraph);
+    open_agent_graph(&mut app);
     draw(&mut app);
     assert_ne!(shown(&app).2, Lens::Files, "the flag gates the lens");
 
     // Turned off while the files lens is shown (a config reload): the
     // drawn lens is issues at once.
     let (mut app, _) = self::app(true);
-    app.navigate_to(TuiMode::AgentGraph);
+    open_agent_graph(&mut app);
     app.config = Some(config(false));
     let out = draw(&mut app);
     assert!(
@@ -127,11 +127,11 @@ async fn deps_files_lens_off_stays_on_issues() {
 }
 
 /// Every key on the files lens is its own: none reaches the launcher
-/// letters or the Overview keys, and kill acts only on the drawn row.
+/// letters or the old session-grid keys, and kill acts only on the drawn row.
 #[tokio::test]
 async fn deps_files_lens_keys_do_not_fall_through() {
     let (mut app, ids) = app(true);
-    app.navigate_to(TuiMode::AgentGraph);
+    open_agent_graph(&mut app);
     draw(&mut app);
     let log = app.show_activity_log;
     for c in ['p', 'r', 'D', 'd', 'l', 'n', 'm'] {
@@ -155,4 +155,34 @@ async fn deps_files_lens_keys_do_not_fall_through() {
         !draw(&mut app).contains("Type"),
         "X on a file row opens no kill"
     );
+}
+
+/// #1294 removed the old mode aliases. Nothing saves a `TuiMode` (the nav
+/// stack lives in memory), so the only saved state that names an old mode
+/// is `[views] agent_graph_enabled` in a `maestro.toml` written before the
+/// cleanup. It still loads, and the ⌃K Agent graph entry still opens
+/// Deps › files; Esc comes back.
+#[tokio::test]
+async fn legacy_mode_state_loads() {
+    use crate::tui::navigation::registry::{PALETTE_COMMANDS, PaletteCommand};
+    let (label, _, _) = PALETTE_COMMANDS
+        .iter()
+        .find(|(_, c, _)| *c == PaletteCommand::AgentGraph)
+        .expect("the Agent graph keeps a palette entry");
+    let (mut app, _) = app(true);
+    app.tui_mode = TuiMode::IssueBrowser;
+    draw(&mut app);
+
+    let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    handle_key(&mut app, ctrl_k).await;
+    for c in label.chars() {
+        press(&mut app, KeyCode::Char(c)).await;
+    }
+    press(&mut app, KeyCode::Enter).await;
+
+    assert_eq!(shown(&app), (TuiMode::Dashboard, View::Deps, Lens::Files));
+    assert!(draw(&mut app).contains("Files · worktrees merged"));
+    press(&mut app, KeyCode::Esc).await;
+    press(&mut app, KeyCode::Esc).await;
+    assert_eq!(app.tui_mode, TuiMode::IssueBrowser, "Esc comes back");
 }

@@ -1,6 +1,6 @@
 //! TurboQuant savings: the logic behind the Dashboard › Tokens tile and
-//! panel (#1289). The full screen is gone; its old mode is an alias for
-//! Dashboard › Tokens (`screens::dashboard::usage::alias_view`).
+//! panel (#1289). The full screen is gone; its ⌃K entry opens
+//! Dashboard › Tokens (`screens::dashboard::usage::open_view`).
 //!
 //! Shows **honest** projections of token/cost savings based on actual
 //! `TokenUsage` per session, and **real** savings when fork-handoff

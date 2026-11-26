@@ -31,8 +31,7 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
 }
 
 /// Help groups that depend on the mode (#1398): the registry block of its
-/// screen, the digit tab rows on a tab screen, and the Overview keys on
-/// Overview (`handle_overview_keys`), which mean other things elsewhere.
+/// screen and the digit tab rows on a tab screen.
 pub fn mode_help_groups(mode: crate::tui::app::TuiMode) -> Vec<KeyBindingGroup> {
     let mut groups: Vec<KeyBindingGroup> = super::registry::screen_help_group(mode)
         .into_iter()
@@ -40,103 +39,7 @@ pub fn mode_help_groups(mode: crate::tui::app::TuiMode) -> Vec<KeyBindingGroup> 
     if crate::tui::ds::tab_bar::tab_index(mode).is_some() {
         groups.push(super::registry::tab_help_group());
     }
-    if mode == crate::tui::app::TuiMode::Overview {
-        groups.extend_from_slice(overview_keybindings());
-    }
     groups
-}
-
-/// The Overview keys the registry does not declare yet (no Overview block).
-pub fn overview_keybindings() -> &'static [KeyBindingGroup] {
-    use std::sync::LazyLock;
-    static OVERVIEW: LazyLock<Vec<KeyBindingGroup>> = LazyLock::new(|| {
-        vec![
-            KeyBindingGroup {
-                title: "Navigation",
-                bindings: vec![
-                    KeyBinding {
-                        key: "Enter",
-                        description: "Open detail / Execute action",
-                    },
-                    KeyBinding {
-                        key: "1-9",
-                        description: "Jump to session detail by index",
-                    },
-                ],
-            },
-            KeyBindingGroup {
-                title: "Views",
-                bindings: vec![
-                    KeyBinding {
-                        key: "f / F3",
-                        description: "Full-screen view for selected session",
-                    },
-                    KeyBinding {
-                        key: "$ / F4",
-                        description: "Cost dashboard view",
-                    },
-                    KeyBinding {
-                        key: "t / F5",
-                        description: "Token dashboard view",
-                    },
-                    KeyBinding {
-                        key: "F6",
-                        description: "Dependency graph view (Deps)",
-                    },
-                    KeyBinding {
-                        key: "Tab",
-                        description: "Cycle view mode (session overview)",
-                    },
-                ],
-            },
-            KeyBindingGroup {
-                title: "Session Control",
-                bindings: vec![
-                    KeyBinding {
-                        key: "p / F9",
-                        description: "Pause all running sessions (SIGSTOP)",
-                    },
-                    KeyBinding {
-                        key: "r",
-                        description: "Resume all paused sessions (SIGCONT)",
-                    },
-                    KeyBinding {
-                        key: "X / F10",
-                        description: "Kill selected session",
-                    },
-                    KeyBinding {
-                        key: "d",
-                        description: "Toggle activity log",
-                    },
-                ],
-            },
-            KeyBindingGroup {
-                title: "Scrolling",
-                bindings: vec![
-                    KeyBinding {
-                        key: "Up/Down",
-                        description: "Scroll agent panel output",
-                    },
-                    KeyBinding {
-                        key: "Shift+Up/Down",
-                        description: "Scroll activity log",
-                    },
-                    KeyBinding {
-                        key: "Mouse wheel",
-                        description: "Scroll focused panel",
-                    },
-                ],
-            },
-            KeyBindingGroup {
-                title: "General",
-                bindings: vec![KeyBinding {
-                    key: "S / F2",
-                    description: "Session summary",
-                }],
-            },
-        ]
-    });
-    &OVERVIEW
 }
 
 /// Action dispatched when an F-key is pressed. Paired with a label in
@@ -373,17 +276,25 @@ mod tests {
         assert_eq!(groups[0].bindings[0].key, "x");
     }
 
+    /// A session screen: its F-keys follow the selected session.
+    fn detail() -> TuiMode {
+        TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: crate::tui::app::SessionView::Detail,
+        }
+    }
+
     #[test]
-    fn mode_keymap_overview_shows_all_fkeys() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
-        assert_eq!(km.mode_label, "Overview");
+    fn mode_keymap_detail_shows_all_fkeys() {
+        let km = mode_keymap(detail(), Some(SessionStatus::Running), &[], false);
+        assert_eq!(km.mode_label, "Detail");
         assert_eq!(km.fkeys.len(), 9);
         assert!(km.fkeys.iter().all(|f| f.visible));
     }
 
     #[test]
-    fn mode_keymap_overview_running_session_activates_pause_kill() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
+    fn mode_keymap_detail_running_session_activates_pause_kill() {
+        let km = mode_keymap(detail(), Some(SessionStatus::Running), &[], false);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
         assert!(f9.active, "F9 Pause should be active when running");
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
@@ -391,8 +302,8 @@ mod tests {
     }
 
     #[test]
-    fn mode_keymap_overview_no_session_dims_session_keys() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+    fn mode_keymap_detail_no_session_dims_session_keys() {
+        let km = mode_keymap(detail(), None, &[], false);
         let f3 = km.fkeys.iter().find(|f| f.key == "F3").unwrap();
         assert!(!f3.active);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
@@ -402,13 +313,8 @@ mod tests {
     }
 
     #[test]
-    fn mode_keymap_overview_completed_session_dims_pause_kill() {
-        let km = mode_keymap(
-            TuiMode::Overview,
-            Some(SessionStatus::Completed),
-            &[],
-            false,
-        );
+    fn mode_keymap_detail_completed_session_dims_pause_kill() {
+        let km = mode_keymap(detail(), Some(SessionStatus::Completed), &[], false);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
         assert!(!f9.active);
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
@@ -456,20 +362,12 @@ mod tests {
 
     #[test]
     fn mode_keymap_help_groups_include_global_keybindings() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let global_titles: Vec<&str> = global_keybindings().iter().map(|g| g.title).collect();
         let km_titles: Vec<&str> = km.help_groups.iter().map(|g| g.title).collect();
         for title in &global_titles {
             assert!(km_titles.contains(title), "missing global group: {}", title);
         }
-    }
-
-    #[test]
-    fn mode_keymap_overview_has_hints() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
-        assert!(!km.hints.is_empty());
-        assert_eq!(km.hints[0].key, "Enter");
-        assert_eq!(km.hints[0].action, "Detail");
     }
 
     #[test]
@@ -483,7 +381,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_full_width_includes_all() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
+        let km = mode_keymap(detail(), Some(SessionStatus::Running), &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 120);
         assert_eq!(fitted.len(), 9);
         for (_, label, _) in &fitted {
@@ -493,7 +391,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_narrow_drops_labels() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(detail(), None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 35);
         for (_, label, _) in &fitted {
             assert!(label.is_none());
@@ -502,7 +400,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_very_narrow_truncates() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(detail(), None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 20);
         assert!(!fitted.is_empty());
         assert!(fitted.len() < 9);
@@ -524,14 +422,14 @@ mod tests {
 
     #[test]
     fn fit_hints_wide_includes_all() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 120);
         assert_eq!(fitted.len(), km.hints.len());
     }
 
     #[test]
     fn fit_hints_narrow_truncates_gracefully() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 30);
         assert!(!fitted.is_empty());
         assert!(fitted.len() < km.hints.len());
@@ -539,39 +437,16 @@ mod tests {
 
     #[test]
     fn fit_hints_sorted_by_priority() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 120);
-        assert_eq!(fitted[0].0, "Enter");
+        let first = km.hints.iter().min_by_key(|h| h.priority).expect("hints");
+        assert_eq!(fitted[0].0, first.key);
     }
 
     #[test]
     fn fit_hints_empty_at_zero_width() {
-        let km = mode_keymap(TuiMode::Overview, None, &[], false);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 0);
         assert!(fitted.is_empty());
-    }
-
-    /// #1160: the help overlay and the bottom bar (`F6 Deps`) must describe
-    /// F6 the same way, and Tab must not be listed as both pane focus and
-    /// an F6 alias.
-    #[test]
-    fn global_keybindings_views_group_describes_f6_as_deps() {
-        let views = overview_keybindings()
-            .iter()
-            .find(|g| g.title == "Views")
-            .expect("Views group");
-        let text: String = views
-            .bindings
-            .iter()
-            .map(|b| format!("{:<16}{}\n", b.key, b.description))
-            .collect();
-        insta::assert_snapshot!(text);
-        let f6 = views
-            .bindings
-            .iter()
-            .find(|b| b.key.split(" / ").any(|k| k == "F6"))
-            .expect("F6 binding");
-        assert!(f6.description.contains("Deps"), "{}", f6.description);
-        assert!(!f6.key.contains("Tab"), "{}", f6.key);
     }
 }

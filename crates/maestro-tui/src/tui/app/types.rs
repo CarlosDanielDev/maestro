@@ -13,13 +13,7 @@ use crate::tui::screens::{
 /// TUI display mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiMode {
-    Overview,
     DependencyGraph,
-    /// Bipartite agent/file graph view (#525/#526/#527). Only reachable
-    /// when `views.agent_graph_enabled == true`. The dispatcher in
-    /// `tui::ui::draw` is the single source of truth for the toggle.
-    AgentGraph,
-    CostDashboard,
     Dashboard,
     /// Persistent landing menu shown at startup.
     Landing,
@@ -36,7 +30,6 @@ pub enum TuiMode {
     QueueConfirmation,
     QueueExecution,
     HollowRetry,
-    TokenDashboard,
     #[allow(dead_code)] // Reason: TUI mode — to be wired into sanitize screen
     Sanitize,
     Settings,
@@ -137,51 +130,11 @@ impl SessionView {
     }
 }
 
-/// #1288: the five old session modes stay as constructors for one release,
-/// so `navigate_to` callers and the nav stack keep working. The cleanup
-/// chore removes them.
-#[allow(non_snake_case)]
-impl TuiMode {
-    pub const fn Detail(id: uuid::Uuid) -> Self {
-        Self::Session {
-            id,
-            view: SessionView::Detail,
-        }
-    }
-    pub const fn Fullscreen(id: uuid::Uuid) -> Self {
-        Self::Session {
-            id,
-            view: SessionView::Output,
-        }
-    }
-    pub const fn LogViewer(id: uuid::Uuid) -> Self {
-        Self::Session {
-            id,
-            view: SessionView::Log,
-        }
-    }
-    pub const fn GateOutputViewer(id: uuid::Uuid) -> Self {
-        Self::Session {
-            id,
-            view: SessionView::Gates,
-        }
-    }
-    pub const fn CallLog(id: uuid::Uuid) -> Self {
-        Self::Session {
-            id,
-            view: SessionView::Events,
-        }
-    }
-}
-
 impl TuiMode {
     /// Human-readable label for breadcrumb rendering.
     pub fn breadcrumb_label(&self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
             Self::DependencyGraph => "Dependencies",
-            Self::AgentGraph => "Agent Graph",
-            Self::CostDashboard => "Cost",
             Self::Dashboard => "Dashboard",
             Self::Landing => "Welcome",
             Self::IssueBrowser => "Issues",
@@ -193,7 +146,6 @@ impl TuiMode {
             Self::QueueConfirmation => "Queue",
             Self::QueueExecution => "Executing",
             Self::HollowRetry => "Retry",
-            Self::TokenDashboard => "Tokens",
             Self::Sanitize => "Code health",
             Self::Settings => "Settings",
             Self::SessionSwitcher => "Switcher",
@@ -744,9 +696,18 @@ mod tests {
     fn push_and_pop_returns_last() {
         let id = uuid::Uuid::new_v4();
         let mut stack = NavigationStack::default();
-        stack.push(TuiMode::Overview);
-        stack.push(TuiMode::Detail(id));
-        assert_eq!(stack.pop(), Some(TuiMode::Detail(id)));
+        stack.push(TuiMode::Dashboard);
+        stack.push(TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        });
+        assert_eq!(
+            stack.pop(),
+            Some(TuiMode::Session {
+                id,
+                view: SessionView::Detail
+            })
+        );
     }
 
     #[test]
@@ -760,16 +721,16 @@ mod tests {
         let mut stack = NavigationStack::default();
         stack.push(TuiMode::Dashboard);
         for _ in 0..20 {
-            stack.push(TuiMode::Overview);
+            stack.push(TuiMode::Dashboard);
         }
         assert_eq!(stack.depth(), 20);
-        assert!(stack.breadcrumbs().iter().all(|m| *m == TuiMode::Overview));
+        assert!(stack.breadcrumbs().iter().all(|m| *m == TuiMode::Dashboard));
     }
 
     #[test]
     fn clear_empties_stack() {
         let mut stack = NavigationStack::default();
-        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Dashboard);
         stack.push(TuiMode::IssueBrowser);
         stack.push(TuiMode::Settings);
         stack.clear();
@@ -781,19 +742,28 @@ mod tests {
     fn breadcrumbs_returns_ordered_slice_oldest_first() {
         let id = uuid::Uuid::new_v4();
         let mut stack = NavigationStack::default();
-        stack.push(TuiMode::Overview);
-        stack.push(TuiMode::Detail(id));
+        stack.push(TuiMode::Dashboard);
+        stack.push(TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        });
         stack.push(TuiMode::Settings);
         let crumbs = stack.breadcrumbs();
-        assert_eq!(crumbs[0], TuiMode::Overview);
-        assert_eq!(crumbs[1], TuiMode::Detail(id));
+        assert_eq!(crumbs[0], TuiMode::Dashboard);
+        assert_eq!(
+            crumbs[1],
+            TuiMode::Session {
+                id,
+                view: SessionView::Detail
+            }
+        );
         assert_eq!(crumbs[2], TuiMode::Settings);
     }
 
     #[test]
     fn depth_tracks_size_after_push_and_pop() {
         let mut stack = NavigationStack::default();
-        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Dashboard);
         stack.push(TuiMode::Dashboard);
         stack.push(TuiMode::Settings);
         assert_eq!(stack.depth(), 3);
@@ -811,10 +781,25 @@ mod tests {
     fn peek_returns_last_without_removing() {
         let id = uuid::Uuid::new_v4();
         let mut stack = NavigationStack::default();
-        stack.push(TuiMode::Overview);
-        stack.push(TuiMode::Detail(id));
-        assert_eq!(stack.peek(), Some(&TuiMode::Detail(id)));
-        assert_eq!(stack.peek(), Some(&TuiMode::Detail(id)));
+        stack.push(TuiMode::Dashboard);
+        stack.push(TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        });
+        assert_eq!(
+            stack.peek(),
+            Some(&TuiMode::Session {
+                id,
+                view: SessionView::Detail
+            })
+        );
+        assert_eq!(
+            stack.peek(),
+            Some(&TuiMode::Session {
+                id,
+                view: SessionView::Detail
+            })
+        );
         assert_eq!(stack.depth(), 2);
     }
 
@@ -824,14 +809,10 @@ mod tests {
     fn all_variants_return_non_empty_breadcrumb_label() {
         let id = uuid::Uuid::new_v4();
         let variants: &[TuiMode] = &[
-            TuiMode::Overview,
             TuiMode::Dashboard,
             TuiMode::IssueBrowser,
             TuiMode::MilestoneView,
             TuiMode::DependencyGraph,
-            TuiMode::AgentGraph,
-            TuiMode::CostDashboard,
-            TuiMode::TokenDashboard,
             TuiMode::Settings,
             TuiMode::PromptInput,
             TuiMode::Interaction,
@@ -847,9 +828,18 @@ mod tests {
             TuiMode::Sanitize,
             TuiMode::SessionSummary,
             TuiMode::ConfirmExit,
-            TuiMode::Detail(id),
-            TuiMode::Fullscreen(id),
-            TuiMode::LogViewer(id),
+            TuiMode::Session {
+                id,
+                view: SessionView::Detail,
+            },
+            TuiMode::Session {
+                id,
+                view: SessionView::Output,
+            },
+            TuiMode::Session {
+                id,
+                view: SessionView::Log,
+            },
             TuiMode::ConfirmKill(id),
             TuiMode::BudgetPreSpawn { session_id: id },
             TuiMode::AdoptPicker,
@@ -863,13 +853,6 @@ mod tests {
                 mode
             );
         }
-    }
-
-    #[test]
-    fn agent_graph_breadcrumb_label_is_non_empty() {
-        let label = TuiMode::AgentGraph.breadcrumb_label();
-        assert!(!label.is_empty());
-        assert_eq!(label, "Agent Graph");
     }
 
     // ── Issue #560: failed-gates helpers on CompletionSummaryData ────────
@@ -956,22 +939,14 @@ mod tests {
         assert_eq!(result.unwrap().session_id, uuid::Uuid::from_u128(2));
     }
 
-    /// #1288: each old session mode is now `Session` with the matching
-    /// view, and pushes and pops through the nav stack unchanged.
+    /// #1288: every session view pushes and pops through the nav stack
+    /// unchanged.
     #[test]
-    fn legacy_session_modes_map_to_views() {
+    fn session_views_round_trip_the_nav_stack() {
         let id = uuid::Uuid::new_v4();
-        let table = [
-            (TuiMode::Detail(id), SessionView::Detail),
-            (TuiMode::Fullscreen(id), SessionView::Output),
-            (TuiMode::LogViewer(id), SessionView::Log),
-            (TuiMode::GateOutputViewer(id), SessionView::Gates),
-            (TuiMode::CallLog(id), SessionView::Events),
-        ];
         let mut stack = NavigationStack::default();
-        for (legacy, view) in table {
-            assert_eq!(legacy, TuiMode::Session { id, view }, "{view:?}");
-            stack.push(legacy);
+        for (view, _, _) in SessionView::ALL {
+            stack.push(TuiMode::Session { id, view });
             assert_eq!(stack.pop(), Some(TuiMode::Session { id, view }));
         }
         let keys: String = SessionView::ALL.iter().map(|(_, k, _)| *k).collect();
@@ -1047,6 +1022,4 @@ mod session_summary_migrated_tests {
             crate::tui::app::types::TuiMode::SessionSummary
         ));
     }
-
-    // -- navigate_to defense-in-depth gate for AgentGraph (#527) --
 }

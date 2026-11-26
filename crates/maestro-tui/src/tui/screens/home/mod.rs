@@ -657,7 +657,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].kind, SuggestionKind::IdleSessions);
 
-        assert_eq!(result[0].action, TuiMode::Overview);
+        assert_eq!(result[0].action, TuiMode::Dashboard);
     }
 
     #[test]
@@ -851,7 +851,7 @@ mod tests {
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Push(TuiMode::Overview));
+        assert_eq!(action, ScreenAction::Push(TuiMode::Dashboard));
     }
 
     #[test]

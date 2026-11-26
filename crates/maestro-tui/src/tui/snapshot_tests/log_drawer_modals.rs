@@ -63,7 +63,7 @@ async fn esc_reaches_screen_when_drawer_closed() {
 #[tokio::test]
 async fn esc_reaches_modal_while_drawer_hidden() {
     let mut app = log_app(TuiMode::ConfirmKill(uuid::Uuid::nil()));
-    app.nav_stack.push(TuiMode::Overview);
+    app.nav_stack.push(TuiMode::Dashboard);
     app.activity_log.drawer_open = true;
     let _ = handle_key(&mut app, esc()).await;
     assert_ne!(

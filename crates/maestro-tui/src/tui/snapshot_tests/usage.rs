@@ -15,7 +15,7 @@ use crate::session::types::{Session, SessionStatus, TokenUsage};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
 use crate::tui::screens::dashboard::rows::WorkKey;
-use crate::tui::screens::dashboard::usage::{View, budget_thresholds};
+use crate::tui::screens::dashboard::usage::{View, budget_thresholds, open_view};
 use crate::tui::{make_test_app, ui};
 
 const BUDGET_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n\
@@ -214,8 +214,8 @@ async fn budget_thresholds_from_config() {
 }
 
 /// The TurboQuant screen is gone: its ⌃K entry opens Dashboard › Tokens,
-/// where TurboQuant is a tile and a panel. The old Cost and Tokens modes
-/// (navigate_to, a direct assignment, F4 / F5) are aliases of the views.
+/// where TurboQuant is a tile and a panel. The old Cost and Tokens routes
+/// (`open_view`, F4 / F5) open the views.
 #[tokio::test]
 async fn turboquant_mode_redirects_to_tokens() {
     use crate::tui::navigation::registry::{PALETTE_COMMANDS, PaletteCommand};
@@ -247,17 +247,9 @@ async fn turboquant_mode_redirects_to_tokens() {
     }
 
     let mut app = usage_app();
-    app.tui_mode = TuiMode::TokenDashboard;
-    draw(&mut app, 120, 36);
-    assert_eq!(
-        (app.tui_mode, view(&app)),
-        (TuiMode::Dashboard, View::Tokens)
-    );
-
-    let mut app = usage_app();
-    app.navigate_to(TuiMode::CostDashboard);
+    open_view(&mut app, View::Cost);
     assert_eq!((app.tui_mode, view(&app)), (TuiMode::Dashboard, View::Cost));
-    app.navigate_to(TuiMode::TokenDashboard);
+    open_view(&mut app, View::Tokens);
     assert_eq!(
         (app.tui_mode, view(&app)),
         (TuiMode::Dashboard, View::Tokens)
@@ -331,12 +323,12 @@ async fn usage_scope_line_names_this_run() {
 /// An old route pushed from another screen still comes back sanely: Esc
 /// leaves the Usage view for Ops, then goes back to the screen it came from.
 #[tokio::test]
-async fn usage_alias_esc_goes_back_to_the_screen_it_came_from() {
+async fn usage_view_esc_goes_back_to_the_screen_it_came_from() {
     let esc = || KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
     let mut app = usage_app();
     app.tui_mode = TuiMode::IssueBrowser;
     draw(&mut app, 120, 36);
-    app.navigate_to(TuiMode::CostDashboard);
+    open_view(&mut app, View::Cost);
     draw(&mut app, 120, 36);
     assert_eq!((app.tui_mode, view(&app)), (TuiMode::Dashboard, View::Cost));
     handle_key(&mut app, esc()).await;

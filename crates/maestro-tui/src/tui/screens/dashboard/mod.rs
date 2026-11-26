@@ -1,16 +1,14 @@
 //! Dashboard, the operations cockpit (§02.1 of
 //! `docs/design-system/index.html`, #1280): the work list (Sessions · PR
 //! pipeline · Finished) with the selected item's detail beside it.
-//! `TuiMode::Overview` is an alias that draws this screen
-//! (`ui::route_overview_alias`). Keys: `dispatch`; layout: `draw`; the
-//! Deps view (`g`, #1292): `deps`.
+//! Keys: `dispatch`; layout: `draw`; the Deps view (`g`, #1292): `deps`.
 
-mod alias;
 pub mod cost;
 pub mod deps;
 pub mod detail;
 pub mod dispatch;
 pub mod draw;
+mod open;
 pub mod rows;
 mod strip;
 pub mod tokens;

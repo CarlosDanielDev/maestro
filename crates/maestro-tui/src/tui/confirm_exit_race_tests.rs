@@ -12,7 +12,7 @@ fn key(c: char) -> KeyEvent {
 /// App on Overview with one running session.
 fn app_with_running_session() -> (super::app::App, uuid::Uuid) {
     let mut app = make_test_app("confirm-exit-race-1158");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     let session = crate::session::types::Session::new(
         "prompt".into(),
         "opus".into(),
@@ -65,7 +65,7 @@ async fn completion_under_confirm_exit_keeps_dialog_focused() {
     handle_key(&mut app, key('n')).await;
     assert_eq!(app.tui_mode, TuiMode::CompletionSummary);
     assert!(app.running);
-    assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
+    assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Dashboard));
 }
 
 /// #1260: `ds::confirm::HoldToConfirm` races. Terminals send no key release

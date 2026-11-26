@@ -4,6 +4,7 @@ use crate::tui::screen_dispatch::{
     dispatch_to_active_screen_then_hook as dispatch_to_active_screen, handle_screen_action,
 };
 use crate::tui::screens;
+use crate::tui::screens::dashboard::usage::{View, open_agent_graph, open_view};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// Result of handling a key event in the TUI loop.
@@ -123,10 +124,7 @@ async fn dispatch_key(app: &mut App, key: KeyEvent) -> KeyAction {
     // letter still types into editors.
     if key.code == KeyCode::Char('e')
         && !is_text_input_mode(app)
-        && matches!(
-            app.tui_mode,
-            app::TuiMode::Overview | app::TuiMode::Dashboard
-        )
+        && app.tui_mode == app::TuiMode::Dashboard
         && app.has_visible_ci_failure()
     {
         app.request_ci_error_review();
@@ -434,7 +432,10 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             {
                 app.log_viewer_scroll = 0;
                 app.dismiss_completion_summary();
-                app.navigate_to(app::TuiMode::LogViewer(sid));
+                app.navigate_to(app::TuiMode::Session {
+                    id: sid,
+                    view: app::SessionView::Log,
+                });
             }
         }
         (KeyCode::Char('f'), _) => {
@@ -583,7 +584,7 @@ fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyA
             if let Some(sl) = first_failed.as_ref() {
                 app.spawn_resume_implement_session(sl);
                 app.dismiss_completion_summary();
-                app.tui_mode = app::TuiMode::Overview;
+                app.tui_mode = app::TuiMode::Dashboard;
             }
         }
         (KeyCode::Char('q'), _) => {
@@ -599,7 +600,10 @@ fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyA
         (KeyCode::Char('v'), _) => {
             if let Some(sl) = first_failed.as_ref() {
                 app.log_viewer_scroll = 0;
-                app.tui_mode = app::TuiMode::GateOutputViewer(sl.session_id);
+                app.tui_mode = app::TuiMode::Session {
+                    id: sl.session_id,
+                    view: app::SessionView::Gates,
+                };
             }
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.panel_view.scroll_up(),
@@ -629,7 +633,7 @@ fn handle_completion_fix(app: &mut App) {
         if let Some(config) = config {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
     } else {
         let needs_review: Vec<_> = app
@@ -645,7 +649,7 @@ fn handle_completion_fix(app: &mut App) {
                 app.spawn_gate_fix_session(sl);
             }
             app.completion_summary = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
     }
 }
@@ -846,14 +850,8 @@ pub(crate) fn switcher_target(session: &crate::session::types::Session) -> Switc
 fn open_session_switcher(app: &mut App) {
     app.screen_state.session_switcher =
         Some(crate::tui::session_switcher::SessionSwitcher::default());
-    // #895 sibling: sessions live on Overview, not Dashboard. If the
-    // user opened [w] from Dashboard, anchor the Esc-return to
-    // Overview so dismissing the switcher lands on the session list
-    // instead of bouncing back to Dashboard. For any other origin,
-    // preserve the prior mode (Detail, etc.) via the nav-stack.
-    if app.tui_mode == app::TuiMode::Dashboard {
-        app.tui_mode = app::TuiMode::Overview;
-    }
+    // #895 sibling: Esc returns to the prior mode (Dashboard, Detail,
+    // etc.) via the nav-stack.
     app.navigate_to(app::TuiMode::SessionSwitcher);
 }
 
@@ -905,7 +903,10 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
                             app, issue, false, None,
                         );
                     }
-                    SwitcherTarget::Detail(id) => app.navigate_to(app::TuiMode::Detail(id)),
+                    SwitcherTarget::Detail(id) => app.navigate_to(app::TuiMode::Session {
+                        id,
+                        view: app::SessionView::Detail,
+                    }),
                 }
             }
         }
@@ -967,7 +968,7 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
         Some(Run::Command(PaletteCommand::Turboquant)) => {
-            app.navigate_to(app::TuiMode::TokenDashboard);
+            open_view(app, View::Tokens);
             KeyAction::Consumed
         }
         Some(Run::Command(PaletteCommand::CompleteModal)) => {
@@ -982,7 +983,7 @@ async fn handle_palette(app: &mut App, key: &KeyEvent) -> KeyAction {
         // its ⏎ ⏎ (armed) is the retry, so the palette writes nothing.
         // #1280: the Agent graph was Overview's `g`; Esc comes back.
         Some(Run::Command(PaletteCommand::AgentGraph)) => {
-            app.navigate_to(app::TuiMode::AgentGraph);
+            open_agent_graph(app);
             KeyAction::Consumed
         }
         // #1276: Code health (TuiMode::Sanitize) with a background scan.
@@ -1135,11 +1136,14 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
         FKeyAction::OpenFullscreenSelected => {
             if let Some(id) = app.focused_session_id() {
                 app.screen_state.output_scroll = Default::default();
-                app.navigate_to(app::TuiMode::Fullscreen(id));
+                app.navigate_to(app::TuiMode::Session {
+                    id,
+                    view: app::SessionView::Output,
+                });
             }
         }
-        FKeyAction::OpenCostDashboard => app.navigate_to(app::TuiMode::CostDashboard),
-        FKeyAction::OpenTokenDashboard => app.navigate_to(app::TuiMode::TokenDashboard),
+        FKeyAction::OpenCostDashboard => open_view(app, View::Cost),
+        FKeyAction::OpenTokenDashboard => open_view(app, View::Tokens),
         FKeyAction::OpenDependencyGraph => app.navigate_to(app::TuiMode::DependencyGraph),
         FKeyAction::PauseAll => {
             #[cfg(unix)]
@@ -1378,7 +1382,7 @@ fn close_confirm_exit(app: &mut App) -> KeyAction {
     if let Some(prev) = app.nav_stack.pop() {
         app.tui_mode = prev;
     } else {
-        app.tui_mode = app::TuiMode::Overview;
+        app.tui_mode = app::TuiMode::Dashboard;
     }
     KeyAction::Consumed
 }
@@ -1457,24 +1461,17 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
                 app.screen_state.output_scroll = Default::default();
-                app.navigate_to(app::TuiMode::Fullscreen(id));
+                app.navigate_to(app::TuiMode::Session {
+                    id,
+                    view: app::SessionView::Output,
+                });
             }
         }
-        (KeyCode::Char('$'), _) => {
-            app.navigate_to(app::TuiMode::CostDashboard);
-        }
-        (KeyCode::Char('t'), _) => {
-            app.navigate_to(app::TuiMode::TokenDashboard);
-        }
+        (KeyCode::Char('$'), _) => open_view(app, View::Cost),
+        (KeyCode::Char('t'), _) => open_view(app, View::Tokens),
         (KeyCode::Char('S'), _) => app.open_session_summary(),
-        (KeyCode::Tab, _) => {
-            app.tui_mode = match app.tui_mode {
-                app::TuiMode::Overview => app::TuiMode::DependencyGraph,
-                // #1289: Cost and Tokens are Dashboard views, not screens.
-                app::TuiMode::DependencyGraph => app::TuiMode::Overview,
-                _ => app::TuiMode::Overview,
-            };
-        }
+        // #1294: Tab leaves the Dependency graph for the Dashboard.
+        (KeyCode::Tab, _) => app.tui_mode = app::TuiMode::Dashboard,
         (KeyCode::Esc, _) => {
             // Match Dashboard's Esc semantics: pop nav stack, fall back
             // to Dashboard on empty stack — NEVER ConfirmExit. The user
@@ -1493,13 +1490,19 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             // path for both states.
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
-                app.navigate_to(app::TuiMode::Detail(id));
+                app.navigate_to(app::TuiMode::Session {
+                    id,
+                    view: app::SessionView::Detail,
+                });
             }
         }
         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
             let idx = (c as usize) - ('1' as usize);
             if let Some(id) = app.pool.session_id_at_index(idx) {
-                app.navigate_to(app::TuiMode::Detail(id));
+                app.navigate_to(app::TuiMode::Session {
+                    id,
+                    view: app::SessionView::Detail,
+                });
             }
         }
         (KeyCode::Char('w'), _) => open_session_switcher(app),
@@ -1518,14 +1521,6 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         }
         (KeyCode::Char('D'), _) => {
             app.dismiss_all_completed();
-        }
-        // #1288: Detail's `l` / `L` are the session strip's `l` / `e` now.
-        (KeyCode::Char('l'), _) if app.tui_mode == app::TuiMode::Overview => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
-                app.log_viewer_scroll = 0;
-                app.navigate_to(app::TuiMode::LogViewer(id));
-            }
         }
         (KeyCode::Up, KeyModifiers::SHIFT) => {
             app.activity_log.scroll_up();
@@ -1598,7 +1593,7 @@ mod overview_grid_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::{App, TuiMode};
+    use crate::tui::app::{App, SessionView, TuiMode};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key(c: char) -> KeyEvent {
@@ -1657,7 +1652,7 @@ mod tests {
     #[test]
     fn is_text_input_mode_false_for_overview() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         assert!(!is_text_input_mode(&app));
     }
 
@@ -1701,7 +1696,7 @@ mod tests {
     fn question_mark_opens_help_on_non_text_screen() {
         // Counterpart: `?` still opens help where it is not a text input.
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         assert!(handle_global_shortcuts(&mut app, &key('?')));
         assert!(app.help_state.is_some());
     }
@@ -1797,7 +1792,7 @@ mod tests {
     fn y_in_confirm_exit_keeps_stack_intact() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         handle_confirm_exit(&mut app, &key('y'));
         assert!(!app.running);
     }
@@ -1816,16 +1811,16 @@ mod tests {
     #[test]
     fn esc_in_confirm_exit_restores_previous_mode() {
         let mut app = make_app();
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         app.tui_mode = TuiMode::ConfirmExit;
         handle_confirm_exit(&mut app, &key_code(KeyCode::Esc));
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
     }
 
     #[test]
     fn n_in_confirm_exit_does_not_quit() {
         let mut app = make_app();
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         app.tui_mode = TuiMode::ConfirmExit;
         app.running = true;
         handle_confirm_exit(&mut app, &key('n'));
@@ -1837,7 +1832,7 @@ mod tests {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
         handle_confirm_exit(&mut app, &key('n'));
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
     }
 
     // ── Group 5: unrelated key swallowing ─────────────────────────────
@@ -1846,7 +1841,7 @@ mod tests {
     fn unrelated_key_in_confirm_exit_stays() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         handle_confirm_exit(&mut app, &key('x'));
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
     }
@@ -1879,7 +1874,7 @@ mod tests {
     #[tokio::test]
     async fn ctrl_c_opens_confirm_exit() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         handle_key(&mut app, ctrl_c_event()).await;
         assert!(app.running);
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
@@ -1889,7 +1884,7 @@ mod tests {
     async fn ctrl_c_in_confirm_exit_stays() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         handle_key(&mut app, ctrl_c_event()).await;
         assert!(app.running);
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
@@ -1898,7 +1893,7 @@ mod tests {
     #[tokio::test]
     async fn q_in_overview_enters_confirm_exit() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         // #1260: an idle `q` quits at once; with a live agent it asks.
         app.pool.enqueue(crate::session::types::Session::new(
             "prompt".into(),
@@ -1909,7 +1904,7 @@ mod tests {
         ));
         handle_key(&mut app, key('q')).await;
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
-        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
+        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Dashboard));
         assert!(app.running);
     }
 
@@ -1923,7 +1918,7 @@ mod tests {
         let mut app = make_app();
         let id = uuid::Uuid::new_v4();
         app.tui_mode = TuiMode::ConfirmKill(id);
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         handle_key(&mut app, key_code(KeyCode::Enter)).await;
         assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     }
@@ -1934,7 +1929,7 @@ mod tests {
         let mut app = make_app();
         let id = uuid::Uuid::new_v4();
         app.tui_mode = TuiMode::ConfirmKill(id);
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         handle_key(&mut app, key('n')).await;
         assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
         handle_key(&mut app, key_code(KeyCode::Esc)).await;
@@ -1946,19 +1941,19 @@ mod tests {
     #[test]
     fn navigate_to_pushes_current_mode_and_switches() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         app.navigate_to(TuiMode::IssueBrowser);
         assert_eq!(app.tui_mode, TuiMode::IssueBrowser);
-        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
+        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Dashboard));
     }
 
     #[test]
     fn navigate_back_pops_to_previous_mode() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         app.navigate_to(TuiMode::IssueBrowser);
         app.navigate_back();
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert!(app.nav_stack.is_empty());
     }
 
@@ -1981,7 +1976,7 @@ mod tests {
     #[test]
     fn navigate_to_root_clears_stack_and_sets_dashboard() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         app.navigate_to(TuiMode::IssueBrowser);
         app.navigate_to(TuiMode::Settings);
         app.navigate_to_root();
@@ -2019,7 +2014,7 @@ mod tests {
             "Quit" => Some(TuiMode::ConfirmExit),
             "Milestones" => Some(TuiMode::MilestoneView),
             "Settings" => Some(TuiMode::Settings),
-            "Sessions" => Some(TuiMode::Overview),
+            "Sessions" => Some(TuiMode::Dashboard),
             "Adapt" => Some(TuiMode::AdaptWizard),
             _ => None,
         }
@@ -2185,7 +2180,9 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("result text"));
         app.panel_view.selected = Some(0);
-        app.tui_mode = TuiMode::Overview;
+        // #1294: `c` is Cost on the Dashboard; the copy key lives in
+        // the shared session keys (`handle_overview_keys`).
+        app.tui_mode = TuiMode::DependencyGraph;
 
         let _ = handle_key(&mut app, key('c')).await;
 
@@ -2210,7 +2207,9 @@ mod tests {
         s.last_message = "in progress".to_string();
         app.pool.enqueue(s);
         app.panel_view.selected = Some(0);
-        app.tui_mode = TuiMode::Overview;
+        // #1294: `c` is Cost on the Dashboard; the copy key lives in
+        // the shared session keys (`handle_overview_keys`).
+        app.tui_mode = TuiMode::DependencyGraph;
 
         let _ = handle_key(&mut app, key('c')).await;
 
@@ -2224,7 +2223,9 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("payload"));
         app.panel_view.selected = Some(0);
-        app.tui_mode = TuiMode::Overview;
+        // #1294: `c` is Cost on the Dashboard; the copy key lives in
+        // the shared session keys (`handle_overview_keys`).
+        app.tui_mode = TuiMode::DependencyGraph;
 
         let _ = handle_key(&mut app, key('c')).await;
 
@@ -2240,7 +2241,7 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("done"));
         app.panel_view.selected = Some(0);
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
 
         let _ = handle_key(&mut app, ctrl_c_event()).await;
 
@@ -2314,7 +2315,10 @@ mod tests {
     async fn g_key_in_log_viewer_scrolls_to_top_not_toggle() {
         let mut app = agent_graph_app(true);
         let id = uuid::Uuid::new_v4();
-        app.tui_mode = TuiMode::LogViewer(id);
+        app.tui_mode = TuiMode::Session {
+            id,
+            view: SessionView::Log,
+        };
         app.log_viewer_scroll = 42;
         let _ = handle_key(&mut app, key('g')).await;
         assert!(
@@ -2615,7 +2619,7 @@ mod tests {
         );
         assert_eq!(
             app.tui_mode,
-            TuiMode::Overview,
+            TuiMode::Dashboard,
             "after spawning resume the modal closes and we land on Overview"
         );
     }
@@ -2644,7 +2648,7 @@ mod tests {
         let mut app = make_app();
         // Production opens the modal via `open_completion_summary`, which
         // pushes the prior mode (here Overview) onto `nav_stack`.
-        app.nav_stack.push(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Dashboard);
         app.tui_mode = TuiMode::CompletionSummary;
         app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
 
@@ -2655,7 +2659,7 @@ mod tests {
             TuiMode::ConfirmExit,
             "failed-gates [q] must NOT trigger app-exit confirmation"
         );
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert!(app.completion_summary.is_none());
     }
 
@@ -2666,7 +2670,10 @@ mod tests {
         // Mirror production: the prior Detail mode is on the nav stack when
         // the recovery modal opens. Dismissing with [q] must restore it
         // (and its [l]/[L]/[k] chord set), not force Overview (#894).
-        app.nav_stack.push(TuiMode::Detail(id));
+        app.nav_stack.push(TuiMode::Session {
+            id,
+            view: SessionView::Detail,
+        });
         app.tui_mode = TuiMode::CompletionSummary;
         app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
 
@@ -2674,7 +2681,10 @@ mod tests {
 
         assert_eq!(
             app.tui_mode,
-            TuiMode::Detail(id),
+            TuiMode::Session {
+                id,
+                view: SessionView::Detail
+            },
             "dismissing the recovery modal must return to the prior Detail screen"
         );
         assert!(app.completion_summary.is_none());
@@ -2705,7 +2715,13 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('v'));
 
-        assert_eq!(app.tui_mode, TuiMode::GateOutputViewer(session_id));
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Session {
+                id: session_id,
+                view: SessionView::Gates
+            }
+        );
         assert!(
             app.completion_summary.is_some(),
             "[v] must keep the summary populated so [Esc] can return to it"
@@ -2718,7 +2734,10 @@ mod tests {
         let mut app = make_app();
         let summary = failed_gates_summary(Some(".maestro/worktrees/issue-560"));
         app.completion_summary = Some(summary);
-        app.tui_mode = TuiMode::GateOutputViewer(uuid::Uuid::nil());
+        app.tui_mode = TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: SessionView::Gates,
+        };
 
         let action = handle_secondary_mode_keys(&mut app, &key_code(KeyCode::Esc)).await;
         assert!(action.is_some());
@@ -2748,7 +2767,7 @@ mod tests {
         // [s] pops the nav stack back to the prior mode (Overview)
         // instead of falling through to ConfirmExit on an empty stack
         // (2026-05-23 UX fix).
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert!(app.completion_summary.is_none());
         assert!(app.completion_summary_dismissed);
         assert!(calls.lock().expect("mutex").is_empty());
@@ -2782,7 +2801,7 @@ mod tests {
     #[test]
     fn overview_esc_falls_back_to_dashboard_when_stack_empty() {
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         assert_eq!(app.nav_stack.depth(), 0);
 
         handle_overview_keys(&mut app, &key_code(KeyCode::Esc));
@@ -2799,7 +2818,7 @@ mod tests {
     fn overview_esc_pops_back_when_stack_has_history() {
         let mut app = make_app();
         app.tui_mode = TuiMode::Landing;
-        app.navigate_to(TuiMode::Overview);
+        app.navigate_to(TuiMode::Dashboard);
         let depth_before = app.nav_stack.depth();
         assert!(depth_before >= 1);
 
@@ -2892,7 +2911,7 @@ mod tests {
         use crate::session::types::{Session, SessionStatus};
 
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         let mut session = Session::new(
             "test".into(),
             "opus".into(),
@@ -2907,7 +2926,11 @@ mod tests {
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
         assert!(
-            app.tui_mode == TuiMode::Detail(id),
+            app.tui_mode
+                == TuiMode::Session {
+                    id,
+                    view: SessionView::Detail
+                },
             "Enter on terminal session must navigate to Detail; got {:?}",
             app.tui_mode
         );
@@ -2918,7 +2941,7 @@ mod tests {
         use crate::session::types::{Session, SessionStatus};
 
         let mut app = make_app();
-        app.tui_mode = TuiMode::Overview;
+        app.tui_mode = TuiMode::Dashboard;
         let mut session = Session::new(
             "test".into(),
             "opus".into(),
@@ -2933,7 +2956,11 @@ mod tests {
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
         assert!(
-            app.tui_mode == TuiMode::Detail(id),
+            app.tui_mode
+                == TuiMode::Session {
+                    id,
+                    view: SessionView::Detail
+                },
             "Enter on running session must navigate to Detail; got {:?}",
             app.tui_mode
         );
@@ -3083,7 +3110,7 @@ mod tests {
         };
         handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
 
-        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert_eq!(
             app.nav_stack.breadcrumbs(),
             breadcrumbs_before.as_slice(),
@@ -3099,7 +3126,10 @@ mod tests {
         // Detail (the screen the user was on before the modal opened),
         // NOT jump to ConfirmExit. Reported 2026-05-23.
         let detail_id = uuid::Uuid::nil();
-        app.navigate_to(TuiMode::Detail(detail_id));
+        app.navigate_to(TuiMode::Session {
+            id: detail_id,
+            view: SessionView::Detail,
+        });
         app.navigate_to(TuiMode::CompletionSummary);
         app.completion_summary = Some(completed_summary());
 
@@ -3107,7 +3137,10 @@ mod tests {
 
         assert_eq!(
             app.tui_mode,
-            TuiMode::Detail(detail_id),
+            TuiMode::Session {
+                id: detail_id,
+                view: SessionView::Detail
+            },
             "[s] dismiss must restore the prior mode via nav_stack pop"
         );
         assert!(app.completion_summary.is_none());
@@ -3118,7 +3151,11 @@ mod tests {
     #[test]
     fn completion_summary_d_key_pushes_dashboard_onto_nav_stack() {
         let mut app = make_app();
-        app.navigate_to(TuiMode::Detail(uuid::Uuid::nil()));
+        app.tui_mode = TuiMode::IssueBrowser;
+        app.navigate_to(TuiMode::Session {
+            id: uuid::Uuid::nil(),
+            view: SessionView::Detail,
+        });
         app.tui_mode = TuiMode::CompletionSummary;
         app.completion_summary = Some(completed_summary());
         let depth_before = app.nav_stack.depth();
@@ -3145,7 +3182,13 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('l'));
 
-        assert_eq!(app.tui_mode, TuiMode::LogViewer(first_id));
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Session {
+                id: first_id,
+                view: SessionView::Log
+            }
+        );
         assert!(app.completion_summary_dismissed);
         // Post-match auto-clear nulls the summary on any non-scroll key.
         assert!(app.completion_summary.is_none());
@@ -3218,7 +3261,10 @@ mod tests {
         let session = completed_session("x");
         let id = session.id;
         app.pool.enqueue(session);
-        app.tui_mode = TuiMode::CallLog(id);
+        app.tui_mode = TuiMode::Session {
+            id,
+            view: SessionView::Events,
+        };
 
         handle_call_log(&mut app, &key_code(KeyCode::End), id);
         assert!(
@@ -3239,7 +3285,10 @@ mod tests {
         let session = completed_session("x");
         let id = session.id;
         app.pool.enqueue(session);
-        app.tui_mode = TuiMode::CallLog(id);
+        app.tui_mode = TuiMode::Session {
+            id,
+            view: SessionView::Events,
+        };
         app.call_log_state.follow_tail = true;
 
         handle_call_log(&mut app, &key('j'), id);

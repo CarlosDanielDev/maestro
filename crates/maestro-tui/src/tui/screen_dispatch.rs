@@ -1206,7 +1206,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // back through them as the user expects. Wiping the stack
             // (previous behavior) lost the Welcome breadcrumb at every
             // session start. Reported 2026-05-23.
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::LaunchSession(config) => {
             // Interaction launches open a long-lived chat screen instead of
@@ -1228,7 +1228,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::SendInteractionTurn {
             issue_number,
@@ -1385,7 +1385,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     .collect();
                 app.pending_commands
                     .push(app::TuiCommand::LaunchSessions(configs));
-                app.tui_mode = app::TuiMode::Overview;
+                app.tui_mode = app::TuiMode::Dashboard;
             }
         }
         ScreenAction::LaunchPromptSession(config) => {
@@ -1394,17 +1394,17 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.screen_state.adapt_follow_up_screen = None;
             app.pending_commands
                 .push(app::TuiCommand::LaunchPromptSession(config));
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::LaunchConflictFix(config) => {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::LaunchCiFix(config) => {
             app.launch_ci_fix_from_review(&config);
             app.screen_state.ci_error_review_screen = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::SkipHollow(session_id) => {
             // #1287: Skip is the choice that dismisses the hollow dialog
@@ -1451,7 +1451,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app.pending_session_launches.push(retry);
             }
             app.screen_state.hollow_retry_screen = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::FetchPrDetail(pr_number) => {
             let pr = app
@@ -2051,7 +2051,7 @@ mod queue_confirm_routing_tests {
     fn single_launch_spawns_directly() {
         let mut app = crate::tui::make_test_app("qc-route-single");
         handle_screen_action(&mut app, ScreenAction::LaunchSessions(vec![cfg(7)]));
-        assert!(matches!(app.tui_mode, TuiMode::Overview));
+        assert!(matches!(app.tui_mode, TuiMode::Dashboard));
         assert!(app.screen_state.queue_confirmation_screen.is_none());
         assert!(
             app.pending_commands

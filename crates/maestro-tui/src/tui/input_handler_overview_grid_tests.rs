@@ -21,7 +21,7 @@ fn overview_app(sessions: usize) -> App {
     for i in 0..sessions {
         app.pool.enqueue(task(FIRST_ISSUE + i as u64));
     }
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app
 }
 

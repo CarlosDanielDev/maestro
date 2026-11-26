@@ -60,10 +60,16 @@ async fn digits_stay_content_while_a_text_field_has_focus() {
 }
 
 #[tokio::test]
-async fn overview_keeps_digits_for_session_detail() {
-    let mut app = app_on(TuiMode::Overview);
+async fn non_tab_screen_keeps_digits_for_session_detail() {
+    // #1294: the old Overview is gone; the Dependency graph still falls
+    // through to the session keys, where a digit opens that session.
+    let mut app = app_on(TuiMode::DependencyGraph);
     press(&mut app, '2').await;
-    assert_eq!(app.tui_mode, TuiMode::Overview, "no session 2, no tab jump");
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::DependencyGraph,
+        "no session 2, no tab jump"
+    );
 }
 
 #[tokio::test]

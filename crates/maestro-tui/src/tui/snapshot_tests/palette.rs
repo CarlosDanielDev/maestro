@@ -8,7 +8,7 @@ use ratatui::style::Modifier;
 use ratatui::{Terminal, backend::TestBackend};
 
 use super::log_drawer::{draw, log_app};
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::palette::{self, Run};
 use crate::tui::ds::tab_bar::TABS;
 use crate::tui::input_handler::handle_key;
@@ -123,7 +123,10 @@ fn palette_entries_follow_registry() {
         assert!(real.iter().any(|e| e.label == name), "tab {name}");
     }
     // A screen block shows only on its screen.
-    let log = TuiMode::LogViewer(uuid::Uuid::nil());
+    let log = TuiMode::Session {
+        id: uuid::Uuid::nil(),
+        view: SessionView::Log,
+    };
     let scroll = |es: &[palette::Entry]| {
         es.iter()
             .any(|e| matches!(e.run, Run::Binding(Action::Top, _)))
@@ -228,7 +231,7 @@ async fn palette_query_dash() {
 /// ⏎ on a tab opens it, also from a screen where its digit is content.
 #[tokio::test]
 async fn palette_tab_entry_opens_the_tab() {
-    let mut app = log_app(TuiMode::Overview);
+    let mut app = log_app(TuiMode::Dashboard);
     handle_key(&mut app, ctrl_k()).await;
     type_text(&mut app, "Issues").await;
     handle_key(&mut app, key(KeyCode::Enter)).await;

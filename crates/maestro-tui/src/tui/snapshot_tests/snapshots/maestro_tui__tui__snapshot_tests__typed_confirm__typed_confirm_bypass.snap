@@ -3,7 +3,7 @@ source: crates/maestro-tui/src/tui/snapshot_tests/typed_confirm.rs
 expression: terminal.backend()
 ---
 " MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
-" Overview › Bypass Warning                                     Esc back  ? help "
+" Dashboard › Bypass Warning                                    Esc back  ? help "
 "                                                                                "
 "        ╔═══════════════[ DANGER: enable bypass mode? ]════════════════╗        "
 "        ║ What it turns off                                            ║        "

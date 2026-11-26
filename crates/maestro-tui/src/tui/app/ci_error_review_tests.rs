@@ -87,7 +87,7 @@ fn request_ci_error_review_flips_mode_and_queues_fetch() {
     app.ci_poller
         .ci_check_details
         .insert(42, vec![check("clippy", CheckConclusion::Failure)]);
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.request_ci_error_review();
     assert_eq!(app.tui_mode, TuiMode::CiErrorReview);
     assert!(app.screen_state.ci_error_review_screen.is_some());
@@ -111,7 +111,7 @@ fn request_ci_error_review_idempotent_when_awaiting_fix() {
     app.ci_poller
         .ci_check_details
         .insert(42, vec![check("clippy", CheckConclusion::Failure)]);
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     app.request_ci_error_review();
     assert_ne!(
         app.tui_mode,
@@ -184,7 +184,7 @@ async fn e_key_with_visible_failure_flips_to_ci_error_review_mode() {
     app.ci_poller
         .ci_check_details
         .insert(42, vec![check("clippy", CheckConclusion::Failure)]);
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     let _ = crate::tui::input_handler::handle_key(
         &mut app,
         KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
@@ -197,7 +197,7 @@ async fn e_key_with_visible_failure_flips_to_ci_error_review_mode() {
 async fn e_key_with_no_failure_does_not_flip_mode() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut app = crate::tui::make_test_app("issue-695-j2");
-    app.tui_mode = TuiMode::Overview;
+    app.tui_mode = TuiMode::Dashboard;
     let _ = crate::tui::input_handler::handle_key(
         &mut app,
         KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
@@ -205,7 +205,7 @@ async fn e_key_with_no_failure_does_not_flip_mode() {
     .await;
     assert_eq!(
         app.tui_mode,
-        TuiMode::Overview,
+        TuiMode::Dashboard,
         "[e] must be a no-op when no failure is visible"
     );
 }

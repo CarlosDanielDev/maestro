@@ -21,7 +21,7 @@ use super::usage::View;
 use super::{Dashboard, DashboardView};
 use crate::tui::agent_graph::ladder::{self, Selection};
 use crate::tui::agent_graph::model::FilesGraph;
-use crate::tui::app::{App, TuiMode};
+use crate::tui::app::{App, SessionView, TuiMode};
 use crate::tui::ds::breakpoint::Breakpoint;
 use crate::tui::navigation::keymap::InlineHint;
 use crate::tui::screens::ScreenAction;
@@ -106,7 +106,10 @@ pub(crate) fn handle_key(app: &mut App, key: &KeyEvent, graph: &FilesGraph) -> S
         KeyCode::Char('k') | KeyCode::Up => step(dash, graph, false),
         KeyCode::Enter => {
             if let Some(id) = enter_target(dash, graph) {
-                app.navigate_to(TuiMode::Detail(id));
+                app.navigate_to(TuiMode::Session {
+                    id,
+                    view: SessionView::Detail,
+                });
             }
         }
         KeyCode::Char('X') if dash.deps.column == Column::Agents => {
