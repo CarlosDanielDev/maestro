@@ -160,7 +160,10 @@ impl App {
         match uncommitted.map(|l| l.ignored) {
             None | Some(0) => {}
             Some(1) => rows.push(("also".into(), "1 ignored file or folder, deleted".into())),
-            Some(n) => rows.push(("also".into(), format!("{n} ignored files or folders, deleted"))),
+            Some(n) => rows.push((
+                "also".into(),
+                format!("{n} ignored files or folders, deleted"),
+            )),
         }
         rows
     }
