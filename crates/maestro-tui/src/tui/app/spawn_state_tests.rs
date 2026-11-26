@@ -217,3 +217,31 @@ async fn refused_spawn_is_visible() {
         "the toast must be drawn:\n{out}"
     );
 }
+
+/// Judge round: a first turn that fails to start raises exactly one
+/// WARN/ERR alert (one toast off the log screens) and a System turn in
+/// the chat; this PR adds no second report on that path.
+#[tokio::test]
+async fn failed_first_turn_raises_one_alert() {
+    use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedTurn};
+    use crate::session::interaction::TurnRole;
+    use crate::tui::app::interaction_pipeline_tests::{app_with_interaction, pump_session_events};
+    let failing = ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::SpawnFail,
+    };
+    let (mut app, _provider) = app_with_interaction("spawn-fail-1453", 1453, vec![failing]);
+    let _ = app.activity_log.take_alerts();
+
+    app.dispatch_interaction_turn(1453, "do the work".into(), "opus".into())
+        .await;
+    pump_session_events(&mut app).await;
+
+    let alerts = app.activity_log.take_alerts();
+    assert_eq!(alerts.len(), 1, "one alert, so one toast: {alerts:?}");
+    let managed = app.pool.interactive_managed(1453).expect("interaction");
+    assert!(
+        (managed.session.turns.iter()).any(|t| t.role == TurnRole::System),
+        "the failure must show as a System turn in the chat"
+    );
+}
