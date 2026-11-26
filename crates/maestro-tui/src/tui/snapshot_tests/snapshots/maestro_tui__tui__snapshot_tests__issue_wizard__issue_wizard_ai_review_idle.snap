@@ -1,0 +1,29 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/issue_wizard.rs
+assertion_line: 150
+expression: terminal.backend()
+---
+" MAESTRO  0.33.1 │ ○ no agents │ $0.00 spent │ TQ:OFF                           "
+" New issue                                                     Esc back  ? help "
+" Step 4/5 · AI review   ✓✓✓●○   next Preview                            feature "
+" Draft 5/5 ready                                                                "
+"┌────────────────────────────────[ AI review ]─────────────────────────────────┐"
+"│                                                                              │"
+"│Claude reads this draft and lists unclear acceptance criteria, missed edge    │"
+"│cases, scope concerns and testability gaps.                                   │"
+"│                                                                              │"
+"│r runs the review · a paid AI call (claude --print)                           │"
+"│Enter or s goes to Preview without it · nothing is sent until you press r     │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" r run review (paid AI call)   e revise   s skip   Enter next           ⌃Q quit "

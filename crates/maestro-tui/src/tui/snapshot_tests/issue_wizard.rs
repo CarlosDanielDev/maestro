@@ -123,3 +123,33 @@ fn issue_wizard_ai_improve_error_wraps_on_narrow_buffer() -> Result<(), Box<dyn 
     );
     Ok(())
 }
+
+/// #1454: AI review before any call — what it does, its cost, and the key.
+/// Reached through `handle_key` and drawn by `ui::draw` at 80x24.
+#[tokio::test]
+async fn issue_wizard_ai_review_idle() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::tui::app::TuiMode;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut screen = IssueWizardScreen::new();
+    screen.payload_mut().title = "Add gauge widget".into();
+    screen.payload_mut().overview = "Render progress".into();
+    screen.payload_mut().expected_behavior = "Fills proportionally".into();
+    screen.payload_mut().acceptance_criteria = "- Renders 0..100".into();
+    screen.set_step_for_tests(IssueWizardStep::Dependencies);
+    screen.begin_dependency_fetch();
+    screen.apply_dep_issues(Vec::new());
+    let mut app = crate::tui::make_test_app("issue-wizard-1454");
+    app.tui_mode = TuiMode::IssueWizard;
+    app.screen_state.issue_wizard_screen = Some(screen);
+    crate::tui::input_handler::handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+    let mut terminal = Terminal::new(TestBackend::new(80, 24))?;
+    terminal.draw(|f| crate::tui::ui::draw(f, &mut app))?;
+    let text = buffer_text(terminal.backend().buffer());
+    assert!(text.contains("r runs the review"), "{text}");
+    assert_snapshot!(terminal.backend());
+    Ok(())
+}

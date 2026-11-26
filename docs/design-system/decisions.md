@@ -683,3 +683,12 @@ first. One entry per decision.
 - **ADR (lock vs armed confirm):** lock. An armed confirm still spends above the budget left on a fast double key; a lock with the reason and the way out keeps the rule with no new state. Rejected: keeping the arm with a longer window (still a launch above the budget left).
 - **Differs from the target:** the target's over-budget dialog arms; here it is locked. "wave 1 only" is not offered as a way out (out of scope for #1448), so the dialog does not name it.
 - **Source:** #1448.
+
+## 2026-11-26 — Issue wizard AI review starts only on `r`
+
+- **What:** entering the AI review step sends no call. The step shows an idle state (what the review checks, `a paid AI call (claude --print)`, `r runs the review`) and `r` queues exactly one `LaunchAiReview`; `r` after a failure re-runs it the same way. `s` skip, `e` revise and ⏎ next work with no call. The idle footer drops `i improve`, which does nothing before a critique.
+- **Why:** #1454: owner rule "no unasked spend". The step-entry hook queued the paid critique as soon as the step was entered (left open by #1450).
+- **Section:** `§02.2` Create issue (Screen components: AI review states; Keymap `r`; Metrics "Meanings of `r` on AI review: 1").
+- **ADR (which key):** `r` = "run the paid AI call", for the first run and for a retry, so `r` keeps one meaning. A new letter would give two keys for one action. Rejected: start on ⏎ (⏎ is "next" on every step), auto-start with a confirm (still a call nobody asked for).
+- **Differs from the target:** the target's review states have no idle state (loading starts on entry); this adds one. `s` skip stays (the target removes it).
+- **Source:** #1454.

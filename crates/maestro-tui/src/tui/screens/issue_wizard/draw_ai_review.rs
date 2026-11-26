@@ -161,12 +161,34 @@ impl IssueWizardScreen {
                     ))
                 })
                 .collect(),
-            None => vec![Line::from(Span::styled(
-                "Press Enter to continue (no review run yet).",
-                Style::default().fg(theme.text_secondary),
-            ))],
+            // #1454: idle — say what the review does and what it costs;
+            // nothing is sent until `r`.
+            None => {
+                let muted = Style::default().fg(theme.text_secondary);
+                vec![
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "Claude reads this draft and lists unclear acceptance criteria, missed edge cases, scope concerns and testability gaps.",
+                        Style::default().fg(theme.text_primary),
+                    )),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled(
+                            "r runs the review",
+                            Style::default()
+                                .fg(theme.text_primary)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" · a paid AI call (claude --print)", muted),
+                    ]),
+                    Line::from(Span::styled(
+                        "Enter or s goes to Preview without it · nothing is sent until you press r",
+                        muted,
+                    )),
+                ]
+            }
         };
-        f.render_widget(Paragraph::new(body), inner);
+        f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }), inner);
     }
 
     /// One row per changed section: focus marker, decision and how many

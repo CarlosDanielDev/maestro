@@ -286,7 +286,7 @@ pub(super) fn blocks() -> Vec<Binding> {
         s(issue, ch('a'), A::Expand, "accept section (AI diff)"),
         s(issue, ch('d'), A::Expand, "keep mine (AI diff)"),
         s(issue, ch('i'), A::Expand, "improve with AI (paid AI call)"),
-        s(issue, ch('r'), A::Expand, "re-run the AI call (paid)"),
+        s(issue, ch('r'), A::Expand, "run the AI call (paid)"),
         s(
             issue,
             ch('e'),
