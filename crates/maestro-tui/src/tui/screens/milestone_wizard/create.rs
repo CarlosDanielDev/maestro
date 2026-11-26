@@ -35,12 +35,27 @@ impl MilestoneWizardScreen {
             .unwrap_or_default()
     }
 
-    /// Why the Plan step cannot advance: a stranded issue, or a selected
-    /// issue `level_buckets` cannot place (a loop of blockers).
+    /// Why the Plan step cannot advance: a stranded issue, two selected
+    /// issues with equivalent titles, or a selected issue `level_buckets`
+    /// cannot place (a loop of blockers).
     pub(super) fn plan_block_reason(&self) -> Option<&'static str> {
         let plan = self.generated_plan()?;
         if !stranded(&plan.issues).is_empty() {
             return Some(STRANDED_REASON);
+        }
+        let titles: Vec<&str> = plan
+            .issues
+            .iter()
+            .filter(|i| i.accepted)
+            .map(|i| i.title.as_str())
+            .collect();
+        let duplicate = titles.iter().enumerate().any(|(n, a)| {
+            titles[n + 1..]
+                .iter()
+                .any(|b| crate::util::titles_equivalent(a, b))
+        });
+        if duplicate {
+            return Some(DUPLICATE_REASON);
         }
         let placed: usize = level_buckets(&plan.issues).iter().map(Vec::len).sum();
         let selected = plan.issues.iter().filter(|i| i.accepted).count();

@@ -721,3 +721,12 @@ first. One entry per decision.
 - **ADR (remove now vs after one release):** remove now. Nothing saves a `TuiMode` (the nav stack lives in memory and no state or config file names a mode), and no user-visible key or label named an alias, so a release of grace protects nothing; the only saved field tied to an old mode, `[views] agent_graph_enabled`, still loads and still gates Deps › files (`legacy_mode_state_loads`). Rejected: waiting one release (the issue's recommendation), because it keeps dead code with no user it protects.
 - **Differs from the target:** three crumb bars drawn by tests that press keys before any draw read `Dashboard › …` instead of `Overview › …` (at runtime the first draw already made it Dashboard). From Home, `⏎` on a Needs-you session row now opens the Dashboard on Ops; before, the alias kept the last Dashboard view, where the row might not be shown.
 - **Source:** #1294.
+
+## 2026-11-26 — Create milestone blocks two selected issues with the same title
+
+- **What:** on Plan, two selected issues whose titles are equivalent under `util::titles_equivalent` (trimmed, inner spaces collapsed, ASCII case ignored: the match `create_issue` uses) block advancing to Create. The reason `two selected issues share a title · drop one with x` sits on the Proposed issues border (`plan_block_reason`, after the stranded check). Deselecting one clears it.
+- **Why:** #1455: `create_issue` reuses an existing issue by title, so the second planned issue became the first one, silently, and its Blocked By edges pointed at it.
+- **Section:** `§02.3` Create milestone (wizard): Create gate (`⊘ CREATE BLOCKED` lists invalid titles among its causes).
+- **ADR (where to stop it):** block on Plan with the existing `x` fix, never rename or merge. Auto-suffixing a title would write text the operator did not choose; merging two issues would drop one of them. Rejected: a second check in `begin_materialization` (Create is only reachable through Plan, and a retry reuses by number), and a planner-side dedupe (the AI can still return two equal titles, and the operator must see it).
+- **Differs from the target:** no title edit (`e` / `t` are not built), so the only fix is `x`; the duplicate rows get no mark of their own.
+- **Source:** #1455.
