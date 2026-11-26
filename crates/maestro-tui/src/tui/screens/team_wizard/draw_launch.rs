@@ -40,12 +40,6 @@ pub(super) fn footer_hints(s: &TeamWizardScreen) -> Vec<(&'static str, &'static 
             LaunchStep::Plan => vec![("Enter", "review launch"), ("Esc", "back")],
         },
         LaunchPhase::Dialog if s.launch_block_reason().is_some() => vec![("Esc", "back to plan")],
-        LaunchPhase::Dialog if s.launch_over_budget() => match s.launch.arm.state() {
-            crate::tui::ds::armed::ArmedState::Armed(_) => {
-                vec![("Enter", "launch now"), ("Esc", "back to plan")]
-            }
-            _ => vec![("Enter", "arm"), ("Esc", "back to plan")],
-        },
         LaunchPhase::Dialog => vec![("Enter", "launch"), ("Esc", "back to plan")],
         LaunchPhase::Executing => vec![("Esc", "cancel run")],
         LaunchPhase::Launched => vec![("Enter", "return")],
