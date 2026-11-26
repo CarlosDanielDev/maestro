@@ -218,11 +218,12 @@ async fn refused_spawn_is_visible() {
     );
 }
 
-/// Judge round: a first turn that fails to start raises exactly one
-/// WARN/ERR alert (one toast off the log screens) and a System turn in
-/// the chat; this PR adds no second report on that path.
+/// Judge round: a first turn that fails to start gets no extra spawn
+/// report from this PR (only the turn's own failure surfaces it), and the
+/// chat shows a System turn. On main this path already raises an ERR for
+/// the session error and a WARN "turn failed"; this PR leaves that as is.
 #[tokio::test]
-async fn failed_first_turn_raises_one_alert() {
+async fn failed_first_turn_adds_no_spawn_report() {
     use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedTurn};
     use crate::session::interaction::TurnRole;
     use crate::tui::app::interaction_pipeline_tests::{app_with_interaction, pump_session_events};
@@ -231,14 +232,20 @@ async fn failed_first_turn_raises_one_alert() {
         end: ScriptedEnd::SpawnFail,
     };
     let (mut app, _provider) = app_with_interaction("spawn-fail-1453", 1453, vec![failing]);
-    let _ = app.activity_log.take_alerts();
 
     app.dispatch_interaction_turn(1453, "do the work".into(), "opus".into())
         .await;
     pump_session_events(&mut app).await;
 
     let alerts = app.activity_log.take_alerts();
-    assert_eq!(alerts.len(), 1, "one alert, so one toast: {alerts:?}");
+    assert!(
+        !alerts.iter().any(|e| e.message.contains("Spawn failed")),
+        "no spawn report on the first-turn path: {alerts:?}"
+    );
+    assert!(
+        alerts.iter().any(|e| e.message.contains("turn failed")),
+        "the turn failure must still surface: {alerts:?}"
+    );
     let managed = app.pool.interactive_managed(1453).expect("interaction");
     assert!(
         (managed.session.turns.iter()).any(|t| t.role == TurnRole::System),
