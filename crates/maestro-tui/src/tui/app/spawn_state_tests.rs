@@ -145,7 +145,11 @@ async fn budget_gate_s_spawns_from_queued() {
         app.tui_mode
     );
 
-    handle_key(&mut app, KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE)).await;
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE),
+    )
+    .await;
 
     let status = app.pool.get_session(id).map(|s| s.status);
     assert_eq!(status, Some(SessionStatus::Spawning));
@@ -208,5 +212,8 @@ async fn refused_spawn_is_visible() {
         toast.is_some_and(|t| t.severity == Severity::Error && t.message.contains("Spawn failed")),
         "the refusal must raise an error toast"
     );
-    assert!(out.contains("Spawn failed"), "the toast must be drawn:\n{out}");
+    assert!(
+        out.contains("Spawn failed"),
+        "the toast must be drawn:\n{out}"
+    );
 }
