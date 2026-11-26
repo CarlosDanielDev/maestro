@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/typed_confirm.rs
+expression: terminal.backend()
+---
+" MAESTRO  0.33.1 │ ● 1 run ◐ 0 wait ✗ 0 fail │ $0.00 spent │ TQ:OFF             "
+" Overview › Confirm Kill                                       Esc back  ? help "
+"  o Ops   c Cost  t Tokens  g Deps                                              "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Work (1) ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃ SESSIONS  1                                                                  ┃"
+"┃▌● runn╔════════════════════[ Kill session #407? ]════════════════════╗ 2m30s ┃"
+"┃       ║ Stops the agent now.                                         ║       ┃"
+"┃ PR PIP║                                                              ║       ┃"
+"┃   ○ No║ gone   the worktree and branch maestro/issue-407             ║       ┃"
+"┗━━━━━━━║ lost   3 uncommitted files, the turn in progress             ║━━━━━━━┛"
+"┌───────║ kept   the transcript                                        ║───────┐"
+"│ ● runn║ other  no other session is running                           ║       │"
+"│ Add lo║                                                              ║       │"
+"│ PIPELI║ Type 407 to confirm:                                         ║       │"
+"│ GATES ║ ›                                                     0 of 3 ║       │"
+"│ ○ no g║                                                              ║       │"
+"│ CONTEX║  Esc  cancel (default)    ⏎  kill (locked)                   ║       │"
+"│ contex╚══════════════════════════════════════════════════════════════╝       │"
+"│ tokens  0 in · 0 out · files 0                                               │"
+"│ OUTPUT · last lines                                                          │"
+"│ no output yet                                                                │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Enter kill                                                             ⌃Q quit "

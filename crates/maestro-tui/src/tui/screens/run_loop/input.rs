@@ -104,14 +104,18 @@ fn open_stop(app: &mut App) {
         .and_then(|id| app.pool.get_session(id))
         .map_or(0.0, |s| s.cost_usd);
     let most = (view.cap > 0.0).then(|| (view.running as f64 * view.cap - running_spent).max(0.0));
-    let starting = (app.queue_executor.as_ref())
-        .is_some_and(|e| e.running_issue().is_some() && e.running_session_id().is_none());
-    app.screen_state.run_loop.stop = Some(StopDialog::new(
-        view.running,
-        starting,
-        view.not_started,
-        most,
-    ));
+    let running_id = app
+        .queue_executor
+        .as_ref()
+        .and_then(|e| e.running_session_id());
+    let starting = (app.queue_executor.as_ref()).is_some_and(|e| e.running_issue().is_some())
+        && running_id.is_none();
+    // Counted once, here: git never runs per frame.
+    let kill_rows = running_id.map_or_else(Vec::new, |id| {
+        app.kill_teardown_rows(id, app.uncommitted_files(id))
+    });
+    let dialog = StopDialog::new(view.running, starting, view.not_started, most);
+    app.screen_state.run_loop.stop = Some(dialog.with_kill_rows(kill_rows));
 }
 
 /// The open "Stop the run?" dialog: `↑↓` switches drain ↔ kill, typed

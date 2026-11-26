@@ -92,3 +92,44 @@ async fn typed_confirm_counter_counts_matching_chars() {
     assert!(!out.contains("7 of 7"), "CONFIRX reads complete:\n{out}");
     assert!(out.contains("does not match"), "{out}");
 }
+
+/// #1456: a session with uncommitted files in its worktree. Before `⏎`
+/// the dialog says the worktree and branch go and the files are lost.
+#[tokio::test]
+async fn kill_confirm_lost_row() {
+    let mut app = log_app(TuiMode::Overview);
+    let session = make_session(SessionStatus::Running, Some(407));
+    let id = session.id;
+    app.pool.enqueue(session);
+    let _ = app.pool.try_promote();
+    let root = tempfile::tempdir().unwrap();
+    // The path teardown removes: `.maestro/worktrees/<slug>`.
+    let worktree = root.path().join(".maestro/worktrees/issue-407");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&worktree)
+        .status()
+        .expect("git must be on PATH");
+    assert!(init.success());
+    for name in ["a.rs", "b.rs", "c.rs"] {
+        std::fs::write(worktree.join(name), "edit").unwrap();
+    }
+    let managed = app.pool.get_active_mut(id).expect("promoted");
+    managed.worktree_path = Some(worktree.clone());
+    // The promote line carries a wall-clock stamp: keep the frame stable.
+    managed.session.activity_log.clear();
+    let _ = handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE),
+    )
+    .await;
+    assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    let terminal = screen(&mut app);
+    let out = format!("{}", terminal.backend());
+    assert!(
+        out.contains("lost   3 uncommitted files, the turn in progress"),
+        "the lost row before confirm:\n{out}"
+    );
+    insta::assert_snapshot!("kill_confirm_lost_row", terminal.backend());
+}
