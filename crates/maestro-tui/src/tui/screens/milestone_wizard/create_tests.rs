@@ -331,7 +331,10 @@ async fn duplicate_titles_block_create() {
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(wizard(&mut app).step(), MilestoneWizardStep::Preview);
     assert!(!create_queued(&app), "advancing to Create writes nothing");
-    assert_eq!(wizard(&mut app).create_description(), "creates 1 milestone + 2 issues");
+    assert_eq!(
+        wizard(&mut app).create_description(),
+        "creates 1 milestone + 2 issues"
+    );
 }
 
 /// A deselected issue is not written, so its title never blocks.
