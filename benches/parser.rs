@@ -1,5 +1,6 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use maestro::session::parser::parse_stream_line;
+use std::hint::black_box;
 
 // ---------------------------------------------------------------------------
 // Test data generators
