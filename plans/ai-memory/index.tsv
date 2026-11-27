@@ -1,0 +1,3 @@
+# key	title	labels	parent
+memepic	Plug ai-memory into maestro — shared agent memory across sessions and providers	epic,type:feature	-
+memepic.1	spike(memory): run maestro agent sessions under `ai-memory run` and decide the integration seam	spike,type:feature	memepic

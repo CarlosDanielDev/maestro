@@ -1,0 +1,5 @@
+# key	title	labels	parent
+adopt-epic	Adopt external Claude sessions — global picker + interactive resume	epic	-
+adopt-epic.1	Discovery scan — enumerate Claude Code transcripts machine-wide	story	adopt-epic
+adopt-epic.2	Adopt pipeline — Interactive session resumed in its original cwd	story	adopt-epic
+adopt-epic.3	TUI picker — global session list + adopt action	story	adopt-epic

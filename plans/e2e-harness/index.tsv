@@ -1,0 +1,3 @@
+# key	title	labels	parent
+e2e-epic.2	test(e2e): binary harness + first offline run-once scenario	chore,testing	#1047
+e2e-epic.3	test(e2e): interaction-session scenario — automate #942	chore,testing	e2e-epic
