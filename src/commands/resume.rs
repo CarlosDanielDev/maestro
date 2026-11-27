@@ -1,7 +1,7 @@
 use crate::commands::setup::setup_app_from_config;
 use crate::config::Config;
 use crate::provider::create_provider;
-use crate::session::pool::session_slug;
+use crate::session::pool::{SessionPool, session_slug};
 use crate::session::types::{Session, SessionStatus};
 use crate::session::worktree::{GitWorktreeManager, WorktreeManager};
 use crate::state::store::StateStore;
@@ -35,11 +35,7 @@ pub async fn cmd_resume(
 
     let probe = GitWorktreeManager::new(repo_root);
     let plan = plan_resume(&state, &incomplete, &probe);
-    for why in &plan.refused {
-        eprintln!("{why}");
-    }
-    app.pool.keep_saved(&plan.keep);
-    for session in plan.restore {
+    for session in apply_plan(&mut app.pool, plan) {
         app.add_session(session).await?;
     }
 
@@ -164,6 +160,17 @@ fn plan_resume(
         refused,
         keep,
     }
+}
+
+/// Prints why each refused session is skipped and keeps every record the
+/// plan does not restore in `pool` (#1487). Returns the sessions to
+/// restore.
+fn apply_plan(pool: &mut SessionPool, plan: ResumePlan) -> Vec<Session> {
+    for why in &plan.refused {
+        eprintln!("{why}");
+    }
+    pool.keep_saved(&plan.keep);
+    plan.restore
 }
 
 /// A fresh queued session that continues the saved one `s` (#1266): it

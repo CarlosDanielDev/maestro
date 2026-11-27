@@ -3,7 +3,7 @@
 //! finds it. Real git repo, real state file, `cmd_resume`'s own steps.
 
 use super::tests::{init_repo, issue_session, walk};
-use super::{plan_resume, sessions_to_resume};
+use super::{apply_plan, plan_resume, sessions_to_resume};
 use crate::commands::setup::setup_app_from_config;
 use crate::config::{Config, LoadedConfig};
 use crate::session::types::{Session, SessionStatus};
@@ -26,8 +26,8 @@ fn bound_paused(n: u64) -> Session {
 }
 
 /// Saves `sessions` as an earlier run left them, then runs `maestro
-/// resume [filter]` as `cmd_resume` does and saves once. Returns the state
-/// after that save.
+/// resume [filter]` through `cmd_resume`'s own `apply_plan` and saves
+/// once. Returns the state after that save.
 async fn resume_run(sessions: Vec<Session>, filter: Option<&str>) -> MaestroState {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
@@ -46,8 +46,7 @@ async fn resume_run(sessions: Vec<Session>, filter: Option<&str>) -> MaestroStat
     assert!(plan.refused.is_empty(), "setup: {:?}", plan.refused);
     let mut app = app_at!(repo.path(), &store_path);
     app.workspace_trusted = false; // nothing may spawn here
-    app.pool.keep_saved(&plan.keep);
-    for s in plan.restore {
+    for s in apply_plan(&mut app.pool, plan) {
         app.add_session(s).await.unwrap();
     }
     crate::tui::save_on_exit(&mut app).expect("saved");
