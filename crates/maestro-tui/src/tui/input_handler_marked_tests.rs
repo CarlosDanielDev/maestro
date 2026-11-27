@@ -57,24 +57,34 @@ fn finish(app: &mut App, id: uuid::Uuid) {
 }
 
 /// `X` off the Dashboard (Detail's own `X` already kills the session it
-/// shows, #1288) still kills the marked #2 after #1, above it, finishes.
+/// shows, #1288) still kills the marked session after #1, above it,
+/// finishes: #2 (a flat index lands on #3) and #3 (on a stale index 0, #2).
 #[tokio::test]
 async fn detail_x_targets_marked_id_after_session_finishes() {
-    let (mut app, ids) = running_app(3);
-    draw(&mut app);
-    press(&mut app, KeyCode::Char('j')).await;
-    draw(&mut app);
-    assert_eq!(
-        app.screen_state.dashboard.list.selected_session(),
-        Some(ids[1])
-    );
-    press(&mut app, KeyCode::F(6)).await;
-    assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
-    draw(&mut app);
+    for marked in [1, 2] {
+        let (mut app, ids) = running_app(3);
+        draw(&mut app);
+        for _ in 0..marked {
+            press(&mut app, KeyCode::Char('j')).await;
+        }
+        draw(&mut app);
+        assert_eq!(
+            app.screen_state.dashboard.list.selected_session(),
+            Some(ids[marked])
+        );
+        press(&mut app, KeyCode::F(6)).await;
+        assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
+        draw(&mut app);
 
-    finish(&mut app, ids[0]);
-    press(&mut app, KeyCode::Char('X')).await;
-    assert_eq!(app.tui_mode, TuiMode::ConfirmKill(ids[1]), "not #3");
+        finish(&mut app, ids[0]);
+        press(&mut app, KeyCode::Char('X')).await;
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::ConfirmKill(ids[marked]),
+            "#{}",
+            marked + 1
+        );
+    }
 }
 
 /// `⏎` off the Dashboard opens the marked queued #4 after it is promoted
