@@ -257,3 +257,81 @@ fn mark_stale_sessions_killed_skips_sessions_whose_worktree_removal_failed() {
     );
     assert_eq!(state.sessions[1].status, SessionStatus::Killed);
 }
+
+// --- #1483: kept branches are listed, not hidden in a tracing line ---
+
+#[test]
+fn clean_stale_report_and_output_list_a_kept_branch() {
+    let dir = init_temp_repo();
+    let wt_root = dir.path().join(".maestro/worktrees");
+    std::fs::create_dir_all(&wt_root).unwrap();
+    let wt = wt_root.join("session-1149aaa");
+    let state_path = dir.path().join("maestro-state.json");
+    seed_stale_session(dir.path(), &state_path, &wt);
+    run_git(
+        &wt,
+        &["commit", "--allow-empty", "-q", "-m", "unpushed work"],
+    );
+
+    let report = clean_stale(dir.path(), &state_path, false).expect("clean_stale");
+
+    assert_eq!(report.removed, 1);
+    assert_eq!(
+        report.kept_branches,
+        vec![KeptBranch {
+            name: "maestro/session-1149aaa".to_string(),
+            unique_commits: Some(1),
+        }]
+    );
+    let out = kept_branches_section(&report.kept_branches);
+    assert!(out.contains("Kept 1 branch(es)"), "got:\n{out}");
+    assert!(
+        out.contains("  maestro/session-1149aaa (1 unique commit(s))"),
+        "got:\n{out}"
+    );
+}
+
+#[test]
+fn kept_branches_section_shows_count_or_unknown_and_the_hints() {
+    let kept = [
+        KeptBranch {
+            name: "maestro/issue-7".to_string(),
+            unique_commits: Some(2),
+        },
+        KeptBranch {
+            name: "maestro/issue-9".to_string(),
+            unique_commits: None,
+        },
+    ];
+
+    let out = kept_branches_section(&kept);
+
+    assert_eq!(
+        out,
+        "\nKept 2 branch(es) — they may hold work not saved anywhere else:\n\
+         \x20 maestro/issue-7 (2 unique commit(s))\n\
+         \x20 maestro/issue-9 (count unknown)\n\
+         Look at one: git log <branch>\n\
+         Remove one once its work is merged or pushed: git branch -d <branch>\n"
+    );
+}
+
+#[test]
+fn nothing_about_branches_is_printed_when_none_were_kept() {
+    let dir = init_temp_repo();
+    let wt_root = dir.path().join(".maestro/worktrees");
+    std::fs::create_dir_all(&wt_root).unwrap();
+    let wt = wt_root.join("session-1149aaa");
+    let state_path = dir.path().join("maestro-state.json");
+    seed_stale_session(dir.path(), &state_path, &wt);
+
+    let report = clean_stale(dir.path(), &state_path, false).expect("clean_stale");
+
+    assert_eq!(report.removed, 1);
+    assert!(
+        report.kept_branches.is_empty(),
+        "{:?}",
+        report.kept_branches
+    );
+    assert_eq!(kept_branches_section(&report.kept_branches), "");
+}

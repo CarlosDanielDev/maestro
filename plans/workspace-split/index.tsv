@@ -1,0 +1,8 @@
+# key	title	labels	parent
+ws	Workspace split: maestro-core / maestro-tui / maestro-cli + CI test sharding	epic	-
+ws1	Define the maestro-core public API seam	story,type:infra	ws
+ws2	Create the cargo workspace skeleton with three crates	story,type:infra	ws
+ws3	Move core modules into maestro-core behind the API	story,type:infra	ws
+ws4	Move the TUI into the maestro-tui crate	story,type:infra	ws
+ws5	Slim maestro-cli to command dispatch only	story,type:infra	ws
+ws6	Adopt cargo-nextest and shard the CI test stage	story,type:infra	ws
