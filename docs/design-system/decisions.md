@@ -793,3 +793,12 @@ first. One entry per decision.
 - **ADR (name it, never install on quit):** quit and Confirm Exit name the upgrade and restart with live work opens the same confirm (owner, 2026-11-27). Rejected: installing the queued upgrade on quit (an action and a spend nobody asked for), and a Confirm Restart whose hold quits (the banner promises a restart).
 - **Differs from the target:** the target's Confirm Exit has no upgrade line and no restart variant, and its StatusBar does not say which chip wins space.
 - **Source:** #1489.
+
+## 2026-11-27 — Confirm Restart's footer shows `⌃Q quit`
+
+- **What:** the Confirm Restart footer reads `y hold to restart  ⌃Q quit  Esc stay` (was `y hold to restart  Esc stay`). Pressing the shown `⌃Q` turns the dialog into the armed quit hold, whose footer reads `⌃Q hold to quit  Esc stay` as before. Confirm Exit's footer is unchanged.
+- **Why:** #1557, judge of PR #1553. `⌃Q` already worked in Confirm Restart but was not shown, so a user who opened the restart by mistake could not see the way to quit.
+- **Section:** `§04 Confirm dialogs` (`#c-confirm`, hold-to-confirm) and the footer key hints.
+- **ADR (show it, label `quit`):** the owner chose to show `⌃Q` between the `y` hold and `Esc` (2026-11-27): the way out should be visible and it keeps Confirm Restart and Confirm Exit consistent. The label is `quit`, not `hold to quit`: here `⌃Q` only switches to the quit hold, which Confirm Exit's own footer then names. Rejected: leaving it hidden (`Esc` then `⌃Q` also quits, but nothing says so).
+- **Differs from the target:** the target has no Confirm Restart variant.
+- **Source:** #1557.

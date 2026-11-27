@@ -1030,13 +1030,14 @@ fn draw_footer(
     hints.retain(|h| !hidden.contains(&h.key));
     // #1260: while agents run, `y` does not quit; only the ⌃Q hold does.
     if app.tui_mode == TuiMode::ConfirmExit && crate::tui::input_handler::has_live_work(app) {
-        // #1489: Confirm Restart is confirmed by the `y` hold.
-        let hold = if crate::tui::input_handler::exit_restarts(app) {
-            ("y", "hold to restart")
+        // #1489: Confirm Restart is confirmed by the `y` hold; #1557: its
+        // ⌃Q (it turns the dialog into the quit hold) is shown too.
+        let pairs: &[(&str, &str)] = if crate::tui::input_handler::exit_restarts(app) {
+            &[("y", "hold to restart"), ("⌃Q", "quit"), ("Esc", "stay")]
         } else {
-            ("⌃Q", "hold to quit")
+            &[("⌃Q", "hold to quit"), ("Esc", "stay")]
         };
-        hints = key_hints::from_pairs(&[hold, ("Esc", "stay")]);
+        hints = key_hints::from_pairs(pairs);
     }
     // #1382: on a budget Block `S` does nothing (#1243, #1276); `b` and `n` act.
     if let TuiMode::BudgetPreSpawn { session_id } = app.tui_mode
