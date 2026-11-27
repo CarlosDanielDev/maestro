@@ -252,9 +252,14 @@ fn status_bar_does_not_count_kept_records_as_running() {
     app.pool.keep_saved([&kept]);
 
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
+    terminal
+        .draw(|f| crate::tui::ui::draw(f, &mut app))
+        .unwrap();
     let out = format!("{}", terminal.backend());
     let bar = out.lines().next().unwrap_or_default();
     assert!(bar.contains("1 run"), "the live session counts:\n{out}");
-    assert!(!bar.contains("2 run"), "the kept record is not running:\n{out}");
+    assert!(
+        !bar.contains("2 run"),
+        "the kept record is not running:\n{out}"
+    );
 }

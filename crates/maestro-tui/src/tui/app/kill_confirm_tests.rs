@@ -335,5 +335,9 @@ async fn kill_on_kept_record_explains_instead_of_silent_noop() {
     let out = draw(&mut app);
     assert!(out.contains("not running"), "X says why:\n{out}");
     let status = app.pool.get_session(id).map(|s| s.status);
-    assert_eq!(status, Some(SessionStatus::Running), "the record is untouched");
+    assert_eq!(
+        status,
+        Some(SessionStatus::Running),
+        "the record is untouched"
+    );
 }
