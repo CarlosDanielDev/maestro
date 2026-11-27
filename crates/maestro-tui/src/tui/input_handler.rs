@@ -1496,7 +1496,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         }
         // #1509: a digit opens the Nth session row the Dashboard shows, by
         // id, not the Nth session in pool order. A row `D` dismissed since
-        // the Dashboard drew opens nothing.
+        // the Dashboard drew opens nothing and a toast says why.
         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
             let n = (c as usize) - ('1' as usize);
             let shown = app.screen_state.dashboard.list.rows.iter()
@@ -1505,13 +1505,19 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                     _ => None,
                 })
                 .nth(n);
-            if let Some(id) = shown
-                && app.pool.get_session(id).is_some()
-            {
-                app.navigate_to(app::TuiMode::Session {
-                    id,
-                    view: app::SessionView::Detail,
-                });
+            match shown {
+                Some(id) if app.pool.get_session(id).is_some() => {
+                    app.navigate_to(app::TuiMode::Session {
+                        id,
+                        view: app::SessionView::Detail,
+                    });
+                }
+                Some(_) => {
+                    use crate::tui::ds::toast::{Severity, Toast};
+                    let text = format!("Row {c} was dismissed: nothing to open");
+                    app.push_toast(Toast::new(Severity::Info, text), std::time::Instant::now());
+                }
+                None => {}
             }
         }
         (KeyCode::Char('w'), _) => open_session_switcher(app),

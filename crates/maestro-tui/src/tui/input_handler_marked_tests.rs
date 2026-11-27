@@ -174,7 +174,8 @@ async fn home_needs_you_jump_marks_by_id() {
 }
 
 /// #1509: a digit on a row `D` dismissed after the Dashboard drew opens
-/// nothing (the fourth row shown, finished #1, is gone from the pool).
+/// nothing (the fourth row shown, finished #1, is gone from the pool), and
+/// a toast says why: a shown key never does nothing silently.
 #[tokio::test]
 async fn digit_key_on_a_dismissed_row_opens_nothing() {
     let (mut app, ids) = running_app(3);
@@ -188,4 +189,9 @@ async fn digit_key_on_a_dismissed_row_opens_nothing() {
 
     press(&mut app, KeyCode::Char('4')).await;
     assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
+    let toast = app.toasts.visible(std::time::Instant::now());
+    assert!(
+        toast.is_some_and(|t| t.message == "Row 4 was dismissed: nothing to open"),
+        "the dismissed row must say why"
+    );
 }
