@@ -140,7 +140,10 @@ fn finalize_retrying_keeps_worktree_for_retry_child() {
 
     assert!(pool.finalize(id), "the Retrying parent is finalized");
 
-    assert!(worktree.exists(), "the queued retry child's worktree is kept");
+    assert!(
+        worktree.exists(),
+        "the queued retry child's worktree is kept"
+    );
     assert_eq!(pool.try_promote(), vec![child_id]);
     assert_eq!(
         pool.get_active(child_id).expect("promoted").worktree_path,
@@ -163,7 +166,10 @@ fn retry_child_promoted_before_parent_finalizes_shares_worktree() {
 
     assert!(pool.finalize(id), "the Retrying parent is finalized");
 
-    assert!(worktree.exists(), "the active retry child's worktree is kept");
+    assert!(
+        worktree.exists(),
+        "the active retry child's worktree is kept"
+    );
     assert_eq!(
         pool.get_active(child_id).expect("active").worktree_path,
         Some(worktree),
