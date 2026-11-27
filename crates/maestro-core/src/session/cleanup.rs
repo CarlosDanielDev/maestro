@@ -20,6 +20,21 @@ pub struct OrphanWorktree {
     pub name: String,
 }
 
+/// A `maestro/<name>` branch cleanup left in place (#1483): it may hold
+/// work, so the CLI lists it. `None` count = git could not tell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeptBranch {
+    pub name: String,
+    pub unique_commits: Option<usize>,
+}
+
+/// Outcome of [`CleanupManager::remove_orphans`].
+#[derive(Debug, Default, PartialEq)]
+pub struct CleanupReport {
+    pub removed: usize,
+    pub kept_branches: Vec<KeptBranch>,
+}
+
 /// Worktrees of stale sessions (#1149), split by safety.
 #[derive(Debug, Default, PartialEq)]
 pub struct StaleScan {
@@ -131,7 +146,8 @@ impl CleanupManager {
         scan
     }
 
-    /// Remove orphaned worktrees. Returns the count removed.
+    /// Remove orphaned worktrees. Returns the count removed and the
+    /// branches kept because they may hold work (#1483).
     ///
     /// #938: each removal routes through the hardened `wipe_worktree`
     /// primitive (rooted at `self.worktree_dir`), so it inherits the root
@@ -140,11 +156,12 @@ impl CleanupManager {
     /// call and the `std::fs::remove_dir_all` fallback — neither root-gated —
     /// are gone. A refused or failed orphan is logged and skipped (best-effort,
     /// no longer aborts the whole batch on the first failure).
-    pub fn remove_orphans(&self, orphans: &[OrphanWorktree]) -> Result<usize> {
-        let mut removed = 0;
+    pub fn remove_orphans(&self, orphans: &[OrphanWorktree]) -> Result<CleanupReport> {
+        let mut report = CleanupReport::default();
         for orphan in orphans {
             if self.remove_orphan(orphan).is_ok() {
-                removed += 1;
+                report.removed += 1;
+                report.kept_branches.extend(self.kept_branch(orphan));
             } else {
                 tracing::warn!(
                     "orphan worktree teardown refused/failed for {}",
@@ -152,7 +169,7 @@ impl CleanupManager {
                 );
             }
         }
-        Ok(removed)
+        Ok(report)
     }
 
     /// Remove one orphaned/stale worktree. Per-item form of
@@ -177,6 +194,24 @@ impl CleanupManager {
             );
         }
         Ok(())
+    }
+
+    /// After [`Self::remove_orphan`] succeeded: the orphan's branch when
+    /// it still exists (kept), `None` when it is gone. Existence is
+    /// checked apart from the count, so a branch deleted earlier is never
+    /// listed as "count unknown" (#1483).
+    pub fn kept_branch(&self, orphan: &OrphanWorktree) -> Option<KeptBranch> {
+        let name = format!("maestro/{}", orphan.name);
+        let exists = Command::new("git")
+            .args(["rev-parse", "--verify", "--quiet"])
+            .arg(format!("refs/heads/{name}"))
+            .current_dir(&self.worktree_dir)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        exists.then(|| KeptBranch {
+            unique_commits: unique_commit_count(&self.worktree_dir, &name),
+            name,
+        })
     }
 }
 
@@ -345,9 +380,9 @@ mod tests {
             path: PathBuf::from("/etc"),
             name: "etc".to_string(),
         };
-        let removed = mgr.remove_orphans(&[orphan]).expect("must not error");
+        let report = mgr.remove_orphans(&[orphan]).expect("must not error");
         assert_eq!(
-            removed, 0,
+            report.removed, 0,
             "an unsafe `/` root must refuse, removing nothing"
         );
         assert!(

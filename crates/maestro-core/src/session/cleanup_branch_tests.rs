@@ -158,3 +158,65 @@ fn orphan_cleanup_logs_kept_branch() {
         "commit count missing: {line}"
     );
 }
+
+/// #1483: the report lists the branch kept for its unique commits, with
+/// the count, and leaves out the branch that was deleted.
+#[test]
+fn cleanup_report_lists_kept_branches() {
+    let (_tmp, repo, kept) = repo_with_worktree();
+    commit_in(&kept.path);
+    commit_in(&kept.path);
+    let path = repo.join(".maestro").join("worktrees").join("issue-8");
+    let path_arg = path.to_str().expect("utf-8 tempdir path");
+    git(
+        &repo,
+        &["worktree", "add", "-q", "-b", "maestro/issue-8", path_arg],
+    );
+    let gone = OrphanWorktree {
+        path,
+        name: "issue-8".to_string(),
+    };
+
+    let report = CleanupManager::new(&repo)
+        .remove_orphans(&[kept, gone])
+        .expect("orphan cleanup must succeed");
+
+    assert_eq!(report.removed, 2, "both worktrees are removed");
+    assert_eq!(
+        report.kept_branches,
+        vec![KeptBranch {
+            name: "maestro/issue-7".to_string(),
+            unique_commits: Some(2),
+        }],
+        "only the branch with unique commits is listed as kept"
+    );
+    assert!(!branch_exists(&repo, "maestro/issue-8"));
+}
+
+/// #1483: a branch already gone before cleanup is not listed as kept
+/// ("count unknown" would be a false report).
+#[test]
+fn cleanup_report_skips_a_branch_that_no_longer_exists() {
+    let (_tmp, repo, orphan) = repo_with_worktree();
+    git(
+        &repo,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            orphan.path.to_str().unwrap(),
+        ],
+    );
+    git(&repo, &["branch", "-d", "maestro/issue-7"]);
+
+    let report = CleanupManager::new(&repo)
+        .remove_orphans(&[orphan])
+        .expect("orphan cleanup must succeed");
+
+    assert_eq!(report.removed, 1, "an already-gone orphan is a success");
+    assert!(
+        report.kept_branches.is_empty(),
+        "a missing branch must not be reported as kept: {:?}",
+        report.kept_branches
+    );
+}
