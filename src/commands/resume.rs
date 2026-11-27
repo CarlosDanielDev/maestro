@@ -38,7 +38,7 @@ pub async fn cmd_resume(
     for why in &plan.refused {
         eprintln!("{why}");
     }
-    app.pool.keep_saved_resumable(&plan.keep);
+    app.pool.keep_saved(&plan.keep);
     for session in plan.restore {
         app.add_session(session).await?;
     }
@@ -251,6 +251,12 @@ fn is_own_worktree(path: &std::path::Path, slug: &str) -> bool {
 #[path = "resume_tests.rs"]
 mod tests;
 
+// `macro_use`: `keep_tests` builds its app with `kinds_tests`' `app_at!`.
 #[cfg(test)]
+#[macro_use]
 #[path = "resume_kinds_tests.rs"]
 mod kinds_tests;
+
+#[cfg(test)]
+#[path = "resume_keep_tests.rs"]
+mod keep_tests;

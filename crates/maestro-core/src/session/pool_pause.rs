@@ -158,6 +158,11 @@ impl SessionPool {
         }
     }
 
+    /// Keep the saved records `maestro resume` did not restore (#1487).
+    pub fn keep_saved(&mut self, saved: &[Session]) {
+        self.keep_saved_resumable(saved);
+    }
+
     /// Paused sessions `r` can resume: this run's, not an earlier run's
     /// kept in `finished`.
     pub fn active_paused_count(&self) -> usize {
