@@ -271,8 +271,11 @@ async fn restart_key_with_live_work_opens_confirm() {
     let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
     t.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
     let out = format!("{}", t.backend());
+    assert!(!out.contains("Confirm Exit"), "one name for the dialog:\n{out}");
+    let footer = out.lines().last().unwrap_or_default();
+    assert!(footer.contains("y hold to restart"), "{footer}");
     for text in [
-        "Confirm Restart",
+        "› Confirm Restart",
         "1 session(s) still running. Restart anyway?",
         "Restart starts 99.0.0; agents pause for maestro resume.",
         "hold to restart",
@@ -335,6 +338,20 @@ fn live_ready_to_restart() -> App {
     promote(&mut app);
     app.upgrade_state = ready_to_restart();
     app
+}
+
+/// #1266 judge (moved here by #1489): with a restart pending, no live work
+/// and no text field, only `y` is the restart key; any other bare key is not.
+#[test]
+fn ready_to_restart_other_keys_are_not_restart() {
+    let mut app = base_app(TuiMode::Dashboard);
+    app.upgrade_state = ready_to_restart();
+    for code in [KeyCode::Char('n'), KeyCode::Esc, KeyCode::Char('j')] {
+        let key = KeyEvent::new(code, KeyModifiers::NONE);
+        assert!(!is_restart_key(&app, &key), "{code:?} restarts");
+    }
+    let y = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+    assert!(is_restart_key(&app, &y));
 }
 
 #[test]
