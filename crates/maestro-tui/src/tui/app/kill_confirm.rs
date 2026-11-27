@@ -4,7 +4,6 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
 use std::time::Duration;
 
 use super::App;
@@ -14,6 +13,7 @@ use crate::session::types::{Session, SessionStatus};
 use crate::tui::ds::confirm::TypedConfirm;
 use crate::tui::ds::status_bar::Place;
 use crate::tui::ds::toast::{Severity, Toast};
+use crate::work::git_within::{GIT_COUNT_TIMEOUT, output_within};
 use crate::work::unique_commits::unique_commit_count;
 
 #[cfg(test)]
@@ -279,9 +279,6 @@ fn count_uncommitted(worktree: &Path) -> Option<LostFiles> {
     count_status_within(git_status(worktree), GIT_COUNT_TIMEOUT)
 }
 
-/// How long the dialog waits for git before it says "count unknown".
-const GIT_COUNT_TIMEOUT: Duration = Duration::from_millis(500);
-
 /// `--untracked-files=all` lists each untracked file; `--ignored=matching`
 /// lists an ignored folder (`target/`) as one `!!` line, not its files.
 /// `--no-optional-locks`: a count must not take `index.lock`, so a git
@@ -300,25 +297,11 @@ fn git_status(worktree: &Path) -> Command {
     git
 }
 
-/// The `git status --porcelain` lines `command` prints, when it exits with
-/// success within `timeout`. Otherwise `None`, and a command still running
-/// is killed: the UI never waits longer than `timeout`. The output is
-/// counted as it streams, never stored whole.
-fn count_status_within(mut command: Command, timeout: Duration) -> Option<LostFiles> {
-    let mut child = (command.stdout(Stdio::piped()).stderr(Stdio::null()))
-        .spawn()
-        .ok()?;
-    let stdout = child.stdout.take();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(stdout.and_then(count_status_lines));
-    });
-    let lost = rx.recv_timeout(timeout).ok().flatten();
-    if lost.is_none() {
-        let _ = child.kill();
-    }
-    let status = child.wait().ok()?;
-    status.success().then_some(lost).flatten()
+/// The `git status --porcelain` lines `command` prints, counted as they
+/// stream (never stored whole), within `timeout` (#1481: the shared
+/// [`output_within`] rule, also used by `unique_commit_count`).
+fn count_status_within(command: Command, timeout: Duration) -> Option<LostFiles> {
+    output_within(command, timeout, count_status_lines)
 }
 
 fn count_status_lines(out: impl Read) -> Option<LostFiles> {

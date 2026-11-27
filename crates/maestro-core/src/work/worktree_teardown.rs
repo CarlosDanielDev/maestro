@@ -66,6 +66,10 @@ pub fn wipe_worktree(
     wipe(issue_number, path, branch, worktree_root, false)
 }
 
+/// How many commits only `branch` holds (`None`: unknown), read from a
+/// directory inside the repo: [`unique_commit_count`], or a stand-in.
+type CountUnique<'a> = &'a dyn Fn(&Path, &str) -> Option<usize>;
+
 /// [`wipe_worktree`], keeping `branch` when `keep_unpushed` and it holds
 /// unpushed commits (#1469, `wipe_worktree_keeping_unpushed`).
 pub(super) fn wipe(
@@ -74,6 +78,21 @@ pub(super) fn wipe(
     branch: &str,
     worktree_root: &Path,
     keep_unpushed: bool,
+) -> Result<(), TeardownError> {
+    let count: CountUnique = &unique_commit_count;
+    let keep = keep_unpushed.then_some(count);
+    wipe_counting(issue_number, path, branch, worktree_root, keep)
+}
+
+/// [`wipe`] with the unique-commit count injected (#1481), so a test can
+/// stand in a git count that never answers and run real git for the rest.
+/// `None`: the branch is deleted without a count.
+fn wipe_counting(
+    issue_number: u64,
+    path: &Path,
+    branch: &str,
+    worktree_root: &Path,
+    keep_unpushed: Option<CountUnique>,
 ) -> Result<(), TeardownError> {
     // Lifecycle span (#742): every git call below runs inside it, and the
     // outcome is recorded before return.
@@ -207,12 +226,16 @@ fn run_git_worktree_remove(repo_dir: &Path, path: &Path) -> Result<(), TeardownE
     })
 }
 
-/// Force-delete `branch`; with `keep`, only when it holds no
-/// commit another ref lacks (#1469): an uncountable branch stays too. Each
-/// outcome logs its own true reason (#1484).
-fn delete_branch(repo_dir: &Path, branch: &str, keep: bool) -> Result<(), TeardownError> {
-    if keep {
-        match unique_commit_count(repo_dir, branch) {
+/// Force-delete `branch`; with `keep`, only when that count says it holds
+/// no commit another ref lacks (#1469): an uncountable branch stays too.
+/// Each outcome logs its own true reason (#1484).
+fn delete_branch(
+    repo_dir: &Path,
+    branch: &str,
+    keep: Option<CountUnique>,
+) -> Result<(), TeardownError> {
+    if let Some(count) = keep {
+        match count(repo_dir, branch) {
             Some(0) => {}
             Some(n) => {
                 tracing::info!(branch, "keeping branch with {n} unique commit(s)");
