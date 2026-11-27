@@ -775,3 +775,12 @@ first. One entry per decision.
 - **ADR (drop running-like, not every kept record):** the mascot drops only a running status off an active session. Rejected: dropping every kept record (finished sessions live in that list, so the mascot would never be happy or show an error again).
 - **Differs from the target:** none; the target has no queue or kept records.
 - **Source:** #1515.
+
+## 2026-11-27 — Confirm Exit names a queued or installed upgrade; restart over live work asks first; the queued chip keeps its place
+
+- **What:** while there is live work, Confirm Exit adds `Upgrade to <v> is queued: it will not install if you quit.` (`UpgradeState::Queued`) or `Upgrade to <v> is installed: quit, then start maestro to use it.` (`ReadyToRestart`). `y` on the READY banner with live work opens the same Confirm Exit (hold ⌃Q quits, agents paused for resume) instead of restarting; with no live work it restarts as before. In the status bar a queued update chip drops last: TurboQuant, quota, the continuous chip, budget and fleet drop before it (an available chip still drops first). At 80x24 with 3 running agents it shows `↑ queued · after 3 agents`.
+- **Why:** #1489. A quit dropped a queued upgrade without a word, `y` restarted over running agents without asking, and at 80 columns the queued chip was the first thing to go.
+- **Section:** `§04 StatusBar` (`#c-statusbar`, drop order) and `§04 Confirm dialogs` (`#c-confirm`, Quit maestro hold).
+- **ADR (name it, never install on quit):** quit and Confirm Exit name the upgrade and restart with live work opens the same confirm (owner, 2026-11-27). Rejected: installing the queued upgrade on quit (an action and a spend nobody asked for), and a second restart-only hold dialog (more plumbing in the run loop for the same outcome: agents paused, new binary on next start).
+- **Differs from the target:** the target's Confirm Exit has no upgrade line, and its StatusBar does not say which chip wins space.
+- **Source:** #1489.

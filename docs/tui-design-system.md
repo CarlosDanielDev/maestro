@@ -337,7 +337,7 @@ budget, bypass or update state of its own. No key hints and no actions here.
 | `status_bar::StatusModel` | Plain data the bar shows: version, `FleetCounts`, spent / cap, quota badges, TurboQuant, `untrusted`, `bypass`, `update`, `continuous` (`(done, attempted)` while a continuous run is active) |
 | `FleetCounts::from_sessions(sessions)` | Takes `(status, Place)` per session (`App::sessions_by_place`: `Active`, `Queued`, or `Kept` = a record in the finished list). `● run` (spawning, running, gates, CI / conflict fix, retry; active only: queued counts as wait, kept in the total only) · `◐ wait` (needs review, PR ready, interactive) · `✗ fail` (gates failed, errored). Empty pool shows `○ no agents` |
 | `status_bar::draw(f, area, &model, theme)` / `draw_for_mode(.., nerd_font)` | One row on `surface_bar`. Left: brand, fleet, budget (`money` + `gauge_level`), `CONTINUOUS: n/m done` (reverse info + bold, only while a run is active), quota, `TQ:ON`. Right: `▲ BYPASS`, `UNTRUSTED`, `↑ <version> u` |
-| `status_bar::segments(&model, width, theme, nerd_font)` | The `(left, right)` spans after dropping. Whole segments drop, never a cut value: update first, then TurboQuant, quota, the continuous chip, budget, fleet. Brand, `▲ BYPASS` and `UNTRUSTED` never drop |
+| `status_bar::segments(&model, width, theme, nerd_font)` | The `(left, right)` spans after dropping. Whole segments drop, never a cut value: update first, then TurboQuant, quota, the continuous chip, budget, fleet. A queued update drops last (#1489). Brand, `▲ BYPASS` and `UNTRUSTED` never drop |
 | `status_bar::pinned_width(&model, nerd_font)` | Columns of the safety chips; an overlay on the bar row (upgrade progress) stays left of them |
 
 Rules: `UNTRUSTED` shows exactly when `App.workspace_trusted` is false. The
@@ -346,8 +346,8 @@ carries no version). Breadcrumbs and key hints are not part of this row.
 
 `StatusModel.update` is a `status_bar::UpdateChip` (#1267): `Available(version)`
 draws `↑ <version> u`; `Queued { after }` draws `↑ queued · after N agents`
-(`after 1 agent`, `until idle` at 0) and has no `u` hint. Same drop rule as
-before. The queued state is `UpgradeState::Queued`; "busy" is
+(`after 1 agent`, `until idle` at 0) and has no `u` hint. An available chip
+drops first; a queued one drops last (#1489), so it shows at 80x24. The queued state is `UpgradeState::Queued`; "busy" is
 `input_handler::has_live_work`, never a copy.
 
 ### Sub-tabs, filter chips, KPI tile, tree prefix (`crates/maestro-tui/src/tui/ds/`, #1256)

@@ -218,17 +218,16 @@ fn exit_saves_before_it_stops_agents() {
     assert_eq!(on_disk_at_stop, Some(true), "stop ran before the save");
 }
 
-/// #1266 judge: the upgrade-restart key saves (and stops) before the exec;
-/// any other key does nothing.
+/// #1266 judge: the upgrade-restart key saves before the exec; any other
+/// key does nothing. #1489: with live work the key opens Confirm Exit
+/// instead (`restart_key_with_live_work_opens_confirm`), so this run is idle.
 #[test]
 fn restart_key_saves_before_exec() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut app = make_test_app("restart-key-1266");
-    let id = running_session(&mut app);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state-1266.json");
     app.store = crate::state::store::StateStore::new(path.clone());
-    let probe = crate::state::store::StateStore::new(path);
     app.upgrade_state = crate::updater::UpgradeState::ReadyToRestart {
         version: "9.9.9".into(),
         backup_path: "/nonexistent-1266".into(),
@@ -239,7 +238,7 @@ fn restart_key_saves_before_exec() {
     let mut on_disk_at_exec = false;
     let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
     let result = on_restart_key(&mut app, &yes, || {
-        on_disk_at_exec = paused_on_disk(&probe, id);
+        on_disk_at_exec = path.exists();
         Ok(())
     });
 

@@ -1165,6 +1165,9 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
         if let Some(ends) = quit_ends_line(app) {
             lines.push(Line::from(Span::styled(ends, bold(theme.accent_error))));
         }
+        if let Some(upgrade) = quit_upgrade_line(app) {
+            lines.push(Line::from(Span::styled(upgrade, bold(theme.accent_warning))));
+        }
         lines.push(Line::from(""));
         let hold = app
             .screen_state
@@ -1236,6 +1239,24 @@ fn quit_ends_line(app: &App) -> Option<String> {
         line.push_str(&format!(" +{}", ends.len() - SHOWN));
     }
     Some(line)
+}
+
+/// What a quit does to the upgrade (#1489): a queued one is dropped, an
+/// installed one waits for the next start.
+fn quit_upgrade_line(app: &App) -> Option<String> {
+    use crate::tui::screens::sanitize_for_terminal;
+    use crate::updater::UpgradeState;
+    match &app.upgrade_state {
+        UpgradeState::Queued(info) => Some(format!(
+            "Upgrade to {} is queued: it will not install if you quit.",
+            sanitize_for_terminal(&info.version)
+        )),
+        UpgradeState::ReadyToRestart { version, .. } => Some(format!(
+            "Upgrade to {} is installed: quit, then start maestro to use it.",
+            sanitize_for_terminal(version)
+        )),
+        _ => None,
+    }
 }
 
 pub(crate) fn draw_completion_overlay(

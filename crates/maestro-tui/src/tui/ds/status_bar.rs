@@ -6,7 +6,8 @@
 //!
 //! When the row is too narrow, whole segments drop (a value is never cut):
 //! the update chip first, then TurboQuant, quota, the continuous-run chip,
-//! budget and fleet counts.
+//! budget and fleet counts. A queued update (#1489) drops last: a quit
+//! would lose it, so it keeps its place at 80 columns.
 //! The brand and the two safety chips never drop.
 
 use ratatui::Frame;
@@ -333,7 +334,8 @@ pub fn segments(
         left_w + gap + right_w <= columns
     };
 
-    if !fits(&left, &update) {
+    let queued = matches!(model.update, Some(UpdateChip::Queued { .. }));
+    if !queued && !fits(&left, &update) {
         update = None;
     }
     for kind in DROP_ORDER {
@@ -341,6 +343,9 @@ pub fn segments(
             break;
         }
         left.retain(|(k, _)| *k != kind);
+    }
+    if !fits(&left, &update) {
+        update = None;
     }
 
     let mut left_spans = brand;

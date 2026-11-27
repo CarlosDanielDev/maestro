@@ -193,7 +193,12 @@ fn handle_upgrade_keys(app: &mut App, key: &KeyEvent) -> bool {
         }
         crate::updater::UpgradeState::ReadyToRestart { .. } => {
             if key.code == KeyCode::Char('y') {
-                // Restart is handled in the main loop since it needs terminal access
+                // #1489: a restart stops live work, so ask first. Without
+                // it the run loop restarts (it needs the terminal).
+                if has_live_work(app) {
+                    open_confirm_exit(app, None);
+                    return true;
+                }
                 return false;
             }
             if key.code == KeyCode::Char('n') || key.code == KeyCode::Esc {
@@ -1202,6 +1207,7 @@ pub(crate) fn is_text_input_mode(app: &App) -> bool {
 
 /// The run loop restarts maestro on this key (`y` while a restart is
 /// pending). #1377: only a bare `y`, and never while a text field has focus.
+/// #1489: never over live work; `handle_upgrade_keys` asks then.
 pub(super) fn is_restart_key(app: &App, key: &KeyEvent) -> bool {
     matches!(
         app.upgrade_state,
@@ -1209,6 +1215,7 @@ pub(super) fn is_restart_key(app: &App, key: &KeyEvent) -> bool {
     ) && key.code == KeyCode::Char('y')
         && key.modifiers.is_empty()
         && !is_text_input_mode(app)
+        && !has_live_work(app)
 }
 
 /// The tab a plain digit opens: only on a top-level screen (inside a flow
