@@ -288,6 +288,11 @@ async fn restart_key_with_live_work_opens_confirm() {
         send(&mut app, KeyCode::Char('y')).await,
         "the confirmed hold restarts"
     );
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Dashboard,
+        "a failed restart is not left in the dialog"
+    );
 }
 
 /// #1489: ⌃Q in Confirm Restart is the quit key again: the dialog becomes

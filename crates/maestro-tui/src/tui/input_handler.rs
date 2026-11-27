@@ -1423,6 +1423,13 @@ fn close_confirm_exit(app: &mut App) -> KeyAction {
     KeyAction::Consumed
 }
 
+/// Confirm Restart was confirmed: close it (a failed restart leaves the
+/// app running, back where it was) and let the run loop restart.
+fn confirm_restart(app: &mut App) -> KeyAction {
+    close_confirm_exit(app);
+    KeyAction::Restart
+}
+
 /// Handle the confirm-exit dialog (the ⌃Q hold, or y/n/Enter/Esc when idle).
 fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     // #1260: while agents run only the ⌃Q hold quits; Esc (default) and
@@ -1440,7 +1447,7 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
         }
         let hold = app.screen_state.exit_hold.get_or_insert(QUIT_HOLD);
         return match hold.handle_key(key, now) {
-            ConfirmOutcome::Confirmed if exit_restarts(app) => KeyAction::Restart,
+            ConfirmOutcome::Confirmed if exit_restarts(app) => confirm_restart(app),
             ConfirmOutcome::Confirmed => {
                 app.running = false;
                 KeyAction::Quit
@@ -1457,7 +1464,7 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     // Enter again would silently destroy the session. Require explicit `y`.
     match key.code {
         // #1489: the work ended while Confirm Restart was open.
-        KeyCode::Char('y') | KeyCode::Char('Y') if exit_restarts(app) => KeyAction::Restart,
+        KeyCode::Char('y') | KeyCode::Char('Y') if exit_restarts(app) => confirm_restart(app),
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.running = false;
             KeyAction::Quit
