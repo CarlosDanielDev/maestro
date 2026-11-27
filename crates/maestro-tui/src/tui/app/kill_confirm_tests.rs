@@ -390,3 +390,6 @@ async fn kill_on_queued_session_never_opens_a_do_nothing_dialog() {
     assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     assert!(app.pool.try_promote().is_empty(), "it never starts");
 }
+
+#[path = "kill_confirm_timeout_tests.rs"]
+mod timeout;
