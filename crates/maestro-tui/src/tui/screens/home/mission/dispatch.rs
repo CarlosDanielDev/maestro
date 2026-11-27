@@ -7,8 +7,8 @@ use crossterm::event::{Event, KeyEventKind, KeyModifiers};
 use super::MissionCommand;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::attention::{AttentionItem, Subject};
-use crate::tui::screens::dashboard::rows::WorkKey;
 use crate::tui::screens::ScreenAction;
+use crate::tui::screens::dashboard::rows::WorkKey;
 
 pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     let Event::Key(key) = event else {

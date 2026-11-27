@@ -1499,7 +1499,12 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         // the Dashboard drew opens nothing and a toast says why.
         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
             let n = (c as usize) - ('1' as usize);
-            let shown = app.screen_state.dashboard.list.rows.iter()
+            let shown = app
+                .screen_state
+                .dashboard
+                .list
+                .rows
+                .iter()
                 .filter_map(|k| match k {
                     WorkKey::Session(id) => Some(*id),
                     _ => None,
