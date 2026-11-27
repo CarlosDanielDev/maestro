@@ -254,7 +254,10 @@ async fn upgrade_banner_clears_status_bar_text_under_it() {
         let banner = match row.find("▲ BYPASS") {
             Some(at) => &row[..at],
             None => {
-                assert!(!bypass, "the BYPASS chip must stay next to the banner: {row}");
+                assert!(
+                    !bypass,
+                    "the BYPASS chip must stay next to the banner: {row}"
+                );
                 row
             }
         };
