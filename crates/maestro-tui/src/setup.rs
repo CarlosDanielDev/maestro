@@ -184,13 +184,15 @@ pub fn setup_app_for_agent(
 /// Returns the branches the orphan cleanup kept because they may hold work
 /// (#1552), for [`report_kept_branches`] once the App exists.
 pub fn startup_cleanup(repo_root: &std::path::Path) -> Vec<KeptBranch> {
-    let kept = Vec::new();
+    let mut kept = Vec::new();
     let cleanup_mgr = crate::session::cleanup::CleanupManager::new(repo_root);
     if let Ok(orphans) = cleanup_mgr.scan_orphans()
         && !orphans.is_empty()
     {
         tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
-        let _ = cleanup_mgr.remove_orphans(&orphans);
+        if let Ok(report) = cleanup_mgr.remove_orphans(&orphans) {
+            kept = report.kept_branches;
+        }
     }
 
     let logger = crate::session::logger::SessionLogger::new(
@@ -208,7 +210,16 @@ pub fn startup_cleanup(repo_root: &std::path::Path) -> Vec<KeptBranch> {
 /// A WARN line: `ui::draw` raises it as a toast off the log screens and the
 /// Activity pane shows it on them. Nothing when no branch was kept.
 pub fn report_kept_branches(app: &mut App, kept: &[KeptBranch]) {
-    let _ = (app, kept);
+    let n = kept.len();
+    if n == 0 {
+        return;
+    }
+    let what = if n == 1 { "branch" } else { "branches" };
+    app.activity_log.push_simple(
+        "clean".into(),
+        format!("Kept {n} {what} that may hold work: see git branch"),
+        crate::tui::activity_log::LogLevel::Warn,
+    );
 }
 
 #[cfg(test)]
