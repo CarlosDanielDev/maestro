@@ -112,6 +112,27 @@ fn update_chip_queued() {
     insta::assert_snapshot!(out);
 }
 
+/// #1489: at 80 columns the queued chip keeps its place; left segments
+/// (TurboQuant, then budget) drop before it.
+#[test]
+fn status_bar_queued_upgrade_80x24() {
+    use crate::session::types::SessionStatus;
+    use crate::tui::snapshot_tests::make_session;
+    let mut app = app("status-bar-queued-upgrade-80x24");
+    for issue in [11, 12, 13] {
+        app.pool
+            .enqueue(make_session(SessionStatus::Running, Some(issue)));
+    }
+    promote(&mut app);
+    app.upgrade_state = crate::updater::UpgradeState::Queued(release("9.8.7"));
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    t.draw(|f| ui::draw(f, &mut app)).unwrap();
+    let out = format!("{}", t.backend());
+    let row = out.lines().next().unwrap_or_default();
+    assert!(row.contains("↑ queued · after 3 agents"), "{row}");
+    insta::assert_snapshot!(out);
+}
+
 fn release(version: &str) -> ReleaseInfo {
     ReleaseInfo {
         tag: format!("v{version}"),

@@ -255,6 +255,29 @@ async fn ready_to_restart_bare_y_outside_text_input_restarts() {
     assert!(send(&mut app, KeyCode::Char('y')).await);
 }
 
+/// #1489: a restart stops the agents, so `y` with live work opens Confirm
+/// Exit instead, which says the upgrade is installed.
+#[tokio::test]
+async fn restart_key_with_live_work_opens_confirm() {
+    use crate::session::types::SessionStatus;
+    use crate::tui::snapshot_tests::{make_session, promote};
+    let mut app = base_app(TuiMode::Dashboard);
+    app.pool
+        .enqueue(make_session(SessionStatus::Running, Some(7)));
+    promote(&mut app);
+    app.upgrade_state = ready_to_restart();
+    assert!(!send(&mut app, KeyCode::Char('y')).await, "restarted over live work");
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    assert!(app.running);
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    t.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
+    let out = format!("{}", t.backend());
+    assert!(
+        out.contains("Upgrade to 99.0.0 is installed: quit, then start maestro to use it."),
+        "{out}"
+    );
+}
+
 #[test]
 fn ready_to_restart_y_chord_is_not_restart() {
     let mut app = base_app(TuiMode::Dashboard);
