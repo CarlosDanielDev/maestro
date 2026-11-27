@@ -1,0 +1,132 @@
+diff --git a/README.md b/README.md
+index ae45e3a..ab5fe91 100644
+--- a/README.md
++++ b/README.md
+@@ -9,6 +9,9 @@ python3 todo.py add "buy milk"
+ python3 todo.py list
+ ```
+ 
++To-dos are saved in `todos.json` in the current directory. Set the `TODO_FILE`
++environment variable to use a different path.
++
+ ## Tests
+ 
+ ```bash
+diff --git a/tests/test_todo.py b/tests/test_todo.py
+index 4d93421..76669b0 100644
+--- a/tests/test_todo.py
++++ b/tests/test_todo.py
+@@ -1,16 +1,65 @@
++import io
++import os
++import tempfile
+ import unittest
++from unittest import mock
+ 
+ import todo
+ 
+ 
+ class TodoTest(unittest.TestCase):
+     def setUp(self):
+-        todo.TODOS.clear()
++        tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(tmp.cleanup)
++        self.file = os.path.join(tmp.name, "todos.json")
++        patcher = mock.patch.dict(os.environ, {"TODO_FILE": self.file})
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
++    def test_missing_file_is_empty(self):
++        self.assertEqual(todo.list_todos(), [])
+ 
+     def test_add_and_list(self):
+         todo.add("buy milk")
++        self.assertTrue(os.path.exists(self.file))
+         self.assertEqual(todo.list_todos(), ["1. [ ] buy milk"])
+ 
++    def test_persists_across_calls(self):
++        todo.add("a")
++        self.assertEqual(todo.add("b"), 2)
++        self.assertEqual(todo.list_todos(), ["1. [ ] a", "2. [ ] b"])
++
++    def test_list_empty(self):
++        self.assertEqual(todo.list_todos(), [])
++
++    def test_list_several(self):
++        for t in ("a", "b", "c"):
++            todo.add(t)
++        self.assertEqual(
++            todo.list_todos(), ["1. [ ] a", "2. [ ] b", "3. [ ] c"]
++        )
++
++    def test_list_done_and_open(self):
++        todo.save([
++            {"text": "a", "done": True},
++            {"text": "b", "done": False},
++            {"text": "c", "done": True},
++        ])
++        self.assertEqual(
++            todo.list_todos(), ["1. [x] a", "2. [ ] b", "3. [x] c"]
++        )
++
++    def test_list_command_prints_lines(self):
++        todo.save([{"text": "a", "done": True}, {"text": "b", "done": False}])
++        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
++            self.assertEqual(todo.main(["list"]), 0)
++        self.assertEqual(out.getvalue(), "1. [x] a\n2. [ ] b\n")
++
++    def test_default_path(self):
++        with mock.patch.dict(os.environ):
++            os.environ.pop("TODO_FILE")
++            self.assertEqual(todo.path(), "todos.json")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/todo.py b/todo.py
+index f268ad6..0457d30 100644
+--- a/todo.py
++++ b/todo.py
+@@ -1,19 +1,38 @@
+ #!/usr/bin/env python3
+ """Tiny command-line to-do list."""
+ import argparse
++import json
++import os
+ import sys
+ 
+-TODOS = []
++
++def path():
++    return os.environ.get("TODO_FILE", "todos.json")
++
++
++def load():
++    try:
++        with open(path()) as f:
++            return json.load(f)
++    except FileNotFoundError:
++        return []
++
++
++def save(todos):
++    with open(path(), "w") as f:
++        json.dump(todos, f)
+ 
+ 
+ def add(text):
+-    TODOS.append({"text": text, "done": False})
+-    return len(TODOS)
++    todos = load()
++    todos.append({"text": text, "done": False})
++    save(todos)
++    return len(todos)
+ 
+ 
+ def list_todos():
+     lines = []
+-    for i, item in enumerate(TODOS, start=1):
++    for i, item in enumerate(load(), start=1):
+         mark = "x" if item["done"] else " "
+         lines.append(f"{i}. [{mark}] {item['text']}")
+     return lines

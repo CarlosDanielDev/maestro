@@ -1,0 +1,10 @@
+# key	title	labels	parent
+epic	feat(engine): setwave-grade engine — issue lifecycle, gates, ledger and judge as native concepts	epic,type:feature,priority:P1	-
+e1	feat(engine): DOR gate at dispatch — run and team refuse issues that are not READY	story,priority:P1	epic
+e2	feat(engine): the issue becomes the state machine — lifecycle persisted outside the process	story,priority:P1	epic
+e3	feat(engine): Done-when ledger on every PR body, applied at merge	story,priority:P1	epic
+e4	feat(engine): double-dispatch refusal — premise checks before any session spawns	story,priority:P1	epic
+e5	feat(engine): guarantees registry — every engine promise pinned to the test that enforces it	story,priority:P2	epic
+e6	feat(team): team dispatch rides the single-run rails — rich prompt, worktree, readiness, blocked-by	story,priority:P1	epic
+e7	feat(engine): merge-blocking judge seat, opt-in and cost-gated	story,priority:P2	epic
+e8	feat(usage): per-seat and per-wave cost telemetry in the Usage views	story,priority:P1	epic
