@@ -62,10 +62,17 @@ impl CleanupManager {
             return Ok(Vec::new());
         }
 
-        // Get list of git-tracked worktrees
+        // Ask git about repo_root, never the process cwd (#1559). When git
+        // cannot answer, remove nothing: an empty list would make every
+        // worktree an orphan.
         let output = Command::new("git")
             .args(["worktree", "list", "--porcelain"])
+            .current_dir(&self.worktree_dir)
             .output()?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("git worktree list failed: {}", err.trim());
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let tracked_paths: HashSet<PathBuf> = stdout
