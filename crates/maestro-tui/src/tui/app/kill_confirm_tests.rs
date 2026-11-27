@@ -363,7 +363,10 @@ async fn kill_on_queued_session_never_opens_a_do_nothing_dialog() {
     press(&mut app, KeyCode::Char('X')).await;
     assert_eq!(app.tui_mode, TuiMode::ConfirmKill(id));
     let out = draw(&mut app);
-    assert!(out.contains("from the queue?"), "the dialog says remove:\n{out}");
+    assert!(
+        out.contains("from the queue?"),
+        "the dialog says remove:\n{out}"
+    );
     assert!(
         out.contains("gone   its place in the queue: it never starts"),
         "the dialog says what goes:\n{out}"
@@ -379,7 +382,11 @@ async fn kill_on_queued_session_never_opens_a_do_nothing_dialog() {
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(app.pool.queued_count(), 0, "it left the queue");
     let status = app.pool.get_session(id).map(|s| s.status);
-    assert_eq!(status, Some(SessionStatus::Killed), "kept as a killed record");
+    assert_eq!(
+        status,
+        Some(SessionStatus::Killed),
+        "kept as a killed record"
+    );
     assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     assert!(app.pool.try_promote().is_empty(), "it never starts");
 }

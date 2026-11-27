@@ -107,10 +107,7 @@ impl App {
             let title = format!("Kill session {label}?");
             (title, "kill", "Stops the agent now.", "the transcript")
         };
-        let mut rows = vec![
-            (String::new(), what.into()),
-            (String::new(), String::new()),
-        ];
+        let mut rows = vec![(String::new(), what.into()), (String::new(), String::new())];
         rows.extend(self.kill_teardown_rows(session_id, uncommitted, unpushed));
         rows.extend([("kept".into(), kept.into()), ("other".into(), other)]);
         TypedConfirm::new(title, token, action, rows)
@@ -141,7 +138,10 @@ impl App {
         match self.place_of(session_id) {
             Some(Place::Queued) => {
                 return vec![
-                    ("gone".into(), "its place in the queue: it never starts".into()),
+                    (
+                        "gone".into(),
+                        "its place in the queue: it never starts".into(),
+                    ),
                     ("kept".into(), "every file: no worktree is touched".into()),
                 ];
             }

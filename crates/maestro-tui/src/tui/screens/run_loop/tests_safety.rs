@@ -247,7 +247,10 @@ async fn run_loop_kill_on_a_queued_item_takes_it_out_of_the_queue() {
         out.contains("gone   its place in the queue: it never starts"),
         "{out}"
     );
-    assert!(!out.contains("lost "), "nothing ran, nothing is lost:\n{out}");
+    assert!(
+        !out.contains("lost "),
+        "nothing ran, nothing is lost:\n{out}"
+    );
 
     type_text(&mut app, "1").await;
     key(&mut app, KeyCode::Enter).await;

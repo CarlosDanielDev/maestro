@@ -818,9 +818,9 @@ impl SessionPool {
     /// queued retry child may share its parent's, #1485). False when the
     /// session is not queued or cannot become `Killed`.
     pub fn dequeue(&mut self, session_id: Uuid) -> bool {
-        let Some(idx) = (self.queue.iter()).position(|s| {
-            s.id == session_id && s.status.can_transition_to(SessionStatus::Killed)
-        }) else {
+        let Some(idx) = (self.queue.iter())
+            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))
+        else {
             return false;
         };
         let Some(mut session) = self.queue.remove(idx) else {
