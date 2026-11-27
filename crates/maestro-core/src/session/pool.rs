@@ -1269,6 +1269,21 @@ pub(in crate::session) mod tests {
         assert_eq!(pool.active_count(), 0);
     }
 
+    /// #1514: Kill on a queued session takes it out of the queue as a
+    /// `Killed` record. It never starts, and no worktree is touched.
+    #[tokio::test]
+    async fn kill_session_takes_a_queued_session_out_of_the_queue() {
+        let mut pool = make_pool(2);
+        let session = make_session("waiting");
+        let id = session.id;
+        pool.enqueue(session);
+        assert!(pool.kill_session(id).await.unwrap(), "Kill acted");
+        assert_eq!(pool.queued_count(), 0, "it left the queue");
+        let status = pool.get_session(id).map(|s| s.status);
+        assert_eq!(status, Some(SessionStatus::Killed));
+        assert!(pool.try_promote().is_empty(), "it never starts");
+    }
+
     #[test]
     fn enqueue_preserves_order() {
         let mut pool = make_pool(2);

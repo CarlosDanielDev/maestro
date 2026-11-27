@@ -222,3 +222,37 @@ async fn run_loop_stop_tells_the_truth_about_worktrees() {
         "{out}"
     );
 }
+
+/// #1514: the running item can still wait in the pool queue (every slot
+/// busy). Stop › Kill takes it out of the queue, as `X` does, and the
+/// dialog never says a turn in progress is lost.
+#[tokio::test]
+async fn run_loop_kill_on_a_queued_item_takes_it_out_of_the_queue() {
+    let mut app = queue_app(&[5, 6]);
+    let queued = Session::new(
+        "work".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(5),
+        None,
+    );
+    let id = queued.id;
+    app.pool.enqueue(queued);
+    app.queue_executor.as_mut().unwrap().set_session_id(id);
+
+    chord(&mut app, 'S').await;
+    key(&mut app, KeyCode::Down).await;
+    let out = frame_80x24(&mut app);
+    assert!(
+        out.contains("gone   its place in the queue: it never starts"),
+        "{out}"
+    );
+    assert!(!out.contains("lost "), "nothing ran, nothing is lost:\n{out}");
+
+    type_text(&mut app, "1").await;
+    key(&mut app, KeyCode::Enter).await;
+    assert!(exec(&app).is_stopped());
+    assert_eq!(app.pool.queued_count(), 0, "it left the queue");
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Killed));
+}

@@ -341,3 +341,45 @@ async fn kill_on_kept_record_explains_instead_of_silent_noop() {
         "the record is untouched"
     );
 }
+
+/// #1514: `pool.kill_session` acted on active sessions only, so Kill on a
+/// queued session opened a dialog whose `⏎` did nothing. Now the dialog
+/// says it removes the session from the queue, and `⏎` does that.
+#[tokio::test]
+async fn kill_on_queued_session_never_opens_a_do_nothing_dialog() {
+    let mut app = crate::tui::make_test_app("maestro-queued-kill-1514");
+    app.tui_mode = TuiMode::Dashboard;
+    let queued = Session::new(
+        "probe".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(1514),
+        None,
+    );
+    let id = queued.id;
+    app.pool.enqueue(queued);
+    app.mark_session_at(0);
+
+    press(&mut app, KeyCode::Char('X')).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmKill(id));
+    let out = draw(&mut app);
+    assert!(out.contains("from the queue?"), "the dialog says remove:\n{out}");
+    assert!(
+        out.contains("gone   its place in the queue: it never starts"),
+        "the dialog says what goes:\n{out}"
+    );
+    assert!(
+        !out.contains("Stops the agent") && !out.contains("lost "),
+        "nothing runs, so nothing stops and nothing is lost:\n{out}"
+    );
+
+    for c in "1514".chars() {
+        press(&mut app, KeyCode::Char(c)).await;
+    }
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(app.pool.queued_count(), 0, "it left the queue");
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(status, Some(SessionStatus::Killed), "kept as a killed record");
+    assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    assert!(app.pool.try_promote().is_empty(), "it never starts");
+}
