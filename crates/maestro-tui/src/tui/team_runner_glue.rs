@@ -233,7 +233,10 @@ mod tests {
         publish_sessions(&watch_tx, &[&old]);
         let wait = std::time::Duration::from_millis(50);
         let waited = tokio::time::timeout(wait, launcher.wait_until_terminal(10)).await;
-        assert!(waited.is_err(), "the older completed session passed the wave");
+        assert!(
+            waited.is_err(),
+            "the older completed session passed the wave"
+        );
 
         let mut new = Session::new("p".into(), "m".into(), "o".into(), Some(10), None);
         new.status = SessionStatus::Completed;

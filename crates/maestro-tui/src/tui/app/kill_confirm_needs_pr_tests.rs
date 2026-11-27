@@ -17,7 +17,11 @@ async fn needs_pr_session_can_be_killed() {
     app.pending_prs.push(awaiting_pending_pr(1500));
 
     press(&mut app, KeyCode::Char('X')).await;
-    assert_eq!(app.tui_mode, TuiMode::ConfirmKill(id), "Kill opens its dialog");
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::ConfirmKill(id),
+        "Kill opens its dialog"
+    );
     let out = draw(&mut app);
     assert!(
         out.contains("No agent runs: it is waiting for its PR."),

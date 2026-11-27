@@ -212,7 +212,11 @@ mod tests {
         }
 
         let ends: Vec<_> = pool.quit_would_end().map(|s| s.id).collect();
-        assert_eq!(ends, vec![running], "Confirm Exit names only the running one");
+        assert_eq!(
+            ends,
+            vec![running],
+            "Confirm Exit names only the running one"
+        );
         pool.pause_for_exit();
         let status = |id| pool.get_session(id).map(|s| s.status);
         assert_eq!(status(needs_pr), Some(SessionStatus::NeedsPr));

@@ -166,7 +166,11 @@ impl App {
         // #1500: a session waiting for its PR has no turn to lose.
         let no_turn = self.waits_for_pr(session_id);
         if self.torn_down_worktree(session_id).is_none() {
-            let lost = if no_turn { "nothing: no agent runs" } else { "the turn in progress" };
+            let lost = if no_turn {
+                "nothing: no agent runs"
+            } else {
+                "the turn in progress"
+            };
             return vec![("lost".into(), lost.into())];
         }
         let branch = match managed.and_then(|m| m.branch_name.as_deref()) {
@@ -191,7 +195,11 @@ impl App {
                 ]
             }
         };
-        let turn = if no_turn { "" } else { ", the turn in progress" };
+        let turn = if no_turn {
+            ""
+        } else {
+            ", the turn in progress"
+        };
         let lost = match uncommitted.map(|l| l.uncommitted) {
             Some(0) if no_turn => "nothing uncommitted".to_string(),
             Some(0) => "the turn in progress".to_string(),
