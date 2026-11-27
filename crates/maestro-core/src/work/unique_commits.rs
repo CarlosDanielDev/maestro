@@ -45,7 +45,7 @@ pub fn unique_commit_count(repo_dir: &Path, branch: &str) -> Option<usize> {
 }
 
 /// The number `command` prints, when it answers with success in `timeout`.
-fn count_within(command: Command, timeout: Duration) -> Option<usize> {
+pub(super) fn count_within(command: Command, timeout: Duration) -> Option<usize> {
     output_within(command, timeout, |mut out| {
         let mut text = String::new();
         out.read_to_string(&mut text).ok()?;

@@ -197,7 +197,8 @@ fn delete_kept(repo: &Path) -> String {
     // `Interest::never` for these callsites from another thread (#1479).
     let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     tracing::subscriber::with_default(subscriber, || {
-        delete_branch(repo, "maestro/x", true).expect("delete_branch must succeed");
+        delete_branch(repo, "maestro/x", Some(&unique_commit_count))
+            .expect("delete_branch must succeed");
     });
     String::from_utf8(captured.0.lock().expect("log buffer lock").clone()).expect("utf-8 log")
 }
@@ -259,10 +260,11 @@ fn delete_branch_logs_truthful_reason() {
 }
 
 /// #1481: teardown whose unique-commit count times out keeps the branch
-/// (the safe side, unchanged rule). A FIFO no one writes to as the
-/// object-store alternates file makes `git rev-list` block on `open`
-/// until it is killed, while `worktree remove` and `rev-parse --verify`
-/// (they read no objects) still answer: real git, no sleep.
+/// (the safe side, unchanged rule). Only the count is stuck: it is the
+/// real timed runner (`count_within`) fed `git hash-object` on a FIFO no
+/// one writes to, as in #1471. Everything else is real git in a tempdir.
+/// (A FIFO as the alternates file was dropped: git 2.56 on Linux reads it
+/// in the untimed teardown steps too.)
 #[cfg(unix)]
 #[test]
 fn teardown_keeps_branch_when_count_times_out() {
@@ -274,20 +276,25 @@ fn teardown_keeps_branch_when_count_times_out() {
         repo.path(),
         &["worktree", "add", "-q", path_arg, "maestro/x"],
     );
-    let alternates = repo.path().join(".git/objects/info/alternates");
-    std::fs::create_dir_all(alternates.parent().expect("parent")).expect("mkdir info");
-    let made = Command::new("mkfifo").arg(&alternates).status();
+    let fifo = repo.path().join("never-written-1481");
+    let made = Command::new("mkfifo").arg(&fifo).status();
     assert!(made.expect("mkfifo").success(), "mkfifo");
 
-    let wt = path.clone();
+    let (wt, stuck_on) = (path.clone(), fifo.clone());
     let wiped = crate::work::git_within::within_or_fail(
         std::time::Duration::from_secs(10),
-        &alternates,
-        move || wipe(1481, &wt, "maestro/x", &root, true).is_ok(),
+        &fifo,
+        move || {
+            let stuck = |dir: &Path, _: &str| {
+                let mut git = Command::new("git");
+                git.arg("hash-object").arg(&stuck_on).current_dir(dir);
+                crate::work::unique_commits::count_within(git, std::time::Duration::from_millis(50))
+            };
+            wipe_counting(1481, &wt, "maestro/x", &root, Some(&stuck)).is_ok()
+        },
     );
     assert!(wiped, "teardown must succeed");
     assert!(!path.exists(), "the worktree is removed");
-    std::fs::remove_file(&alternates).expect("remove fifo");
     assert!(
         branch_present(repo.path(), "maestro/x"),
         "a branch whose count timed out is kept"
