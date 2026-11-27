@@ -202,15 +202,15 @@ impl App {
             .then_some(path)
     }
 
-    /// #1507: the label of a record no process runs: in the pool but not
-    /// active (kept by resume, or finished) and not waiting in the queue.
+    /// #1507: the label of a record no process runs: one in the pool's
+    /// finished list (kept by resume, or finished), never active or queued.
     /// `pool.kill_session` acts on active sessions only, so Kill on it
-    /// would do nothing.
+    /// would do nothing. `all_sessions` lists active, finished, then queued.
     fn kept_record_label(&self, session_id: uuid::Uuid) -> Option<String> {
-        let session = self.pool.get_session(session_id)?;
-        let kept = self.pool.get_active(session_id).is_none()
-            && session.status != SessionStatus::Queued;
-        kept.then(|| session_label(session))
+        let sessions = self.pool.all_sessions();
+        let at = sessions.iter().position(|s| s.id == session_id)?;
+        let finished = self.pool.active_count()..sessions.len() - self.pool.queued_count();
+        finished.contains(&at).then(|| session_label(sessions[at]))
     }
 
     /// The status of a session Kill cannot move to `Killed`, if it is one.
