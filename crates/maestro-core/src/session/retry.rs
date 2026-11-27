@@ -192,6 +192,10 @@ impl RetryPolicy {
 }
 
 #[cfg(test)]
+#[path = "retry_unified_tests.rs"]
+mod unified_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -377,6 +381,22 @@ mod tests {
         let original = make_session(SessionStatus::Errored, 0);
         let retry = policy.prepare_retry(&original, None, None);
         assert_eq!(retry.issue_number, Some(1));
+    }
+
+    /// #1506: the worktree slug of a unified session comes from
+    /// `issue_numbers`; a child without them gets another worktree.
+    #[test]
+    fn prepare_retry_keeps_issue_numbers_for_unified_session() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Errored, 0);
+        original.issue_numbers = vec![1, 2];
+        let retry = policy.prepare_retry(&original, None, None);
+        assert_eq!(retry.issue_numbers, vec![1, 2]);
+        assert_eq!(
+            crate::session::pool::session_slug(&retry),
+            crate::session::pool::session_slug(&original),
+            "the retry child shares the parent's worktree slug"
+        );
     }
 
     #[test]
