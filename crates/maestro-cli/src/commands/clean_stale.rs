@@ -2,7 +2,7 @@
 //! and close the sessions out. Split from `clean.rs` to honor the
 //! 400-line file cap; tests live in `clean_stale_tests.rs`.
 
-use crate::session::cleanup::{CleanupManager, OrphanWorktree};
+use crate::session::cleanup::{CleanupManager, KeptBranch, OrphanWorktree};
 use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus};
 use crate::state::store::StateStore;
@@ -25,6 +25,8 @@ pub struct StaleCleanReport {
     /// for retry instead of being marked `Killed` blind.
     pub failed: Vec<String>,
     pub marked_killed: usize,
+    /// Branches kept because they may hold work (#1483).
+    pub kept_branches: Vec<KeptBranch>,
 }
 
 /// Move stale sessions (#1149) to the terminal `Killed` state.
@@ -77,14 +79,19 @@ pub fn clean_stale(
             removed: 0,
             failed: Vec::new(),
             marked_killed: 0,
+            kept_branches: Vec::new(),
         });
     }
 
     let mut removed = 0;
     let mut failed = Vec::new();
+    let mut kept_branches = Vec::new();
     for orphan in &scan.safe {
         match mgr.remove_orphan(orphan) {
-            Ok(()) => removed += 1,
+            Ok(()) => {
+                removed += 1;
+                kept_branches.extend(mgr.kept_branch(orphan));
+            }
             Err(e) => {
                 tracing::warn!(
                     "stale worktree teardown refused/failed for {}: {}",
@@ -113,7 +120,31 @@ pub fn clean_stale(
         removed,
         failed,
         marked_killed,
+        kept_branches,
     })
+}
+
+/// The "Kept N branch(es)" section both `maestro clean` forms print after
+/// removal (#1483): each kept branch, its unique-commit count, and how to
+/// look at or remove it. Empty when nothing was kept.
+pub(crate) fn kept_branches_section(kept: &[KeptBranch]) -> String {
+    if kept.is_empty() {
+        return String::new();
+    }
+    let mut out = format!(
+        "\nKept {} branch(es) — they may hold work not saved anywhere else:\n",
+        kept.len()
+    );
+    for branch in kept {
+        let count = match branch.unique_commits {
+            Some(n) => format!("{n} unique commit(s)"),
+            None => "count unknown".to_string(),
+        };
+        out.push_str(&format!("  {} ({count})\n", branch.name));
+    }
+    out.push_str("Look at one: git log <branch>\n");
+    out.push_str("Remove one once its work is merged or pushed: git branch -d <branch>\n");
+    out
 }
 
 pub(crate) fn print_stale_clean_summary(report: &StaleCleanReport, dry_run: bool) {
@@ -160,6 +191,7 @@ pub(crate) fn print_stale_clean_summary(report: &StaleCleanReport, dry_run: bool
         "\nRemoved {} worktree(s). Marked {} stale session(s) as KILLED.",
         report.removed, report.marked_killed
     );
+    print!("{}", kept_branches_section(&report.kept_branches));
 }
 
 #[cfg(test)]
