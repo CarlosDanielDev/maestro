@@ -5,7 +5,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 
-use super::{KeyAction, handle_key, handle_key_under_size_guard, is_restart_key, is_text_input_mode};
+use super::{
+    KeyAction, handle_key, handle_key_under_size_guard, is_restart_key, is_text_input_mode,
+};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::help::HelpOverlayState;
 use crate::tui::screens::prd::{EditTarget, PrdScreen};
@@ -256,11 +258,14 @@ async fn ready_to_restart_bare_y_outside_text_input_restarts() {
 }
 
 /// #1489: a restart stops the agents, so `y` with live work opens Confirm
-/// Restart, which names what stops; a second `y` (the hold) restarts.
+/// Restart, which names what stops; holding `y` (or two presses) restarts.
 #[tokio::test]
 async fn restart_key_with_live_work_opens_confirm() {
     let mut app = live_ready_to_restart();
-    assert!(!send(&mut app, KeyCode::Char('y')).await, "restarted over live work");
+    assert!(
+        !send(&mut app, KeyCode::Char('y')).await,
+        "restarted over live work"
+    );
     assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
     assert!(app.running);
     let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -274,7 +279,15 @@ async fn restart_key_with_live_work_opens_confirm() {
     ] {
         assert!(out.contains(text), "{text}:\n{out}");
     }
-    assert!(send(&mut app, KeyCode::Char('y')).await, "the confirmed hold restarts");
+    // The `y` that opened it does not count: press `y` twice to restart.
+    assert!(
+        !send(&mut app, KeyCode::Char('y')).await,
+        "one press only arms"
+    );
+    assert!(
+        send(&mut app, KeyCode::Char('y')).await,
+        "the confirmed hold restarts"
+    );
 }
 
 /// #1489: ⌃Q in Confirm Restart is the quit key again: the dialog becomes
@@ -284,9 +297,28 @@ async fn ctrl_q_in_confirm_restart_turns_into_quit_hold() {
     let mut app = live_ready_to_restart();
     send(&mut app, KeyCode::Char('y')).await;
     let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-    assert!(matches!(handle_key(&mut app, ctrl_q).await, KeyAction::Consumed));
+    assert!(matches!(
+        handle_key(&mut app, ctrl_q).await,
+        KeyAction::Consumed
+    ));
     assert!(!super::exit_restarts(&app));
-    assert!(matches!(handle_key(&mut app, ctrl_q).await, KeyAction::Quit));
+    assert!(matches!(
+        handle_key(&mut app, ctrl_q).await,
+        KeyAction::Quit
+    ));
+}
+
+/// #1489: `y` in the idle Confirm Exit (opened by ⌃C) answers it: it
+/// quits, and is not taken as the restart key.
+#[tokio::test]
+async fn y_in_confirm_exit_quits_not_restarts() {
+    let mut app = base_app(TuiMode::Dashboard);
+    app.upgrade_state = ready_to_restart();
+    let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    handle_key(&mut app, ctrl_c).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    assert!(!send(&mut app, KeyCode::Char('y')).await, "y restarted");
+    assert!(!app.running, "y quits");
 }
 
 fn live_ready_to_restart() -> App {

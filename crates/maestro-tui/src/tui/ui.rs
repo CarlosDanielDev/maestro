@@ -1167,14 +1167,21 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
             lines.push(Line::from(Span::styled(ends, bold(theme.accent_error))));
         }
         if let Some(upgrade) = quit_upgrade_line(app, restart) {
-            lines.push(Line::from(Span::styled(upgrade, bold(theme.accent_warning))));
+            lines.push(Line::from(Span::styled(
+                upgrade,
+                bold(theme.accent_warning),
+            )));
         }
         lines.push(Line::from(""));
         let hold = app
             .screen_state
             .exit_hold
             .unwrap_or(crate::tui::input_handler::QUIT_HOLD);
-        let (key, action) = if restart { ("y", "restart") } else { ("⌃Q", "quit") };
+        let (key, action) = if restart {
+            ("y", "restart")
+        } else {
+            ("⌃Q", "quit")
+        };
         lines.extend(hold.lines(key, action, now, theme));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
@@ -1219,7 +1226,11 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
         h,
     );
     f.render_widget(Clear, popup);
-    let title = if restart { "Confirm Restart" } else { "Confirm Exit" };
+    let title = if restart {
+        "Confirm Restart"
+    } else {
+        "Confirm Exit"
+    };
     let block = panel(title, focus, theme).padding(ratatui::widgets::Padding::horizontal(1));
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }

@@ -1293,7 +1293,11 @@ fn team_run_live(app: &App) -> bool {
 /// The Confirm Exit question while there is live work: the most specific
 /// thing a quit (or a restart, #1489) would cut off.
 pub(crate) fn live_work_question(app: &App) -> String {
-    let verb = if exit_restarts(app) { "Restart" } else { "Exit" };
+    let verb = if exit_restarts(app) {
+        "Restart"
+    } else {
+        "Exit"
+    };
     format!("{} {verb} anyway?", live_work_cut_off(app))
 }
 

@@ -399,9 +399,10 @@ async fn event_loop(
                             if let Err(e) = restarted {
                                 enable_raw_mode().ok();
                                 enter_tui_mode(&mut io::stdout()).ok();
-                                app.upgrade_state = crate::updater::UpgradeState::Failed(
-                                    format!("Restart failed: {}", e),
-                                );
+                                app.upgrade_state = crate::updater::UpgradeState::Failed(format!(
+                                    "Restart failed: {}",
+                                    e
+                                ));
                             }
                         }
                     }
