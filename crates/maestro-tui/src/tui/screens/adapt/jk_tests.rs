@@ -47,19 +47,18 @@ fn shown(app: &mut App, w: u16, h: u16) -> String {
 
 #[tokio::test]
 async fn project_field_types_j_and_k() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let base = format!("{}/work/", dir.path().display());
-    let mut app = adapt_app(&base);
+    // A short relative path that exists nowhere, so the drawn field shows
+    // it whole and typing never finds a cache.
+    let base = "no-such-dir-1540/work/";
+    let mut app = adapt_app(base);
     shown(&mut app, 120, 34);
 
     type_str(&mut app, "kyte-j").await;
 
     assert_eq!(screen(&mut app).selected_field, 0, "j / k never move focus");
     assert_eq!(screen(&mut app).config.path, format!("{base}kyte-j"));
-    assert!(
-        shown(&mut app, 120, 34).contains("work/kyte-j"),
-        "the typed path is drawn"
-    );
+    let drawn = shown(&mut app, 120, 34);
+    assert!(drawn.contains("work/kyte-j"), "the typed path is drawn:\n{drawn}");
 
     press(&mut app, KeyCode::Down).await;
     assert_eq!(screen(&mut app).selected_field, 1, "↓ moves from Project");
