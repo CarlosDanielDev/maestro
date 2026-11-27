@@ -1591,6 +1591,10 @@ mod fullscreen_tests;
 mod overview_grid_tests;
 
 #[cfg(test)]
+#[path = "input_handler_marked_tests.rs"]
+mod marked_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::tui::app::{App, SessionView, TuiMode};
@@ -2179,7 +2183,7 @@ mod tests {
         let mock = MockClipboard::new();
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("result text"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2206,7 +2210,7 @@ mod tests {
         s.status = SessionStatus::Running;
         s.last_message = "in progress".to_string();
         app.pool.enqueue(s);
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2222,7 +2226,7 @@ mod tests {
         let mock = MockClipboard::will_fail("backend exposed: /run/user/1000/wayland-0");
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("payload"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2240,7 +2244,7 @@ mod tests {
         let mock = MockClipboard::new();
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("done"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         app.tui_mode = TuiMode::Dashboard;
 
         let _ = handle_key(&mut app, ctrl_c_event()).await;
@@ -2922,6 +2926,7 @@ mod tests {
         session.status = SessionStatus::Completed;
         let id = session.id;
         app.pool.enqueue(session);
+        app.mark_session_at(0);
 
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
@@ -2952,6 +2957,7 @@ mod tests {
         session.status = SessionStatus::Running;
         let id = session.id;
         app.pool.enqueue(session);
+        app.mark_session_at(0);
 
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
