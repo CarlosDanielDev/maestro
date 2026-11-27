@@ -1,0 +1,8 @@
+# key	title	labels	parent
+epic	feat(sessions): follow-up harvester — side agent that drafts issues from session endings	epic,type:feature,priority:P2	-
+s1-record	feat(sessions): persist a session-end record (jsonl) when a session settles	story,priority:P2	epic
+s2-harvester	feat(sessions): harvester agent drafts follow-up candidates from the session-end record	story,priority:P2	epic
+s3-review	feat(tui): review follow-up drafts in the Run summary with accept/reject	story,priority:P2	epic
+s4-export	feat(sessions): export accepted follow-ups to a lint-clean setwave plan dir	story,priority:P2	epic
+bug-logs	fix(tests): building an App in tests writes session logs into the caller's cwd	bug,priority:P2	epic
+bug-pendingprs	fix(state): PermanentlyFailed pending_prs are never reaped	bug,priority:P2	epic

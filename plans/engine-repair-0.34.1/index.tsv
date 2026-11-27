@@ -1,0 +1,7 @@
+# key	title	labels	parent
+epic	fix(engine): 0.34.1 repair train — dead team engine, data loss, false cost, blind dashboard, stranded work	epic,priority:P0	-
+p1	fix(team): dispatch spawns the text provider while the consumer awaits stream events	bug,priority:P0	epic
+p2	fix(team): failed subagents leave edits in the main checkout while reporting zero succeeded	bug,priority:P0	epic
+p3	fix(cost): PR body reports $0.00 and total_cost_usd resets between runs	bug,priority:P1	epic
+p4	fix(tui): Dashboard shows 0 sessions and 0 PRs while the repo has open maestro PRs	bug,priority:P1	epic
+p5	fix(pr): a session that finishes with an open PR for its issue strands the new commit silently	bug,priority:P1	epic
