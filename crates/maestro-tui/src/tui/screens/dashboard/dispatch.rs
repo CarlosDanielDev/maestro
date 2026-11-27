@@ -76,16 +76,6 @@ pub fn sync(app: &mut App) {
     if dash.view != View::Ops {
         dash.list.keep_on_session();
     }
-    mirror_selection(app);
-}
-
-/// The Overview-era keys that still run from Detail (`X` / F10 kill, `f` /
-/// F3 full, `c` copy) read `panel_view.selected`: keep it on the marked
-/// session, or on no session for a PR row (`usize::MAX` selects nothing).
-fn mirror_selection(app: &mut App) {
-    let marked = app.screen_state.dashboard.list.selected_session();
-    let index = marked.and_then(|id| app.pool.all_sessions().iter().position(|s| s.id == id));
-    app.panel_view.selected = Some(index.unwrap_or(usize::MAX));
 }
 
 /// Called for every key before any handler: a key that will not reach the
@@ -135,9 +125,7 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {
     if app.screen_state.dashboard.view == View::Deps {
         app.screen_state.dashboard.disarm();
         let graph = split(app).0.files;
-        let action = super::deps::handle_key(app, key, &graph);
-        mirror_selection(app);
-        return Some(action);
+        return Some(super::deps::handle_key(app, key, &graph));
     }
     if key.code == KeyCode::Enter {
         return Some(enter(app));
@@ -145,9 +133,7 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> Option<ScreenAction> {
     let dash = &mut app.screen_state.dashboard;
     let was_armed = matches!(dash.armed.state(), ArmedState::Armed(_));
     dash.disarm();
-    let action = handle_other(app, key, was_armed);
-    mirror_selection(app);
-    action
+    handle_other(app, key, was_armed)
 }
 
 fn handle_other(app: &mut App, key: &KeyEvent, was_armed: bool) -> Option<ScreenAction> {

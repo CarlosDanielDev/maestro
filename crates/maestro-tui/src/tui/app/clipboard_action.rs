@@ -63,13 +63,13 @@ impl App {
     }
 
     /// The session copy, F3 and F10 act on: on the session screen the one it
-    /// shows (#1288), elsewhere the panel selection.
+    /// shows (#1288), elsewhere the Dashboard's marked session, by id
+    /// (#1486: a list index moved when a session finished or was promoted).
     pub(crate) fn focused_session_id(&self) -> Option<uuid::Uuid> {
         if let super::TuiMode::Session { id, .. } = self.tui_mode {
             return Some(id);
         }
-        self.pool
-            .session_id_at_index(self.panel_view.selected_index())
+        self.screen_state.dashboard.list.selected_session()
     }
 
     /// Test setup: mark the session at pool index `index` on the Dashboard,

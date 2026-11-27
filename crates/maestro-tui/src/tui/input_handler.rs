@@ -1441,12 +1441,11 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('r'), _) => {
             app.resume_all();
         }
-        // #1280: kill is `X` in Detail as on the Dashboard list (`k` is up
-        // there); the target is `panel_view.selected`, which the Dashboard
-        // keeps on its marked session.
+        // #1280: kill is `X` as on the Dashboard list (`k` is up there).
+        // #1486: `X`, `f` and `⏎` act on the Dashboard's marked session by
+        // id, never a list index a finish or a promotion moved.
         (KeyCode::Char('X'), _) => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
+            if let Some(id) = app.focused_session_id()
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
@@ -1458,8 +1457,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             // it will be handled by the caller if needed
         }
         (KeyCode::Char('f'), _) => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
+            if let Some(id) = app.focused_session_id() {
                 app.screen_state.output_scroll = Default::default();
                 app.navigate_to(app::TuiMode::Session {
                     id,
@@ -1488,8 +1486,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             // hint shown in the top-bar. Detail works for terminal
             // sessions too (renders the recorded transcript), so use one
             // path for both states.
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
+            if let Some(id) = app.focused_session_id() {
                 app.navigate_to(app::TuiMode::Session {
                     id,
                     view: app::SessionView::Detail,
