@@ -151,7 +151,7 @@ fn fleet_counts_group_statuses() {
         Completed,
         Queued,
     ];
-    let counts = FleetCounts::from_statuses(statuses.iter());
+    let counts = FleetCounts::from_sessions(statuses.iter().map(|s| (s, true)));
     assert_eq!(
         counts,
         FleetCounts {

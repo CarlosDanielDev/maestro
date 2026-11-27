@@ -739,3 +739,12 @@ first. One entry per decision.
 - **ADR (where to stop it):** block on Plan with the existing `x` fix, never rename or merge. Auto-suffixing a title would write text the operator did not choose; merging two issues would drop one of them. Rejected: a second check in `begin_materialization` (Create is only reachable through Plan, and a retry reuses by number), and a planner-side dedupe (the AI can still return two equal titles, and the operator must see it).
 - **Differs from the target:** no title edit (`e` / `t` are not built), so the only fix is `x`. Only the repeat is marked, not the first issue of the title, so `x` on any marked row keeps one issue per title.
 - **Source:** #1455.
+
+## 2026-11-27 — The status bar counts only live sessions as running; Kill on a kept record says why it does not act
+
+- **What:** `FleetCounts::from_sessions` takes `(status, live)` per session, `live` when the session is in the pool's active list; `● run` counts a running-like status (spawning, running, gates, CI / conflict fix, retry) only when it is live. A kept record still counts in the total, and in wait / fail as before. `X` (Dashboard and Session) on a record no process runs (in the pool, not active, not queued) opens no Kill dialog; a toast says `<label> is a saved record, not running: Kill has nothing to stop`.
+- **Why:** #1507. Since #1487 `maestro resume` keeps a crashed `Running` first turn in the finished list, so the bar showed phantom running agents, and Kill on its row opened a dialog whose `⏎` did nothing (`pool.kill_session` acts on active sessions only).
+- **Section:** `§04 StatusBar` (fleet counts) and `§02.1` Dashboard kill dialog (`dashboard.killDialog`).
+- **ADR (explain vs hide Kill):** `X` stays and explains in a toast, the same way `X` already explains an Errored session. Rejected: hiding `X` on such rows (the key hint would change per row and a silent key reads as broken), and rewriting the kept record's status to something not running (that changes what resume keeps, out of scope).
+- **Differs from the target:** the target has no kept records, so it shows no such toast.
+- **Source:** #1507.

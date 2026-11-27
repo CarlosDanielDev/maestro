@@ -25,6 +25,7 @@ impl App {
     /// never per frame.
     /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
     /// `Killed` transition) gets a toast instead: Kill would do nothing.
+    /// So does a kept record no process runs (#1507).
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
         self.open_kill_confirm_counting(session_id, count_uncommitted);
     }
@@ -43,6 +44,12 @@ impl App {
                 "{label} is {}: Kill cannot stop it, nothing changes",
                 status.label().to_lowercase()
             );
+            let toast = Toast::new(Severity::Info, text);
+            self.push_toast(toast, std::time::Instant::now());
+            return;
+        }
+        if let Some(label) = self.kept_record_label(session_id) {
+            let text = format!("{label} is a saved record, not running: Kill has nothing to stop");
             let toast = Toast::new(Severity::Info, text);
             self.push_toast(toast, std::time::Instant::now());
             return;
@@ -193,6 +200,17 @@ impl App {
         let slug = session_slug(&managed.session);
         path.ends_with(Path::new(".maestro").join("worktrees").join(slug))
             .then_some(path)
+    }
+
+    /// #1507: the label of a record no process runs: in the pool but not
+    /// active (kept by resume, or finished) and not waiting in the queue.
+    /// `pool.kill_session` acts on active sessions only, so Kill on it
+    /// would do nothing.
+    fn kept_record_label(&self, session_id: uuid::Uuid) -> Option<String> {
+        let session = self.pool.get_session(session_id)?;
+        let kept = self.pool.get_active(session_id).is_none()
+            && session.status != SessionStatus::Queued;
+        kept.then(|| session_label(session))
     }
 
     /// The status of a session Kill cannot move to `Killed`, if it is one.
