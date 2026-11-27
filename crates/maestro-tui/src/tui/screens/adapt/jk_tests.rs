@@ -58,7 +58,10 @@ async fn project_field_types_j_and_k() {
     assert_eq!(screen(&mut app).selected_field, 0, "j / k never move focus");
     assert_eq!(screen(&mut app).config.path, format!("{base}kyte-j"));
     let drawn = shown(&mut app, 120, 34);
-    assert!(drawn.contains("work/kyte-j"), "the typed path is drawn:\n{drawn}");
+    assert!(
+        drawn.contains("work/kyte-j"),
+        "the typed path is drawn:\n{drawn}"
+    );
 
     press(&mut app, KeyCode::Down).await;
     assert_eq!(screen(&mut app).selected_field, 1, "↓ moves from Project");
