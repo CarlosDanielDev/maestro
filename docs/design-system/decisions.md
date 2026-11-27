@@ -793,3 +793,12 @@ first. One entry per decision.
 - **ADR (name it, never install on quit):** quit and Confirm Exit name the upgrade and restart with live work opens the same confirm (owner, 2026-11-27). Rejected: installing the queued upgrade on quit (an action and a spend nobody asked for), and a Confirm Restart whose hold quits (the banner promises a restart).
 - **Differs from the target:** the target's Confirm Exit has no upgrade line and no restart variant, and its StatusBar does not say which chip wins space.
 - **Source:** #1489.
+
+## 2026-11-27 — Startup says when cleanup kept branches that may hold work
+
+- **What:** `setup::startup_cleanup` now returns the branches the orphan cleanup kept (`CleanupReport.kept_branches`, #1483) instead of dropping the report. Once the App exists, `maestro` and `maestro run` call `setup::report_kept_branches`, which logs one WARN line `[clean] Kept N branch(es) that may hold work: see git branch`. Off the log screens `ui::draw` raises it as a warn `ds::toast` on the first frame (6 s); on the log screens the Activity pane shows it. Nothing is logged or shown when no branch was kept.
+- **Why:** #1552, found by the judge of #1551. A TUI-only user never learned that a crashed session's branch was kept and may hold commits.
+- **Section:** `§04` toast (`ds::toast`) and the WARN-to-toast rule of the Activity Log ("Elsewhere WARN/ERR arrive as a toast").
+- **ADR (WARN line raised as a toast, not a direct toast):** the owner rule says the activity log alone is not enough for something the user must act on, and the log rule says log a WARN and never also push a toast for the same event; a WARN line does both through `raise_log_toasts`. It lands after the run loop's one-time ⌃Q hint, so on a launch with kept branches it replaces that info toast (the hint stays in the log). Rejected: an activity-log line only (unseen off the log screens), and a direct toast pushed before the run loop (the ⌃Q hint would replace it before the first frame).
+- **Differs from the issue:** the issue's text said "run `maestro clean --stale` to see them". That command does not list these branches: their worktree is already gone, and `clean --stale` lists only branches it keeps in its own run. The line says `see git branch` instead, so it makes no false promise and fits the toast at 80 columns.
+- **Source:** #1552.
