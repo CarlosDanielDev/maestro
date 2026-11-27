@@ -280,7 +280,10 @@ fn status_bar_counts_a_queued_fix_as_waiting_not_running() {
         .unwrap();
     let out = format!("{}", terminal.backend());
     let bar = out.lines().next().unwrap_or_default();
-    assert!(bar.contains("0 run"), "the queued fix is not running:\n{out}");
+    assert!(
+        bar.contains("0 run"),
+        "the queued fix is not running:\n{out}"
+    );
     assert!(bar.contains("1 wait"), "the queued fix waits:\n{out}");
 }
 
