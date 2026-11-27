@@ -231,3 +231,36 @@ async fn confirm_restart_footer_80x24() {
     }
     insta::assert_snapshot!("confirm_restart_footer_80x24", out);
 }
+
+/// #1560: the upgrade banner owns its area left of the pinned safety
+/// chips. No status bar text shows after `[n]o`, and BYPASS stays on the
+/// row next to it.
+#[tokio::test]
+async fn upgrade_banner_clears_status_bar_text_under_it() {
+    use crate::updater::UpgradeState;
+    for bypass in [false, true] {
+        let mut app = app(TuiMode::Landing, 1);
+        app.show_activity_log = false;
+        app.bypass_active = bypass;
+        app.upgrade_state = UpgradeState::ReadyToRestart {
+            version: "9.8.7".into(),
+            backup_path: "/nonexistent-1560".into(),
+        };
+        let _ = handle_key(&mut app, key('y')).await;
+        assert_eq!(app.tui_mode, TuiMode::ConfirmExit, "bypass {bypass}");
+        let out = text(&mut app, 80, 24);
+        let row = out.lines().next().unwrap_or_default();
+        assert!(row.contains("[n]o"), "bypass {bypass}: {row}");
+        let banner = match row.find("▲ BYPASS") {
+            Some(at) => &row[..at],
+            None => {
+                assert!(
+                    !bypass,
+                    "the BYPASS chip must stay next to the banner: {row}"
+                );
+                row
+            }
+        };
+        assert!(!banner.contains("spent"), "bypass {bypass}: {row}");
+    }
+}

@@ -802,3 +802,12 @@ first. One entry per decision.
 - **ADR (show it, label `quit`):** the owner chose to show `⌃Q` between the `y` hold and `Esc` (2026-11-27): the way out should be visible and it keeps Confirm Restart and Confirm Exit consistent. The label is `quit`, not `hold to quit`: here `⌃Q` only switches to the quit hold, which Confirm Exit's own footer then names. Rejected: leaving it hidden (`Esc` then `⌃Q` also quits, but nothing says so).
 - **Differs from the target:** the target has no Confirm Restart variant.
 - **Source:** #1557.
+
+## 2026-11-27 — The upgrade banner clears the status bar text under it
+
+- **What:** `draw_upgrade_banner` renders `Clear` over its area (the status bar row left of the pinned safety chips), then its spans with the bar's `surface_bar` background. The cells after the text are blank, so the Ready-to-restart row reads ` READY  v9.8.7 installed!  Restart now? [y]es  [n]o` with nothing after it (was `[n]o0 spent │ TQ:OFF`). BYPASS and UNTRUSTED stay on the right, as before.
+- **Why:** #1560, found by the #1557 implementer. The banner drew only its spans, so every cell after its last span kept the status bar text already drawn there.
+- **Section:** `§04 StatusBar` (`#c-statusbar`): the pinned safety chips stay visible.
+- **ADR (Clear the area):** `Clear`, then the spans: it is the ratatui widget for hiding what is under a widget and needs no width math. Rejected: padding the line with spaces to the area width. Unpinned chips such as `TQ:OFF` sit inside the banner area, so they are hidden while a banner shows; only BYPASS and UNTRUSTED are pinned.
+- **Differs from the target:** the target has no upgrade banner.
+- **Source:** #1560.

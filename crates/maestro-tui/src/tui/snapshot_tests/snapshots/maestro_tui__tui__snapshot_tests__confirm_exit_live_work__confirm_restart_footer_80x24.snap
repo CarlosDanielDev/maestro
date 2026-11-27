@@ -2,7 +2,7 @@
 source: crates/maestro-tui/src/tui/snapshot_tests/confirm_exit_live_work.rs
 expression: out
 ---
-" READY  v9.8.7 installed!  Restart now? [y]es  [n]o0 spent │ TQ:OFF             "
+" READY  v9.8.7 installed!  Restart now? [y]es  [n]o                             "
 " Home › Confirm Restart                                        Esc back  ? help "
 "┌──────────────────────────────[ Budget & quota ]──────────────────────────────┐"
 "│ spend        $0.00                                                           │"
