@@ -1,6 +1,7 @@
 //! #1473: orphan cleanup keeps a `maestro/<slug>` branch that holds commits
-//! no other ref has. Real git repos in a tempdir. Sibling file via `#[path]`
-//! so `cleanup.rs` stays under the 400-line gate cap.
+//! no other ref has. #1559: the orphan scan asks git about `repo_root`.
+//! Real git repos in a tempdir. Sibling file via `#[path]` so `cleanup.rs`
+//! stays under the 400-line gate cap.
 
 use super::*;
 
@@ -260,4 +261,52 @@ fn kept_branch_lists_the_branch_when_git_cannot_start() {
         Some(None),
         "a spawn error must list the branch, count unknown"
     );
+}
+
+// --- #1559: the orphan scan asks git about `repo_root`, not the cwd ---
+
+#[test]
+fn scan_orphans_returns_empty_when_dir_missing() {
+    let mgr = CleanupManager::new(Path::new("/tmp/nonexistent-repo-12345"));
+    let orphans = mgr.scan_orphans().unwrap();
+    assert!(orphans.is_empty());
+}
+
+/// The test process cwd is the maestro checkout, a different repo: the
+/// tracked `issue-7` must still be seen as tracked, and only the untracked
+/// `stray` dir is an orphan.
+#[test]
+fn scan_orphans_reads_worktrees_of_repo_root_not_cwd() {
+    let (_tmp, repo, tracked) = repo_with_worktree();
+    let stray = repo.join(".maestro").join("worktrees").join("stray");
+    std::fs::create_dir(&stray).expect("mkdir stray");
+
+    let orphans = CleanupManager::new(&repo)
+        .scan_orphans()
+        .expect("scan must succeed in a real repo");
+
+    let names: Vec<&str> = orphans.iter().map(|o| o.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["stray"],
+        "{:?} is tracked by repo_root and must never be an orphan",
+        tracked.path
+    );
+}
+
+/// A tempdir that is not a git repo: `git worktree list` exits non-zero,
+/// so the scan must fail instead of calling every dir an orphan.
+#[test]
+fn scan_orphans_errors_when_git_worktree_list_fails() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let x = tmp.path().join(".maestro").join("worktrees").join("x");
+    std::fs::create_dir_all(&x).expect("mkdir x");
+
+    let result = CleanupManager::new(tmp.path()).scan_orphans();
+
+    assert!(
+        result.is_err(),
+        "a failed git must list nothing, got: {result:?}"
+    );
+    assert!(x.exists(), "the scan never touches the directory");
 }
