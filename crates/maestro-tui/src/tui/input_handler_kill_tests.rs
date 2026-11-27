@@ -35,11 +35,14 @@ fn app_with_407() -> App {
     app
 }
 
+/// #1514: the fixture session is queued, and Kill now takes it out of the
+/// queue, so a confirmed Kill logs "killed by user" (it used to log "not
+/// found or already finished" and do nothing).
 fn kill_attempted(app: &App) -> bool {
     app.activity_log
         .entries()
         .iter()
-        .any(|e| e.session_label == "#407" && e.message.contains("not found or already finished"))
+        .any(|e| e.session_label == "#407" && e.message.contains("Session killed by user"))
 }
 
 fn draw(app: &mut App) -> String {

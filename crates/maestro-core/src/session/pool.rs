@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::pool_quota::QuotaRouting;
+use super::transition::TransitionReason;
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
@@ -801,14 +802,33 @@ impl SessionPool {
         before - self.finished.len()
     }
 
-    /// Kill a single active session by ID.
+    /// Kill a single session by ID: an active one is stopped, a queued one
+    /// leaves the queue ([`Self::dequeue`], #1514).
     pub async fn kill_session(&mut self, session_id: Uuid) -> anyhow::Result<bool> {
         if let Some(managed) = self.active.iter_mut().find(|m| m.session.id == session_id) {
             managed.kill().await?;
             Ok(true)
         } else {
-            Ok(false)
+            Ok(self.dequeue(session_id))
         }
+    }
+
+    /// #1514: take a queued session out of the queue as a `Killed` record.
+    /// It never ran, so nothing is stopped and no worktree is touched (a
+    /// queued retry child may share its parent's, #1485). False when the
+    /// session is not queued or cannot become `Killed`.
+    pub fn dequeue(&mut self, session_id: Uuid) -> bool {
+        let Some(idx) = (self.queue.iter())
+            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))
+        else {
+            return false;
+        };
+        let Some(mut session) = self.queue.remove(idx) else {
+            return false;
+        };
+        let _ = session.transition_to(SessionStatus::Killed, TransitionReason::UserKill);
+        self.finished.push(ManagedSession::new(session));
+        true
     }
 
     /// Get the event sender for spawning sessions.
@@ -1267,6 +1287,35 @@ pub(in crate::session) mod tests {
         pool.enqueue(make_session("fix bug"));
         assert_eq!(pool.queued_count(), 1);
         assert_eq!(pool.active_count(), 0);
+    }
+
+    /// #1514: Kill on a queued session takes it out of the queue as a
+    /// `Killed` record. It never starts, and no worktree is touched.
+    #[tokio::test]
+    async fn kill_session_takes_a_queued_session_out_of_the_queue() {
+        let mut pool = make_pool(2);
+        let session = make_session("waiting");
+        let id = session.id;
+        pool.enqueue(session);
+        assert!(pool.kill_session(id).await.unwrap(), "Kill acted");
+        assert_eq!(pool.queued_count(), 0, "it left the queue");
+        let status = pool.get_session(id).map(|s| s.status);
+        assert_eq!(status, Some(SessionStatus::Killed));
+        assert!(pool.try_promote().is_empty(), "it never starts");
+    }
+
+    /// #1514: a queued session that cannot become `Killed` stays queued.
+    #[tokio::test]
+    async fn dequeue_leaves_a_session_that_cannot_be_killed() {
+        let mut pool = make_pool(2);
+        let mut session = make_session("settled");
+        session.status = SessionStatus::Completed;
+        let id = session.id;
+        pool.enqueue(session);
+        assert!(!pool.kill_session(id).await.unwrap(), "Kill did not act");
+        assert_eq!(pool.queued_count(), 1, "it stays queued");
+        let status = pool.get_session(id).map(|s| s.status);
+        assert_eq!(status, Some(SessionStatus::Completed), "untouched");
     }
 
     #[test]

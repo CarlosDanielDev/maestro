@@ -775,3 +775,12 @@ first. One entry per decision.
 - **ADR (drop running-like, not every kept record):** the mascot drops only a running status off an active session. Rejected: dropping every kept record (finished sessions live in that list, so the mascot would never be happy or show an error again).
 - **Differs from the target:** none; the target has no queue or kept records.
 - **Source:** #1515.
+
+## 2026-11-27 — Kill on a queued session removes it from the queue
+
+- **What:** `X` on a queued session (`Place::Queued`) opens the typed confirm titled `Remove session <label> from the queue?` with `⏎ remove`; its rows read `It has not started: no agent to stop.`, `gone   its place in the queue: it never starts`, `kept   every file: no worktree is touched`, `kept   its record, marked killed`. `⏎` runs `pool.kill_session`, which now calls the new `pool.dequeue(id)`: the session leaves the queue and is kept as a `Killed` record, never spawned, its worktree untouched. The run loop's Stop › Kill reads the same rows (`App::kill_teardown_rows`) and the same `kill_session`, so a running item still waiting for a slot leaves the queue too; a kept record there reads `skips   it is a saved record, not running: Kill leaves it as it is`.
+- **Why:** #1514, after #1507. `pool.kill_session` acted on active sessions only, so `⏎` on a queued session wrote "Session not found or already finished" to the activity log and nothing else: a shown key that did nothing.
+- **Section:** `§05` "Killing the wrong agent" (the typed kill confirm); the run loop Stop dialog.
+- **ADR (dequeue, not a toast):** the owner chose dequeue on 2026-11-27: the user wants the session gone, and a toast (as for kept records, #1507) leaves no action. The record stays as `Killed` rather than vanishing, so its history and the run loop's outcome read the same as any kill. Rejected: the toast, and dropping the session from the pool (its saved state would be lost and a run-loop item would have no outcome to settle on).
+- **Differs from the target:** the target has no queue, so it shows no remove-from-queue dialog.
+- **Source:** #1514.

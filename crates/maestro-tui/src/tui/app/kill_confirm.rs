@@ -96,16 +96,21 @@ impl App {
             1 => "1 other session keeps running".to_string(),
             n => format!("{n} other sessions keep running"),
         };
-        let mut rows = vec![
-            (String::new(), "Stops the agent now.".into()),
-            (String::new(), String::new()),
-        ];
+        // #1514: a queued session has no agent yet; `⏎` takes it out of
+        // the queue (`pool.kill_session` → `dequeue`).
+        let queued = self.place_of(session_id) == Some(Place::Queued);
+        let (title, action, what, kept) = if queued {
+            let title = format!("Remove session {label} from the queue?");
+            let what = "It has not started: no agent to stop.";
+            (title, "remove", what, "its record, marked killed")
+        } else {
+            let title = format!("Kill session {label}?");
+            (title, "kill", "Stops the agent now.", "the transcript")
+        };
+        let mut rows = vec![(String::new(), what.into()), (String::new(), String::new())];
         rows.extend(self.kill_teardown_rows(session_id, uncommitted, unpushed));
-        rows.extend([
-            ("kept".into(), "the transcript".into()),
-            ("other".into(), other),
-        ]);
-        TypedConfirm::new(format!("Kill session {label}?"), token, "kill", rows)
+        rows.extend([("kept".into(), kept.into()), ("other".into(), other)]);
+        TypedConfirm::new(title, token, action, rows)
     }
 
     /// #1456: what Kill does to the session's work, read from the real
@@ -128,6 +133,23 @@ impl App {
                 status.label().to_lowercase()
             );
             return vec![("skips".into(), text)];
+        }
+        // #1514: the run loop's Stop › Kill reads these rows too.
+        match self.place_of(session_id) {
+            Some(Place::Queued) => {
+                return vec![
+                    (
+                        "gone".into(),
+                        "its place in the queue: it never starts".into(),
+                    ),
+                    ("kept".into(), "every file: no worktree is touched".into()),
+                ];
+            }
+            Some(Place::Kept) => {
+                let text = "it is a saved record, not running: Kill leaves it as it is";
+                return vec![("skips".into(), text.into())];
+            }
+            _ => {}
         }
         let managed = self.pool.get_active(session_id);
         if self.torn_down_worktree(session_id).is_none() {
@@ -210,6 +232,13 @@ impl App {
         let sessions = self.sessions_by_place();
         let (session, place) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
         (place == Place::Kept).then(|| session_label(session))
+    }
+
+    /// The list `session_id` is in ([`Self::sessions_by_place`]).
+    fn place_of(&self, session_id: uuid::Uuid) -> Option<Place> {
+        let sessions = self.sessions_by_place();
+        let (_, place) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
+        Some(place)
     }
 
     /// #1507: every pool session in `all_sessions` order (active, finished,
