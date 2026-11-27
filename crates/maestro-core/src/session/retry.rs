@@ -179,6 +179,9 @@ impl RetryPolicy {
         new_session.retry_count = original.retry_count + 1;
         new_session.last_retry_at = Some(Utc::now());
         new_session.issue_title = original.issue_title.clone();
+        // #1506: a unified session's worktree slug comes from
+        // `issue_numbers`; keep them so the child reuses that worktree.
+        new_session.issue_numbers = original.issue_numbers.clone();
         new_session.origin = original.origin;
         new_session.active_command = original.active_command.clone();
         // Preserve the original agent so the retry runs on the same
