@@ -257,3 +257,35 @@ fn delete_branch_logs_truthful_reason() {
         "no unique commits: deleted"
     );
 }
+
+/// #1481: teardown whose unique-commit count times out keeps the branch
+/// (the safe side, unchanged rule). A FIFO no one writes to as the
+/// object-store alternates file makes `git rev-list` block on `open`
+/// until it is killed, while `worktree remove` and `rev-parse --verify`
+/// (they read no objects) still answer: real git, no sleep.
+#[cfg(unix)]
+#[test]
+fn teardown_keeps_branch_when_count_times_out() {
+    let repo = repo_with_branch(0);
+    let root = repo.path().join(".maestro/worktrees");
+    let path = root.join("x");
+    let path_arg = path.to_str().expect("utf-8 tempdir");
+    git(repo.path(), &["worktree", "add", "-q", path_arg, "maestro/x"]);
+    let alternates = repo.path().join(".git/objects/info/alternates");
+    std::fs::create_dir_all(alternates.parent().expect("parent")).expect("mkdir info");
+    let made = Command::new("mkfifo").arg(&alternates).status();
+    assert!(made.expect("mkfifo").success(), "mkfifo");
+
+    let started = std::time::Instant::now();
+    wipe(1481, &path, "maestro/x", &root, true).expect("teardown must succeed");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "teardown does not wait for a stuck count"
+    );
+    assert!(!path.exists(), "the worktree is removed");
+    std::fs::remove_file(&alternates).expect("remove fifo");
+    assert!(
+        branch_present(repo.path(), "maestro/x"),
+        "a branch whose count timed out is kept"
+    );
+}
