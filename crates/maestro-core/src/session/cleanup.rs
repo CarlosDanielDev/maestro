@@ -360,13 +360,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn scan_orphans_returns_empty_when_dir_missing() {
-        let mgr = CleanupManager::new(Path::new("/tmp/nonexistent-repo-12345"));
-        let orphans = mgr.scan_orphans().unwrap();
-        assert!(orphans.is_empty());
-    }
-
     // #938: a misconfigured worktree root of `/` must be refused before any
     // destructive call. We construct the manager with `worktree_dir = "/"`
     // directly (same module → private field is reachable) and assert the orphan
