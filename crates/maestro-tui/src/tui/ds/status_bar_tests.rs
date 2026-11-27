@@ -151,7 +151,7 @@ fn fleet_counts_group_statuses() {
         Completed,
         Queued,
     ];
-    let counts = FleetCounts::from_statuses(statuses.iter());
+    let counts = FleetCounts::from_sessions(statuses.iter().map(|s| (s, false)));
     assert_eq!(
         counts,
         FleetCounts {
@@ -231,4 +231,35 @@ fn update_chip_queued_counts_agents() {
         assert!(row.contains(text), "{row:?}");
         assert!(!row.contains("0.34.0"), "{row:?}");
     }
+}
+
+/// #1507: one live running session and one saved record kept with a
+/// Running status. Only the live one is counted as running.
+#[test]
+fn status_bar_does_not_count_kept_records_as_running() {
+    use crate::session::types::Session;
+    let mut app = crate::tui::make_test_app("maestro-kept-count-1507");
+    app.tui_mode = crate::tui::app::TuiMode::Dashboard;
+    let session = |issue| Session::new("p".into(), "opus".into(), "o".into(), Some(issue), None);
+    let live = session(1);
+    let live_id = live.id;
+    app.pool.enqueue(live);
+    let _ = app.pool.try_promote();
+    let managed = app.pool.get_active_mut(live_id).expect("promoted");
+    managed.session.status = SessionStatus::Running;
+    let mut kept = session(2);
+    kept.status = SessionStatus::Running;
+    app.pool.keep_saved([&kept]);
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| crate::tui::ui::draw(f, &mut app))
+        .unwrap();
+    let out = format!("{}", terminal.backend());
+    let bar = out.lines().next().unwrap_or_default();
+    assert!(bar.contains("1 run"), "the live session counts:\n{out}");
+    assert!(
+        !bar.contains("2 run"),
+        "the kept record is not running:\n{out}"
+    );
 }

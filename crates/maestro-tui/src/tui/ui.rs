@@ -953,7 +953,9 @@ fn status_model(app: &App) -> status_bar::StatusModel {
     };
     status_bar::StatusModel {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        fleet: status_bar::FleetCounts::from_statuses(app.pool.all_statuses()),
+        fleet: status_bar::FleetCounts::from_sessions(
+            (app.sessions_with_kept().into_iter()).map(|(s, kept)| (&s.status, kept)),
+        ),
         spent: app.total_cost,
         cap: app.budget_enforcer.as_ref().map(|e| e.total_limit()),
         quota: app.quota_badges(),

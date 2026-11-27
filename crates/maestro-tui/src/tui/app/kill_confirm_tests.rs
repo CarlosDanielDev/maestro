@@ -307,3 +307,37 @@ async fn kill_count_includes_ignored_files() {
         "the ignored file and the ignored folder are listed apart:\n{out}"
     );
 }
+
+/// #1507: a record `maestro resume` kept can still say Running, but no
+/// process runs it, so Kill has nothing to stop. `X` says so in a toast
+/// instead of opening a dialog whose Enter silently does nothing.
+#[tokio::test]
+async fn kill_on_kept_record_explains_instead_of_silent_noop() {
+    let mut app = crate::tui::make_test_app("maestro-kept-kill-1507");
+    app.tui_mode = TuiMode::Dashboard;
+    let mut kept = Session::new(
+        "probe".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(1507),
+        None,
+    );
+    kept.status = SessionStatus::Running;
+    let id = kept.id;
+    app.pool.keep_saved([&kept]);
+    app.mark_session_at(0);
+
+    press(&mut app, KeyCode::Char('X')).await;
+    assert!(
+        !matches!(app.tui_mode, TuiMode::ConfirmKill(_)),
+        "no kill dialog for a record no process runs"
+    );
+    let out = draw(&mut app);
+    assert!(out.contains("not running"), "X says why:\n{out}");
+    let status = app.pool.get_session(id).map(|s| s.status);
+    assert_eq!(
+        status,
+        Some(SessionStatus::Running),
+        "the record is untouched"
+    );
+}

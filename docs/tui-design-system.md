@@ -335,7 +335,7 @@ budget, bypass or update state of its own. No key hints and no actions here.
 | Item | For |
 |---|---|
 | `status_bar::StatusModel` | Plain data the bar shows: version, `FleetCounts`, spent / cap, quota badges, TurboQuant, `untrusted`, `bypass`, `update`, `continuous` (`(done, attempted)` while a continuous run is active) |
-| `FleetCounts::from_statuses(statuses)` | `● run` (spawning, running, gates, CI / conflict fix, retry) · `◐ wait` (needs review, PR ready, interactive) · `✗ fail` (gates failed, errored). Empty pool shows `○ no agents` |
+| `FleetCounts::from_sessions(sessions)` | Takes `(status, kept)` per session (`App::sessions_with_kept`); `kept` = a record in the pool's finished list. `● run` (spawning, running, gates, CI / conflict fix, retry; a kept record never counts) · `◐ wait` (needs review, PR ready, interactive) · `✗ fail` (gates failed, errored). Empty pool shows `○ no agents` |
 | `status_bar::draw(f, area, &model, theme)` / `draw_for_mode(.., nerd_font)` | One row on `surface_bar`. Left: brand, fleet, budget (`money` + `gauge_level`), `CONTINUOUS: n/m done` (reverse info + bold, only while a run is active), quota, `TQ:ON`. Right: `▲ BYPASS`, `UNTRUSTED`, `↑ <version> u` |
 | `status_bar::segments(&model, width, theme, nerd_font)` | The `(left, right)` spans after dropping. Whole segments drop, never a cut value: update first, then TurboQuant, quota, the continuous chip, budget, fleet. Brand, `▲ BYPASS` and `UNTRUSTED` never drop |
 | `status_bar::pinned_width(&model, nerd_font)` | Columns of the safety chips; an overlay on the bar row (upgrade progress) stays left of them |
