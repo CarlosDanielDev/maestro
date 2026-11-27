@@ -4,7 +4,7 @@
 //! checkout.
 
 use super::tests::{init_repo, issue_session, walk};
-use super::{plan_resume, restore_session, resumable_sessions, sessions_to_resume};
+use super::{apply_plan, plan_resume, restore_session, resumable_sessions, sessions_to_resume};
 use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
 use crate::commands::setup::setup_app_from_config;
 use crate::config::{Config, LoadedConfig};
@@ -373,8 +373,7 @@ async fn resume_keeps_the_records_it_skips() {
     let plan = plan_resume(&state, &picked, &probe);
     let mut app = app_at!(repo.path(), &store_path);
     app.workspace_trusted = false; // nothing may spawn here
-    app.pool.keep_saved_resumable(&plan.keep);
-    for s in plan.restore {
+    for s in apply_plan(&mut app.pool, plan) {
         app.add_session(s).await.unwrap();
     }
     crate::tui::save_on_exit(&mut app).expect("saved");
