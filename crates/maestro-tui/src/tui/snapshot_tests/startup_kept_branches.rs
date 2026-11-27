@@ -22,7 +22,10 @@ async fn startup_kept_branches_are_shown() {
     let mut app = app(TuiMode::Landing, 0);
     report_kept_branches(
         &mut app,
-        &[kept("maestro/issue-7", Some(2)), kept("maestro/issue-8", None)],
+        &[
+            kept("maestro/issue-7", Some(2)),
+            kept("maestro/issue-8", None),
+        ],
     );
 
     let first = text(&mut app, 80, 24);
