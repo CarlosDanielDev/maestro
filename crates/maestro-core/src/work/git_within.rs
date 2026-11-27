@@ -36,3 +36,29 @@ pub fn output_within<T: Send + 'static>(
     let status = child.wait().ok()?;
     status.success().then_some(out).flatten()
 }
+
+/// Test guard for a FIFO-blocked git (#1481): `f`'s result within `limit`,
+/// else the test fails instead of hanging CI. On that failure a writer
+/// opens `fifo` and closes it, so a git still blocked on its `open`
+/// reads EOF and exits.
+#[cfg(test)]
+pub(crate) fn within_or_fail<T: Send + 'static>(
+    limit: Duration,
+    fifo: &std::path::Path,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    match rx.recv_timeout(limit) {
+        Ok(out) => out,
+        Err(_) => {
+            let fifo = fifo.to_path_buf();
+            std::thread::spawn(move || {
+                let _ = std::fs::OpenOptions::new().write(true).open(fifo);
+            });
+            panic!("git still blocked after {limit:?}: the timeout did not fire");
+        }
+    }
+}

@@ -276,12 +276,13 @@ fn teardown_keeps_branch_when_count_times_out() {
     let made = Command::new("mkfifo").arg(&alternates).status();
     assert!(made.expect("mkfifo").success(), "mkfifo");
 
-    let started = std::time::Instant::now();
-    wipe(1481, &path, "maestro/x", &root, true).expect("teardown must succeed");
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(10),
-        "teardown does not wait for a stuck count"
+    let (wt, wt_root) = (path.clone(), root.clone());
+    let wiped = crate::work::git_within::within_or_fail(
+        std::time::Duration::from_secs(10),
+        &alternates,
+        move || wipe(1481, &wt, "maestro/x", &wt_root, true).is_ok(),
     );
+    assert!(wiped, "teardown must succeed");
     assert!(!path.exists(), "the worktree is removed");
     std::fs::remove_file(&alternates).expect("remove fifo");
     assert!(

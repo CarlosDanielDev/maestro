@@ -122,7 +122,11 @@ mod tests {
         let mut stuck = Command::new("git");
         stuck.arg("hash-object").arg(&fifo).current_dir(repo.path());
         let started = std::time::Instant::now();
-        let count = count_within(stuck, Duration::from_millis(50));
+        let count = crate::work::git_within::within_or_fail(
+            Duration::from_secs(5),
+            &fifo,
+            move || count_within(stuck, Duration::from_millis(50)),
+        );
         assert_eq!(count, None, "a git that does not answer is unknown");
         assert!(
             started.elapsed() < Duration::from_secs(5),
