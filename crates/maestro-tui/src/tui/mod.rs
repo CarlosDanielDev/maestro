@@ -40,6 +40,8 @@ pub mod widgets;
 #[cfg(test)]
 mod confirm_exit_race_tests;
 #[cfg(test)]
+mod exit_save_pending_tests;
+#[cfg(test)]
 mod once_exit_tests;
 #[cfg(test)]
 mod quit_pause_tests;
@@ -235,6 +237,7 @@ pub fn save_on_exit(app: &mut App) -> anyhow::Result<()> {
 fn save_then(app: &mut App, stop: impl FnOnce(&mut App)) -> anyhow::Result<()> {
     let paused = app.pause_for_exit();
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
+    app.mirror_pending_to_state();
     app.state.update_total_cost();
     app.state.last_updated = Some(chrono::Utc::now());
     let _ = app.state.compact(app.turboquant_adapter.as_deref());
