@@ -2,9 +2,12 @@
 //! them for good. Session teardown and the Kill dialog both read this count,
 //! so what the dialog says is what teardown does.
 
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
+use super::git_within::{GIT_COUNT_TIMEOUT, output_within};
 use super::worktree_teardown::{TeardownError, wipe};
 
 /// Session teardown (Kill and every other `pool.finalize`, #1469): the
@@ -24,25 +27,30 @@ pub fn wipe_worktree_keeping_unpushed(
 /// How many commits `refs/heads/<branch>` holds that no other local branch,
 /// remote-tracking branch or tag reaches. Run from any directory inside the
 /// repo (a worktree works: refs are shared). `None` when git cannot tell
-/// (no such branch, not a repo): callers must then treat the branch as
+/// (no such branch, not a repo) or does not answer in
+/// [`GIT_COUNT_TIMEOUT`] (#1481): callers must then treat the branch as
 /// holding work. No network: only local refs are read.
 pub fn unique_commit_count(repo_dir: &Path, branch: &str) -> Option<usize> {
     // `--exclude` drops this branch from the next `--branches` only, so
     // every other ref still counts as "the commit lives elsewhere too".
-    let out = Command::new("git")
-        .arg("rev-list")
+    let mut git = Command::new("git");
+    git.arg("rev-list")
         .arg("--count")
         .arg(format!("refs/heads/{branch}"))
         .arg("--not")
         .arg(format!("--exclude={branch}"))
         .args(["--branches", "--remotes", "--tags"])
-        .current_dir(repo_dir)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+        .current_dir(repo_dir);
+    count_within(git, GIT_COUNT_TIMEOUT)
+}
+
+/// The number `command` prints, when it answers with success in `timeout`.
+pub(super) fn count_within(command: Command, timeout: Duration) -> Option<usize> {
+    output_within(command, timeout, |mut out| {
+        let mut text = String::new();
+        out.read_to_string(&mut text).ok()?;
+        text.trim().parse().ok()
+    })
 }
 
 #[cfg(test)]
@@ -97,5 +105,31 @@ mod tests {
     fn a_missing_branch_is_unknown_not_empty() {
         let repo = repo();
         assert_eq!(unique_commit_count(repo.path(), "maestro/nope"), None);
+    }
+
+    /// #1481: a git that never answers. The count gives up at the timeout,
+    /// so the Kill dialog still opens (count unknown) and teardown keeps
+    /// the branch. The stuck runner is `git hash-object` on a FIFO no one
+    /// writes to, as in #1471: its `open` blocks until git is killed, so
+    /// the test needs no sleep.
+    #[cfg(unix)]
+    #[test]
+    fn unique_count_times_out() {
+        let repo = repo();
+        let fifo = repo.path().join("never-written-1481");
+        let made = Command::new("mkfifo").arg(&fifo).status().unwrap();
+        assert!(made.success(), "mkfifo");
+        let mut stuck = Command::new("git");
+        stuck.arg("hash-object").arg(&fifo).current_dir(repo.path());
+        let started = std::time::Instant::now();
+        let count =
+            crate::work::git_within::within_or_fail(Duration::from_secs(5), &fifo, move || {
+                count_within(stuck, Duration::from_millis(50))
+            });
+        assert_eq!(count, None, "a git that does not answer is unknown");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the count does not wait for git"
+        );
     }
 }
