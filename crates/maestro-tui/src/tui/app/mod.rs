@@ -872,19 +872,10 @@ impl App {
         self.tui_mode = TuiMode::Dashboard;
     }
 
-    fn sync_state(&mut self) {
-        self.state.sessions = self.pool.all_sessions().into_iter().cloned().collect();
-        // Cap historical (terminal) sessions per
-        // `[sessions].session_history_cap`; active sessions stay intact.
-        // Defaults to 10 if config is missing.
-        let cap = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.session_history_cap)
-            .unwrap_or(10);
-        self.state.cap_session_history(cap);
-        self.total_cost = self.state.total_cost_usd;
-        self.state.last_updated = Some(Utc::now());
+    /// Copies the in-memory pending completions and pending-PR queue into
+    /// `state`. Shared by `sync_state` and the exit save (#1488), so a quit
+    /// after an early `check_completions` error still keeps them.
+    pub(crate) fn mirror_pending_to_state(&mut self) {
         // Mirror in-memory pending completions to persisted state so a
         // shutdown between session-end and the next check_completions tick
         // does not orphan the worktree (#514).
@@ -898,6 +889,22 @@ impl App {
         // entries after a restart — without this the in-memory queue is
         // lost on shutdown.
         self.state.pending_prs = self.pending_prs.clone();
+    }
+
+    fn sync_state(&mut self) {
+        self.state.sessions = self.pool.all_sessions().into_iter().cloned().collect();
+        // Cap historical (terminal) sessions per
+        // `[sessions].session_history_cap`; active sessions stay intact.
+        // Defaults to 10 if config is missing.
+        let cap = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.session_history_cap)
+            .unwrap_or(10);
+        self.state.cap_session_history(cap);
+        self.total_cost = self.state.total_cost_usd;
+        self.state.last_updated = Some(Utc::now());
+        self.mirror_pending_to_state();
         if let Err(e) = self.store.save(&self.state) {
             let message = e.to_string();
             self.activity_log.push_simple(
