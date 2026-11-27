@@ -308,7 +308,7 @@ async fn handle_session(
 
 /// Detail acts on the session on screen: `X` kills it (typed confirm), `c`
 /// copies its last reply, `w` opens the switcher. Nothing falls through to
-/// the Overview keys, whose targets are a list position.
+/// the Overview keys, whose target is the Dashboard's marked session.
 fn handle_session_detail(app: &mut App, key: &KeyEvent, id: uuid::Uuid) -> KeyAction {
     match key.code {
         KeyCode::Char('c')
