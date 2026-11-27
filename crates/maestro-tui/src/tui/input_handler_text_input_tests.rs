@@ -318,7 +318,9 @@ async fn ctrl_q_in_confirm_restart_turns_into_quit_hold() {
     assert!(!super::exit_restarts(&app));
     // #1557: the footer now names the quit hold, not the restart.
     let footer = footer_80x24(&mut app);
-    assert!(footer.contains("⌃Q hold to quit  Esc stay"), "{footer}");
+    for hint in ["⌃Q hold to quit", "Esc stay"] {
+        assert!(footer.contains(hint), "{hint}: {footer}");
+    }
     assert!(!footer.contains("restart"), "{footer}");
     assert!(matches!(
         handle_key(&mut app, ctrl_q).await,

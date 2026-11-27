@@ -226,9 +226,8 @@ async fn confirm_restart_footer_80x24() {
     assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
     let out = text(&mut app, 80, 24);
     let footer = out.lines().last().unwrap_or_default();
-    assert!(
-        footer.contains("y hold to restart  ⌃Q quit  Esc stay"),
-        "{footer}"
-    );
+    for hint in ["y hold to restart", "⌃Q quit", "Esc stay"] {
+        assert!(footer.contains(hint), "{hint}: {footer}");
+    }
     insta::assert_snapshot!("confirm_restart_footer_80x24", out);
 }
