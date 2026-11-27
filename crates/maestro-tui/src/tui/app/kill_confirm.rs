@@ -115,10 +115,10 @@ impl App {
         let mut rows = vec![(String::new(), what.into()), (String::new(), String::new())];
         rows.extend(self.kill_teardown_rows(session_id, uncommitted, unpushed));
         rows.push(("kept".into(), kept.into()));
-        // #1500: Kill does not touch `pending_prs`; the retry still runs.
+        // #1500: Kill cancels the issue's PR retry ([`Self::cancel_pr_retry`]).
         if self.pr_retry_pending(session_id) {
-            let text = "its PR retry: the PR may still open";
-            rows.push(("kept".into(), text.into()));
+            let text = "its PR retry: no PR is opened";
+            rows.push(("gone".into(), text.into()));
         }
         rows.push(("other".into(), other));
         TypedConfirm::new(title, token, action, rows)
@@ -286,6 +286,13 @@ impl App {
     fn waits_for_pr(&self, session_id: uuid::Uuid) -> bool {
         let status = self.pool.get_session(session_id).map(|s| s.status);
         status == Some(SessionStatus::NeedsPr)
+    }
+
+    /// #1500: Kill on a NeedsPr session drops its issue's `pending_prs`
+    /// entries (scheduled and manual-wait), so no PR opens later and no CI
+    /// poll, CI fix agent or auto-merge follows for a killed session.
+    pub(crate) fn cancel_pr_retry(&mut self, issue: u64) {
+        self.pending_prs.retain(|p| p.issue_number != issue);
     }
 
     /// #1500: a PR retry for the session's issue that can still open it.

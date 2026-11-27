@@ -161,8 +161,15 @@ impl App {
             .get_session(session_id)
             .map(session_label)
             .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+        // #1500: a session waiting for its PR takes its PR retry with it.
+        let needs_pr_issue = (self.pool.get_session(session_id))
+            .filter(|s| s.status == crate::session::types::SessionStatus::NeedsPr)
+            .and_then(|s| s.issue_number);
         match self.pool.kill_session(session_id).await {
             Ok(true) => {
+                if let Some(issue) = needs_pr_issue {
+                    self.cancel_pr_retry(issue);
+                }
                 self.activity_log.push_simple(
                     label,
                     "Session killed by user".into(),
