@@ -1,7 +1,7 @@
 use crate::commands::setup::setup_app_from_config;
 use crate::config::Config;
 use crate::provider::create_provider;
-use crate::session::pool::session_slug;
+use crate::session::pool::{SessionPool, session_slug};
 use crate::session::types::{Session, SessionStatus};
 use crate::session::worktree::{GitWorktreeManager, WorktreeManager};
 use crate::state::store::StateStore;
@@ -35,11 +35,7 @@ pub async fn cmd_resume(
 
     let probe = GitWorktreeManager::new(repo_root);
     let plan = plan_resume(&state, &incomplete, &probe);
-    for why in &plan.refused {
-        eprintln!("{why}");
-    }
-    app.pool.keep_saved_resumable(&plan.keep);
-    for session in plan.restore {
+    for session in apply_plan(&mut app.pool, plan) {
         app.add_session(session).await?;
     }
 
@@ -133,9 +129,10 @@ fn select_first_turn(
 }
 
 /// What `cmd_resume` does with the sessions it picked (#1423): each one
-/// restored, or a line saying why not, plus every saved record it does
-/// not restore, for `SessionPool::keep_saved_resumable` — so this run's
-/// state saves keep a skipped or refused record for a later resume.
+/// restored, or a line saying why not, plus every saved record a later
+/// resume could pick up and this one does not restore, for
+/// `SessionPool::keep_saved` (#1487) — so this run's state saves keep a
+/// skipped, filtered-out or refused record, with or without a worktree.
 struct ResumePlan {
     restore: Vec<Session>,
     refused: Vec<String>,
@@ -154,7 +151,7 @@ fn plan_resume(
             Err(why) => refused.push(why),
         }
     }
-    let keep = (state.sessions.iter())
+    let keep = (resumable_sessions(state, None).into_iter())
         .filter(|s| !restore.iter().any(|r| r.id == s.id))
         .cloned()
         .collect();
@@ -163,6 +160,17 @@ fn plan_resume(
         refused,
         keep,
     }
+}
+
+/// Prints why each refused session is skipped and keeps every record the
+/// plan does not restore in `pool` (#1487). Returns the sessions to
+/// restore.
+fn apply_plan(pool: &mut SessionPool, plan: ResumePlan) -> Vec<Session> {
+    for why in &plan.refused {
+        eprintln!("{why}");
+    }
+    pool.keep_saved(&plan.keep);
+    plan.restore
 }
 
 /// A fresh queued session that continues the saved one `s` (#1266): it
@@ -251,6 +259,12 @@ fn is_own_worktree(path: &std::path::Path, slug: &str) -> bool {
 #[path = "resume_tests.rs"]
 mod tests;
 
+// `macro_use`: `keep_tests` builds its app with `kinds_tests`' `app_at!`.
 #[cfg(test)]
+#[macro_use]
 #[path = "resume_kinds_tests.rs"]
 mod kinds_tests;
+
+#[cfg(test)]
+#[path = "resume_keep_tests.rs"]
+mod keep_tests;
