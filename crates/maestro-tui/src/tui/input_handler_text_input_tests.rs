@@ -5,7 +5,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 
-use super::{handle_key, handle_key_under_size_guard, is_restart_key, is_text_input_mode};
+use super::{KeyAction, handle_key, handle_key_under_size_guard, is_restart_key, is_text_input_mode};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::help::HelpOverlayState;
 use crate::tui::screens::prd::{EditTarget, PrdScreen};
@@ -21,17 +21,17 @@ const AREA: Rect = Rect::new(0, 0, 80, 24);
 
 /// One key through the run-loop order in `tui/mod.rs`: size guard, then the
 /// restart key, then `handle_key`. The restart is mocked: it is not run, the
-/// return value says whether the run loop would have called it.
+/// return value says whether the run loop would have called it (the restart
+/// key, or `KeyAction::Restart` from a confirmed Confirm Restart, #1489).
 async fn send(app: &mut App, code: KeyCode) -> bool {
     let key = KeyEvent::new(code, KeyModifiers::NONE);
-    if handle_key_under_size_guard(app, key, AREA).await.is_some() {
-        return false;
+    if let Some(action) = handle_key_under_size_guard(app, key, AREA).await {
+        return matches!(action, KeyAction::Restart);
     }
     if is_restart_key(app, &key) {
         return true;
     }
-    handle_key(app, key).await;
-    false
+    matches!(handle_key(app, key).await, KeyAction::Restart)
 }
 
 /// The download double: a non-GitHub URL fails the installer's trust check
@@ -256,9 +256,40 @@ async fn ready_to_restart_bare_y_outside_text_input_restarts() {
 }
 
 /// #1489: a restart stops the agents, so `y` with live work opens Confirm
-/// Exit instead, which says the upgrade is installed.
+/// Restart, which names what stops; a second `y` (the hold) restarts.
 #[tokio::test]
 async fn restart_key_with_live_work_opens_confirm() {
+    let mut app = live_ready_to_restart();
+    assert!(!send(&mut app, KeyCode::Char('y')).await, "restarted over live work");
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    assert!(app.running);
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    t.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
+    let out = format!("{}", t.backend());
+    for text in [
+        "Confirm Restart",
+        "1 session(s) still running. Restart anyway?",
+        "Restart starts 99.0.0; agents pause for maestro resume.",
+        "hold to restart",
+    ] {
+        assert!(out.contains(text), "{text}:\n{out}");
+    }
+    assert!(send(&mut app, KeyCode::Char('y')).await, "the confirmed hold restarts");
+}
+
+/// #1489: ⌃Q in Confirm Restart is the quit key again: the dialog becomes
+/// the armed quit hold, and a second ⌃Q quits instead of restarting.
+#[tokio::test]
+async fn ctrl_q_in_confirm_restart_turns_into_quit_hold() {
+    let mut app = live_ready_to_restart();
+    send(&mut app, KeyCode::Char('y')).await;
+    let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert!(matches!(handle_key(&mut app, ctrl_q).await, KeyAction::Consumed));
+    assert!(!super::exit_restarts(&app));
+    assert!(matches!(handle_key(&mut app, ctrl_q).await, KeyAction::Quit));
+}
+
+fn live_ready_to_restart() -> App {
     use crate::session::types::SessionStatus;
     use crate::tui::snapshot_tests::{make_session, promote};
     let mut app = base_app(TuiMode::Dashboard);
@@ -266,16 +297,7 @@ async fn restart_key_with_live_work_opens_confirm() {
         .enqueue(make_session(SessionStatus::Running, Some(7)));
     promote(&mut app);
     app.upgrade_state = ready_to_restart();
-    assert!(!send(&mut app, KeyCode::Char('y')).await, "restarted over live work");
-    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
-    assert!(app.running);
-    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
-    t.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
-    let out = format!("{}", t.backend());
-    assert!(
-        out.contains("Upgrade to 99.0.0 is installed: quit, then start maestro to use it."),
-        "{out}"
-    );
+    app
 }
 
 #[test]

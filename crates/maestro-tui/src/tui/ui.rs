@@ -1154,6 +1154,7 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
     use ratatui::widgets::Clear;
 
     let bold = |fg| Style::default().fg(fg).add_modifier(Modifier::BOLD);
+    let restart = crate::tui::input_handler::exit_restarts(app);
     let mut lines = Vec::new();
     let focus = if crate::tui::input_handler::has_live_work(app) {
         let now = crate::tui::input_handler::quit_now(app);
@@ -1162,10 +1163,10 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
             question,
             bold(theme.accent_warning),
         )));
-        if let Some(ends) = quit_ends_line(app) {
+        if let Some(ends) = quit_ends_line(app, restart) {
             lines.push(Line::from(Span::styled(ends, bold(theme.accent_error))));
         }
-        if let Some(upgrade) = quit_upgrade_line(app) {
+        if let Some(upgrade) = quit_upgrade_line(app, restart) {
             lines.push(Line::from(Span::styled(upgrade, bold(theme.accent_warning))));
         }
         lines.push(Line::from(""));
@@ -1173,7 +1174,8 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
             .screen_state
             .exit_hold
             .unwrap_or(crate::tui::input_handler::QUIT_HOLD);
-        lines.extend(hold.lines("⌃Q", "quit", now, theme));
+        let (key, action) = if restart { ("y", "restart") } else { ("⌃Q", "quit") };
+        lines.extend(hold.lines(key, action, now, theme));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled(
@@ -1187,10 +1189,12 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
         ]));
         Focus::Danger
     } else {
-        lines.push(Line::from(Span::styled(
-            "Are you sure you want to exit?",
-            bold(theme.text_primary),
-        )));
+        let question = if restart {
+            "Restart into the installed upgrade?"
+        } else {
+            "Are you sure you want to exit?"
+        };
+        lines.push(Line::from(Span::styled(question, bold(theme.text_primary))));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("[y]", Style::default().fg(theme.accent_success)),
@@ -1215,15 +1219,15 @@ fn draw_confirm_exit_popup(f: &mut Frame, app: &App, area: Rect, theme: &crate::
         h,
     );
     f.render_widget(Clear, popup);
-    let block =
-        panel("Confirm Exit", focus, theme).padding(ratatui::widgets::Padding::horizontal(1));
+    let title = if restart { "Confirm Restart" } else { "Confirm Exit" };
+    let block = panel(title, focus, theme).padding(ratatui::widgets::Padding::horizontal(1));
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 /// The sessions a quit ends instead of saving for `maestro resume`
 /// (#1423), named before the quit. At most four labels, so the line fits
 /// in 80 columns.
-fn quit_ends_line(app: &App) -> Option<String> {
+fn quit_ends_line(app: &App, restart: bool) -> Option<String> {
     const SHOWN: usize = 4;
     let ends: Vec<String> = (app.pool.quit_would_end())
         .map(crate::tui::app::helpers::session_label)
@@ -1232,7 +1236,8 @@ fn quit_ends_line(app: &App) -> Option<String> {
         return None;
     }
     let mut line = format!(
-        "Quit ends (no resume): {}",
+        "{} ends (no resume): {}",
+        if restart { "Restart" } else { "Quit" },
         ends[..ends.len().min(SHOWN)].join(", ")
     );
     if ends.len() > SHOWN {
@@ -1242,14 +1247,18 @@ fn quit_ends_line(app: &App) -> Option<String> {
 }
 
 /// What a quit does to the upgrade (#1489): a queued one is dropped, an
-/// installed one waits for the next start.
-fn quit_upgrade_line(app: &App) -> Option<String> {
+/// installed one waits for the next start (or, on Confirm Restart, starts).
+fn quit_upgrade_line(app: &App, restart: bool) -> Option<String> {
     use crate::tui::screens::sanitize_for_terminal;
     use crate::updater::UpgradeState;
     match &app.upgrade_state {
         UpgradeState::Queued(info) => Some(format!(
             "Upgrade to {} is queued: it will not install if you quit.",
             sanitize_for_terminal(&info.version)
+        )),
+        UpgradeState::ReadyToRestart { version, .. } if restart => Some(format!(
+            "Restart starts {}; agents pause for maestro resume.",
+            sanitize_for_terminal(version)
         )),
         UpgradeState::ReadyToRestart { version, .. } => Some(format!(
             "Upgrade to {} is installed: quit, then start maestro to use it.",

@@ -14,6 +14,9 @@ pub(super) enum KeyAction {
     Consumed,
     /// The app should quit.
     Quit,
+    /// Save and restart into the installed upgrade (#1489: the Confirm
+    /// Restart hold was confirmed).
+    Restart,
 }
 
 /// #1253: while the SizeGuard is shown (terminal below 80x24) the screen is
@@ -193,10 +196,11 @@ fn handle_upgrade_keys(app: &mut App, key: &KeyEvent) -> bool {
         }
         crate::updater::UpgradeState::ReadyToRestart { .. } => {
             if key.code == KeyCode::Char('y') {
-                // #1489: a restart stops live work, so ask first. Without
-                // it the run loop restarts (it needs the terminal).
+                // #1489: a restart stops live work, so ask first (hold `y`).
+                // Without it the run loop restarts (it needs the terminal).
                 if has_live_work(app) {
                     open_confirm_exit(app, None);
+                    app.screen_state.exit_hold = Some(RESTART_HOLD);
                     return true;
                 }
                 return false;
@@ -1207,7 +1211,8 @@ pub(crate) fn is_text_input_mode(app: &App) -> bool {
 
 /// The run loop restarts maestro on this key (`y` while a restart is
 /// pending). #1377: only a bare `y`, and never while a text field has focus.
-/// #1489: never over live work; `handle_upgrade_keys` asks then.
+/// #1489: never over live work (`handle_upgrade_keys` opens Confirm Restart
+/// then), and never in Confirm Exit, whose `y` is its own answer.
 pub(super) fn is_restart_key(app: &App, key: &KeyEvent) -> bool {
     matches!(
         app.upgrade_state,
@@ -1216,6 +1221,7 @@ pub(super) fn is_restart_key(app: &App, key: &KeyEvent) -> bool {
         && key.modifiers.is_empty()
         && !is_text_input_mode(app)
         && !has_live_work(app)
+        && app.tui_mode != app::TuiMode::ConfirmExit
 }
 
 /// The tab a plain digit opens: only on a top-level screen (inside a flow
@@ -1285,8 +1291,13 @@ fn team_run_live(app: &App) -> bool {
 }
 
 /// The Confirm Exit question while there is live work: the most specific
-/// thing a quit would cut off.
+/// thing a quit (or a restart, #1489) would cut off.
 pub(crate) fn live_work_question(app: &App) -> String {
+    let verb = if exit_restarts(app) { "Restart" } else { "Exit" };
+    format!("{} {verb} anyway?", live_work_cut_off(app))
+}
+
+fn live_work_cut_off(app: &App) -> String {
     use crate::work::executor::ExecutorPhase;
     let live = live_agents(app);
     let awaiting = app
@@ -1294,17 +1305,17 @@ pub(crate) fn live_work_question(app: &App) -> String {
         .as_ref()
         .is_some_and(|q| matches!(q.phase(), ExecutorPhase::AwaitingDecision { .. }));
     if live > 0 {
-        format!("{live} session(s) still running. Exit anyway?")
+        format!("{live} session(s) still running.")
     } else if awaiting {
-        "A queue is waiting for your decision. Exit anyway?".into()
+        "A queue is waiting for your decision.".into()
     } else if team_run_live(app) {
-        "A team run is between waves. Exit anyway?".into()
+        "A team run is between waves.".into()
     } else if milestone_write_live(app) {
-        "A milestone create is still writing. Exit anyway?".into()
+        "A milestone create is still writing.".into()
     } else if adapt_write_live(app) {
-        "An Adapt run is still writing. Exit anyway?".into()
+        "An Adapt run is still writing.".into()
     } else {
-        "A queue or PR job is still running. Exit anyway?".into()
+        "A queue or PR job is still running.".into()
     }
 }
 
@@ -1370,6 +1381,19 @@ pub(crate) fn quit_now(app: &App) -> std::time::Instant {
 pub(crate) const QUIT_HOLD: crate::tui::ds::confirm::HoldToConfirm =
     crate::tui::ds::confirm::HoldToConfirm::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
+/// The Confirm Restart hold (#1489): `y`, the key the READY banner shows.
+pub(crate) const RESTART_HOLD: crate::tui::ds::confirm::HoldToConfirm =
+    crate::tui::ds::confirm::HoldToConfirm::new(KeyCode::Char('y'), KeyModifiers::NONE);
+
+/// True when Confirm Exit was opened by the restart key: it confirms a
+/// restart, not a quit.
+pub(crate) fn exit_restarts(app: &App) -> bool {
+    app.screen_state.exit_hold.is_some_and(|mut hold| {
+        hold.reset();
+        hold == RESTART_HOLD
+    })
+}
+
 /// Open Confirm Exit with a fresh hold. `press` is the ⌃Q that opened it,
 /// which arms the hold.
 fn open_confirm_exit(app: &mut App, press: Option<(&KeyEvent, std::time::Instant)>) {
@@ -1402,8 +1426,17 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     if has_live_work(app) {
         use crate::tui::ds::confirm::ConfirmOutcome;
         let now = quit_now(app);
+        // #1489: ⌃Q in Confirm Restart turns it into the quit hold (armed).
+        let ctrl_q = key.code == KeyCode::Char('q')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.kind != KeyEventKind::Release;
+        if ctrl_q && exit_restarts(app) {
+            open_confirm_exit(app, Some((key, now)));
+            return KeyAction::Consumed;
+        }
         let hold = app.screen_state.exit_hold.get_or_insert(QUIT_HOLD);
         return match hold.handle_key(key, now) {
+            ConfirmOutcome::Confirmed if exit_restarts(app) => KeyAction::Restart,
             ConfirmOutcome::Confirmed => {
                 app.running = false;
                 KeyAction::Quit
@@ -1419,6 +1452,8 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     // opened by a menu-Enter (e.g. Quick Action "Quit"), and reflex-pressing
     // Enter again would silently destroy the session. Require explicit `y`.
     match key.code {
+        // #1489: the work ended while Confirm Restart was open.
+        KeyCode::Char('y') | KeyCode::Char('Y') if exit_restarts(app) => KeyAction::Restart,
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.running = false;
             KeyAction::Quit

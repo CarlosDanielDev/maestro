@@ -251,16 +251,6 @@ fn save_then(app: &mut App, stop: impl FnOnce(&mut App)) -> anyhow::Result<()> {
     })
 }
 
-/// The upgrade restart key (`y` on ReadyToRestart): `None` for any other
-/// key; otherwise the result of [`save_and_restart`].
-fn on_restart_key(
-    app: &mut App,
-    key: &crossterm::event::KeyEvent,
-    restart: impl FnOnce() -> anyhow::Result<()>,
-) -> Option<anyhow::Result<()>> {
-    input_handler::is_restart_key(app, key).then(|| save_and_restart(app, restart))
-}
-
 /// Upgrade restart (#1266): save and stop the agents like a quit, then run
 /// `restart` (terminal teardown + exec). When the exec fails, maestro keeps
 /// running with those agents stopped, so the log says how to get them back.
@@ -388,35 +378,32 @@ async fn event_loop(
                 Event::Key(key) => {
                     let size = terminal.size()?;
                     let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                    if let Some(action) =
-                        input_handler::handle_key_under_size_guard(app, key, area).await
-                    {
-                        if matches!(action, input_handler::KeyAction::Quit) {
-                            return Ok(());
+                    use input_handler::KeyAction;
+                    // #1489: the restart key, or a confirmed Confirm Restart.
+                    let action =
+                        match input_handler::handle_key_under_size_guard(app, key, area).await {
+                            Some(action) => action,
+                            None if input_handler::is_restart_key(app, &key) => KeyAction::Restart,
+                            None => input_handler::handle_key(app, key).await,
+                        };
+                    match action {
+                        KeyAction::Consumed => {}
+                        KeyAction::Quit => return Ok(()),
+                        KeyAction::Restart => {
+                            let restarted = save_and_restart(app, || {
+                                disable_raw_mode().ok();
+                                leave_tui_mode(terminal.backend_mut()).ok();
+                                terminal.show_cursor().ok();
+                                crate::updater::installer::restart_with_same_args()
+                            });
+                            if let Err(e) = restarted {
+                                enable_raw_mode().ok();
+                                enter_tui_mode(&mut io::stdout()).ok();
+                                app.upgrade_state = crate::updater::UpgradeState::Failed(
+                                    format!("Restart failed: {}", e),
+                                );
+                            }
                         }
-                        continue;
-                    }
-                    let restarted = on_restart_key(app, &key, || {
-                        disable_raw_mode().ok();
-                        leave_tui_mode(terminal.backend_mut()).ok();
-                        terminal.show_cursor().ok();
-                        crate::updater::installer::restart_with_same_args()
-                    });
-                    if let Some(restarted) = restarted {
-                        if let Err(e) = restarted {
-                            enable_raw_mode().ok();
-                            enter_tui_mode(&mut io::stdout()).ok();
-                            app.upgrade_state = crate::updater::UpgradeState::Failed(format!(
-                                "Restart failed: {}",
-                                e
-                            ));
-                        }
-                        continue;
-                    }
-
-                    match input_handler::handle_key(app, key).await {
-                        input_handler::KeyAction::Consumed => {}
-                        input_handler::KeyAction::Quit => return Ok(()),
                     }
                 }
                 Event::Mouse(mouse) => match mouse.kind {
