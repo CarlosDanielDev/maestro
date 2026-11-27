@@ -152,7 +152,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let clock = SystemClock;
     app.mascot_animator.tick(&clock);
-    let derived = crate::mascot::derive_dashboard_mascot_state(app.pool.all_statuses());
+    // #1515: a running status conducts only on an active session. A kept
+    // record (a crashed `Running` turn kept for resume) or a queued one has
+    // no process; kept Completed / Errored records still set Happy / Error.
+    let derived = crate::mascot::derive_dashboard_mascot_state(
+        (app.sessions_by_place().into_iter())
+            .filter(|(s, place)| {
+                *place == status_bar::Place::Active
+                    || !matches!(
+                        s.status,
+                        crate::session::types::SessionStatus::Running
+                            | crate::session::types::SessionStatus::Spawning
+                    )
+            })
+            .map(|(s, _)| &s.status),
+    );
     app.mascot_animator.set_state(derived, &clock);
 
     // #1253: below 80x24 every mode would overlap; explain the minimum instead.
@@ -954,7 +968,7 @@ fn status_model(app: &App) -> status_bar::StatusModel {
     status_bar::StatusModel {
         version: env!("CARGO_PKG_VERSION").to_string(),
         fleet: status_bar::FleetCounts::from_sessions(
-            (app.sessions_with_kept().into_iter()).map(|(s, kept)| (&s.status, kept)),
+            (app.sessions_by_place().into_iter()).map(|(s, place)| (&s.status, place)),
         ),
         spent: app.total_cost,
         cap: app.budget_enforcer.as_ref().map(|e| e.total_limit()),

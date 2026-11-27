@@ -4,7 +4,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::log_drawer::{draw, log_app};
-use super::make_session;
+use super::{make_session, promote};
 use crate::session::types::SessionStatus;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
@@ -28,6 +28,7 @@ async fn typed_confirm_kill() {
     let mut app = log_app(TuiMode::Dashboard);
     app.pool
         .enqueue(make_session(SessionStatus::Running, Some(407)));
+    promote(&mut app);
     let _ = handle_key(
         &mut app,
         // #1280: the kill key is `X`.

@@ -57,6 +57,9 @@ fn app_with(sessions: Vec<Session>) -> App {
     for s in sessions {
         app.pool.enqueue(s);
     }
+    // #1515: live sessions, as the views show them: the status bar counts
+    // only active sessions as running.
+    crate::tui::snapshot_tests::promote(&mut app);
     for id in ids {
         app.pool.get_session_mut(id).unwrap().status = SessionStatus::Running;
     }

@@ -94,6 +94,23 @@ pub fn fixed_end() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2024, 1, 1, 10, 2, 30).unwrap()
 }
 
+/// #1515: move the queued fixture sessions into the pool's free slots, as a
+/// live fleet is: the status bar counts only active sessions as running.
+/// Promotion logs a timestamped `Worktree ...` line; each promoted session
+/// gets its fixture activity back, so snapshots stay fixed. Keyed by issue
+/// number, because `make_session` gives every session the nil id.
+pub fn promote(app: &mut crate::tui::app::App) {
+    let logs: Vec<(u64, Vec<ActivityEntry>)> = (app.pool.all_sessions().into_iter())
+        .filter_map(|s| Some((s.issue_number?, s.activity_log.clone())))
+        .collect();
+    let _ = app.pool.try_promote();
+    for (issue, log) in logs {
+        if let Some(managed) = app.pool.find_by_issue_mut(issue) {
+            managed.session.activity_log = log;
+        }
+    }
+}
+
 /// Both started_at and finished_at are pinned to avoid drift from
 /// `elapsed_display()` calling `Utc::now()` on non-terminal sessions.
 pub fn make_session(status: SessionStatus, issue_number: Option<u64>) -> Session {

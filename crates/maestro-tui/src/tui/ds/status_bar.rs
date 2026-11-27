@@ -35,24 +35,35 @@ pub struct FleetCounts {
     pub total: usize,
 }
 
+/// Which pool list a session is in (`App::sessions_by_place`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// A process runs it.
+    Active,
+    /// Waiting for a free slot.
+    Queued,
+    /// A record in the finished list (kept by resume, or finished).
+    Kept,
+}
+
 impl FleetCounts {
-    /// Each session as `(status, kept)`, `kept` when it is a record in the
-    /// pool's finished list (`App::sessions_with_kept`). #1507: a saved
-    /// record kept for resume can still say Running; no process runs it,
-    /// so it is never counted as running.
+    /// Each session as `(status, place)`. #1507: only an active session
+    /// counts as running. A queued one with a running-like status (a CI or
+    /// conflict fix waiting for a slot) counts as waiting; a kept record
+    /// (a crashed `Running` turn kept for resume) counts in the total only.
     pub fn from_sessions<'a>(
-        sessions: impl IntoIterator<Item = (&'a SessionStatus, bool)>,
+        sessions: impl IntoIterator<Item = (&'a SessionStatus, Place)>,
     ) -> Self {
         use SessionStatus::*;
         let mut counts = Self::default();
-        for (status, kept) in sessions {
+        for (status, place) in sessions {
             counts.total += 1;
             match status {
-                Spawning | Running | GatesRunning | CiFix | ConflictFix | Retrying => {
-                    if !kept {
-                        counts.running += 1
-                    }
-                }
+                Spawning | Running | GatesRunning | CiFix | ConflictFix | Retrying => match place {
+                    Place::Active => counts.running += 1,
+                    Place::Queued => counts.waiting += 1,
+                    Place::Kept => {}
+                },
                 NeedsReview | NeedsPr | Interactive => counts.waiting += 1,
                 FailedGates | Errored => counts.failed += 1,
                 Queued | Completed | Paused | Killed | Stalled => {}

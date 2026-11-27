@@ -8,7 +8,7 @@ use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
-use super::{make_activity, make_session};
+use super::{make_activity, make_session, promote};
 use crate::provider::github::types::{PendingPr, awaiting_pending_pr};
 use crate::session::types::{GateResultEntry, SessionStatus};
 use crate::tui::activity_log::ActivityLog;
@@ -65,6 +65,7 @@ fn cockpit_app() -> App {
     for s in [failed, running, done] {
         app.pool.enqueue(s);
     }
+    promote(&mut app);
 
     app.pending_prs = vec![
         pending(545, &["gh: HTTP 502 Bad Gateway (createPullRequest)"]),
