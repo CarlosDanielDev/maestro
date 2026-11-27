@@ -1565,8 +1565,12 @@ fn draw_upgrade_banner(
         ],
     };
 
+    // #1560: the banner owns its area. Clear the status bar text under it,
+    // then keep the bar's background on the blank cells after the text.
     let line = Line::from(spans);
-    f.render_widget(Paragraph::new(line), area);
+    f.render_widget(ratatui::widgets::Clear, area);
+    let bar = Style::default().bg(theme.surface_bar);
+    f.render_widget(Paragraph::new(line).style(bar), area);
 }
 
 pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
