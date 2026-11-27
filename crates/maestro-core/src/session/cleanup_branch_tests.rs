@@ -220,3 +220,44 @@ fn cleanup_report_skips_a_branch_that_no_longer_exists() {
         report.kept_branches
     );
 }
+
+/// Judge round on PR #1551: only `rev-parse` exit 1 means "gone". A git
+/// error (exit 128 here: not a repo) must list the branch as kept, count
+/// unknown, never hide it.
+#[test]
+fn kept_branch_lists_the_branch_when_git_fails_with_another_code() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join(".maestro").join("worktrees")).expect("mkdir");
+    let orphan = OrphanWorktree {
+        path: tmp.path().join(".maestro/worktrees/issue-7"),
+        name: "issue-7".to_string(),
+    };
+
+    let kept = CleanupManager::new(tmp.path()).kept_branch(&orphan);
+
+    assert_eq!(
+        kept,
+        Some(KeptBranch {
+            name: "maestro/issue-7".to_string(),
+            unique_commits: None,
+        })
+    );
+}
+
+/// Same rule when git cannot even start (its cwd does not exist).
+#[test]
+fn kept_branch_lists_the_branch_when_git_cannot_start() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let orphan = OrphanWorktree {
+        path: tmp.path().join("missing/issue-7"),
+        name: "issue-7".to_string(),
+    };
+
+    let kept = CleanupManager::new(&tmp.path().join("missing")).kept_branch(&orphan);
+
+    assert_eq!(
+        kept.map(|k| k.unique_commits),
+        Some(None),
+        "a spawn error must list the branch, count unknown"
+    );
+}

@@ -196,19 +196,20 @@ impl CleanupManager {
         Ok(())
     }
 
-    /// After [`Self::remove_orphan`] succeeded: the orphan's branch when
-    /// it still exists (kept), `None` when it is gone. Existence is
-    /// checked apart from the count, so a branch deleted earlier is never
-    /// listed as "count unknown" (#1483).
+    /// After [`Self::remove_orphan`] succeeded: the orphan's branch unless
+    /// git says it is gone (`rev-parse --verify --quiet` exit 1), so a
+    /// branch deleted earlier is never listed as "count unknown" (#1483).
+    /// Any other failure (other exit code, git not starting) lists the
+    /// branch as kept, count unknown: it may hold work, never hide it.
     pub fn kept_branch(&self, orphan: &OrphanWorktree) -> Option<KeptBranch> {
         let name = format!("maestro/{}", orphan.name);
-        let exists = Command::new("git")
+        let gone = Command::new("git")
             .args(["rev-parse", "--verify", "--quiet"])
             .arg(format!("refs/heads/{name}"))
             .current_dir(&self.worktree_dir)
             .output()
-            .is_ok_and(|o| o.status.success());
-        exists.then(|| KeptBranch {
+            .is_ok_and(|o| o.status.code() == Some(1));
+        (!gone).then(|| KeptBranch {
             unique_commits: unique_commit_count(&self.worktree_dir, &name),
             name,
         })
