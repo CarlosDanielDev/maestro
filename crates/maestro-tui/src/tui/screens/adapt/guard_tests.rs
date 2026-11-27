@@ -49,18 +49,21 @@ fn only_the_scaffold_arm_writes_the_prd() {
 
 #[test]
 fn cache_follows_the_project_field() {
-    let with_cache = tempfile::TempDir::new().unwrap();
+    // #1540: the project folder ends in `j`, so this runs the same every time
+    // and proves `j` types into Project (it used to move focus instead).
+    let tmp = tempfile::TempDir::new().unwrap();
+    let with_cache = tmp.path().join("proj");
+    std::fs::create_dir(&with_cache).unwrap();
     AdaptResults {
-        profile: Some(profile(with_cache.path())),
+        profile: Some(profile(&with_cache)),
         ..Default::default()
     }
-    .save_cache(with_cache.path());
-    let mut s = screen_in(with_cache.path());
+    .save_cache(&with_cache);
+    let mut s = screen_in(&with_cache);
     // Type the last character of the path: the cache of that project loads.
-    let full = s.config.path.clone();
-    let last = full.chars().last().unwrap();
+    assert!(s.config.path.ends_with('j'), "setup: the path ends in j");
     s.config.path.pop();
-    s.handle_input(&key_event(KeyCode::Char(last)), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
     assert!(s.loaded_from_cache, "the chosen project's cache is found");
     assert!(s.results.profile.is_some());
 

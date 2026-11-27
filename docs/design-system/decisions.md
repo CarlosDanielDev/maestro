@@ -757,3 +757,12 @@ first. One entry per decision.
 - **ADR (rows as last drawn):** the digit reads the work list the Dashboard last drew, the rows the user saw, not a fresh rebuild from the pool. Rejected: rebuilding the rows on F6 (it would count a session the user never saw), and keeping the index with a resync at draw (the gap between key and draw is the bug).
 - **Differs from the target:** none; the target has no digit jump or grid on the Dependency graph.
 - **Source:** #1509.
+
+## 2026-11-27 — On the Adapt Project and Model fields `j` and `k` are letters; only the arrows move
+
+- **What:** on Adapt Configure, `j` and `k` type into Project (field 0) and Model (field 2); `↓` / `↑` move focus from every field. Stop after (field 1, a select) keeps `j` / `k` as move keys. The Configure footer shows `↑↓ Navigate` (was `j/k Navigate`); Help shows `Down` / `Up` on a text field and `j/Down` / `k/Up` on Stop after.
+- **Why:** #1540. The move arm matched before the text arms, so `~/work/kyte` read `~/work/yte` and `haiku` lost its `k`; the same bug made `cache_follows_the_project_field` fail when the random tempdir ended in `j` or `k`.
+- **Section:** `§02.11` Adapt project, Keymap (Configure row: "Moving and typing no longer share a mode").
+- **ADR (per-field guard now, Input widget later):** a guard per field is the smallest fix and ends the flaky test too. Rejected for now: moving both fields to the canonical `Input` widget (`widgets::input::feed()`), the real cure for the class, filed as #1542 (milestone #62).
+- **Differs from the target:** the target lists `↑↓ j k` for Configure; `j` / `k` move only on Stop after, because on the text fields they are letters.
+- **Source:** #1540.
