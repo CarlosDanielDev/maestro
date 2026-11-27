@@ -776,6 +776,15 @@ first. One entry per decision.
 - **Differs from the target:** none; the target has no queue or kept records.
 - **Source:** #1515.
 
+## 2026-11-27 — Kill on a queued session removes it from the queue
+
+- **What:** `X` on a queued session (`Place::Queued`) opens the typed confirm titled `Remove session <label> from the queue?` with `⏎ remove`; its rows read `It has not started: no agent to stop.`, `gone   its place in the queue: it never starts`, `kept   every file: no worktree is touched`, `kept   its record, marked killed`. `⏎` runs `pool.kill_session`, which now calls the new `pool.dequeue(id)`: the session leaves the queue and is kept as a `Killed` record, never spawned, its worktree untouched. The run loop's Stop › Kill reads the same rows (`App::kill_teardown_rows`) and the same `kill_session`, so a running item still waiting for a slot leaves the queue too; a kept record there reads `skips   it is a saved record, not running: Kill leaves it as it is`.
+- **Why:** #1514, after #1507. `pool.kill_session` acted on active sessions only, so `⏎` on a queued session wrote "Session not found or already finished" to the activity log and nothing else: a shown key that did nothing.
+- **Section:** `§05` "Killing the wrong agent" (the typed kill confirm); the run loop Stop dialog.
+- **ADR (dequeue, not a toast):** the owner chose dequeue on 2026-11-27: the user wants the session gone, and a toast (as for kept records, #1507) leaves no action. The record stays as `Killed` rather than vanishing, so its history and the run loop's outcome read the same as any kill. Rejected: the toast, and dropping the session from the pool (its saved state would be lost and a run-loop item would have no outcome to settle on).
+- **Differs from the target:** the target has no queue, so it shows no remove-from-queue dialog.
+- **Source:** #1514.
+
 ## 2026-11-27 — Confirm Exit names a queued upgrade; `y` over live work opens Confirm Restart; the queued chip keeps its place
 
 - **What:** while there is live work, Confirm Exit adds `Upgrade to <v> is queued: it will not install if you quit.` (`UpgradeState::Queued`) or `Upgrade to <v> is installed: quit, then start maestro to use it.` (`ReadyToRestart`). `y` on the READY banner with live work opens Confirm Restart: the same popup (Danger focus) titled `Confirm Restart`, `N session(s) still running. Restart anyway?`, `Restart starts <v>; agents pause for maestro resume.`, and a hold on `y` (`input_handler::RESTART_HOLD`; hold, or press twice within the window). Confirmed, it returns `KeyAction::Restart` and the run loop runs the same `save_and_restart` as the idle `y`. The breadcrumb ends in `Confirm Restart` and the footer shows `y hold to restart  Esc stay`. `Esc` / `n` stay; `⌃Q` turns it into the armed quit hold. With no live work `y` restarts as before; `y` inside Confirm Exit is never the restart key. In the status bar a queued update chip drops last: TurboQuant, quota, the continuous chip, budget and fleet drop before it (an available chip still drops first). At 80x24 with 3 running agents it shows `↑ queued · after 3 agents`.
