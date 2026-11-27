@@ -270,17 +270,20 @@ fn teardown_keeps_branch_when_count_times_out() {
     let root = repo.path().join(".maestro/worktrees");
     let path = root.join("x");
     let path_arg = path.to_str().expect("utf-8 tempdir");
-    git(repo.path(), &["worktree", "add", "-q", path_arg, "maestro/x"]);
+    git(
+        repo.path(),
+        &["worktree", "add", "-q", path_arg, "maestro/x"],
+    );
     let alternates = repo.path().join(".git/objects/info/alternates");
     std::fs::create_dir_all(alternates.parent().expect("parent")).expect("mkdir info");
     let made = Command::new("mkfifo").arg(&alternates).status();
     assert!(made.expect("mkfifo").success(), "mkfifo");
 
-    let (wt, wt_root) = (path.clone(), root.clone());
+    let wt = path.clone();
     let wiped = crate::work::git_within::within_or_fail(
         std::time::Duration::from_secs(10),
         &alternates,
-        move || wipe(1481, &wt, "maestro/x", &wt_root, true).is_ok(),
+        move || wipe(1481, &wt, "maestro/x", &root, true).is_ok(),
     );
     assert!(wiped, "teardown must succeed");
     assert!(!path.exists(), "the worktree is removed");
