@@ -179,6 +179,9 @@ impl RetryPolicy {
         new_session.retry_count = original.retry_count + 1;
         new_session.last_retry_at = Some(Utc::now());
         new_session.issue_title = original.issue_title.clone();
+        // #1506: a unified session's worktree slug comes from
+        // `issue_numbers`; keep them so the child reuses that worktree.
+        new_session.issue_numbers = original.issue_numbers.clone();
         new_session.origin = original.origin;
         new_session.active_command = original.active_command.clone();
         // Preserve the original agent so the retry runs on the same
@@ -190,6 +193,10 @@ impl RetryPolicy {
         new_session
     }
 }
+
+#[cfg(test)]
+#[path = "retry_unified_tests.rs"]
+mod unified_tests;
 
 #[cfg(test)]
 mod tests {
@@ -377,6 +384,22 @@ mod tests {
         let original = make_session(SessionStatus::Errored, 0);
         let retry = policy.prepare_retry(&original, None, None);
         assert_eq!(retry.issue_number, Some(1));
+    }
+
+    /// #1506: the worktree slug of a unified session comes from
+    /// `issue_numbers`; a child without them gets another worktree.
+    #[test]
+    fn prepare_retry_keeps_issue_numbers_for_unified_session() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Errored, 0);
+        original.issue_numbers = vec![1, 2];
+        let retry = policy.prepare_retry(&original, None, None);
+        assert_eq!(retry.issue_numbers, vec![1, 2]);
+        assert_eq!(
+            crate::session::pool::session_slug(&retry),
+            crate::session::pool::session_slug(&original),
+            "the retry child shares the parent's worktree slug"
+        );
     }
 
     #[test]
