@@ -208,13 +208,39 @@ fn run_git_worktree_remove(repo_dir: &Path, path: &Path) -> Result<(), TeardownE
 }
 
 /// Force-delete `branch`; with `keep`, only when it holds no
-/// commit another ref lacks (#1469): an uncountable branch stays too.
+/// commit another ref lacks (#1469): an uncountable branch stays too. Each
+/// outcome logs its own true reason (#1484).
 fn delete_branch(repo_dir: &Path, branch: &str, keep: bool) -> Result<(), TeardownError> {
-    if keep && unique_commit_count(repo_dir, branch) != Some(0) {
-        tracing::info!(branch, "branch holds unpushed commits; keeping it");
-        return Ok(());
+    if keep {
+        match unique_commit_count(repo_dir, branch) {
+            Some(0) => {}
+            Some(n) => {
+                tracing::info!(branch, "keeping branch with {n} unique commit(s)");
+                return Ok(());
+            }
+            None if is_branch_missing(repo_dir, branch) => {
+                tracing::info!(branch, "branch already absent; nothing to delete");
+                return Ok(());
+            }
+            None => {
+                tracing::info!(branch, "could not count commits; keeping it to be safe");
+                return Ok(());
+            }
+        }
     }
     run_git_branch_delete(repo_dir, branch, true)
+}
+
+/// True only when git answers that `refs/heads/<branch>` does not exist
+/// (`rev-parse --verify --quiet` exit 1). Any other failure is not proof
+/// the branch is gone, so the caller keeps it.
+fn is_branch_missing(repo_dir: &Path, branch: &str) -> bool {
+    Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("refs/heads/{branch}"))
+        .current_dir(repo_dir)
+        .output()
+        .is_ok_and(|out| out.status.code() == Some(1))
 }
 
 /// `git branch -D|-d <branch>`, run from `repo_dir`. Idempotent: a
