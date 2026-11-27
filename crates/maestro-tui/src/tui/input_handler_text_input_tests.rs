@@ -276,7 +276,10 @@ async fn restart_key_with_live_work_opens_confirm() {
         "one name for the dialog:\n{out}"
     );
     let footer = out.lines().last().unwrap_or_default();
-    assert!(footer.contains("y hold to restart"), "{footer}");
+    // #1557: the way out (⌃Q) is shown next to the `y` hold.
+    for hint in ["y hold to restart", "⌃Q quit", "Esc stay"] {
+        assert!(footer.contains(hint), "{hint}: {footer}");
+    }
     for text in [
         "› Confirm Restart",
         "1 session(s) still running. Restart anyway?",
@@ -313,10 +316,24 @@ async fn ctrl_q_in_confirm_restart_turns_into_quit_hold() {
         KeyAction::Consumed
     ));
     assert!(!super::exit_restarts(&app));
+    // #1557: the footer now names the quit hold, not the restart.
+    let footer = footer_80x24(&mut app);
+    for hint in ["⌃Q hold to quit", "Esc stay"] {
+        assert!(footer.contains(hint), "{hint}: {footer}");
+    }
+    assert!(!footer.contains("restart"), "{footer}");
     assert!(matches!(
         handle_key(&mut app, ctrl_q).await,
         KeyAction::Quit
     ));
+}
+
+/// The footer row of a full `ui::draw` at 80x24.
+fn footer_80x24(app: &mut App) -> String {
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
+    let out = format!("{}", t.backend());
+    out.lines().last().unwrap_or_default().to_string()
 }
 
 /// #1489: `y` in the idle Confirm Exit (opened by ⌃C) answers it: it

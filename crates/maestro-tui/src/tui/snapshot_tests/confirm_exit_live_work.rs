@@ -210,3 +210,24 @@ async fn confirm_exit_names_queued_upgrade() {
         );
     }
 }
+
+/// #1557: Confirm Restart's footer names the `y` hold, the ⌃Q way out
+/// and Esc, and fits at 80x24.
+#[tokio::test]
+async fn confirm_restart_footer_80x24() {
+    use crate::updater::UpgradeState;
+    let mut app = app(TuiMode::Landing, 1);
+    app.show_activity_log = false;
+    app.upgrade_state = UpgradeState::ReadyToRestart {
+        version: "9.8.7".into(),
+        backup_path: "/nonexistent-1557".into(),
+    };
+    let _ = handle_key(&mut app, key('y')).await;
+    assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    let out = text(&mut app, 80, 24);
+    let footer = out.lines().last().unwrap_or_default();
+    for hint in ["y hold to restart", "⌃Q quit", "Esc stay"] {
+        assert!(footer.contains(hint), "{hint}: {footer}");
+    }
+    insta::assert_snapshot!("confirm_restart_footer_80x24", out);
+}
