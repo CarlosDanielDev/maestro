@@ -758,6 +758,15 @@ first. One entry per decision.
 - **Differs from the target:** none; the target has no digit jump or grid on the Dependency graph.
 - **Source:** #1509.
 
+## 2026-11-27 — On the Adapt Project and Model fields `j` and `k` are letters; only the arrows move
+
+- **What:** on Adapt Configure, `j` and `k` type into Project (field 0) and Model (field 2); `↓` / `↑` move focus from every field. Stop after (field 1, a select) keeps `j` / `k` as move keys. The Configure footer shows `↑↓ Navigate` (was `j/k Navigate`); Help shows `Down` / `Up` on a text field and `j/Down` / `k/Up` on Stop after.
+- **Why:** #1540. The move arm matched before the text arms, so `~/work/kyte` read `~/work/yte` and `haiku` lost its `k`; the same bug made `cache_follows_the_project_field` fail when the random tempdir ended in `j` or `k`.
+- **Section:** `§02.11` Adapt project, Keymap (Configure row: "Moving and typing no longer share a mode").
+- **ADR (per-field guard now, Input widget later):** a guard per field is the smallest fix and ends the flaky test too. Rejected for now: moving both fields to the canonical `Input` widget (`widgets::input::feed()`), the real cure for the class, filed as #1542 (milestone #62).
+- **Differs from the target:** the target lists `↑↓ j k` for Configure; `j` / `k` move only on Stop after, because on the text fields they are letters.
+- **Source:** #1540.
+
 ## 2026-11-27 — A queued fix counts as wait; the mascot conducts only for an active session
 
 - **What:** `FleetCounts::from_sessions` takes `(status, Place)` per session from `App::sessions_by_place` (`Active`, `Queued`, or `Kept`; it replaces `App::sessions_with_kept`). `● run` counts a running-like status only for an active session; a queued one (a CI or conflict fix waiting for a slot) counts as `◐ wait`; a kept one counts in the total only. The Dashboard mascot reads the same places: a `Running` / `Spawning` status makes it conduct only on an active session; kept `Completed` / `Errored` records still make it happy or show the error.

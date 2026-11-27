@@ -344,11 +344,19 @@ impl AdaptScreen {
             self.pending_clear = false;
         }
         match code {
-            KeyCode::Char('j') | KeyCode::Down if self.selected_field < FIELD_COUNT - 1 => {
+            // #1540: on Project and Model `j` / `k` are letters; only the
+            // Stop after select (field 1) also moves with them.
+            KeyCode::Down if self.selected_field < FIELD_COUNT - 1 => {
                 self.selected_field += 1;
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('j') if self.selected_field == 1 => {
+                self.selected_field += 1;
+            }
+            KeyCode::Up => {
                 self.selected_field = self.selected_field.saturating_sub(1);
+            }
+            KeyCode::Char('k') if self.selected_field == 1 => {
+                self.selected_field -= 1;
             }
             KeyCode::Char(' ') | KeyCode::Right if self.selected_field == 1 => {
                 self.config.stop_after.next().apply(&mut self.config);
@@ -435,6 +443,7 @@ impl KeymapProvider for AdaptScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         match self.step {
             AdaptStep::Configure => {
+                let on_select = self.selected_field == 1;
                 let mut action_bindings = vec![
                     KeyBinding {
                         key: "Space/←→",
@@ -465,15 +474,16 @@ impl KeymapProvider for AdaptScreen {
                     description: "Back",
                 });
                 vec![
+                    // #1540: `j` / `k` move only off the text fields.
                     KeyBindingGroup {
                         title: "Navigation",
                         bindings: vec![
                             KeyBinding {
-                                key: "j/Down",
+                                key: if on_select { "j/Down" } else { "Down" },
                                 description: "Move down",
                             },
                             KeyBinding {
-                                key: "k/Up",
+                                key: if on_select { "k/Up" } else { "Up" },
                                 description: "Move up",
                             },
                         ],
@@ -620,6 +630,8 @@ impl Screen for AdaptScreen {
 #[cfg(test)]
 mod guard_tests;
 #[cfg(test)]
+mod jk_tests;
+#[cfg(test)]
 pub(crate) mod run_tests;
 
 #[cfg(test)]
@@ -740,33 +752,34 @@ mod tests {
 
     // -- Configure input --
 
+    // #1540: on the text fields only the arrows move; `j` / `k` type.
     #[test]
-    fn configure_j_moves_field_down() {
+    fn configure_down_moves_field_down() {
         let mut screen = test_screen();
-        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected_field, 1);
     }
 
     #[test]
-    fn configure_k_moves_field_up() {
+    fn configure_up_moves_field_up() {
         let mut screen = test_screen();
         screen.selected_field = 2;
-        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.selected_field, 1);
     }
 
     #[test]
-    fn configure_k_at_zero_stays_at_zero() {
+    fn configure_up_at_zero_stays_at_zero() {
         let mut screen = test_screen();
-        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.selected_field, 0);
     }
 
     #[test]
-    fn configure_j_does_not_exceed_max() {
+    fn configure_down_does_not_exceed_max() {
         let mut screen = test_screen();
         screen.selected_field = FIELD_COUNT - 1;
-        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected_field, FIELD_COUNT - 1);
     }
 

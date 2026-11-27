@@ -30,7 +30,8 @@ pub(super) fn footer_hints(screen: &AdaptScreen) -> Vec<(&'static str, &'static 
         AdaptStep::Configure => vec![
             ("Enter", start_label(screen)),
             ("←→", "Stop after"),
-            ("j/k", "Navigate"),
+            // #1540: `j` / `k` type on Project and Model; arrows move everywhere.
+            ("↑↓", "Navigate"),
             ("Esc", "Back"),
         ],
         AdaptStep::Review => vec![

@@ -43,4 +43,4 @@ expression: t.backend()
 "┃                                                                                  ┃│                                                                                  │"
 "┃                                                                                  ┃│                                                                                  │"
 "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────────────────────────────────────────┘"
-" Enter Start dry run   ←→ Stop after   j/k Navigate   Esc Back                                                                                                  ⌃Q quit "
+" Enter Start dry run   ←→ Stop after   ↑↓ Navigate   Esc Back                                                                                                   ⌃Q quit "
