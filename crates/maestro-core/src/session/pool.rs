@@ -175,6 +175,10 @@ impl SessionPool {
             };
 
             let slug = session_slug(&session);
+            // #1505: a Stalled parent goes `Retrying` without a kill, so its
+            // provider can still write in the worktree this child shares.
+            // Stop it before the child spawns there.
+            self.cancel_retrying_turns(&slug);
 
             // Try to create worktree (non-fatal — runs in cwd if it fails)
             let branch_name = format!("maestro/{}", slug);
@@ -364,10 +368,16 @@ impl SessionPool {
     fn retrying_worktree(&self, slug: &str) -> Option<PathBuf> {
         self.active
             .iter()
-            .find(|m| {
-                m.session.status == SessionStatus::Retrying && session_slug(&m.session) == slug
-            })
+            .find(|m| is_retrying_with_slug(m, slug))
             .and_then(|m| m.worktree_path.clone())
+    }
+
+    /// Interrupt the in-flight turn of every active `Retrying` session with
+    /// this slug (#1505).
+    fn cancel_retrying_turns(&mut self, slug: &str) {
+        for managed in (self.active.iter_mut()).filter(|m| is_retrying_with_slug(m, slug)) {
+            managed.cancel_inflight_turn();
+        }
     }
 
     /// #1485: whether a queued or active session shares the slug of the
@@ -814,6 +824,10 @@ impl SessionPool {
             }
         }
     }
+}
+
+fn is_retrying_with_slug(managed: &ManagedSession, slug: &str) -> bool {
+    managed.session.status == SessionStatus::Retrying && session_slug(&managed.session) == slug
 }
 
 /// Worktree slug for a session — `.maestro/worktrees/<slug>` on branch
