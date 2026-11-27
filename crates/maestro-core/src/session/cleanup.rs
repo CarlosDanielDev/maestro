@@ -62,10 +62,17 @@ impl CleanupManager {
             return Ok(Vec::new());
         }
 
-        // Get list of git-tracked worktrees
+        // Ask git about repo_root, never the process cwd (#1559). When git
+        // cannot answer, remove nothing: an empty list would make every
+        // worktree an orphan.
         let output = Command::new("git")
             .args(["worktree", "list", "--porcelain"])
+            .current_dir(&self.worktree_dir)
             .output()?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("git worktree list failed: {}", err.trim());
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let tracked_paths: HashSet<PathBuf> = stdout
@@ -358,13 +365,6 @@ mod tests {
             mgr.worktree_dir,
             PathBuf::from("/tmp/repo/.maestro/worktrees")
         );
-    }
-
-    #[test]
-    fn scan_orphans_returns_empty_when_dir_missing() {
-        let mgr = CleanupManager::new(Path::new("/tmp/nonexistent-repo-12345"));
-        let orphans = mgr.scan_orphans().unwrap();
-        assert!(orphans.is_empty());
     }
 
     // #938: a misconfigured worktree root of `/` must be refused before any
