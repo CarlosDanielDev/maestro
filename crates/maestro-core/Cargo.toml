@@ -23,7 +23,6 @@ directories = "6"
 flate2 = "1"
 fs2 = "0.4"
 futures = "0.3"
-image = { version = "0.25.10", features = ["png"], default-features = false }
 libc = "0.2"
 minisign-verify = "0.3.0"
 portable-pty = "0.9"
