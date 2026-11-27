@@ -1,0 +1,4 @@
+# key	title	labels	parent
+fleet-epic	Fleet view — cross-repo session board	epic,type:feature	-
+fleet-epic.1	Fleet board — all sessions and discovered transcripts, machine-wide	story,type:feature	fleet-epic
+fleet-epic.2	Fleet actions — adopt and jump from the board	story,type:feature	fleet-epic
