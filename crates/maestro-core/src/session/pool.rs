@@ -1304,6 +1304,20 @@ pub(in crate::session) mod tests {
         assert!(pool.try_promote().is_empty(), "it never starts");
     }
 
+    /// #1514: a queued session that cannot become `Killed` stays queued.
+    #[tokio::test]
+    async fn dequeue_leaves_a_session_that_cannot_be_killed() {
+        let mut pool = make_pool(2);
+        let mut session = make_session("settled");
+        session.status = SessionStatus::Completed;
+        let id = session.id;
+        pool.enqueue(session);
+        assert!(!pool.kill_session(id).await.unwrap(), "Kill did not act");
+        assert_eq!(pool.queued_count(), 1, "it stays queued");
+        let status = pool.get_session(id).map(|s| s.status);
+        assert_eq!(status, Some(SessionStatus::Completed), "untouched");
+    }
+
     #[test]
     fn enqueue_preserves_order() {
         let mut pool = make_pool(2);
