@@ -106,8 +106,8 @@ impl SessionPool {
                 | SessionStatus::CiFix
                 | SessionStatus::ConflictFix
                 | SessionStatus::Interactive => {}
-                // GatesRunning, NeedsPr: no agent process, and they cannot
-                // move to Killed; leave them as they are.
+                // GatesRunning, NeedsPr: no agent process to pause; leave
+                // them as they are.
                 _ => continue,
             }
             // A session that fell back to the main checkout runs in `.`

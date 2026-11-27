@@ -24,8 +24,8 @@ impl App {
     /// Open the kill dialog for `session_id` with an empty field. The
     /// uncommitted files and unpushed commits are counted here, once,
     /// never per frame.
-    /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
-    /// `Killed` transition) gets a toast instead: Kill would do nothing.
+    /// A session Kill cannot end (Errored, GatesRunning: no `Killed`
+    /// transition) gets a toast instead: Kill would do nothing.
     /// So does a kept record no process runs (#1507).
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
         self.open_kill_confirm_counting(session_id, count_uncommitted);
@@ -103,13 +103,24 @@ impl App {
             let title = format!("Remove session {label} from the queue?");
             let what = "It has not started: no agent to stop.";
             (title, "remove", what, "its record, marked killed")
+        } else if self.waits_for_pr(session_id) {
+            // #1500: NeedsPr has no agent process; only the PR is missing.
+            let title = format!("Kill session {label}?");
+            let what = "No agent runs: it is waiting for its PR.";
+            (title, "kill", what, "the transcript")
         } else {
             let title = format!("Kill session {label}?");
             (title, "kill", "Stops the agent now.", "the transcript")
         };
         let mut rows = vec![(String::new(), what.into()), (String::new(), String::new())];
         rows.extend(self.kill_teardown_rows(session_id, uncommitted, unpushed));
-        rows.extend([("kept".into(), kept.into()), ("other".into(), other)]);
+        rows.push(("kept".into(), kept.into()));
+        // #1500: Kill does not touch `pending_prs`; the retry still runs.
+        if self.pr_retry_pending(session_id) {
+            let text = "its PR retry: the PR may still open";
+            rows.push(("kept".into(), text.into()));
+        }
+        rows.push(("other".into(), other));
         TypedConfirm::new(title, token, action, rows)
     }
 
@@ -152,8 +163,11 @@ impl App {
             _ => {}
         }
         let managed = self.pool.get_active(session_id);
+        // #1500: a session waiting for its PR has no turn to lose.
+        let no_turn = self.waits_for_pr(session_id);
         if self.torn_down_worktree(session_id).is_none() {
-            return vec![("lost".into(), "the turn in progress".into())];
+            let lost = if no_turn { "nothing: no agent runs" } else { "the turn in progress" };
+            return vec![("lost".into(), lost.into())];
         }
         let branch = match managed.and_then(|m| m.branch_name.as_deref()) {
             Some(branch) => format!("branch {branch}"),
@@ -177,10 +191,13 @@ impl App {
                 ]
             }
         };
+        let turn = if no_turn { "" } else { ", the turn in progress" };
         let lost = match uncommitted.map(|l| l.uncommitted) {
+            Some(0) if no_turn => "nothing uncommitted".to_string(),
             Some(0) => "the turn in progress".to_string(),
-            Some(1) => "1 uncommitted file, the turn in progress".to_string(),
-            Some(n) => format!("{n} uncommitted files, the turn in progress"),
+            Some(1) => format!("1 uncommitted file{turn}"),
+            Some(n) => format!("{n} uncommitted files{turn}"),
+            None if no_turn => "uncommitted files (count unknown)".to_string(),
             None => "uncommitted files (count unknown), turn in progress".to_string(),
         };
         rows.push(("lost".into(), lost));
@@ -255,6 +272,22 @@ impl App {
         (sessions.into_iter().enumerate())
             .map(|(i, s)| (s, place(i)))
             .collect()
+    }
+
+    /// #1500: the session finished its work and waits for its PR (NeedsPr).
+    fn waits_for_pr(&self, session_id: uuid::Uuid) -> bool {
+        let status = self.pool.get_session(session_id).map(|s| s.status);
+        status == Some(SessionStatus::NeedsPr)
+    }
+
+    /// #1500: a PR retry for the session's issue that can still open it.
+    fn pr_retry_pending(&self, session_id: uuid::Uuid) -> bool {
+        use crate::provider::github::types::PendingPrStatus;
+        let Some(issue) = (self.pool.get_session(session_id)).and_then(|s| s.issue_number) else {
+            return false;
+        };
+        (self.pending_prs.iter())
+            .any(|p| p.issue_number == issue && p.status != PendingPrStatus::PermanentlyFailed)
     }
 
     /// The status of a session Kill cannot move to `Killed`, if it is one.

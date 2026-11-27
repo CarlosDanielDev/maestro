@@ -793,3 +793,12 @@ first. One entry per decision.
 - **ADR (name it, never install on quit):** quit and Confirm Exit name the upgrade and restart with live work opens the same confirm (owner, 2026-11-27). Rejected: installing the queued upgrade on quit (an action and a spend nobody asked for), and a Confirm Restart whose hold quits (the banner promises a restart).
 - **Differs from the target:** the target's Confirm Exit has no upgrade line and no restart variant, and its StatusBar does not say which chip wins space.
 - **Source:** #1489.
+
+## 2026-11-27 — Kill ends a session waiting for its PR, and its dialog says no agent runs
+
+- **What:** `NeedsPr` can now move to `Killed` (`SessionStatus::valid_transitions`), so `X` on a session waiting for its PR opens the typed kill confirm instead of the "Kill cannot stop it" toast. Its rows read `No agent runs: it is waiting for its PR.`; the `lost` row drops "the turn in progress" (`lost   nothing uncommitted`, `lost   1 uncommitted file`, or `lost   nothing: no agent runs` in the main checkout); the `gone` / `kept` worktree and branch rows are the usual teardown rows. When a PR retry for the issue is still pending (`pending_prs`, not permanently failed), the dialog adds `kept   its PR retry: the PR may still open`: Kill does not cancel it.
+- **Why:** #1500. Since #1468 the dialog said NeedsPr could not be killed, so a session stuck without its PR had no way out; and the usual rows (`Stops the agent now.`, "the turn in progress") would be false for it.
+- **Section:** `§05` "Killing the wrong agent" (the typed kill confirm).
+- **ADR (state machine, not a dialog special case):** the owner chose to add `Killed` to `NeedsPr => [...]` (2026-11-27), one rule for one transition. Rejected: forcing the kill in the dialog while the state machine forbids it. Side effect, same rule: Confirm Exit's "quit ends" list (`pool.quit_would_end`, adopted sessions only) now names and ends an adopted NeedsPr session too.
+- **Differs from the target:** the target has no NeedsPr session or PR retry row.
+- **Source:** #1500.

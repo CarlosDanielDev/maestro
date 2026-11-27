@@ -17,6 +17,9 @@ use crate::state::store::StateStore;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::input_handler::handle_key;
 
+#[path = "kill_confirm_needs_pr_tests.rs"]
+mod needs_pr;
+
 fn git(dir: &Path, args: &[&str]) -> bool {
     std::process::Command::new("git")
         .args(args)

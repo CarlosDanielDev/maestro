@@ -286,6 +286,7 @@ mod tests {
             &[
                 SessionStatus::Completed,
                 SessionStatus::Errored,
+                SessionStatus::Killed,
                 SessionStatus::Interactive,
             ],
         );

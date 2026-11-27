@@ -61,6 +61,20 @@ pub(super) fn publish_sessions(tx: &watch::Sender<Vec<SessionMark>>, sessions: &
     });
 }
 
+/// #1500: the session ids each issue already has in the pool when a team
+/// run starts. Read from `app.pool`, not the `sessions` watch: on a first
+/// run nothing was published yet, so the watch would miss an older
+/// completed session and the first wave would pass on it.
+pub(super) fn prior_sessions(sessions: &[&Session]) -> HashMap<IssueNumber, HashSet<Uuid>> {
+    let mut prior: HashMap<IssueNumber, HashSet<Uuid>> = HashMap::new();
+    for session in sessions {
+        if let Some(issue) = session.issue_number {
+            prior.entry(issue).or_default().insert(session.id);
+        }
+    }
+    prior
+}
+
 /// Verdict for `issue` over the sessions that appeared after its spawn
 /// (`prior` holds the ones that already existed). A retry is a new session
 /// for the same issue, so wait while any of them is live, then pass if any
@@ -98,8 +112,30 @@ pub(super) struct RealTeamLauncher {
     pub tx: UnboundedSender<app::TuiDataEvent>,
     pub provider_config: ProviderConfig,
     pub sessions: watch::Receiver<Vec<SessionMark>>,
-    /// Session ids that existed for an issue before its team spawn.
+    /// Session ids that existed for an issue before its team spawn:
+    /// [`prior_sessions`] at the run's start, plus what the watch shows at
+    /// the spawn (a session started during an earlier wave).
     pub prior: Mutex<HashMap<IssueNumber, HashSet<Uuid>>>,
+}
+
+impl RealTeamLauncher {
+    /// Add the sessions the watch shows for `issue` to its prior set,
+    /// right before the spawn. Never drops the pool snapshot.
+    fn note_prior(&self, issue: IssueNumber) {
+        let seen: Vec<Uuid> = (self.sessions.borrow().iter())
+            .filter(|m| m.issue == Some(issue))
+            .map(|m| m.id)
+            .collect();
+        if let Ok(mut map) = self.prior.lock() {
+            map.entry(issue).or_default().extend(seen);
+        }
+    }
+
+    fn prior_for(&self, issue: IssueNumber) -> HashSet<Uuid> {
+        (self.prior.lock())
+            .map(|map| map.get(&issue).cloned().unwrap_or_default())
+            .unwrap_or_default()
+    }
 }
 
 #[async_trait]
@@ -108,16 +144,7 @@ impl TeamLauncher for RealTeamLauncher {
         let client = create_provider(&self.provider_config)
             .map_err(|e| format!("provider init failed: {e}"))?;
         let fetched = client.get_issue(issue).await.map_err(|e| e.to_string())?;
-        let prior: HashSet<Uuid> = self
-            .sessions
-            .borrow()
-            .iter()
-            .filter(|m| m.issue == Some(issue))
-            .map(|m| m.id)
-            .collect();
-        if let Ok(mut map) = self.prior.lock() {
-            map.insert(issue, prior);
-        }
+        self.note_prior(issue);
         // Hand the fetched issue back through the same data-event the
         // single-issue launch path uses. The data-handler turns this
         // into a queued session inside the pool.
@@ -132,11 +159,7 @@ impl TeamLauncher for RealTeamLauncher {
     }
 
     async fn wait_until_terminal(&self, issue: IssueNumber) -> Result<(), String> {
-        let prior = self
-            .prior
-            .lock()
-            .map(|map| map.get(&issue).cloned().unwrap_or_default())
-            .unwrap_or_default();
+        let prior = self.prior_for(issue);
         wait_for_verdict(self.sessions.clone(), |marks| {
             issue_verdict(marks, issue, &prior)
         })
@@ -188,6 +211,35 @@ mod tests {
             issue_verdict(&[first, hollow], 10, &none),
             Some(Err(_))
         ));
+    }
+
+    /// #1500: the first team run starts before the event loop published
+    /// anything, so the watch is empty while the pool already holds an
+    /// older completed session for the issue. That session must not pass
+    /// the wave; the session the spawn creates does.
+    #[tokio::test]
+    async fn first_team_run_ignores_older_completed_session() {
+        let mut old = Session::new("p".into(), "m".into(), "o".into(), Some(10), None);
+        old.status = SessionStatus::Completed;
+        let (watch_tx, _) = watch::channel(Vec::new());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let launcher = RealTeamLauncher {
+            tx,
+            provider_config: ProviderConfig::default(),
+            sessions: watch_tx.subscribe(),
+            prior: Mutex::new(prior_sessions(&[&old])),
+        };
+        launcher.note_prior(10);
+        publish_sessions(&watch_tx, &[&old]);
+        let wait = std::time::Duration::from_millis(50);
+        let waited = tokio::time::timeout(wait, launcher.wait_until_terminal(10)).await;
+        assert!(waited.is_err(), "the older completed session passed the wave");
+
+        let mut new = Session::new("p".into(), "m".into(), "o".into(), Some(10), None);
+        new.status = SessionStatus::Completed;
+        publish_sessions(&watch_tx, &[&old, &new]);
+        let waited = tokio::time::timeout(wait, launcher.wait_until_terminal(10)).await;
+        assert_eq!(waited.ok(), Some(Ok(())), "the spawned session decides");
     }
 
     #[test]

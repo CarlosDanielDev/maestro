@@ -185,7 +185,9 @@ impl SessionStatus {
             Errored => &[Retrying],
             Retrying => &[Spawning, Errored, Killed, Interactive],
             CiFix => &[Spawning, Errored, Killed, Interactive],
-            NeedsPr => &[Completed, Errored, Interactive],
+            // #1500: Kill ends a session waiting for its PR; teardown
+            // treats it like any other kill.
+            NeedsPr => &[Completed, Errored, Killed, Interactive],
             ConflictFix => &[Spawning, Errored, Killed, Interactive],
             Killed => &[],
             // Kept alive until explicit quit/kill; re-settles onto itself
