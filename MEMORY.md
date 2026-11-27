@@ -207,3 +207,15 @@ Rejected: `/design-sync` to Claude Design (needs a React component library; maes
 **Demo capture:** `docs/assets/capture.sh` records at 1600x1000 / font 14 (171x58 terminal → Full tier), hides the ~5 s startup, fake HOME + scripted `demo-agent.sh`. OCR every frame before publishing.
 
 **Next-session priorities:** (1) X post draft still says v0.31.7 — refresh to v0.31.8 if posting; (2) Highlights text is sized to the panel's outer width, so the border clips it without `…` (all tiers; fixing changes Medium/Full snapshots); (3) landing at <40 rows with CI checks: the CI box can push the log line out of view; (4) static help entry "w Measure network"; (5) `scripts/render-readme-hero.sh` is dead since the SVG hero was deleted (#1216) — delete needs owner OK; (6) ten merged local branches still need force-deletion by the owner (the guard blocks it for agents).
+
+## 2026-11-27 — session summary (waves 20–21, epic #1231)
+
+- Worked on: setwave waves 20 and 21 of milestone #67 (v0.34.0 TUI Redesign).
+- Completed: wave 20 — #1501 (#1488 exit save keeps pending PRs/completions), #1502 (#1485 retry child reuses the Retrying parent's worktree), #1503 (#1487 resume keeps every resumable record it skips), #1504 (#1486 session keys act on the marked session id). Wave 21 — #1510 (#1506 unified retry keeps `issue_numbers`), #1511 (#1505 cancel a Stalled parent before its retry child spawns), #1512 (#1507 kept records do not count as running; Kill on them explains), #1513 (#1509 digit/Home jumps by id; dead F6 grid navigation removed). All squash-merged with an explicit per-wave owner OK; ledgers and milestone graph ticked.
+- Filed: #1505–#1509 (Level 16), #1514–#1515 (Level 17). Rename notice posted on #1189 (its Overview/`handle_grid_navigation` premises are gone).
+- In progress: none. Local-only branch `wip/1507-queued-wait` (6eedc555) holds a first try at #1515 — not pushed.
+- Decisions made:
+  - **Decided:** #1512 merged without the "queued CiFix counts as wait" rule; that rule + fixture fixes moved to #1515. **Why:** the rule changes 19 snapshots because test fixtures enqueue `Running` sessions without promoting them; the false number already existed before the PR. **Rejected:** fixing ~8 fixture files inside #1512 (wide diff, another build + judge round).
+  - **Decided:** a retry child shares the parent's worktree by slug (#1502), and the Stalled parent's turn is cancelled (signal, not wait) before the child is promoted (#1511). **Rejected:** waiting for the parent's process to exit (no exit signal from the provider task; `kill(pid, 0)` would be new `unsafe`).
+- Gotchas: ai-memory page `gotchas/setwave-waves-20-21.md` (inbox lag, per-wave merge OK, judges cannot read PR bodies, wrong judge line numbers, fixtures queue `Running` sessions, `git reset --keep` revert, decisions.md append conflicts).
+- Next session priorities: wave 22 — #1514, #1515, #1508, plus one of Level 14/15 (#1481 or #1500); re-check #1189 premises before dispatch.
