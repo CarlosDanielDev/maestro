@@ -1,0 +1,8 @@
+# key	title	labels	parent
+tui-rings	maestro TUI layout optimization + session sidebar with circular progress rings	epic	-
+s1	spike(tui): measure circular-ring rendering — ratatui Canvas vs braille matrix vs half-blocks	ratatui,ui	tui-rings
+a1	refactor(tui): home panes stack below a width threshold and truncate labels with ellipsis	ui,cosmetic	tui-rings
+a2	refactor(tui): overview grid cells gain breathing gaps and a documented border-style table	ui,tech-debt	tui-rings
+s2	feat(tui): circular progress ring widget (arc + status color + blink)	type:feature,ui,ratatui	tui-rings
+s3	feat(tui): session sidebar rail widget — one ring per session, provider glyph, scroll	type:feature,ui,ratatui,sessions	tui-rings
+s4	feat(tui): dock session rail on Overview with shared keyboard navigation	type:feature,ui,sessions	tui-rings

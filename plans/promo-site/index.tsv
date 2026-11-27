@@ -1,0 +1,5 @@
+# key	title	labels	parent
+site-epic	Promo site — carlosdanieldev.github.io/maestro	epic,documentation	-
+site-epic.1	Gh-pages scaffold — static single-page site	chore,type:infra	site-epic
+site-epic.2	Live TUI demo capture for the hero section	type:feature,documentation	site-epic
+site-epic.3	Content pass — features, quickstart, repo wiring	documentation,type:docs	site-epic
