@@ -63,13 +63,22 @@ impl App {
     }
 
     /// The session copy, F3 and F10 act on: on the session screen the one it
-    /// shows (#1288), elsewhere the panel selection.
+    /// shows (#1288), elsewhere the Dashboard's marked session, by id
+    /// (#1486: a list index moved when a session finished or was promoted).
     pub(crate) fn focused_session_id(&self) -> Option<uuid::Uuid> {
         if let super::TuiMode::Session { id, .. } = self.tui_mode {
             return Some(id);
         }
-        self.pool
-            .session_id_at_index(self.panel_view.selected_index())
+        self.screen_state.dashboard.list.selected_session()
+    }
+
+    /// Test setup: mark the session at pool index `index` on the Dashboard,
+    /// as `j` / `k` do.
+    #[cfg(test)]
+    pub(crate) fn mark_session_at(&mut self, index: usize) {
+        let id = self.pool.session_id_at_index(index).expect("a session");
+        self.screen_state.dashboard.list.selected =
+            Some(crate::tui::screens::dashboard::rows::WorkKey::Session(id));
     }
 
     /// Try to copy the focused session's `last_message` (ANSI-stripped) to
@@ -189,7 +198,7 @@ mod tests {
         let mut app = empty_app();
         app.pool
             .enqueue(session_with(SessionStatus::Completed, "Some response"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(app.copy_focused_response_enabled());
     }
 
@@ -197,7 +206,7 @@ mod tests {
     fn disabled_when_completed_but_empty_last_message() {
         let mut app = empty_app();
         app.pool.enqueue(session_with(SessionStatus::Completed, ""));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(!app.copy_focused_response_enabled());
     }
 
@@ -208,7 +217,7 @@ mod tests {
             SessionStatus::Running,
             "Partial output so far",
         ));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(!app.copy_focused_response_enabled());
     }
 
@@ -217,7 +226,7 @@ mod tests {
         let mut app = empty_app();
         app.pool
             .enqueue(session_with(SessionStatus::NeedsReview, "Review required"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(app.copy_focused_response_enabled());
     }
 
@@ -226,7 +235,7 @@ mod tests {
         let mut app = empty_app();
         app.pool
             .enqueue(session_with(SessionStatus::Killed, "Work done before kill"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(app.copy_focused_response_enabled());
     }
 
@@ -241,7 +250,7 @@ mod tests {
         let mut app = empty_app();
         app.pool
             .enqueue(session_with(SessionStatus::Errored, "Something went wrong"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         assert!(!app.copy_focused_response_enabled());
     }
 
@@ -253,7 +262,7 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool
             .enqueue(session_with(SessionStatus::Completed, "hello"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
 
         let outcome = app.copy_focused_response();
 
@@ -266,7 +275,7 @@ mod tests {
         let mock = MockClipboard::new();
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(session_with(SessionStatus::Completed, ""));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
 
         let outcome = app.copy_focused_response();
 
@@ -280,7 +289,7 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool
             .enqueue(session_with(SessionStatus::Running, "Streaming..."));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
 
         let outcome = app.copy_focused_response();
 
@@ -296,7 +305,7 @@ mod tests {
         let mut app = make_clipboard_app(mock.clone());
         app.pool
             .enqueue(session_with(SessionStatus::Completed, "content"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
 
         let outcome = app.copy_focused_response();
 
@@ -314,7 +323,7 @@ mod tests {
         let ansi = "\x1b[32mSuccess\x1b[0m: all tests pass";
         app.pool
             .enqueue(session_with(SessionStatus::Completed, ansi));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
 
         let outcome = app.copy_focused_response();
 
@@ -336,7 +345,7 @@ mod tests {
             SessionStatus::Completed,
             "Content of session B",
         ));
-        app.panel_view.selected = Some(1);
+        app.mark_session_at(1);
 
         let outcome = app.copy_focused_response();
 

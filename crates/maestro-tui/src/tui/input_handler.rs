@@ -308,7 +308,7 @@ async fn handle_session(
 
 /// Detail acts on the session on screen: `X` kills it (typed confirm), `c`
 /// copies its last reply, `w` opens the switcher. Nothing falls through to
-/// the Overview keys, whose targets are a list position.
+/// the Overview keys, whose target is the Dashboard's marked session.
 fn handle_session_detail(app: &mut App, key: &KeyEvent, id: uuid::Uuid) -> KeyAction {
     match key.code {
         KeyCode::Char('c')
@@ -1441,12 +1441,11 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('r'), _) => {
             app.resume_all();
         }
-        // #1280: kill is `X` in Detail as on the Dashboard list (`k` is up
-        // there); the target is `panel_view.selected`, which the Dashboard
-        // keeps on its marked session.
+        // #1280: kill is `X` as on the Dashboard list (`k` is up there).
+        // #1486: `X`, `f` and `⏎` act on the Dashboard's marked session by
+        // id, never a list index a finish or a promotion moved.
         (KeyCode::Char('X'), _) => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
+            if let Some(id) = app.focused_session_id()
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
@@ -1458,8 +1457,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             // it will be handled by the caller if needed
         }
         (KeyCode::Char('f'), _) => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
+            if let Some(id) = app.focused_session_id() {
                 app.screen_state.output_scroll = Default::default();
                 app.navigate_to(app::TuiMode::Session {
                     id,
@@ -1488,8 +1486,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             // hint shown in the top-bar. Detail works for terminal
             // sessions too (renders the recorded transcript), so use one
             // path for both states.
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected) {
+            if let Some(id) = app.focused_session_id() {
                 app.navigate_to(app::TuiMode::Session {
                     id,
                     view: app::SessionView::Detail,
@@ -1589,6 +1586,10 @@ mod fullscreen_tests;
 #[cfg(test)]
 #[path = "input_handler_overview_grid_tests.rs"]
 mod overview_grid_tests;
+
+#[cfg(test)]
+#[path = "input_handler_marked_tests.rs"]
+mod marked_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2179,7 +2180,7 @@ mod tests {
         let mock = MockClipboard::new();
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("result text"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2206,7 +2207,7 @@ mod tests {
         s.status = SessionStatus::Running;
         s.last_message = "in progress".to_string();
         app.pool.enqueue(s);
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2222,7 +2223,7 @@ mod tests {
         let mock = MockClipboard::will_fail("backend exposed: /run/user/1000/wayland-0");
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("payload"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         // #1294: `c` is Cost on the Dashboard; the copy key lives in
         // the shared session keys (`handle_overview_keys`).
         app.tui_mode = TuiMode::DependencyGraph;
@@ -2240,7 +2241,7 @@ mod tests {
         let mock = MockClipboard::new();
         let mut app = make_clipboard_app(mock.clone());
         app.pool.enqueue(completed_session("done"));
-        app.panel_view.selected = Some(0);
+        app.mark_session_at(0);
         app.tui_mode = TuiMode::Dashboard;
 
         let _ = handle_key(&mut app, ctrl_c_event()).await;
@@ -2922,6 +2923,7 @@ mod tests {
         session.status = SessionStatus::Completed;
         let id = session.id;
         app.pool.enqueue(session);
+        app.mark_session_at(0);
 
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
@@ -2952,6 +2954,7 @@ mod tests {
         session.status = SessionStatus::Running;
         let id = session.id;
         app.pool.enqueue(session);
+        app.mark_session_at(0);
 
         handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
 
