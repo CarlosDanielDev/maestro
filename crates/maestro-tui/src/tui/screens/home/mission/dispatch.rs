@@ -8,6 +8,7 @@ use super::MissionCommand;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::attention::{AttentionItem, Subject};
 use crate::tui::screens::ScreenAction;
+use crate::tui::screens::dashboard::rows::WorkKey;
 
 pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     let Event::Key(key) = event else {
@@ -38,14 +39,13 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
 }
 
 /// `⏎` on a Needs-you row: a session opens the Dashboard with that
-/// row selected and highlighted (the grid cursor moves at the next draw); doctor, gh auth, budget and quota rows open Dashboard,
-/// where the warnings and the spend live.
+/// session marked, by id (#1509: a pool index moved when a session
+/// finished before the Dashboard drew); doctor, gh auth, budget and quota
+/// rows open Dashboard, where the warnings and the spend live.
 fn open(app: &mut App, item: &AttentionItem) -> ScreenAction {
     let Subject::Session { id, .. } = item.subject else {
         return ScreenAction::Push(TuiMode::Dashboard);
     };
-    if let Some(index) = app.pool.all_sessions().iter().position(|s| s.id == id) {
-        app.panel_view.reveal(index);
-    }
+    app.screen_state.dashboard.list.selected = Some(WorkKey::Session(id));
     ScreenAction::Push(TuiMode::Dashboard)
 }

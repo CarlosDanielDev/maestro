@@ -58,19 +58,11 @@ fn usage(app: &App) -> Usage {
     }
 }
 
-/// Rebuild the rows. A Home `⏎` jump (`PanelView::reveal`) selects its
-/// session here, as it did on the Overview grid.
+/// Rebuild the rows. A Home `⏎` jump marked its session by id already;
+/// the rebuild keeps it while the session is listed.
 pub fn sync(app: &mut App) {
-    let reveal = app
-        .panel_view
-        .pending_reveal
-        .take()
-        .and_then(|i| app.pool.session_id_at_index(i));
     let (view, dash) = split(app);
     dash.rebuild(&view);
-    if let Some(id) = reveal {
-        dash.list.select(WorkKey::Session(id));
-    }
     // #1289: Cost and Tokens list no PR rows, so their selection never
     // rests on one (a hidden armed ⏎ ⏎ would write to GitHub).
     if dash.view != View::Ops {

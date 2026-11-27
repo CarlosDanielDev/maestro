@@ -184,22 +184,6 @@ async fn overview_routes_to_dashboard() {
 }
 
 #[tokio::test]
-async fn home_jump_selects_the_session_on_the_dashboard() {
-    let mut app = dashboard_app();
-    let a = live_session(1);
-    let b = live_session(2);
-    let b_id = b.id;
-    app.pool.enqueue(a);
-    app.pool.enqueue(b);
-    app.panel_view.reveal(1);
-    draw(&mut app);
-    assert_eq!(
-        app.screen_state.dashboard.list.selected_session(),
-        Some(b_id)
-    );
-}
-
-#[tokio::test]
 async fn esc_while_armed_only_disarms() {
     let mut app = dashboard_app();
     app.pending_prs.push(awaiting_pending_pr(545));

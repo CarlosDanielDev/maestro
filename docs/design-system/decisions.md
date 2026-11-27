@@ -748,3 +748,12 @@ first. One entry per decision.
 - **ADR (explain vs hide Kill):** `X` stays and explains in a toast, the same way `X` already explains an Errored session. Rejected: hiding `X` on such rows (the key hint would change per row and a silent key reads as broken), and rewriting the kept record's status to something not running (that changes what resume keeps, out of scope).
 - **Differs from the target:** the target has no kept records, so it shows no such toast.
 - **Source:** #1507.
+
+## 2026-11-27 — Digit and Home jumps resolve by session id; the F6 grid keys are gone
+
+- **What:** on the Dependency graph (F6), a digit `1`–`9` opens the Nth session row the Dashboard work list shows (Sessions, then Finished, as last drawn), by id; a row dismissed since then opens nothing and an Info toast says `Row N was dismissed: nothing to open`. `⏎` on a Home Needs-you session marks that `WorkKey::Session(id)` on the Dashboard directly; `PanelView::reveal` / `pending_reveal` / `apply_reveal` / `grid_layout` / `drawn_area` are removed. The arrows and `[` `]` on F6 no longer move `panel_view.grid_state`, which F6 never draws.
+- **Why:** #1509, after #1486. A pool index was taken at the key and read back later (at the next draw, or against pool order); a session that finished in between moved it onto another session, and pool order differs from the rows shown once a session finished.
+- **Section:** `§02.1` Dashboard work list (the marked row); Home Needs you (`⏎` opens the Dashboard on that session).
+- **ADR (rows as last drawn):** the digit reads the work list the Dashboard last drew, the rows the user saw, not a fresh rebuild from the pool. Rejected: rebuilding the rows on F6 (it would count a session the user never saw), and keeping the index with a resync at draw (the gap between key and draw is the bug).
+- **Differs from the target:** none; the target has no digit jump or grid on the Dependency graph.
+- **Source:** #1509.

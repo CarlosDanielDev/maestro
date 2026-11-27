@@ -308,11 +308,10 @@ async fn enter_opens_overview_on(runners: u128) {
 
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
-    let selected = app
-        .pool
-        .session_at_index(app.panel_view.selected_index())
-        .map(|s| s.id);
-    assert_eq!(selected, Some(Uuid::from_u128(FAILED_ID)));
+    assert_eq!(
+        app.screen_state.dashboard.list.selected_session(),
+        Some(Uuid::from_u128(FAILED_ID))
+    );
 
     // #1280: Overview routes to the Dashboard; the jump selects #412 in
     // the Work list, also when it is far down the list.

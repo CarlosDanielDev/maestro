@@ -209,26 +209,17 @@ impl Default for GridState {
 
 pub struct PanelView {
     pub selected: Option<usize>,
-    /// One-shot (#1264): a session index to put the grid cursor on at the
-    /// next Overview draw, where the grid layout is known.
-    pub pending_reveal: Option<usize>,
     /// Scroll offset for the message area in agent panels.
     pub scroll_offset: u16,
     pub grid_state: GridState,
-    /// #1384: the area the Overview grid was last drawn in. The arrow and
-    /// page keys build their layout from it, so they move the grid the
-    /// user sees, not one sized for the whole terminal.
-    pub drawn_area: Option<Rect>,
 }
 
 impl PanelView {
     pub fn new() -> Self {
         Self {
             selected: None,
-            pending_reveal: None,
             scroll_offset: 0,
             grid_state: GridState::new(),
-            drawn_area: None,
         }
     }
 
@@ -242,30 +233,6 @@ impl PanelView {
 
     pub fn selected_index(&self) -> usize {
         self.selected.unwrap_or(0)
-    }
-
-    /// The grid layout for `session_count` sessions in the area the grid
-    /// was last drawn in (#1384). Before the first draw, a 120x40 area.
-    pub fn grid_layout(&self, session_count: usize) -> GridLayout {
-        let area = self.drawn_area.unwrap_or(Rect::new(0, 0, 120, 40));
-        GridLayout::calculate(session_count, area.width, area.height)
-    }
-
-    /// Select session `index` now and move the grid cursor to it at the
-    /// next draw (`apply_reveal`), so the highlight follows the selection.
-    pub fn reveal(&mut self, index: usize) {
-        self.selected = Some(index);
-        self.pending_reveal = Some(index);
-    }
-
-    /// Apply a pending [`reveal`](Self::reveal) with the layout the grid is
-    /// drawn with (`session_count` sessions in `area`).
-    pub fn apply_reveal(&mut self, session_count: usize, area: Rect) {
-        if let Some(index) = self.pending_reveal.take() {
-            let layout = GridLayout::calculate(session_count, area.width, area.height);
-            self.grid_state.select_index(index, session_count, &layout);
-            self.scroll_offset = 0;
-        }
     }
 
     /// Put the grid cursor on `selected` for the layout the grid is drawn
@@ -796,24 +763,6 @@ mod tests {
         let layout = GridLayout::calculate(4, 80, 21);
         assert_eq!(v.selected, Some(3));
         assert_eq!(v.grid_state.selected_index(&layout), 3);
-    }
-
-    #[test]
-    fn panel_view_reveal_moves_the_cursor_once_at_draw() {
-        let mut v = PanelView::new();
-        v.reveal(4);
-        assert_eq!(v.selected_index(), 4);
-        let area = Rect::new(0, 0, 120, 40);
-        v.apply_reveal(6, area);
-        let layout = GridLayout::calculate(6, 120, 40);
-        assert_eq!(v.grid_state.selected_index(&layout), 4);
-        v.grid_state.move_left();
-        v.apply_reveal(6, area);
-        assert_eq!(
-            v.grid_state.selected_index(&layout),
-            3,
-            "one-shot: arrows win after"
-        );
     }
 
     #[test]
