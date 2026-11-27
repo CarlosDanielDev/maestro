@@ -270,7 +270,11 @@ fn finalize_retry_child_tears_down_shared_worktree_once() {
     pool.enqueue(child);
     assert_eq!(pool.try_promote(), vec![child_id]);
     assert!(pool.finalize(id), "the Retrying parent is finalized");
-    assert_eq!(removes.load(Ordering::SeqCst), 0, "the child still needs it");
+    assert_eq!(
+        removes.load(Ordering::SeqCst),
+        0,
+        "the child still needs it"
+    );
     assert_eq!(start(&mut pool, child_id), worktree, "one shared worktree");
 
     // The child commits work it never pushes, then is killed.
