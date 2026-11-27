@@ -99,7 +99,7 @@ pub fn fixed_end() -> chrono::DateTime<Utc> {
 /// Promotion logs a timestamped `Worktree ...` line; each promoted session
 /// gets its fixture activity back, so snapshots stay fixed. Keyed by issue
 /// number, because `make_session` gives every session the nil id.
-pub fn promote(app: &mut crate::tui::app::App) {
+pub(crate) fn promote(app: &mut crate::tui::app::App) {
     let logs: Vec<(u64, Vec<ActivityEntry>)> = (app.pool.all_sessions().into_iter())
         .filter_map(|s| Some((s.issue_number?, s.activity_log.clone())))
         .collect();
