@@ -1,0 +1,28 @@
+---
+source: crates/maestro-tui/src/tui/snapshot_tests/confirm_exit_live_work.rs
+expression: out
+---
+" READY  v9.8.7 installed!  Restart now? [y]es  [n]o0 spent │ TQ:OFF             "
+" Home › Confirm Restart                                        Esc back  ? help "
+"┌──────────────────────────────[ Budget & quota ]──────────────────────────────┐"
+"│ spend        $0.00                                                           │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ Needs you ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃ ✓ All clear. Agents are working.                                             ┃"
+"┃          ╔══════════════════[ Confirm Restart ]═══════════════════╗          ┃"
+"┃          ║ 1 session(s) still running. Restart anyway?            ║          ┃"
+"┗━━━━━━━━━━║ Restart starts 9.8.7; agents pause for maestro resume. ║━━━━━━━━━━┛"
+"┌──────────║                                                        ║──────────┐"
+"│ STATUS   ║  y    hold to restart  ░░░░░░░░░░░░░░░░ 0.5s           ║X    COST │"
+"│ ● running║        or press y twice within 2s                      ║%   $0.12 │"
+"│          ║                                                        ║          │"
+"│          ║  Esc   stay (default, ⏎ does nothing)                  ║          │"
+"│          ╚════════════════════════════════════════════════════════╝          │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" y hold to restart   ⌃Q quit   Esc stay                                         "
