@@ -179,6 +179,43 @@ impl SessionPool {
 /// conversation runs in its transcript's own cwd, never a worktree, and
 /// `claude --resume` finds it only there. A quit ends it; the transcript
 /// stays, so it can be adopted again.
+/// #1500 (owner, 2026-11-27): NeedsPr can move to Killed for `X`, but a
+/// quit keeps it as NeedsPr, as before: only `X` kills it.
 fn quit_ends(s: &Session) -> bool {
-    s.adopted_cwd.is_some() && s.status.can_transition_to(SessionStatus::Killed)
+    s.adopted_cwd.is_some()
+        && s.status != SessionStatus::NeedsPr
+        && s.status.can_transition_to(SessionStatus::Killed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::pool::tests::{make_pool, make_session};
+    use super::*;
+
+    #[test]
+    fn quit_keeps_adopted_needs_pr_session() {
+        let mut pool = make_pool(2);
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let mut session = make_session("adopted");
+            session.adopted_cwd = Some("/tmp/adopted-1500".into());
+            ids.push(session.id);
+            pool.enqueue(session);
+        }
+        pool.try_promote();
+        let (needs_pr, running) = (ids[0], ids[1]);
+        for (id, status) in [
+            (needs_pr, SessionStatus::NeedsPr),
+            (running, SessionStatus::Running),
+        ] {
+            pool.get_active_mut(id).unwrap().session.status = status;
+        }
+
+        let ends: Vec<_> = pool.quit_would_end().map(|s| s.id).collect();
+        assert_eq!(ends, vec![running], "Confirm Exit names only the running one");
+        pool.pause_for_exit();
+        let status = |id| pool.get_session(id).map(|s| s.status);
+        assert_eq!(status(needs_pr), Some(SessionStatus::NeedsPr));
+        assert_eq!(status(running), Some(SessionStatus::Killed));
+    }
 }
