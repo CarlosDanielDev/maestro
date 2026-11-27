@@ -188,3 +188,25 @@ async fn exit_chord_release_is_ignored() {
     );
     assert!(app.running);
 }
+
+/// #1489: a quit drops a queued upgrade (it waits for the agents that the
+/// quit stops), so Confirm Exit names it.
+#[tokio::test]
+async fn confirm_exit_names_queued_upgrade() {
+    use crate::updater::{ReleaseInfo, UpgradeState};
+    for chord in [key('q'), ctrl('q')] {
+        let mut app = app(TuiMode::Landing, 1);
+        app.upgrade_state = UpgradeState::Queued(ReleaseInfo {
+            tag: "v9.8.7".into(),
+            version: "9.8.7".into(),
+            download_url: "http://127.0.0.1/untrusted-1489".into(),
+        });
+        let _ = handle_key(&mut app, chord).await;
+        assert_eq!(app.tui_mode, TuiMode::ConfirmExit, "{chord:?}");
+        let out = text(&mut app, 80, 24);
+        assert!(
+            out.contains("Upgrade to 9.8.7 is queued: it will not install if you quit."),
+            "{chord:?}:\n{out}"
+        );
+    }
+}

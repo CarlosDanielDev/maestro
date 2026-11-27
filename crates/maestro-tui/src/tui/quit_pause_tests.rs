@@ -218,32 +218,25 @@ fn exit_saves_before_it_stops_agents() {
     assert_eq!(on_disk_at_stop, Some(true), "stop ran before the save");
 }
 
-/// #1266 judge: the upgrade-restart key saves (and stops) before the exec;
-/// any other key does nothing.
+/// #1266 judge: the upgrade restart saves (and stops) before the exec.
+/// #1489: it runs from the idle `y` or a confirmed Confirm Restart, both
+/// through `save_and_restart` (`KeyAction::Restart` in the run loop).
 #[test]
 fn restart_key_saves_before_exec() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut app = make_test_app("restart-key-1266");
     let id = running_session(&mut app);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state-1266.json");
     app.store = crate::state::store::StateStore::new(path.clone());
     let probe = crate::state::store::StateStore::new(path);
-    app.upgrade_state = crate::updater::UpgradeState::ReadyToRestart {
-        version: "9.9.9".into(),
-        backup_path: "/nonexistent-1266".into(),
-    };
-    let other = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
-    assert!(on_restart_key(&mut app, &other, || unreachable!()).is_none());
 
     let mut on_disk_at_exec = false;
-    let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
-    let result = on_restart_key(&mut app, &yes, || {
+    let result = save_and_restart(&mut app, || {
         on_disk_at_exec = paused_on_disk(&probe, id);
         Ok(())
     });
 
-    assert!(matches!(result, Some(Ok(()))));
+    assert!(result.is_ok());
     assert!(on_disk_at_exec, "the exec ran before the state was saved");
 }
 
