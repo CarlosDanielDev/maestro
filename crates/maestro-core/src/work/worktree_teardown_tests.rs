@@ -216,14 +216,21 @@ fn delete_branch_logs_truthful_reason() {
     // None, branch present: its commit object is gone, so git cannot count.
     let repo = repo_with_branch(1);
     let sha = git(repo.path(), &["rev-parse", "maestro/x"]);
-    let object = repo.path().join(".git/objects").join(&sha[..2]).join(&sha[2..]);
+    let object = repo
+        .path()
+        .join(".git/objects")
+        .join(&sha[..2])
+        .join(&sha[2..]);
     std::fs::remove_file(&object).expect("remove commit object");
     let log = delete_kept(repo.path());
     assert!(
         log.contains("could not count commits; keeping it to be safe"),
         "uncountable case: {log}"
     );
-    assert!(branch_present(repo.path(), "maestro/x"), "uncountable: kept");
+    assert!(
+        branch_present(repo.path(), "maestro/x"),
+        "uncountable: kept"
+    );
 
     // Branch missing: nothing to delete, and no claim that it was kept.
     let repo = repo_with_branch(0);
@@ -233,11 +240,20 @@ fn delete_branch_logs_truthful_reason() {
         log.contains("branch already absent; nothing to delete"),
         "missing case: {log}"
     );
-    assert!(!log.contains("keeping"), "missing case claims a keep: {log}");
-    assert!(!branch_present(repo.path(), "maestro/x"), "missing: still absent");
+    assert!(
+        !log.contains("keeping"),
+        "missing case claims a keep: {log}"
+    );
+    assert!(
+        !branch_present(repo.path(), "maestro/x"),
+        "missing: still absent"
+    );
 
     // Some(0): unchanged, the branch is deleted.
     let repo = repo_with_branch(0);
     delete_kept(repo.path());
-    assert!(!branch_present(repo.path(), "maestro/x"), "no unique commits: deleted");
+    assert!(
+        !branch_present(repo.path(), "maestro/x"),
+        "no unique commits: deleted"
+    );
 }
