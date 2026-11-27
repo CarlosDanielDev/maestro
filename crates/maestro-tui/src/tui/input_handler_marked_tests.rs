@@ -58,7 +58,9 @@ fn finish(app: &mut App, id: uuid::Uuid) {
 
 /// `X` off the Dashboard (Detail's own `X` already kills the session it
 /// shows, #1288) still kills the marked session after #1, above it,
-/// finishes: #2 (a flat index lands on #3) and #3 (on a stale index 0, #2).
+/// finishes: #2 (a flat index 1 lands on #3) and #3 (a flat index 2 lands
+/// on #1, which has finished, so `X` opens no kill; this case also fails
+/// a stale index 0, which lands on #2).
 #[tokio::test]
 async fn detail_x_targets_marked_id_after_session_finishes() {
     for marked in [1, 2] {
@@ -119,4 +121,71 @@ async fn enter_after_promotion_opens_same_session() {
         },
         "not #1"
     );
+}
+
+/// #1509: on the Dependency graph a digit opens the Nth session row the
+/// Dashboard shows, not the Nth session in pool order. Finished #1 sits
+/// between the live sessions and queued #4 in the pool, so pool index 2 is
+/// #1 while the third Sessions row is #4.
+#[tokio::test]
+async fn digit_key_selects_shown_row_by_id() {
+    let (mut app, ids) = running_app(3);
+    let queued = live(4);
+    let queued_id = queued.id;
+    app.pool.enqueue(queued);
+    finish(&mut app, ids[0]);
+    draw(&mut app);
+    assert_eq!(app.pool.session_id_at_index(2), Some(ids[0]));
+    press(&mut app, KeyCode::F(6)).await;
+    assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
+    draw(&mut app);
+
+    press(&mut app, KeyCode::Char('3')).await;
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Session {
+            id: queued_id,
+            view: SessionView::Detail
+        },
+        "the third row shown is #4, not pool index 2 (#1)"
+    );
+}
+
+/// #1509: `⏎` on a Home Needs-you session marks it on the Dashboard by id.
+/// A pool index taken at the key moved when #1, above it, finished before
+/// the Dashboard drew: index 2 then named #1.
+#[tokio::test]
+async fn home_needs_you_jump_marks_by_id() {
+    let (mut app, ids) = running_app(3);
+    app.pool.get_session_mut(ids[2]).unwrap().status = SessionStatus::FailedGates;
+    press(&mut app, KeyCode::Char('1')).await;
+    assert_eq!(app.tui_mode, TuiMode::Landing);
+    draw(&mut app);
+
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(app.tui_mode, TuiMode::Dashboard);
+    finish(&mut app, ids[0]);
+    draw(&mut app);
+    assert_eq!(
+        app.screen_state.dashboard.list.selected_session(),
+        Some(ids[2]),
+        "#3, not #1"
+    );
+}
+
+/// #1509: a digit on a row `D` dismissed after the Dashboard drew opens
+/// nothing (the fourth row shown, finished #1, is gone from the pool).
+#[tokio::test]
+async fn digit_key_on_a_dismissed_row_opens_nothing() {
+    let (mut app, ids) = running_app(3);
+    app.pool.enqueue(live(4));
+    finish(&mut app, ids[0]);
+    draw(&mut app);
+    press(&mut app, KeyCode::F(6)).await;
+    draw(&mut app);
+    press(&mut app, KeyCode::Char('D')).await;
+    assert!(app.pool.get_session(ids[0]).is_none(), "#1 was dismissed");
+
+    press(&mut app, KeyCode::Char('4')).await;
+    assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
 }
