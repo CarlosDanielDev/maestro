@@ -106,3 +106,78 @@ fn teardown_removes_branch_without_unique_commits() {
         "a branch with nothing of its own is deleted, as before"
     );
 }
+
+/// #1485: the parent errored and its retry was spawned (`Retrying`).
+fn mark_retrying(pool: &mut SessionPool, id: Uuid) {
+    let managed = pool.get_active_mut(id).expect("active");
+    for (to, why) in [
+        (SessionStatus::Errored, TransitionReason::StreamError),
+        (SessionStatus::Retrying, TransitionReason::RetryTriggered),
+    ] {
+        managed.session.transition_to(to, why).expect("transition");
+    }
+}
+
+/// The retry child: a new session for the same issue, so the same slug.
+fn retry_child(issue: u64) -> Session {
+    Session::new(
+        "probe retry".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(issue),
+        None,
+    )
+}
+
+#[test]
+fn finalize_retrying_keeps_worktree_for_retry_child() {
+    let repo = repo();
+    let (mut pool, id, worktree) = running_in(repo.path(), 1485);
+    mark_retrying(&mut pool, id);
+    let child = retry_child(1485);
+    let child_id = child.id;
+    pool.enqueue(child);
+
+    assert!(pool.finalize(id), "the Retrying parent is finalized");
+
+    assert!(worktree.exists(), "the queued retry child's worktree is kept");
+    assert_eq!(pool.try_promote(), vec![child_id]);
+    assert_eq!(
+        pool.get_active(child_id).expect("promoted").worktree_path,
+        Some(worktree),
+        "the retry child runs in the kept worktree, not in the cwd"
+    );
+}
+
+#[test]
+fn retry_child_promoted_before_parent_finalizes_shares_worktree() {
+    let repo = repo();
+    let (mut pool, id, worktree) = running_in(repo.path(), 1486);
+    mark_retrying(&mut pool, id);
+    let child = retry_child(1486);
+    let child_id = child.id;
+    // Same tick as the completion pipeline: the child is enqueued and
+    // promoted while the parent is still active and `Retrying`.
+    pool.enqueue(child);
+    assert_eq!(pool.try_promote(), vec![child_id]);
+
+    assert!(pool.finalize(id), "the Retrying parent is finalized");
+
+    assert!(worktree.exists(), "the active retry child's worktree is kept");
+    assert_eq!(
+        pool.get_active(child_id).expect("active").worktree_path,
+        Some(worktree),
+        "the retry child runs in the parent's worktree, not in the cwd"
+    );
+}
+
+#[test]
+fn finalize_retrying_without_child_tears_down() {
+    let repo = repo();
+    let (mut pool, id, worktree) = running_in(repo.path(), 1487);
+    mark_retrying(&mut pool, id);
+
+    assert!(pool.finalize(id), "the Retrying parent is finalized");
+
+    assert!(!worktree.exists(), "no child shares the slug: torn down");
+}
