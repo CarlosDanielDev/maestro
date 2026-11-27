@@ -180,9 +180,13 @@ impl SessionPool {
             let branch_name = format!("maestro/{}", slug);
             // A session paused by quit comes back to the worktree it left
             // (#1266); the slug check keeps the branch name right.
+            // #1485: a retry child promoted while its parent is still
+            // `Retrying` shares the parent's worktree (same slug); a fresh
+            // `git worktree add` on that path fails and would run it in cwd.
             let kept = session
                 .worktree_path
                 .clone()
+                .or_else(|| self.retrying_worktree(&slug))
                 .filter(|_| self.worktree_mgr.exists(&slug));
             let verb = if kept.is_some() { "reused" } else { "created" };
             let created = match kept {
@@ -340,7 +344,8 @@ impl SessionPool {
         // in `finished` as a non-terminal "RETRYING" row that renders like an
         // active session and that the active-only kill path can't remove.
         // `Killed` is the only terminal status reachable from `Retrying`.
-        if self.active[idx].session.status == SessionStatus::Retrying {
+        let retrying = self.active[idx].session.status == SessionStatus::Retrying;
+        if retrying {
             let _ = self.active[idx].session.transition_to(
                 SessionStatus::Killed,
                 crate::session::transition::TransitionReason::RetryTriggered,
@@ -350,9 +355,37 @@ impl SessionPool {
         let retain = matches!(
             self.active[idx].session.status,
             SessionStatus::FailedGates | SessionStatus::Errored
-        );
+        ) || (retrying && self.hand_worktree_to_retry(idx));
         self.finalize_at(idx, retain);
         true
+    }
+
+    /// The worktree of an active `Retrying` session with this slug.
+    fn retrying_worktree(&self, slug: &str) -> Option<PathBuf> {
+        self.active
+            .iter()
+            .find(|m| {
+                m.session.status == SessionStatus::Retrying && session_slug(&m.session) == slug
+            })
+            .and_then(|m| m.worktree_path.clone())
+    }
+
+    /// #1485: whether a queued or active session shares the slug of the
+    /// finished retry parent at `idx`, so its worktree must stay. A queued
+    /// child is given the parent's worktree path so promotion reuses it.
+    fn hand_worktree_to_retry(&mut self, idx: usize) -> bool {
+        let parent = &self.active[idx];
+        let slug = session_slug(&parent.session);
+        let (parent_id, path) = (parent.session.id, parent.worktree_path.clone());
+        let mut shared = (self.active.iter())
+            .any(|m| m.session.id != parent_id && session_slug(&m.session) == slug);
+        for queued in self.queue.iter_mut().filter(|s| session_slug(s) == slug) {
+            shared = true;
+            if queued.worktree_path.is_none() {
+                queued.worktree_path = path.clone();
+            }
+        }
+        shared
     }
 
     /// Move a terminal session to `finished` and tear down its worktree.
