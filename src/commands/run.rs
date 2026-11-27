@@ -1,4 +1,4 @@
-use crate::commands::setup::{setup_app_for_agent, startup_cleanup};
+use crate::commands::setup::{report_kept_branches, setup_app_for_agent, startup_cleanup};
 use crate::config::Config;
 use crate::provider::{create_provider, github::client::RepoProvider};
 use crate::session::types::Session;
@@ -110,7 +110,7 @@ pub async fn cmd_run(
 
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
-    startup_cleanup(&repo_root);
+    let kept_branches = startup_cleanup(&repo_root);
 
     let issue_filter_labels = config.github.issue_filter_labels.clone();
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
@@ -138,6 +138,7 @@ pub async fn cmd_run(
     app.pool.keep_saved_resumable(&saved);
     app.pool.set_provider(selected_provider);
     app.flags = feature_flags;
+    report_kept_branches(&mut app, &kept_branches);
 
     if resume {
         let mut recovered = 0;

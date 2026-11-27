@@ -1,6 +1,7 @@
 use crate::config::LoadedConfig;
 use crate::notifications::dispatcher::build_notification_dispatcher;
 use crate::review::bypass::BypassSource;
+use crate::session::cleanup::KeptBranch;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
 
@@ -180,7 +181,10 @@ pub fn setup_app_for_agent(
 }
 
 /// Perform startup housekeeping: remove orphaned worktrees and old session logs.
-pub fn startup_cleanup(repo_root: &std::path::Path) {
+/// Returns the branches the orphan cleanup kept because they may hold work
+/// (#1552), for [`report_kept_branches`] once the App exists.
+pub fn startup_cleanup(repo_root: &std::path::Path) -> Vec<KeptBranch> {
+    let kept = Vec::new();
     let cleanup_mgr = crate::session::cleanup::CleanupManager::new(repo_root);
     if let Ok(orphans) = cleanup_mgr.scan_orphans()
         && !orphans.is_empty()
@@ -197,7 +201,19 @@ pub fn startup_cleanup(repo_root: &std::path::Path) {
     {
         tracing::info!("Cleaned {} old session logs", removed);
     }
+    kept
 }
+
+/// #1552: tell the user startup cleanup kept branches that may hold work.
+/// A WARN line: `ui::draw` raises it as a toast off the log screens and the
+/// Activity pane shows it on them. Nothing when no branch was kept.
+pub fn report_kept_branches(app: &mut App, kept: &[KeptBranch]) {
+    let _ = (app, kept);
+}
+
+#[cfg(test)]
+#[path = "setup_cleanup_tests.rs"]
+mod cleanup_tests;
 
 #[cfg(test)]
 mod bypass_source_tests {

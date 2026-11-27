@@ -1,4 +1,6 @@
-use crate::commands::setup::{DEFAULT_MAX_CONCURRENT, setup_app_from_config, startup_cleanup};
+use crate::commands::setup::{
+    DEFAULT_MAX_CONCURRENT, report_kept_branches, setup_app_from_config, startup_cleanup,
+};
 use crate::config::Config;
 use crate::provider::create_provider;
 use crate::session::worktree::GitWorktreeManager;
@@ -7,7 +9,7 @@ use crate::tui::app::App;
 
 pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let repo_root = std::env::current_dir()?;
-    startup_cleanup(&repo_root);
+    let kept_branches = startup_cleanup(&repo_root);
 
     let state_path = StateStore::default_path();
     let first_run = is_first_run(&state_path);
@@ -150,6 +152,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     app.pending_commands
         .push(crate::tui::app::TuiCommand::FetchSuggestionData);
 
+    report_kept_branches(&mut app, &kept_branches);
     crate::tui::run(app).await
 }
 
