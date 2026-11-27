@@ -271,7 +271,10 @@ async fn restart_key_with_live_work_opens_confirm() {
     let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
     t.draw(|f| crate::tui::ui::draw(f, &mut app)).unwrap();
     let out = format!("{}", t.backend());
-    assert!(!out.contains("Confirm Exit"), "one name for the dialog:\n{out}");
+    assert!(
+        !out.contains("Confirm Exit"),
+        "one name for the dialog:\n{out}"
+    );
     let footer = out.lines().last().unwrap_or_default();
     assert!(footer.contains("y hold to restart"), "{footer}");
     for text in [
