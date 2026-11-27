@@ -10,7 +10,7 @@ use std::time::Duration;
 use super::App;
 use super::helpers::session_label;
 use crate::session::pool::session_slug;
-use crate::session::types::SessionStatus;
+use crate::session::types::{Session, SessionStatus};
 use crate::tui::ds::confirm::TypedConfirm;
 use crate::tui::ds::toast::{Severity, Toast};
 use crate::work::unique_commits::unique_commit_count;
@@ -25,6 +25,7 @@ impl App {
     /// never per frame.
     /// A session Kill cannot end (Errored, GatesRunning, NeedsPr: no
     /// `Killed` transition) gets a toast instead: Kill would do nothing.
+    /// So does a kept record no process runs (#1507).
     pub fn open_kill_confirm(&mut self, session_id: uuid::Uuid) {
         self.open_kill_confirm_counting(session_id, count_uncommitted);
     }
@@ -43,6 +44,12 @@ impl App {
                 "{label} is {}: Kill cannot stop it, nothing changes",
                 status.label().to_lowercase()
             );
+            let toast = Toast::new(Severity::Info, text);
+            self.push_toast(toast, std::time::Instant::now());
+            return;
+        }
+        if let Some(label) = self.kept_record_label(session_id) {
+            let text = format!("{label} is a saved record, not running: Kill has nothing to stop");
             let toast = Toast::new(Severity::Info, text);
             self.push_toast(toast, std::time::Instant::now());
             return;
@@ -193,6 +200,27 @@ impl App {
         let slug = session_slug(&managed.session);
         path.ends_with(Path::new(".maestro").join("worktrees").join(slug))
             .then_some(path)
+    }
+
+    /// #1507: the label of a record no process runs (see
+    /// [`Self::sessions_with_kept`]). `pool.kill_session` acts on active
+    /// sessions only, so Kill on it would do nothing.
+    fn kept_record_label(&self, session_id: uuid::Uuid) -> Option<String> {
+        let sessions = self.sessions_with_kept();
+        let (session, kept) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
+        kept.then(|| session_label(session))
+    }
+
+    /// #1507: every pool session in `all_sessions` order, with `kept` when
+    /// it is a record in the finished list (kept by resume, or finished):
+    /// never active, never queued, and no process runs it. `all_sessions`
+    /// lists active, finished, then queued.
+    pub(crate) fn sessions_with_kept(&self) -> Vec<(&Session, bool)> {
+        let sessions = self.pool.all_sessions();
+        let finished = self.pool.active_count()..sessions.len() - self.pool.queued_count();
+        (sessions.into_iter().enumerate())
+            .map(|(i, s)| (s, finished.contains(&i)))
+            .collect()
     }
 
     /// The status of a session Kill cannot move to `Killed`, if it is one.

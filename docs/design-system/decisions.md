@@ -740,6 +740,15 @@ first. One entry per decision.
 - **Differs from the target:** no title edit (`e` / `t` are not built), so the only fix is `x`. Only the repeat is marked, not the first issue of the title, so `x` on any marked row keeps one issue per title.
 - **Source:** #1455.
 
+## 2026-11-27 — The status bar counts only live sessions as running; Kill on a kept record says why it does not act
+
+- **What:** `FleetCounts::from_sessions` takes `(status, kept)` per session from `App::sessions_with_kept`, `kept` when the session is a record in the pool's finished list (no process runs it; active and queued sessions are never kept); `● run` counts a running-like status (spawning, running, gates, CI / conflict fix, retry) only when it is not kept. A kept record still counts in the total, and in wait / fail as before. `X` (Dashboard and Session) on a record no process runs (in the pool, not active, not queued) opens no Kill dialog; a toast says `<label> is a saved record, not running: Kill has nothing to stop`.
+- **Why:** #1507. Since #1487 `maestro resume` keeps a crashed `Running` first turn in the finished list, so the bar showed phantom running agents, and Kill on its row opened a dialog whose `⏎` did nothing (`pool.kill_session` acts on active sessions only).
+- **Section:** `§04 StatusBar` (fleet counts) and `§02.1` Dashboard kill dialog (`dashboard.killDialog`).
+- **ADR (explain vs hide Kill):** `X` stays and explains in a toast, the same way `X` already explains an Errored session. Rejected: hiding `X` on such rows (the key hint would change per row and a silent key reads as broken), and rewriting the kept record's status to something not running (that changes what resume keeps, out of scope).
+- **Differs from the target:** the target has no kept records, so it shows no such toast.
+- **Source:** #1507.
+
 ## 2026-11-27 — Digit and Home jumps resolve by session id; the F6 grid keys are gone
 
 - **What:** on the Dependency graph (F6), a digit `1`–`9` opens the Nth session row the Dashboard work list shows (Sessions, then Finished, as last drawn), by id; a row dismissed since then opens nothing and an Info toast says `Row N was dismissed: nothing to open`. `⏎` on a Home Needs-you session marks that `WorkKey::Session(id)` on the Dashboard directly; `PanelView::reveal` / `pending_reveal` / `apply_reveal` / `grid_layout` / `drawn_area` are removed. The arrows and `[` `]` on F6 no longer move `panel_view.grid_state`, which F6 never draws.
