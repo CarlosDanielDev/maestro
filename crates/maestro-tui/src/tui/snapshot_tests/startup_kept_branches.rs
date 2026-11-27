@@ -32,6 +32,21 @@ async fn startup_kept_branches_are_shown() {
     assert_eq!(app.tui_mode, TuiMode::Dashboard);
     let after = text(&mut app, 80, 24);
     assert!(after.contains("may hold work"), "still shown:\n{after}");
+
+    // With no log pane on screen the same line arrives as a warn toast.
+    let mut app = app_without_log_pane();
+    report_kept_branches(&mut app, &[kept("maestro/issue-7", Some(1))]);
+    let _ = handle_key(&mut app, key('2')).await;
+    let toast = text(&mut app, 80, 24);
+    let line = "[clean] Kept 1 branch that may hold work: see git branch";
+    assert_eq!(toast.matches(line).count(), 1, "warn toast:\n{toast}");
+    assert!(toast.contains("warn"), "warn toast:\n{toast}");
+}
+
+fn app_without_log_pane() -> crate::tui::app::App {
+    let mut app = app(TuiMode::Landing, 0);
+    app.show_activity_log = false;
+    app
 }
 
 #[tokio::test]
