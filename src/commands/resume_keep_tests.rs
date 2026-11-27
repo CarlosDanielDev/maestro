@@ -100,5 +100,8 @@ async fn errored_not_at_cap_survives_resume_run() {
     assert_eq!(kept.status, Errored, "as it was saved");
     let (picked, _) = sessions_to_resume(&state, Some("1489"), false);
     assert_eq!(picked.len(), 1, "a later `maestro resume 1489` finds it");
-    assert!(saved(&state, done_id).is_none(), "a finished run is not kept");
+    assert!(
+        saved(&state, done_id).is_none(),
+        "a finished run is not kept"
+    );
 }
