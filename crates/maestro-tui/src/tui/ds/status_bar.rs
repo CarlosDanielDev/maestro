@@ -36,19 +36,20 @@ pub struct FleetCounts {
 }
 
 impl FleetCounts {
-    /// Each session as `(status, live)`, `live` when it is in the pool's
-    /// active list. #1507: a saved record kept for resume can still say
-    /// Running; it is not live, so it is never counted as running.
+    /// Each session as `(status, kept)`, `kept` when it is a record in the
+    /// pool's finished list (`App::sessions_with_kept`). #1507: a saved
+    /// record kept for resume can still say Running; no process runs it,
+    /// so it is never counted as running.
     pub fn from_sessions<'a>(
         sessions: impl IntoIterator<Item = (&'a SessionStatus, bool)>,
     ) -> Self {
         use SessionStatus::*;
         let mut counts = Self::default();
-        for (status, live) in sessions {
+        for (status, kept) in sessions {
             counts.total += 1;
             match status {
                 Spawning | Running | GatesRunning | CiFix | ConflictFix | Retrying => {
-                    if live {
+                    if !kept {
                         counts.running += 1
                     }
                 }

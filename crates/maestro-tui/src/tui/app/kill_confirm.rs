@@ -10,7 +10,7 @@ use std::time::Duration;
 use super::App;
 use super::helpers::session_label;
 use crate::session::pool::session_slug;
-use crate::session::types::SessionStatus;
+use crate::session::types::{Session, SessionStatus};
 use crate::tui::ds::confirm::TypedConfirm;
 use crate::tui::ds::toast::{Severity, Toast};
 use crate::work::unique_commits::unique_commit_count;
@@ -202,15 +202,25 @@ impl App {
             .then_some(path)
     }
 
-    /// #1507: the label of a record no process runs: one in the pool's
-    /// finished list (kept by resume, or finished), never active or queued.
-    /// `pool.kill_session` acts on active sessions only, so Kill on it
-    /// would do nothing. `all_sessions` lists active, finished, then queued.
+    /// #1507: the label of a record no process runs (see
+    /// [`Self::sessions_with_kept`]). `pool.kill_session` acts on active
+    /// sessions only, so Kill on it would do nothing.
     fn kept_record_label(&self, session_id: uuid::Uuid) -> Option<String> {
+        let sessions = self.sessions_with_kept();
+        let (session, kept) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
+        kept.then(|| session_label(session))
+    }
+
+    /// #1507: every pool session in `all_sessions` order, with `kept` when
+    /// it is a record in the finished list (kept by resume, or finished):
+    /// never active, never queued, and no process runs it. `all_sessions`
+    /// lists active, finished, then queued.
+    pub(crate) fn sessions_with_kept(&self) -> Vec<(&Session, bool)> {
         let sessions = self.pool.all_sessions();
-        let at = sessions.iter().position(|s| s.id == session_id)?;
         let finished = self.pool.active_count()..sessions.len() - self.pool.queued_count();
-        finished.contains(&at).then(|| session_label(sessions[at]))
+        (sessions.into_iter().enumerate())
+            .map(|(i, s)| (s, finished.contains(&i)))
+            .collect()
     }
 
     /// The status of a session Kill cannot move to `Killed`, if it is one.
