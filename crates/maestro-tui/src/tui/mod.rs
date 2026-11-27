@@ -40,6 +40,8 @@ pub mod widgets;
 #[cfg(test)]
 mod confirm_exit_race_tests;
 #[cfg(test)]
+mod exit_save_pending_tests;
+#[cfg(test)]
 mod once_exit_tests;
 #[cfg(test)]
 mod quit_pause_tests;
