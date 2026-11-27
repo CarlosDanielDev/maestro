@@ -739,3 +739,12 @@ first. One entry per decision.
 - **ADR (where to stop it):** block on Plan with the existing `x` fix, never rename or merge. Auto-suffixing a title would write text the operator did not choose; merging two issues would drop one of them. Rejected: a second check in `begin_materialization` (Create is only reachable through Plan, and a retry reuses by number), and a planner-side dedupe (the AI can still return two equal titles, and the operator must see it).
 - **Differs from the target:** no title edit (`e` / `t` are not built), so the only fix is `x`. Only the repeat is marked, not the first issue of the title, so `x` on any marked row keeps one issue per title.
 - **Source:** #1455.
+
+## 2026-11-27 — Digit and Home jumps resolve by session id; the F6 grid keys are gone
+
+- **What:** on the Dependency graph (F6), a digit `1`–`9` opens the Nth session row the Dashboard work list shows (Sessions, then Finished, as last drawn), by id; a row dismissed since then opens nothing. `⏎` on a Home Needs-you session marks that `WorkKey::Session(id)` on the Dashboard directly; `PanelView::reveal` / `pending_reveal` / `apply_reveal` / `grid_layout` / `drawn_area` are removed. The arrows and `[` `]` on F6 no longer move `panel_view.grid_state`, which F6 never draws.
+- **Why:** #1509, after #1486. A pool index was taken at the key and read back later (at the next draw, or against pool order); a session that finished in between moved it onto another session, and pool order differs from the rows shown once a session finished.
+- **Section:** `§02.1` Dashboard work list (the marked row); Home Needs you (`⏎` opens the Dashboard on that session).
+- **ADR (rows as last drawn):** the digit reads the work list the Dashboard last drew, the rows the user saw, not a fresh rebuild from the pool. Rejected: rebuilding the rows on F6 (it would count a session the user never saw), and keeping the index with a resync at draw (the gap between key and draw is the bug).
+- **Differs from the target:** none; the target has no digit jump or grid on the Dependency graph.
+- **Source:** #1509.
