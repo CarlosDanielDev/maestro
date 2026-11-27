@@ -938,7 +938,9 @@ async fn event_loop(
                             tx: tx.clone(),
                             provider_config,
                             sessions: team_sessions.subscribe(),
-                            prior: Default::default(),
+                            prior: std::sync::Mutex::new(team_runner_glue::prior_sessions(
+                                &app.pool.all_sessions(),
+                            )),
                         });
                     let scheduler = *scheduler;
                     // #1246: Esc on the wizard's Executing step cancels the run.

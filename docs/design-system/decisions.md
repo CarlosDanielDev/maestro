@@ -811,3 +811,12 @@ first. One entry per decision.
 - **ADR (Clear the area):** `Clear`, then the spans: it is the ratatui widget for hiding what is under a widget and needs no width math. Rejected: padding the line with spaces to the area width. Unpinned chips such as `TQ:OFF` sit inside the banner area, so they are hidden while a banner shows; only BYPASS and UNTRUSTED are pinned.
 - **Differs from the target:** the target has no upgrade banner.
 - **Source:** #1560.
+
+## 2026-11-27 — Kill ends a session waiting for its PR, and its dialog says no agent runs
+
+- **What:** `NeedsPr` can now move to `Killed` (`SessionStatus::valid_transitions`), so `X` on a session waiting for its PR opens the typed kill confirm instead of the "Kill cannot stop it" toast. Its rows read `No agent runs: it is waiting for its PR.`; the `lost` row drops "the turn in progress" (`lost   nothing uncommitted`, `lost   1 uncommitted file`, or `lost   nothing: no agent runs` in the main checkout); the `gone` / `kept` worktree and branch rows are the usual teardown rows. Kill cancels the issue's PR retry (`App::cancel_pr_retry` drops its `pending_prs` entries, scheduled and manual-wait), so no PR opens later and no CI poll, CI fix agent or auto-merge follows a killed session; when a retry was pending the dialog says `gone   its PR retry: no PR is opened`.
+- **Why:** #1500. Since #1468 the dialog said NeedsPr could not be killed, so a session stuck without its PR had no way out; and the usual rows (`Stops the agent now.`, "the turn in progress") would be false for it.
+- **Section:** `§05` "Killing the wrong agent" (the typed kill confirm).
+- **ADR (state machine, not a dialog special case):** the owner chose to add `Killed` to `NeedsPr => [...]` (2026-11-27), one rule for one transition. Rejected: forcing the kill in the dialog while the state machine forbids it. Quit does not change (owner, 2026-11-27): `quit_ends` excludes NeedsPr, so an adopted NeedsPr session is kept as NeedsPr at quit and Confirm Exit does not list it; only `X` kills it.
+- **Differs from the target:** the target has no NeedsPr session or PR retry row.
+- **Source:** #1500.
