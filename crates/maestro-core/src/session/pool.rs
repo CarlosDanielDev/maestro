@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::pool_quota::QuotaRouting;
+use super::transition::TransitionReason;
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
@@ -801,14 +802,33 @@ impl SessionPool {
         before - self.finished.len()
     }
 
-    /// Kill a single active session by ID.
+    /// Kill a single session by ID: an active one is stopped, a queued one
+    /// leaves the queue ([`Self::dequeue`], #1514).
     pub async fn kill_session(&mut self, session_id: Uuid) -> anyhow::Result<bool> {
         if let Some(managed) = self.active.iter_mut().find(|m| m.session.id == session_id) {
             managed.kill().await?;
             Ok(true)
         } else {
-            Ok(false)
+            Ok(self.dequeue(session_id))
         }
+    }
+
+    /// #1514: take a queued session out of the queue as a `Killed` record.
+    /// It never ran, so nothing is stopped and no worktree is touched (a
+    /// queued retry child may share its parent's, #1485). False when the
+    /// session is not queued or cannot become `Killed`.
+    pub fn dequeue(&mut self, session_id: Uuid) -> bool {
+        let Some(idx) = (self.queue.iter()).position(|s| {
+            s.id == session_id && s.status.can_transition_to(SessionStatus::Killed)
+        }) else {
+            return false;
+        };
+        let Some(mut session) = self.queue.remove(idx) else {
+            return false;
+        };
+        let _ = session.transition_to(SessionStatus::Killed, TransitionReason::UserKill);
+        self.finished.push(ManagedSession::new(session));
+        true
     }
 
     /// Get the event sender for spawning sessions.
