@@ -373,7 +373,7 @@ async fn resume_keeps_the_records_it_skips() {
     let plan = plan_resume(&state, &picked, &probe);
     let mut app = app_at!(repo.path(), &store_path);
     app.workspace_trusted = false; // nothing may spawn here
-    app.pool.keep_saved_resumable(&plan.keep);
+    app.pool.keep_saved(&plan.keep);
     for s in plan.restore {
         app.add_session(s).await.unwrap();
     }

@@ -133,9 +133,10 @@ fn select_first_turn(
 }
 
 /// What `cmd_resume` does with the sessions it picked (#1423): each one
-/// restored, or a line saying why not, plus every saved record it does
-/// not restore, for `SessionPool::keep_saved_resumable` — so this run's
-/// state saves keep a skipped or refused record for a later resume.
+/// restored, or a line saying why not, plus every saved record a later
+/// resume could pick up and this one does not restore, for
+/// `SessionPool::keep_saved` (#1487) — so this run's state saves keep a
+/// skipped, filtered-out or refused record, with or without a worktree.
 struct ResumePlan {
     restore: Vec<Session>,
     refused: Vec<String>,
@@ -154,7 +155,7 @@ fn plan_resume(
             Err(why) => refused.push(why),
         }
     }
-    let keep = (state.sessions.iter())
+    let keep = (resumable_sessions(state, None).into_iter())
         .filter(|s| !restore.iter().any(|r| r.id == s.id))
         .cloned()
         .collect();

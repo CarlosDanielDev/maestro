@@ -151,16 +151,19 @@ impl SessionPool {
                     _ => RetryPolicy::is_budget_cap_stop(s) && s.worktree_path.is_some(),
                 }
         };
-        for s in saved.iter().filter(resumable) {
+        self.keep_saved(saved.iter().filter(resumable));
+    }
+
+    /// Keep every one of these saved records, whatever its status, in the
+    /// pool's finished list. `maestro resume` passes each record it could
+    /// pick up and did not restore (#1487), so a crashed Running first turn
+    /// or an Errored one below the cap is still there for a later resume.
+    pub fn keep_saved<'a>(&mut self, saved: impl IntoIterator<Item = &'a Session>) {
+        for s in saved {
             if self.get_session(s.id).is_none() {
                 self.finished.push(ManagedSession::new(s.clone()));
             }
         }
-    }
-
-    /// Keep the saved records `maestro resume` did not restore (#1487).
-    pub fn keep_saved(&mut self, saved: &[Session]) {
-        self.keep_saved_resumable(saved);
     }
 
     /// Paused sessions `r` can resume: this run's, not an earlier run's
