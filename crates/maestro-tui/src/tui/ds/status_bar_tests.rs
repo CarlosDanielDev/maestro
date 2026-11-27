@@ -151,7 +151,7 @@ fn fleet_counts_group_statuses() {
         Completed,
         Queued,
     ];
-    let counts = FleetCounts::from_sessions(statuses.iter().map(|s| (s, false)));
+    let counts = FleetCounts::from_sessions(statuses.iter().map(|s| (s, Place::Active)));
     assert_eq!(
         counts,
         FleetCounts {
@@ -262,4 +262,45 @@ fn status_bar_does_not_count_kept_records_as_running() {
         !bar.contains("2 run"),
         "the kept record is not running:\n{out}"
     );
+}
+
+/// #1515: a CI fix waiting in the queue has no process yet. It counts as
+/// waiting, not running.
+#[test]
+fn status_bar_counts_a_queued_fix_as_waiting_not_running() {
+    use crate::session::types::Session;
+    let mut app = crate::tui::make_test_app("maestro-queued-fix-1515");
+    let mut queued = Session::new("p".into(), "opus".into(), "o".into(), Some(3), None);
+    queued.status = SessionStatus::CiFix;
+    app.pool.enqueue(queued);
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| crate::tui::ui::draw(f, &mut app))
+        .unwrap();
+    let out = format!("{}", terminal.backend());
+    let bar = out.lines().next().unwrap_or_default();
+    assert!(
+        bar.contains("0 run"),
+        "the queued fix is not running:\n{out}"
+    );
+    assert!(bar.contains("1 wait"), "the queued fix waits:\n{out}");
+}
+
+/// #1515: a saved record kept with a Running status has no process, so the
+/// mascot does not conduct for it.
+#[test]
+fn mascot_ignores_kept_running_record() {
+    use crate::mascot::MascotState;
+    use crate::session::types::Session;
+    let mut app = crate::tui::make_test_app("maestro-kept-mascot-1515");
+    let mut kept = Session::new("p".into(), "opus".into(), "o".into(), Some(2), None);
+    kept.status = SessionStatus::Running;
+    app.pool.keep_saved([&kept]);
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| crate::tui::ui::draw(f, &mut app))
+        .unwrap();
+    assert_eq!(app.mascot_animator.state(), MascotState::Idle);
 }

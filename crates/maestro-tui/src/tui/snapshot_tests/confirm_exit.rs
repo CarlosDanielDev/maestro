@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::log_drawer::{draw, log_app};
-use super::make_session;
+use super::{make_session, promote};
 use crate::session::types::SessionStatus;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::ds::key_hints::QUIT;
@@ -34,6 +34,7 @@ pub(super) fn app(mode: TuiMode, live: usize) -> App {
         app.pool
             .enqueue(make_session(SessionStatus::Running, Some(400 + i as u64)));
     }
+    promote(&mut app);
     app.screen_state.quit_hints.ctrl_q_shown = true;
     app.screen_state.quit_clock = Some(fixed_clock);
     app

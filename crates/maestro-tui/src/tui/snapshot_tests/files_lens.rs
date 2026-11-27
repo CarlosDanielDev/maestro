@@ -6,6 +6,7 @@
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 
+use super::promote;
 use super::usage::{empty_app, session, tokens};
 use crate::session::types::SessionStatus;
 use crate::tui::app::App;
@@ -33,6 +34,7 @@ fn lens_app() -> App {
         ids.push(s.id);
         app.pool.enqueue(s);
     }
+    promote(&mut app);
     let claims = &mut app.pool.file_claims;
     for (path, who) in [
         ("src/auth/middleware.rs", ids[0]),

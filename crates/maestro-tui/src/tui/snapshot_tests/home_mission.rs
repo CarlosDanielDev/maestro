@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
+use super::promote;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::{LogEntry, LogLevel};
 use crate::tui::app::{App, TuiMode};
@@ -115,6 +116,7 @@ fn busy_app_after(runners: u128) -> App {
     ] {
         app.pool.enqueue(s);
     }
+    promote(&mut app);
     app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(5.0, 20.0, 80));
     app.total_cost = 4.82;
     let mut home = HomeScreen::new(

@@ -9,7 +9,7 @@ use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
-use super::{fixed_start, make_session};
+use super::{fixed_start, make_session, promote};
 use crate::config::BudgetConfig;
 use crate::session::types::{Session, SessionStatus, TokenUsage};
 use crate::tui::app::{App, TuiMode};
@@ -103,6 +103,7 @@ pub(super) fn usage_app() -> App {
     for s in [failed, running, unpriced, done] {
         app.pool.enqueue(s);
     }
+    promote(&mut app);
     app.total_cost = 6.42;
     app
 }

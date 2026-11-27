@@ -12,6 +12,7 @@ use super::helpers::session_label;
 use crate::session::pool::session_slug;
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::ds::confirm::TypedConfirm;
+use crate::tui::ds::status_bar::Place;
 use crate::tui::ds::toast::{Severity, Toast};
 use crate::work::unique_commits::unique_commit_count;
 
@@ -202,24 +203,28 @@ impl App {
             .then_some(path)
     }
 
-    /// #1507: the label of a record no process runs (see
-    /// [`Self::sessions_with_kept`]). `pool.kill_session` acts on active
-    /// sessions only, so Kill on it would do nothing.
+    /// #1507: the label of a record no process runs ([`Place::Kept`]).
+    /// `pool.kill_session` acts on active sessions only, so Kill on it
+    /// would do nothing.
     fn kept_record_label(&self, session_id: uuid::Uuid) -> Option<String> {
-        let sessions = self.sessions_with_kept();
-        let (session, kept) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
-        kept.then(|| session_label(session))
+        let sessions = self.sessions_by_place();
+        let (session, place) = sessions.into_iter().find(|(s, _)| s.id == session_id)?;
+        (place == Place::Kept).then(|| session_label(session))
     }
 
-    /// #1507: every pool session in `all_sessions` order, with `kept` when
-    /// it is a record in the finished list (kept by resume, or finished):
-    /// never active, never queued, and no process runs it. `all_sessions`
-    /// lists active, finished, then queued.
-    pub(crate) fn sessions_with_kept(&self) -> Vec<(&Session, bool)> {
+    /// #1507: every pool session in `all_sessions` order (active, finished,
+    /// then queued) with the list it is in.
+    pub(crate) fn sessions_by_place(&self) -> Vec<(&Session, Place)> {
         let sessions = self.pool.all_sessions();
-        let finished = self.pool.active_count()..sessions.len() - self.pool.queued_count();
+        let active = self.pool.active_count();
+        let queued_from = sessions.len() - self.pool.queued_count();
+        let place = |i| match i {
+            i if i < active => Place::Active,
+            i if i >= queued_from => Place::Queued,
+            _ => Place::Kept,
+        };
         (sessions.into_iter().enumerate())
-            .map(|(i, s)| (s, finished.contains(&i)))
+            .map(|(i, s)| (s, place(i)))
             .collect()
     }
 

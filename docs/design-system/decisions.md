@@ -766,3 +766,12 @@ first. One entry per decision.
 - **ADR (per-field guard now, Input widget later):** a guard per field is the smallest fix and ends the flaky test too. Rejected for now: moving both fields to the canonical `Input` widget (`widgets::input::feed()`), the real cure for the class, filed as #1542 (milestone #62).
 - **Differs from the target:** the target lists `↑↓ j k` for Configure; `j` / `k` move only on Stop after, because on the text fields they are letters.
 - **Source:** #1540.
+
+## 2026-11-27 — A queued fix counts as wait; the mascot conducts only for an active session
+
+- **What:** `FleetCounts::from_sessions` takes `(status, Place)` per session from `App::sessions_by_place` (`Active`, `Queued`, or `Kept`; it replaces `App::sessions_with_kept`). `● run` counts a running-like status only for an active session; a queued one (a CI or conflict fix waiting for a slot) counts as `◐ wait`; a kept one counts in the total only. The Dashboard mascot reads the same places: a `Running` / `Spawning` status makes it conduct only on an active session; kept `Completed` / `Errored` records still make it happy or show the error.
+- **Why:** #1515, after #1507. A queued fix has no process yet, and a kept `Running` record made the mascot say "Conducting" with no agent at work: both were false UI.
+- **Section:** `§04 StatusBar` (`#c-statusbar`, fleet counts) and the Dashboard mascot panel.
+- **ADR (drop running-like, not every kept record):** the mascot drops only a running status off an active session. Rejected: dropping every kept record (finished sessions live in that list, so the mascot would never be happy or show an error again).
+- **Differs from the target:** none; the target has no queue or kept records.
+- **Source:** #1515.

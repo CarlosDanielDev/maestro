@@ -1,7 +1,7 @@
 //! #1257: the status bar as `ui::draw` shows it, fed from a real App.
 
 use crate::tui::app::TuiDataEvent;
-use crate::tui::snapshot_tests::test_terminal;
+use crate::tui::snapshot_tests::{promote, test_terminal};
 use crate::tui::{make_test_app, ui};
 use crate::updater::ReleaseInfo;
 
@@ -104,6 +104,7 @@ fn update_chip_queued() {
         app.pool
             .enqueue(make_session(SessionStatus::Running, Some(issue)));
     }
+    promote(&mut app);
     app.upgrade_state = crate::updater::UpgradeState::Queued(release("9.8.7"));
     let out = screen(&mut app);
     let row = out.lines().next().unwrap_or_default();
