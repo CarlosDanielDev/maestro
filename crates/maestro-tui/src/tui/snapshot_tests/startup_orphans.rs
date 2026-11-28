@@ -8,8 +8,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::confirm_exit::text;
 use super::log_drawer::log_app;
-use crate::setup::orphans::{SHOWN_MARKER, remove_command};
 use crate::setup::orphans::tests::{repo_with, worktree};
+use crate::setup::orphans::{SHOWN_MARKER, remove_command};
 use crate::setup::report_startup_orphans;
 use crate::tui::app::TuiMode;
 use crate::tui::input_handler::{announce_quit_key, handle_key};
@@ -47,7 +47,11 @@ async fn startup_orphan_notice_on_the_first_frame_and_full_commands_on_ctrl_l() 
         let pieces = remove_command(name);
         assert_eq!(pieces.concat(), format!("rm -rf .maestro/worktrees/{name}"));
         for (i, piece) in pieces.iter().enumerate() {
-            let row = if i + 1 < pieces.len() { format!("{piece}\\") } else { piece.clone() };
+            let row = if i + 1 < pieces.len() {
+                format!("{piece}\\")
+            } else {
+                piece.clone()
+            };
             assert!(drawer.contains(&row), "{row:?} in the drawer:\n{drawer}");
         }
     }

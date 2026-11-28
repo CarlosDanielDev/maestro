@@ -5,10 +5,6 @@
 use super::*;
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-use crate::tui::input_handler::handle_key;
-
 /// `<tmp>/repo`, a git repo, with untracked `.maestro/worktrees/<name>`
 /// dirs that each hold one file.
 pub(crate) fn repo_with(names: &[&str]) -> (tempfile::TempDir, PathBuf) {
@@ -53,8 +49,10 @@ fn launch(repo: &Path) -> (App, Instant) {
     (app, now)
 }
 
-async fn esc(app: &mut App) {
-    let _ = handle_key(app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+/// `Esc` on the visible toast (the key route is tested on Landing in
+/// `snapshot_tests/startup_orphans.rs`).
+fn esc(app: &mut App, now: Instant) {
+    assert!(app.toast_esc(now), "a toast to dismiss");
 }
 
 #[test]
@@ -70,7 +68,11 @@ fn startup_orphan_untracked_dir_is_reported_not_deleted() {
     assert!(dir.join("file").exists(), "the dir and its file stay");
     assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
     let command = "rm -rf .maestro/worktrees/leftover";
-    assert!(logged(&app).iter().any(|m| m == command), "{:?}", logged(&app));
+    assert!(
+        logged(&app).iter().any(|m| m == command),
+        "{:?}",
+        logged(&app)
+    );
     let stderr = String::from_utf8(stderr).expect("utf-8");
     assert!(
         stderr.ends_with(&format!("\nwarning: {command}\n")),
@@ -96,16 +98,20 @@ fn startup_orphans_are_one_notice() {
     }
 }
 
-#[tokio::test]
-async fn orphan_notice_shown_once_and_again_after_recreate() {
+#[test]
+fn orphan_notice_shown_once_and_again_after_recreate() {
     let (_tmp, repo) = repo_with(&["leftover"]);
     let (app, now) = launch(&repo);
     assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
     drop(app); // quit without dismissing it: not seen
 
     let (mut app, now) = launch(&repo);
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")), "shown again");
-    esc(&mut app).await;
+    assert_eq!(
+        toast(&app, now),
+        Some(format!("Error {ONE}")),
+        "shown again"
+    );
+    esc(&mut app, now);
     assert!(toast(&app, now).is_none(), "Esc dismissed it");
 
     let (app, now) = launch(&repo);
@@ -145,8 +151,8 @@ fn startup_scan_error_is_reported() {
 /// A symlinked dir never gets a marker (it would land outside the worktree
 /// root), so it is shown on every launch, even after Esc.
 #[cfg(unix)]
-#[tokio::test]
-async fn orphan_symlink_dir_gets_no_marker() {
+#[test]
+fn orphan_symlink_dir_gets_no_marker() {
     let (tmp, repo) = repo_with(&[]);
     let target = tmp.path().join("elsewhere");
     std::fs::create_dir(&target).expect("mkdir target");
@@ -156,10 +162,14 @@ async fn orphan_symlink_dir_gets_no_marker() {
 
     let (mut app, now) = launch(&repo);
     assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
-    esc(&mut app).await;
+    esc(&mut app, now);
     assert!(!target.join(SHOWN_MARKER).exists(), "nothing written there");
     let (app, now) = launch(&repo);
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")), "not recorded");
+    assert_eq!(
+        toast(&app, now),
+        Some(format!("Error {ONE}")),
+        "not recorded"
+    );
 }
 
 #[test]

@@ -52,7 +52,11 @@ pub(crate) fn report_startup_orphans(
         let last = line.len() - 1;
         for (i, piece) in line.iter().enumerate() {
             let piece = sanitize_for_terminal(piece);
-            let row = if i < last { format!("{piece}\\") } else { piece };
+            let row = if i < last {
+                format!("{piece}\\")
+            } else {
+                piece
+            };
             app.activity_log
                 .push_simple("cleanup".into(), row, LogLevel::Info);
         }
@@ -60,12 +64,7 @@ pub(crate) fn report_startup_orphans(
     if stderr.is_some() {
         mark_shown(&dirs);
     }
-    // The ⌃Q launch hint is logged now (the run loop's call is then a
-    // no-op) and its info toast dropped: a live info toast would hide this
-    // one on the first frame.
-    crate::tui::input_handler::announce_quit_key(app, now);
-    app.toasts.drop_transient();
-    app.push_toast(Toast::new(Severity::Error, message.clone()), now);
+    app.push_first_frame_toast(Toast::new(Severity::Error, message.clone()), now);
     app.startup_orphans = Some(StartupOrphans { message, dirs });
 }
 
@@ -114,7 +113,9 @@ fn orphan_notice(repo_root: &Path) -> Option<Notice> {
     }
     let n = new.len();
     let s = if n == 1 { "" } else { "s" };
-    let mut lines = vec![vec![format!("kept {n} dir{s} git does not track; remove with:")]];
+    let mut lines = vec![vec![format!(
+        "kept {n} dir{s} git does not track; remove with:"
+    )]];
     lines.extend(new.iter().map(|o| remove_command(&o.name)));
     Some(Notice {
         message: format!("kept {n} untracked dir{s} · ⌃L shows how to remove"),
