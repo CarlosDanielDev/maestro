@@ -827,5 +827,6 @@ first. One entry per decision.
 - **Why:** #1556, judge of PR #1554. A dequeued child never reached `finalize_at`, so the handed worktree and its branch stayed on disk, and the startup orphan scan does not list worktrees git tracks.
 - **Section:** `§05` "Killing the wrong agent" (the typed kill confirm).
 - **ADR (dequeue tears down):** option (a) of the issue: the user asked to remove the session, and a leftover the user must find is a silent leak. The pool remembers which queued children were handed a worktree, so a queued session's own worktree path alone never makes dequeue delete files. Rejected: (b) keep the worktree and tell the user to run `maestro clean --stale`.
+- **Judge follow-up (PR #1569):** `⏎` keeps what the dialog showed: the dialog's answer is stored when it opens (`ScreenState::kill_teardown_shown`, cleared on Esc) and `pool.dequeue_as_shown` removes the worktree only when the dialog said so and the pool still agrees. A worktree kept against the pool's new answer raises a Warn toast (`… its worktree was kept, as the dialog said: <path>`); a teardown git did not do raises an Error toast (`… git could not remove its worktree: <path>`), not only a log line.
 - **Differs from the target:** the target has no queued-session or retry-child dialog.
 - **Source:** #1556.
