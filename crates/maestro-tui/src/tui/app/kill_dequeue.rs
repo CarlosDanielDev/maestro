@@ -1,8 +1,8 @@
 //! #1556: Kill on a queued session removes it the way its dialog said.
 
+use crate::session::pool::Dequeued;
 use crate::tui::app::App;
 use crate::tui::app::helpers::session_label;
-use crate::session::pool::Dequeued;
 use crate::tui::ds::status_bar::Place;
 use crate::tui::ds::toast::{Severity, Toast};
 
@@ -39,7 +39,9 @@ impl App {
             Dequeued::Untouched | Dequeued::Removed => return Some(true),
             Dequeued::KeptAsShown => Toast::new(
                 Severity::Warn,
-                format!("{label} left the queue; its worktree was kept, as the dialog said: {path}"),
+                format!(
+                    "{label} left the queue; its worktree was kept, as the dialog said: {path}"
+                ),
             ),
             Dequeued::RemoveFailed => Toast::new(
                 Severity::Error,

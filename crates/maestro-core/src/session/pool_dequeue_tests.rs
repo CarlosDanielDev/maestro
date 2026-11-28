@@ -161,5 +161,9 @@ fn dequeue_reports_a_teardown_that_left_the_worktree() {
 
     let outcome = pool.dequeue_as_shown(child_id, true);
 
-    assert_eq!(outcome, Some(Dequeued::RemoveFailed), "never a silent Removed");
+    assert_eq!(
+        outcome,
+        Some(Dequeued::RemoveFailed),
+        "never a silent Removed"
+    );
 }

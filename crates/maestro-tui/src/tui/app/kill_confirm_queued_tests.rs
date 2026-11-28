@@ -14,7 +14,11 @@ use crate::tui::app::{App, TuiMode};
 
 /// The Overview over real worktrees of `repo`, with `max` session slots.
 fn app_in(repo: &Path, max: usize) -> App {
-    app_over(repo, max, Box::new(GitWorktreeManager::new(repo.to_path_buf())))
+    app_over(
+        repo,
+        max,
+        Box::new(GitWorktreeManager::new(repo.to_path_buf())),
+    )
 }
 
 fn app_over(repo: &Path, max: usize, worktrees: Box<dyn WorktreeManager + Send>) -> App {
@@ -176,7 +180,10 @@ async fn kill_on_queued_child_keeps_the_promise_when_the_parent_hands_over_first
         out.contains("kept   every file: no worktree is touched"),
         "the parent still runs when the dialog opens:\n{out}"
     );
-    assert!(app.pool.finalize(parent), "the parent hands its worktree over");
+    assert!(
+        app.pool.finalize(parent),
+        "the parent hands its worktree over"
+    );
     confirm(&mut app, "1561").await;
 
     let status = app.pool.get_session(child).map(|s| s.status);
@@ -213,7 +220,10 @@ async fn kill_on_queued_retry_child_says_when_git_kept_the_worktree() {
     let (parent, worktree) = running(&mut app, 1562);
     retrying(&mut app, parent);
     let child = queue_child(&mut app, 1562);
-    assert!(app.pool.finalize(parent), "the parent hands its worktree over");
+    assert!(
+        app.pool.finalize(parent),
+        "the parent hands its worktree over"
+    );
 
     let out = open_dialog(&mut app, child).await;
     assert!(out.contains("gone   the worktree"), "promised:\n{out}");
@@ -233,10 +243,16 @@ async fn kill_on_queued_retry_child_keeps_a_branch_with_unpushed_commits() {
     let repo = repo();
     let mut app = app_in(repo.path(), 1);
     let (parent, worktree) = running(&mut app, 1563);
-    assert!(git(&worktree, &["commit", "-q", "--allow-empty", "-m", "work"]));
+    assert!(git(
+        &worktree,
+        &["commit", "-q", "--allow-empty", "-m", "work"]
+    ));
     retrying(&mut app, parent);
     let child = queue_child(&mut app, 1563);
-    assert!(app.pool.finalize(parent), "the parent hands its worktree over");
+    assert!(
+        app.pool.finalize(parent),
+        "the parent hands its worktree over"
+    );
 
     let out = open_dialog(&mut app, child).await;
     assert!(
@@ -260,7 +276,10 @@ async fn kill_on_resumed_queued_session_never_touches_its_worktree() {
     let managed = app.pool.get_active_mut(before).unwrap();
     let errored = (SessionStatus::Errored, TransitionReason::StreamError);
     managed.session.transition_to(errored.0, errored.1).unwrap();
-    assert!(app.pool.finalize(before), "an errored session keeps its worktree");
+    assert!(
+        app.pool.finalize(before),
+        "an errored session keeps its worktree"
+    );
     let mut resumed = for_issue(1564);
     resumed.worktree_path = Some(worktree.clone());
     let id = resumed.id;

@@ -835,8 +835,9 @@ impl SessionPool {
     /// [`Self::dequeue_tears_down`] still says so now. `None` when the
     /// session is not queued or cannot become `Killed`.
     pub fn dequeue_as_shown(&mut self, session_id: Uuid, shown_teardown: bool) -> Option<Dequeued> {
-        let idx = (self.queue.iter())
-            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))?;
+        let idx = (self.queue.iter()).position(|s| {
+            s.id == session_id && s.status.can_transition_to(SessionStatus::Killed)
+        })?;
         let tear_down = self.dequeue_tears_down(session_id);
         self.handed.remove(&session_id);
         let mut session = self.queue.remove(idx)?;
