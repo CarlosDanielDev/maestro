@@ -70,8 +70,6 @@ skip = [
     # portable-pty (interactive claude transport, #749) pins bitflags 1.x;
     # the rest of the workspace ecosystem is on 2.x.
     { name = "bitflags", version = "1", reason = "portable-pty pins v1; workspace uses v2 — upstream tracking: portable-pty/wezterm" },
-    # redox_syscall: parking_lot 0.12 uses 0.5; filetime/libredox use 0.7.4.
-    { name = "redox_syscall", version = "0.5", reason = "parking_lot 0.12 pins v0.5; newer libredox uses v0.7 — no upgrade path" },
     # getrandom: rand (0.8) uses 0.2.17; uuid uses 0.4.2.
     { name = "getrandom", version = "0.2", reason = "rand 0.8 pins v0.2.17; newer uuid uses v0.4 — no upgrade path" },
     # thiserror: redox_users (via directories) pins 1.x; maestro/syntect use 2.x.
@@ -82,36 +80,10 @@ skip = [
     # direct dep (#1011). Name-only skip covers all versions — resilient to
     # Cargo.lock churn, matching the windows-sys entry below.
     { name = "syn", reason = "multiple syn 2.x versions across the thiserror-impl v1/v2 + insight design_system (#1011) dep graph under --all-features — no single-version pin possible" },
-    # windows-core (sysinfo via 0.57); iana-time-zone/chrono use 0.62.2.
-    { name = "windows-core", version = "0.57", reason = "sysinfo pins v0.57; iana-time-zone/chrono use v0.62 — no upgrade path" },
-    # windows-implement: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.60.2.
-    { name = "windows-implement", version = "0.57", reason = "windows v0.57 (sysinfo) uses v0.57.0; iana-time-zone uses v0.60 — no upgrade path" },
-    # windows-interface: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.59.3.
-    { name = "windows-interface", version = "0.57", reason = "windows v0.57 (sysinfo) uses v0.57.0; iana-time-zone uses v0.59 — no upgrade path" },
-    # windows-result: windows v0.57 (sysinfo) uses 0.1.2; iana-time-zone uses 0.4.1.
-    { name = "windows-result", version = "0.1", reason = "windows v0.57 (sysinfo) uses v0.1.2; iana-time-zone uses v0.4 — no upgrade path" },
     # windows-sys: multiple versions across the Windows crate ecosystem.
     # Name-only skip covers all versions — resilient to Cargo.lock churn
     # (seen v0.52, v0.59, v0.60, v0.61 depending on resolution target).
     { name = "windows-sys", reason = "multiple versions across windows ecosystem (ring/rustix/clap/tokio/arboard pin different majors); no single upgrade path" },
-    # --- Additional duplicates surfaced on Linux/musl CI that don't appear on macOS ---
-    # These are all transitive through the Windows crate ecosystem
-    # (windows-targets + per-architecture variants). Name-only skips cover
-    # all versions — robust to lockfile drift.
-    { name = "windows-targets", reason = "transitive via windows ecosystem; multiple versions across dep graph on Linux CI" },
-    { name = "windows_aarch64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_aarch64_msvc", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_i686_gnu", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_i686_gnullvm", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_i686_msvc", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_x86_64_gnu", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_x86_64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
-    { name = "windows_x86_64_msvc", reason = "transitive via windows-targets; per-target variant" },
-    # shlex: maestro depends on shlex 1.x directly; a fresh Linux/musl CI
-    # resolution surfaces a second 1.x via build-deps (cc) that the committed
-    # macOS lockfile dedupes. Both are post-RUSTSEC-2024-0006 (cargo-audit
-    # passes). Name-only skip is robust to lockfile drift.
-    { name = "shlex", reason = "maestro direct dep + transitive build-dep (cc); duplicate 1.x surfaces only on Linux/musl CI resolution; both versions are advisory-clean" },
     # base64: reqwest 0.12 pins 0.22; hyper-util and plist (via syntect) use 0.23.
     # Name-only skip is robust to lockfile drift between macOS and Linux CI.
     { name = "base64", reason = "reqwest 0.12 uses v0.22; hyper-util/plist use v0.23 — no upgrade path without a reqwest major bump" },
