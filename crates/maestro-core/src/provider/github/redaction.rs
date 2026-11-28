@@ -19,20 +19,20 @@ use std::sync::OnceLock;
 /// - AWS access keys: `AKIA…` / `ASIA…` + 16 uppercase alphanumerics
 ///
 /// `KEY=value` lines whose key names look secret keep the key name and
-/// lose the value. A name qualifies when one of KEY, TOKEN, SECRET,
-/// PASSWORD, PASSWD, CREDENTIAL(S) or AUTH appears at an underscore
-/// boundary, ends the name, or is followed only by digits
-/// (case-insensitive, so `GITHUB_TOKEN=` and `db_password=` both match,
-/// while `AUTHOR=`, `KEYBOARD=` and `TOKENIZER=` stay readable). The
-/// value may be bare, single- or double-quoted; a quoted value masks
-/// through its closing quote (escaped quotes included) or through end
-/// of line when the quote never closes.
+/// lose the value. A name qualifies when one of KEY(S), TOKEN(S),
+/// SECRET(S), PASSWORD(S), PASSWD(S), CREDENTIAL(S) or AUTH(S) appears
+/// at an underscore boundary, ends the name, or is followed only by
+/// digits (case-insensitive, so `GITHUB_TOKEN=` and `db_password=` both
+/// match, while `AUTHOR=`, `KEYBOARD=` and `TOKENIZER=` stay readable).
+/// The value may be bare, single- or double-quoted; a quoted value
+/// masks through its closing quote (escaped quotes included) or
+/// through end of line when the quote never closes.
 pub fn redact_secrets(s: &str) -> String {
     static NAMED_VALUE: OnceLock<regex::Regex> = OnceLock::new();
     static TOKEN: OnceLock<regex::Regex> = OnceLock::new();
     let named_value = NAMED_VALUE.get_or_init(|| {
         regex::Regex::new(
-            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?)?(?i:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.)*(?:'|(?m:$))|\S+)"#,
+            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.)*(?:'|(?m:$))|\S+)"#,
         )
         .unwrap()
     });
@@ -249,6 +249,22 @@ asianfoodmarket street food
                 "SECRET='two open words",
                 "SECRET=[REDACTED]",
             ),
+        ];
+        for (label, input, masked) in cases {
+            let out = redact_secrets(input);
+            assert_eq!(out, masked, "{label}: expected {masked}, got {out}");
+        }
+    }
+
+    /// Plural keyword names (`SECRETS=`, `KEYS=`, `PASSWORDS=`) are
+    /// still secret-looking and keep their values out of logs
+    /// (#1445 round 2).
+    #[test]
+    fn redacts_plural_keyword_names() {
+        let cases = [
+            ("plural secrets", "SECRETS=x", "SECRETS=[REDACTED]"),
+            ("plural keys", "KEYS=x", "KEYS=[REDACTED]"),
+            ("plural passwords", "PASSWORDS=x", "PASSWORDS=[REDACTED]"),
         ];
         for (label, input, masked) in cases {
             let out = redact_secrets(input);
