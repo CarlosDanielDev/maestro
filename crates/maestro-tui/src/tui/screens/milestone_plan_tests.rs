@@ -281,6 +281,31 @@ fn blocked_by_header_matches_the_shared_parser() {
     }
 }
 
+/// A `## Blocked By` header split over two lines (`\s` in the shared
+/// parser's regex spans the newline): the refs after it parse the same.
+#[test]
+fn blocked_by_header_split_lines_agree() {
+    use crate::orchestration::dag::parse_blocked_by;
+    let body = "## Blocked\nBy\n\n- #10\n\n## Next\n- #99\n";
+    assert_eq!(blocked_by_refs(body).0, parse_blocked_by(body), "{body:?}");
+    assert_eq!(blocked_by_refs(body).0, vec![10], "{body:?}");
+}
+
+/// An empty `##` heading line ends the section for both parsers.
+#[test]
+fn empty_hash_line_agree() {
+    use crate::orchestration::dag::parse_blocked_by;
+    for hash_line in ["##", "## ", "##\t"] {
+        let body = format!("## Blocked By\n\n- #10\n\n{hash_line}\n- #99\n");
+        assert_eq!(
+            blocked_by_refs(&body).0,
+            parse_blocked_by(&body),
+            "{hash_line:?}"
+        );
+        assert_eq!(blocked_by_refs(&body).0, vec![10], "{hash_line:?}");
+    }
+}
+
 #[test]
 fn issue_under_a_spaced_header_is_held_by_its_blocker() {
     let issues = vec![issue(30, "##  Blocked\tBy\n\n- #31\n"), issue(31, "")];
