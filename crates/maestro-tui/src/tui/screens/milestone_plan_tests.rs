@@ -293,7 +293,7 @@ fn blocked_by_header_split_lines_agree() {
 
 /// An empty `##` heading line ends the section for both parsers.
 #[test]
-fn empty_hash_line_agree() {
+fn empty_hash_line_agrees() {
     use crate::orchestration::dag::parse_blocked_by;
     for hash_line in ["##", "## ", "##\t"] {
         let body = format!("## Blocked By\n\n- #10\n\n{hash_line}\n- #99\n");
