@@ -172,6 +172,32 @@ mod tests {
         );
     }
 
+    /// New secret shapes (#1445) must be masked both in the state tail
+    /// (`GateResult::output`) and in the on-disk gate log.
+    #[test]
+    fn gate_masks_new_secret_shapes_in_state_tail_and_disk_log() {
+        let wt = tempfile::tempdir().unwrap();
+        let logs = tempfile::tempdir().unwrap();
+        let gate = sh(
+            "leak2",
+            "echo ANTHROPIC_API_KEY=sk-ant-api03-1234abcdefABCDEF-ghijklmnopq; echo token AKIAIOSFODNN7EXAMPLE; exit 1",
+        );
+        let r = run_gate(&gate, wt.path(), Some(logs.path()));
+        assert!(!r.passed);
+        assert!(r.output.contains("[REDACTED]"));
+        assert!(
+            !r.output
+                .contains("sk-ant-api03-1234abcdefABCDEF-ghijklmnopq")
+        );
+        assert!(!r.output.contains("AKIAIOSFODNN7EXAMPLE"));
+        let full = std::fs::read_to_string(r.log_path.unwrap()).unwrap();
+        assert!(!full.contains("sk-ant-api03-1234abcdefABCDEF-ghijklmnopq"));
+        assert!(
+            !full.contains("AKIAIOSFODNN7EXAMPLE"),
+            "disk log masked too"
+        );
+    }
+
     #[test]
     fn gate_log_name_cannot_leave_the_log_dir() {
         let wt = tempfile::tempdir().unwrap();
