@@ -197,7 +197,12 @@ fn delete_kept(repo: &Path) -> String {
     // `Interest::never` for these callsites from another thread (#1479).
     let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     tracing::subscriber::with_default(subscriber, || {
-        delete_branch(repo, "maestro/x", Some(&unique_commit_count))
+        delete_branch(
+            repo,
+            "maestro/x",
+            Some(&unique_commit_count),
+            &is_branch_missing,
+        )
             .expect("delete_branch must succeed");
     });
     String::from_utf8(captured.0.lock().expect("log buffer lock").clone()).expect("utf-8 log")
@@ -290,7 +295,15 @@ fn teardown_keeps_branch_when_count_times_out() {
                 git.arg("hash-object").arg(&stuck_on).current_dir(dir);
                 crate::work::unique_commits::count_within(git, std::time::Duration::from_millis(50))
             };
-            wipe_counting(1481, &wt, "maestro/x", &root, Some(&stuck)).is_ok()
+            wipe_counting(
+                1481,
+                &wt,
+                "maestro/x",
+                &root,
+                Some(&stuck),
+                &is_branch_missing,
+            )
+            .is_ok()
         },
     );
     assert!(wiped, "teardown must succeed");
@@ -298,5 +311,81 @@ fn teardown_keeps_branch_when_count_times_out() {
     assert!(
         branch_present(repo.path(), "maestro/x"),
         "a branch whose count timed out is kept"
+    );
+}
+
+/// A `git` that blocks on opening `fifo` until it is killed (#1471,
+/// #1481): `hash-object` on a FIFO no one writes to. The runner is
+/// injected, so the test does not depend on which git subcommands read
+/// the object store (that differs across git versions).
+#[cfg(unix)]
+fn stuck_git(dir: &Path, fifo: &Path) -> Command {
+    let mut git = Command::new("git");
+    git.arg("hash-object").arg(fifo).current_dir(dir);
+    git
+}
+
+#[cfg(unix)]
+fn make_fifo(fifo: &Path) {
+    let made = Command::new("mkfifo").arg(fifo).status();
+    assert!(made.expect("mkfifo").success(), "mkfifo");
+}
+
+/// #1567: a git that does not answer within the timeout is not proof the
+/// branch is gone: the check gives up and says "present" (the safe side).
+#[cfg(unix)]
+#[test]
+fn is_branch_missing_times_out_to_present() {
+    let repo = repo_with_branch(0);
+    let fifo = repo.path().join("never-written-1567");
+    make_fifo(&fifo);
+    let stuck = stuck_git(repo.path(), &fifo);
+    let started = std::time::Instant::now();
+    let missing =
+        crate::work::git_within::within_or_fail(std::time::Duration::from_secs(5), &fifo, move || {
+            branch_missing_within(stuck, "maestro/x", std::time::Duration::from_millis(50))
+        });
+    assert!(!missing, "a timed-out check must answer present");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the check does not wait for git"
+    );
+}
+
+/// #1567: teardown whose count is unknown and whose missing-branch check
+/// times out still finishes, and keeps the branch. Only those two reads
+/// are stand-ins; the worktree remove and the branch are real git.
+#[cfg(unix)]
+#[test]
+fn teardown_keeps_branch_when_missing_check_times_out() {
+    let repo = repo_with_branch(0);
+    let root = repo.path().join(".maestro/worktrees");
+    let path = root.join("x");
+    let path_arg = path.to_str().expect("utf-8 tempdir");
+    git(
+        repo.path(),
+        &["worktree", "add", "-q", path_arg, "maestro/x"],
+    );
+    let fifo = repo.path().join("never-written-1567");
+    make_fifo(&fifo);
+
+    let (wt, stuck_on) = (path.clone(), fifo.clone());
+    let wiped = crate::work::git_within::within_or_fail(
+        std::time::Duration::from_secs(10),
+        &fifo,
+        move || {
+            let unknown = |_: &Path, _: &str| -> Option<usize> { None };
+            let stuck = |dir: &Path, branch: &str| {
+                let git = stuck_git(dir, &stuck_on);
+                branch_missing_within(git, branch, std::time::Duration::from_millis(50))
+            };
+            wipe_counting(1567, &wt, "maestro/x", &root, Some(&unknown), &stuck).is_ok()
+        },
+    );
+    assert!(wiped, "teardown must finish and succeed");
+    assert!(!path.exists(), "the worktree is removed");
+    assert!(
+        branch_present(repo.path(), "maestro/x"),
+        "a branch whose missing check timed out is kept"
     );
 }
