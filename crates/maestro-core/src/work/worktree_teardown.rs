@@ -15,9 +15,12 @@
 //!    missing path, an already-removed worktree, or a missing branch are all
 //!    treated as success, not error.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
+use super::git_within::{GIT_COUNT_TIMEOUT, output_within};
 use super::unique_commits::unique_commit_count;
 
 /// Typed failure modes for [`wipe_worktree`]. No path here ever panics; every
@@ -70,6 +73,10 @@ pub fn wipe_worktree(
 /// directory inside the repo: [`unique_commit_count`], or a stand-in.
 type CountUnique<'a> = &'a dyn Fn(&Path, &str) -> Option<usize>;
 
+/// Whether git says `branch` is gone, read from a directory inside the
+/// repo: [`is_branch_missing`], or a stand-in (#1567).
+type IsMissing<'a> = &'a dyn Fn(&Path, &str) -> bool;
+
 /// [`wipe_worktree`], keeping `branch` when `keep_unpushed` and it holds
 /// unpushed commits (#1469, `wipe_worktree_keeping_unpushed`).
 pub(super) fn wipe(
@@ -81,18 +88,27 @@ pub(super) fn wipe(
 ) -> Result<(), TeardownError> {
     let count: CountUnique = &unique_commit_count;
     let keep = keep_unpushed.then_some(count);
-    wipe_counting(issue_number, path, branch, worktree_root, keep)
+    wipe_counting(
+        issue_number,
+        path,
+        branch,
+        worktree_root,
+        keep,
+        &is_branch_missing,
+    )
 }
 
-/// [`wipe`] with the unique-commit count injected (#1481), so a test can
-/// stand in a git count that never answers and run real git for the rest.
-/// `None`: the branch is deleted without a count.
+/// [`wipe`] with the unique-commit count (#1481) and the missing-branch
+/// check (#1567) injected, so a test can stand in a git that never
+/// answers and run real git for the rest. `None`: the branch is deleted
+/// without a count.
 fn wipe_counting(
     issue_number: u64,
     path: &Path,
     branch: &str,
     worktree_root: &Path,
     keep_unpushed: Option<CountUnique>,
+    missing: IsMissing,
 ) -> Result<(), TeardownError> {
     // Lifecycle span (#742): every git call below runs inside it, and the
     // outcome is recorded before return.
@@ -119,12 +135,12 @@ fn wipe_counting(
             // Path already gone (idempotent re-entry). Still attempt the branch
             // delete — it may have survived a partial earlier teardown.
             tracing::warn!(issue_number, path = %path.display(), "worktree path already absent; skipping remove");
-            delete_branch(worktree_root, branch, keep_unpushed)?;
+            delete_branch(worktree_root, branch, keep_unpushed, missing)?;
             Ok(())
         }
         Some(canon_path) => {
             run_git_worktree_remove(worktree_root, &canon_path)?;
-            delete_branch(worktree_root, branch, keep_unpushed)?;
+            delete_branch(worktree_root, branch, keep_unpushed, missing)?;
             if canon_path.exists() {
                 return Err(TeardownError::PathStillExists(canon_path));
             }
@@ -233,6 +249,7 @@ fn delete_branch(
     repo_dir: &Path,
     branch: &str,
     keep: Option<CountUnique>,
+    missing: IsMissing,
 ) -> Result<(), TeardownError> {
     if let Some(count) = keep {
         match count(repo_dir, branch) {
@@ -241,7 +258,7 @@ fn delete_branch(
                 tracing::info!(branch, "keeping branch with {n} unique commit(s)");
                 return Ok(());
             }
-            None if is_branch_missing(repo_dir, branch) => {
+            None if missing(repo_dir, branch) => {
                 tracing::info!(branch, "branch already absent; nothing to delete");
                 return Ok(());
             }
@@ -254,16 +271,29 @@ fn delete_branch(
     run_git_branch_delete(repo_dir, branch, true)
 }
 
-/// True only when git answers that `refs/heads/<branch>` does not exist
-/// (`rev-parse --verify --quiet` exit 1). Any other failure is not proof
-/// the branch is gone, so the caller keeps it.
+/// True only when git answers, within [`GIT_COUNT_TIMEOUT`], that
+/// `refs/heads/<branch>` does not exist. A failure or a timeout is not
+/// proof the branch is gone, so the caller keeps it (#1567).
 fn is_branch_missing(repo_dir: &Path, branch: &str) -> bool {
-    Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet"])
+    let mut git = Command::new("git");
+    git.args(["for-each-ref", "--format=%(refname)"])
         .arg(format!("refs/heads/{branch}"))
-        .current_dir(repo_dir)
-        .output()
-        .is_ok_and(|out| out.status.code() == Some(1))
+        .current_dir(repo_dir);
+    branch_missing_within(git, branch, GIT_COUNT_TIMEOUT)
+}
+
+/// True when `command` (a `for-each-ref` listing) answers with success in
+/// `timeout` and lists no `refs/heads/<branch>`. `for-each-ref` exits 0
+/// on no match, so the shared timeout helper, which only keeps a success,
+/// can still tell "missing" from "no answer".
+fn branch_missing_within(command: Command, branch: &str, timeout: Duration) -> bool {
+    let full = format!("refs/heads/{branch}");
+    let listed = output_within(command, timeout, |mut out| {
+        let mut text = String::new();
+        out.read_to_string(&mut text).ok()?;
+        Some(text)
+    });
+    listed.is_some_and(|text| !text.lines().any(|line| line == full))
 }
 
 /// `git branch -D|-d <branch>`, run from `repo_dir`. Idempotent: a
