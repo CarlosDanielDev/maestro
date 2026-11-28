@@ -3,6 +3,8 @@ use crate::notifications::dispatcher::build_notification_dispatcher;
 use crate::review::bypass::BypassSource;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
+use std::io::Write;
+use std::path::Path;
 
 pub const DEFAULT_MAX_CONCURRENT: usize = 3;
 pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
@@ -179,15 +181,14 @@ pub fn setup_app_for_agent(
     app
 }
 
-/// Perform startup housekeeping: remove orphaned worktrees and old session logs.
-pub fn startup_cleanup(repo_root: &std::path::Path) {
-    let cleanup_mgr = crate::session::cleanup::CleanupManager::new(repo_root);
-    if let Ok(orphans) = cleanup_mgr.scan_orphans()
-        && !orphans.is_empty()
-    {
-        tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
-        let _ = cleanup_mgr.remove_orphans(&orphans);
-    }
+/// Startup housekeeping, run just before the first screen: report each
+/// untracked dir under `.maestro/worktrees/` once (never delete it, #1563)
+/// and remove old session logs. `stderr` (`maestro run --once`, which
+/// draws no screen) also prints the lines there.
+pub fn startup_cleanup(app: &mut App, repo_root: &Path, stderr: bool) {
+    let mut err = std::io::stderr();
+    let err = stderr.then_some(&mut err as &mut dyn Write);
+    report_startup_orphans(app, repo_root, std::time::Instant::now(), err);
 
     let logger = crate::session::logger::SessionLogger::new(
         crate::session::logger::SessionLogger::default_dir(),
@@ -198,6 +199,10 @@ pub fn startup_cleanup(repo_root: &std::path::Path) {
         tracing::info!("Cleaned {} old session logs", removed);
     }
 }
+
+#[path = "setup_orphans.rs"]
+pub(crate) mod orphans;
+pub(crate) use orphans::{StartupOrphans, report_startup_orphans};
 
 #[cfg(test)]
 mod bypass_source_tests {

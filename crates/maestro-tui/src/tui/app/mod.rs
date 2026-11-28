@@ -257,6 +257,8 @@ pub struct App {
     pub(crate) copy_toast: Option<crate::tui::app::clipboard_action::CopyToast>,
     /// `ds::toast` queue (#1254): one visible toast, errors wait their turn.
     pub(crate) toasts: crate::tui::ds::toast::ToastQueue<toasts::ToastUndo>,
+    /// The startup untracked-dir notice (#1563); `Esc` on it records its dirs.
+    pub(crate) startup_orphans: Option<crate::setup::StartupOrphans>,
     /// The visible file-conflict toast and what its `p` / `⏎` act on (#1292).
     pub(crate) conflict_prompts: Vec<crate::tui::agent_graph::conflict_toast::ConflictPrompt>,
     /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
@@ -466,6 +468,7 @@ impl App {
             shell_launcher: Box::new(crate::tui::shell_launcher::OsShellLauncher),
             copy_toast: None,
             toasts: Default::default(),
+            startup_orphans: None,
             conflict_prompts: Vec::new(),
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::sync::Arc::new(std::sync::Mutex::new(

@@ -196,6 +196,12 @@ impl<U> ToastQueue<U> {
         self.transient.take().and_then(|s| s.toast.undo)
     }
 
+    /// Drop the transient toast, so a queued error shows at once (#1563:
+    /// the startup notice must not wait behind the ⌃Q launch hint).
+    pub fn drop_transient(&mut self) {
+        self.transient = None;
+    }
+
     /// `Esc`: drop the visible error. `false` when no error is visible.
     pub fn dismiss_error(&mut self, now: Instant) -> bool {
         if self.live_transient(now).is_some() {

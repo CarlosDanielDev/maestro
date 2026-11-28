@@ -17,6 +17,16 @@ impl App {
         self.toasts.push(toast, now);
     }
 
+    /// Show `toast` on the first frame (#1563, the startup notice). The
+    /// ⌃Q launch hint is logged now (the run loop's call is then a no-op)
+    /// and its info toast dropped, because a live info toast hides every
+    /// error toast. The footer still pins `⌃Q quit`.
+    pub(crate) fn push_first_frame_toast(&mut self, toast: Toast<ToastUndo>, now: Instant) {
+        crate::tui::input_handler::announce_quit_key(self, now);
+        self.toasts.drop_transient();
+        self.push_toast(toast, now);
+    }
+
     /// `Ctrl+Z`: run the visible toast's undo. `false` (key not used) when
     /// no undo toast is visible or its window has closed.
     pub(crate) fn toast_ctrl_z(&mut self, now: Instant) -> bool {
@@ -38,6 +48,7 @@ impl App {
         // #1292: a dismissed conflict toast's keys go with it.
         if let (true, Some(message)) = (dismissed, shown) {
             self.forget_conflict_prompt(&message);
+            self.ack_startup_orphans(&message);
         }
         dismissed
     }
