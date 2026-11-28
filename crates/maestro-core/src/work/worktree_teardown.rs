@@ -15,8 +15,8 @@
 //!    missing path, an already-removed worktree, or a missing branch are all
 //!    treated as success, not error.
 
-use std::path::{Path, PathBuf};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
