@@ -182,6 +182,13 @@ mod tests {
             .with_max_level(tracing::Level::DEBUG)
             .with_writer(move || writer.clone())
             .finish();
+        // Plain `cargo test` runs many tests in one process. With only one live
+        // dispatcher, tracing-core rebuilds callsite interest from the calling
+        // thread's own default, so a test on another thread that first hits the
+        // "derived role" callsite caches `Interest::never` for every thread and
+        // this scoped subscriber misses the event. A second live dispatcher
+        // makes every rebuild ask all live dispatchers, this one included.
+        let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
         tracing::subscriber::with_default(subscriber, || {
             derive_role("build it with token sk-secret-1044");
         });
