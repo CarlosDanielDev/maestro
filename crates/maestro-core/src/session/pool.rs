@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -45,6 +45,9 @@ pub struct SessionPool {
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
     /// Quota input for headroom routing (issue #1065). `None` = routing off.
     pub(super) quota_routing: Option<QuotaRouting>,
+    /// #1556: queued retry children a finished parent handed its worktree
+    /// to ([`Self::hand_worktree_to_retry`]).
+    handed: HashSet<Uuid>,
 }
 
 impl SessionPool {
@@ -71,6 +74,7 @@ impl SessionPool {
             knowledge_appendix: None,
             rendered_template_store: None,
             quota_routing: None,
+            handed: HashSet::new(),
         }
     }
 
@@ -174,6 +178,7 @@ impl SessionPool {
             let Some(mut session) = self.queue.pop_front() else {
                 break;
             };
+            self.handed.remove(&session.id);
 
             let slug = session_slug(&session);
             // #1505: a Stalled parent goes `Retrying` without a kill, so its
@@ -392,8 +397,9 @@ impl SessionPool {
             .any(|m| m.session.id != parent_id && session_slug(&m.session) == slug);
         for queued in self.queue.iter_mut().filter(|s| session_slug(s) == slug) {
             shared = true;
-            if queued.worktree_path.is_none() {
+            if queued.worktree_path.is_none() && path.is_some() {
                 queued.worktree_path = path.clone();
+                self.handed.insert(queued.id);
             }
         }
         shared
@@ -814,21 +820,59 @@ impl SessionPool {
     }
 
     /// #1514: take a queued session out of the queue as a `Killed` record.
-    /// It never ran, so nothing is stopped and no worktree is touched (a
-    /// queued retry child may share its parent's, #1485). False when the
-    /// session is not queued or cannot become `Killed`.
+    /// It never ran, so nothing is stopped. #1556: a worktree its finished
+    /// retry parent handed it goes the way `finalize_at` removes one, when
+    /// no other session runs there ([`Self::dequeue_tears_down`]); any
+    /// other worktree is not touched. False when the session is not queued
+    /// or cannot become `Killed`.
     pub fn dequeue(&mut self, session_id: Uuid) -> bool {
-        let Some(idx) = (self.queue.iter())
-            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))
+        let shown = self.dequeue_tears_down(session_id);
+        self.dequeue_as_shown(session_id, shown).is_some()
+    }
+
+    /// #1556: [`Self::dequeue`] as the Kill dialog promised it. The
+    /// worktree goes only when the dialog said so (`shown_teardown`) and
+    /// [`Self::dequeue_tears_down`] still says so now. `None` when the
+    /// session is not queued or cannot become `Killed`.
+    pub fn dequeue_as_shown(&mut self, session_id: Uuid, shown_teardown: bool) -> Option<Dequeued> {
+        let idx = (self.queue.iter()).position(|s| {
+            s.id == session_id && s.status.can_transition_to(SessionStatus::Killed)
+        })?;
+        let tear_down = self.dequeue_tears_down(session_id);
+        self.handed.remove(&session_id);
+        let mut session = self.queue.remove(idx)?;
+        let _ = session.transition_to(SessionStatus::Killed, TransitionReason::UserKill);
+        let slug = session_slug(&session);
+        let outcome = match (tear_down, shown_teardown) {
+            (true, true) => {
+                // `GitWorktreeManager::remove` only logs a failed teardown:
+                // ask whether the worktree is really gone.
+                let failed = self.worktree_mgr.remove(&slug).is_err();
+                if failed || self.worktree_mgr.exists(&slug) {
+                    Dequeued::RemoveFailed
+                } else {
+                    Dequeued::Removed
+                }
+            }
+            (true, false) => Dequeued::KeptAsShown,
+            (false, _) => Dequeued::Untouched,
+        };
+        self.finished.push(ManagedSession::new(session));
+        Some(outcome)
+    }
+
+    /// #1556: whether [`Self::dequeue`] removes `session_id`'s worktree: it
+    /// is a queued retry child holding the worktree its finished parent
+    /// handed it, and no other active or queued session shares the slug.
+    pub fn dequeue_tears_down(&self, session_id: Uuid) -> bool {
+        let Some(child) =
+            (self.queue.iter()).find(|s| s.id == session_id && self.handed.contains(&s.id))
         else {
             return false;
         };
-        let Some(mut session) = self.queue.remove(idx) else {
-            return false;
-        };
-        let _ = session.transition_to(SessionStatus::Killed, TransitionReason::UserKill);
-        self.finished.push(ManagedSession::new(session));
-        true
+        let slug = session_slug(child);
+        let mut others = (self.active.iter().map(|m| &m.session)).chain(self.queue.iter());
+        !others.any(|s| s.id != session_id && session_slug(s) == slug)
     }
 
     /// Get the event sender for spawning sessions.
@@ -844,6 +888,21 @@ impl SessionPool {
             }
         }
     }
+}
+
+/// #1556: what [`SessionPool::dequeue_as_shown`] did to the worktree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dequeued {
+    /// No worktree was the session's to remove.
+    Untouched,
+    /// The handed worktree is gone (its branch stays if it has unpushed
+    /// commits).
+    Removed,
+    /// The worktree would go now, but the dialog said no worktree is
+    /// touched: it stays, as shown.
+    KeptAsShown,
+    /// The teardown was tried and the worktree is still there.
+    RemoveFailed,
 }
 
 fn is_retrying_with_slug(managed: &ManagedSession, slug: &str) -> bool {
@@ -870,6 +929,10 @@ pub fn session_slug(session: &Session) -> String {
 #[cfg(test)]
 #[path = "pool_teardown_tests.rs"]
 mod teardown_tests;
+
+#[cfg(test)]
+#[path = "pool_dequeue_tests.rs"]
+mod dequeue_tests;
 
 #[cfg(test)]
 pub(in crate::session) mod tests {

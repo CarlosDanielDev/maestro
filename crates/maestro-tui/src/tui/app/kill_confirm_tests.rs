@@ -19,6 +19,8 @@ use crate::tui::input_handler::handle_key;
 
 #[path = "kill_confirm_needs_pr_tests.rs"]
 mod needs_pr;
+#[path = "kill_confirm_queued_tests.rs"]
+mod queued;
 
 fn git(dir: &Path, args: &[&str]) -> bool {
     std::process::Command::new("git")

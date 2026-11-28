@@ -820,3 +820,13 @@ first. One entry per decision.
 - **ADR (state machine, not a dialog special case):** the owner chose to add `Killed` to `NeedsPr => [...]` (2026-11-27), one rule for one transition. Rejected: forcing the kill in the dialog while the state machine forbids it. Quit does not change (owner, 2026-11-27): `quit_ends` excludes NeedsPr, so an adopted NeedsPr session is kept as NeedsPr at quit and Confirm Exit does not list it; only `X` kills it.
 - **Differs from the target:** the target has no NeedsPr session or PR retry row.
 - **Source:** #1500.
+
+## 2026-11-27 — Removing a queued retry child from the queue removes the worktree its parent left it
+
+- **What:** `pool.dequeue` (Kill on a queued session) now tears down the worktree a finished retry parent handed its queued child (`hand_worktree_to_retry`), through the same `WorktreeManager::remove` that `finalize_at` uses, so the branch is kept when it holds unpushed commits (#1469). It does this only when no other active or queued session shares the slug (`SessionPool::dequeue_tears_down`); a session resumed with its own worktree (#1266) keeps it. The Kill dialog for that child reads `gone   its place in the queue: it never starts`, then the usual teardown rows (`gone   the worktree and its branch`, or `kept   its branch, N unpushed commits`, and `lost   N uncommitted file(s)`, counted once when the dialog opens). Every other queued session still reads `kept   every file: no worktree is touched`.
+- **Why:** #1556, judge of PR #1554. A dequeued child never reached `finalize_at`, so the handed worktree and its branch stayed on disk, and the startup orphan scan does not list worktrees git tracks.
+- **Section:** `§05` "Killing the wrong agent" (the typed kill confirm).
+- **ADR (dequeue tears down):** option (a) of the issue: the user asked to remove the session, and a leftover the user must find is a silent leak. The pool remembers which queued children were handed a worktree, so a queued session's own worktree path alone never makes dequeue delete files. Rejected: (b) keep the worktree and tell the user to run `maestro clean --stale`.
+- **Judge follow-up (PR #1569):** `⏎` keeps what the dialog showed: the dialog's answer is stored when it opens (`ScreenState::kill_teardown_shown`, cleared on Esc) and `pool.dequeue_as_shown` removes the worktree only when the dialog said so and the pool still agrees. A worktree kept against the pool's new answer raises a Warn toast (`… its worktree was kept, as the dialog said: <path>`); a teardown git did not do raises an Error toast (`… git could not remove its worktree: <path>`), not only a log line.
+- **Differs from the target:** the target has no queued-session or retry-child dialog.
+- **Source:** #1556.
