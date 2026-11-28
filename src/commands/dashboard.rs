@@ -7,7 +7,6 @@ use crate::tui::app::App;
 
 pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let repo_root = std::env::current_dir()?;
-    startup_cleanup(&repo_root);
 
     let state_path = StateStore::default_path();
     let first_run = is_first_run(&state_path);
@@ -116,7 +115,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         })
         .collect();
 
-    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
+    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root.clone()));
 
     let mut app = if let Some(lc) = loaded {
         let provider_config = lc.config.effective_provider_config();
@@ -150,6 +149,8 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     app.pending_commands
         .push(crate::tui::app::TuiCommand::FetchSuggestionData);
 
+    // #1563: last before the first screen, so its line is not lost.
+    startup_cleanup(&mut app, &repo_root, false);
     crate::tui::run(app).await
 }
 

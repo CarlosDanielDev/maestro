@@ -3,6 +3,9 @@ use crate::notifications::dispatcher::build_notification_dispatcher;
 use crate::review::bypass::BypassSource;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
+use crate::tui::screens::sanitize_for_terminal;
+use std::io::Write;
+use std::path::Path;
 
 pub const DEFAULT_MAX_CONCURRENT: usize = 3;
 pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
@@ -179,15 +182,14 @@ pub fn setup_app_for_agent(
     app
 }
 
-/// Perform startup housekeeping: remove orphaned worktrees and old session logs.
-pub fn startup_cleanup(repo_root: &std::path::Path) {
-    let cleanup_mgr = crate::session::cleanup::CleanupManager::new(repo_root);
-    if let Ok(orphans) = cleanup_mgr.scan_orphans()
-        && !orphans.is_empty()
-    {
-        tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
-        let _ = cleanup_mgr.remove_orphans(&orphans);
-    }
+/// Startup housekeeping, run just before the first screen: report each
+/// untracked dir under `.maestro/worktrees/` once (never delete it, #1563)
+/// and remove old session logs. `stderr` (`maestro run --once`, which
+/// draws no screen) also prints the lines there.
+pub fn startup_cleanup(app: &mut App, repo_root: &Path, stderr: bool) {
+    let mut err = std::io::stderr();
+    let err = stderr.then_some(&mut err as &mut dyn Write);
+    report_startup_orphans(app, repo_root, std::time::Instant::now(), err);
 
     let logger = crate::session::logger::SessionLogger::new(
         crate::session::logger::SessionLogger::default_dir(),
@@ -197,6 +199,79 @@ pub fn startup_cleanup(repo_root: &std::path::Path) {
     {
         tracing::info!("Cleaned {} old session logs", removed);
     }
+}
+
+/// Marker inside an untracked dir: its line was shown (#1563). Removing
+/// the dir by hand removes the marker too, so a new dir with the same name
+/// is shown again.
+const SHOWN_MARKER: &str = ".maestro-orphan-shown";
+
+/// Log each line of [`orphan_notices`], show it as an error toast (sticky:
+/// the ⌃Q launch notice that follows must not hide it) and write it to
+/// `stderr` when given.
+pub(crate) fn report_startup_orphans(
+    app: &mut App,
+    repo_root: &Path,
+    now: std::time::Instant,
+    mut stderr: Option<&mut dyn Write>,
+) {
+    use crate::tui::ds::toast::{Severity, Toast};
+    for line in orphan_notices(repo_root) {
+        tracing::warn!("{line}");
+        if let Some(w) = stderr.as_deref_mut() {
+            let _ = writeln!(w, "warning: {}", sanitize_for_terminal(&line));
+        }
+        app.push_toast(Toast::new(Severity::Error, line), now);
+    }
+}
+
+/// The startup lines: one per untracked dir not shown before, or the scan
+/// error. An untracked dir is never removed: it may hold the only copy of
+/// files no git ref has, and `git worktree remove` cannot remove it.
+pub(crate) fn orphan_notices(repo_root: &Path) -> Vec<String> {
+    match crate::session::cleanup::CleanupManager::new(repo_root).scan_orphans() {
+        Ok(orphans) => (orphans.iter())
+            .filter(|o| first_notice(&o.path))
+            .map(|o| orphan_line(&o.name))
+            .collect(),
+        Err(e) => vec![format!("orphan worktree scan failed: {e:#}")],
+    }
+}
+
+/// `true` when `dir` was not shown yet, and records it as shown. A symlink
+/// (never write outside the worktree root) or a marker that cannot be
+/// written is shown on every launch: never silent.
+fn first_notice(dir: &Path) -> bool {
+    if !std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir()) {
+        return true;
+    }
+    let marker = dir.join(SHOWN_MARKER);
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)
+    {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => {
+            tracing::warn!("cannot record orphan notice {}: {e}", marker.display());
+            true
+        }
+    }
+}
+
+/// `untracked dir kept · rm -rf .maestro/worktrees/<name>`: the path and
+/// the exact command, run from the repo root. Fits the 80-column toast for
+/// a usual worktree name.
+fn orphan_line(name: &str) -> String {
+    let path = format!(".maestro/worktrees/{name}");
+    let plain = |c: char| c.is_ascii_alphanumeric() || "._/-@%+=:,".contains(c);
+    let path = if path.chars().all(plain) {
+        path
+    } else {
+        format!("'{}'", path.replace('\'', r"'\''"))
+    };
+    format!("untracked dir kept · rm -rf {path}")
 }
 
 #[cfg(test)]
@@ -312,3 +387,7 @@ command = "claude"
         );
     }
 }
+
+#[cfg(test)]
+#[path = "setup_orphan_tests.rs"]
+pub(crate) mod orphan_tests;

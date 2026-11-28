@@ -110,10 +110,9 @@ pub async fn cmd_run(
 
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
-    startup_cleanup(&repo_root);
 
     let issue_filter_labels = config.github.issue_filter_labels.clone();
-    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
+    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root.clone()));
 
     let effective_max_concurrent = if continuous && milestone.is_some() {
         Some(1)
@@ -263,6 +262,8 @@ pub async fn cmd_run(
 
     app.once_mode = once;
     app.no_splash = no_splash;
+    // #1563: `--once` draws no screen, so its line goes to stderr.
+    startup_cleanup(&mut app, &repo_root, once);
 
     crate::tui::run(app).await
 }

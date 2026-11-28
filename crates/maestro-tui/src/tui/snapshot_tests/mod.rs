@@ -59,6 +59,7 @@ mod settings_theme_parity;
 mod settings_turboquant_parity;
 mod shell_bars;
 mod size_guard;
+mod startup_orphans;
 mod status_bar;
 mod status_chips;
 mod team_wizard;
