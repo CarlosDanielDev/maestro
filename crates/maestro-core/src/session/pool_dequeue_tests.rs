@@ -2,12 +2,16 @@
 //! worktree its finished parent handed it behind, and never removes a
 //! worktree a live session still runs in.
 
+use std::path::PathBuf;
+
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::SessionPool;
 use super::tests::{make_pool, make_session};
+use super::{Dequeued, SessionPool};
 use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus};
+use crate::session::worktree::{MockWorktreeManager, WorktreeManager};
 
 /// A session for `issue`: every session of one issue shares its slug.
 fn for_issue(issue: u64) -> Session {
@@ -104,4 +108,58 @@ fn dequeue_keeps_the_worktree_of_a_resumed_session() {
     assert!(pool.dequeue(resumed_id), "it leaves the queue");
 
     assert!(pool.worktree_exists("issue-1558"), "its worktree stays");
+}
+
+/// #1556 judge: the dialog opened while the parent still ran ("no worktree
+/// is touched"); the parent handed its worktree over before `⏎`. The
+/// worktree stays, as the dialog said, and the caller is told.
+#[test]
+fn dequeue_as_shown_keeps_a_worktree_the_dialog_said_stays() {
+    let mut pool = make_pool(1);
+    let parent = running(&mut pool, 1559);
+    walk(&mut pool, parent, &RETRYING);
+    let child = for_issue(1559);
+    let child_id = child.id;
+    pool.enqueue(child);
+    let shown = pool.dequeue_tears_down(child_id);
+    assert!(!shown, "the dialog opens before the hand-over");
+    assert!(pool.finalize(parent), "the parent hands its worktree over");
+
+    let outcome = pool.dequeue_as_shown(child_id, shown);
+
+    assert_eq!(outcome, Some(Dequeued::KeptAsShown));
+    assert!(pool.worktree_exists("issue-1559"), "as the dialog said");
+}
+
+/// A worktree manager whose teardown does nothing and says `Ok`, as
+/// `GitWorktreeManager::remove` does when git fails or refuses.
+struct StuckWorktrees(MockWorktreeManager);
+
+impl WorktreeManager for StuckWorktrees {
+    fn create(&self, slug: &str) -> anyhow::Result<PathBuf> {
+        self.0.create(slug)
+    }
+    fn remove(&self, _slug: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn exists(&self, slug: &str) -> bool {
+        self.0.exists(slug)
+    }
+}
+
+#[test]
+fn dequeue_reports_a_teardown_that_left_the_worktree() {
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let stuck = Box::new(StuckWorktrees(MockWorktreeManager::new()));
+    let mut pool = SessionPool::new(1, stuck, tx);
+    let parent = running(&mut pool, 1560);
+    walk(&mut pool, parent, &RETRYING);
+    let child = for_issue(1560);
+    let child_id = child.id;
+    pool.enqueue(child);
+    assert!(pool.finalize(parent), "the parent hands its worktree over");
+
+    let outcome = pool.dequeue_as_shown(child_id, true);
+
+    assert_eq!(outcome, Some(Dequeued::RemoveFailed), "never a silent Removed");
 }

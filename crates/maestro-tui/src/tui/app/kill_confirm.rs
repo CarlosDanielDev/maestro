@@ -16,6 +16,9 @@ use crate::tui::ds::toast::{Severity, Toast};
 use crate::work::git_within::{GIT_COUNT_TIMEOUT, output_within};
 use crate::work::unique_commits::unique_commit_count;
 
+#[path = "kill_dequeue.rs"]
+mod dequeue;
+
 #[cfg(test)]
 #[path = "kill_confirm_tests.rs"]
 mod tests;
@@ -59,6 +62,8 @@ impl App {
         let unpushed = self.unpushed_commits(session_id);
         let confirm = self.kill_confirm_with(session_id, uncommitted, unpushed);
         self.screen_state.kill_confirm = Some((session_id, confirm));
+        let shown = self.pool.dequeue_tears_down(session_id);
+        self.screen_state.kill_teardown_shown = Some((session_id, shown));
         self.navigate_to(super::TuiMode::ConfirmKill(session_id));
     }
 

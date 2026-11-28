@@ -165,7 +165,12 @@ impl App {
         let needs_pr_issue = (self.pool.get_session(session_id))
             .filter(|s| s.status == crate::session::types::SessionStatus::NeedsPr)
             .and_then(|s| s.issue_number);
-        match self.pool.kill_session(session_id).await {
+        // #1556: a queued session leaves the queue the way its dialog said.
+        let killed = match self.dequeue_as_shown(session_id) {
+            Some(done) => Ok(done),
+            None => self.pool.kill_session(session_id).await,
+        };
+        match killed {
             Ok(true) => {
                 if let Some(issue) = needs_pr_issue {
                     self.cancel_pr_retry(issue);

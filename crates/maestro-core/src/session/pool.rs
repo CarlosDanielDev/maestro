@@ -826,22 +826,38 @@ impl SessionPool {
     /// other worktree is not touched. False when the session is not queued
     /// or cannot become `Killed`.
     pub fn dequeue(&mut self, session_id: Uuid) -> bool {
-        let Some(idx) = (self.queue.iter())
-            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))
-        else {
-            return false;
-        };
+        let shown = self.dequeue_tears_down(session_id);
+        self.dequeue_as_shown(session_id, shown).is_some()
+    }
+
+    /// #1556: [`Self::dequeue`] as the Kill dialog promised it. The
+    /// worktree goes only when the dialog said so (`shown_teardown`) and
+    /// [`Self::dequeue_tears_down`] still says so now. `None` when the
+    /// session is not queued or cannot become `Killed`.
+    pub fn dequeue_as_shown(&mut self, session_id: Uuid, shown_teardown: bool) -> Option<Dequeued> {
+        let idx = (self.queue.iter())
+            .position(|s| s.id == session_id && s.status.can_transition_to(SessionStatus::Killed))?;
         let tear_down = self.dequeue_tears_down(session_id);
         self.handed.remove(&session_id);
-        let Some(mut session) = self.queue.remove(idx) else {
-            return false;
-        };
+        let mut session = self.queue.remove(idx)?;
         let _ = session.transition_to(SessionStatus::Killed, TransitionReason::UserKill);
-        if tear_down {
-            let _ = self.worktree_mgr.remove(&session_slug(&session));
-        }
+        let slug = session_slug(&session);
+        let outcome = match (tear_down, shown_teardown) {
+            (true, true) => {
+                // `GitWorktreeManager::remove` only logs a failed teardown:
+                // ask whether the worktree is really gone.
+                let failed = self.worktree_mgr.remove(&slug).is_err();
+                if failed || self.worktree_mgr.exists(&slug) {
+                    Dequeued::RemoveFailed
+                } else {
+                    Dequeued::Removed
+                }
+            }
+            (true, false) => Dequeued::KeptAsShown,
+            (false, _) => Dequeued::Untouched,
+        };
         self.finished.push(ManagedSession::new(session));
-        true
+        Some(outcome)
     }
 
     /// #1556: whether [`Self::dequeue`] removes `session_id`'s worktree: it
@@ -871,6 +887,21 @@ impl SessionPool {
             }
         }
     }
+}
+
+/// #1556: what [`SessionPool::dequeue_as_shown`] did to the worktree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dequeued {
+    /// No worktree was the session's to remove.
+    Untouched,
+    /// The handed worktree is gone (its branch stays if it has unpushed
+    /// commits).
+    Removed,
+    /// The worktree would go now, but the dialog said no worktree is
+    /// touched: it stays, as shown.
+    KeptAsShown,
+    /// The teardown was tried and the worktree is still there.
+    RemoveFailed,
 }
 
 fn is_retrying_with_slug(managed: &ManagedSession, slug: &str) -> bool {
