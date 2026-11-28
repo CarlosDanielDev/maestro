@@ -288,14 +288,11 @@ fn is_branch_missing(repo_dir: &Path, branch: &str) -> bool {
 /// can still tell "missing" from "no answer".
 fn branch_missing_within(command: Command, branch: &str, timeout: Duration) -> bool {
     let full = format!("refs/heads/{branch}");
-    // RED (#1567): untimed on purpose; the next commit uses the helper.
-    let _ = timeout;
-    let mut command = command;
-    let listed = command
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned());
+    let listed = output_within(command, timeout, |mut out| {
+        let mut text = String::new();
+        out.read_to_string(&mut text).ok()?;
+        Some(text)
+    });
     listed.is_some_and(|text| !text.lines().any(|line| line == full))
 }
 
