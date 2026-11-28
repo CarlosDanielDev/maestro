@@ -17,13 +17,15 @@ use std::sync::OnceLock;
 /// - Anthropic/OpenAI-style keys: `sk-` followed by 20+ key characters
 ///   (covers `sk-ant-…`, `sk-proj-…`, legacy `sk-…`)
 /// - AWS access keys: `AKIA…` / `ASIA…` + 16 uppercase alphanumerics
+/// - npm CLI tokens: `npm_` + 36 alphanumerics
 ///
 /// `KEY=value` lines whose key names look secret keep the key name and
 /// lose the value. A name qualifies when one of KEY(S), TOKEN(S),
 /// SECRET(S), PASSWORD(S), PASSWD(S), CREDENTIAL(S) or AUTH(S) appears
-/// with any name characters before it (no underscore required, so
-/// `APIKEY=`, `apikey=` and `dbpassword=` all match), and is followed
-/// only by a `_`-run, digits, or the `=` (case-insensitive, so
+/// with any name characters before it (no underscore required, and the
+/// name may start with `_` or a digit, so `APIKEY=`, `apikey=`,
+/// `dbpassword=`, `:_authToken=` and `2FA_SECRET=` all match), and is
+/// followed only by a `_`-run, digits, or the `=` (case-insensitive, so
 /// `GITHUB_TOKEN=`, `db_password=` and lowercase `apikey=` all match,
 /// while `AUTHOR=`, `KEYBOARD=` and `TOKENIZER=` stay readable). The
 /// boundary is intentionally loose: `monkey=` and `hockey=` lose their
@@ -37,13 +39,13 @@ pub fn redact_secrets(s: &str) -> String {
     static TOKEN: OnceLock<regex::Regex> = OnceLock::new();
     let named_value = NAMED_VALUE.get_or_init(|| {
         regex::Regex::new(
-            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.?)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.?)*(?:'|(?m:$))|\S+)"#,
+            r#"\b((?:[A-Za-z0-9_][A-Za-z0-9_]*?)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.?)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.?)*(?:'|(?m:$))|\S+)"#,
         )
         .unwrap()
     });
     let token = TOKEN.get_or_init(|| {
         regex::Regex::new(
-            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|bearer\s+[A-Za-z0-9._~+/=-]{16,}|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|\bsk-[A-Za-z0-9_-]{20,}|\b(?:AKIA|ASIA)[0-9A-Z]{16})",
+            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|bearer\s+[A-Za-z0-9._~+/=-]{16,}|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|\bsk-[A-Za-z0-9_-]{20,}|\b(?:AKIA|ASIA)[0-9A-Z]{16}|\bnpm_[A-Za-z0-9]{36})",
         )
         .unwrap()
     });
@@ -347,5 +349,37 @@ asianstreetfoodfair saturday
             let out = redact_secrets(input);
             assert_eq!(out, masked, "{label}: expected {masked}, got {out}");
         }
+    }
+
+    /// Names starting with `_` or a digit must mask too: `_` is a word
+    /// character, so `\b` never lands before the keyword inside
+    /// `_authToken` (an `.npmrc` line), and the prefix used to require
+    /// a leading letter (#1445 round 5).
+    #[test]
+    fn redacts_names_starting_with_underscore_or_digit() {
+        let cases = [
+            (
+                "npmrc auth token",
+                "//registry.npmjs.org/:_authToken=npm_abcdefghijklmnop1234",
+                "//registry.npmjs.org/:_authToken=[REDACTED]",
+            ),
+            ("leading underscore", "_TOKEN=x", "_TOKEN=[REDACTED]"),
+            ("double underscore", "__SECRET=x", "__SECRET=[REDACTED]"),
+            ("leading digit", "2FA_SECRET=x", "2FA_SECRET=[REDACTED]"),
+        ];
+        for (label, input, masked) in cases {
+            let out = redact_secrets(input);
+            assert_eq!(out, masked, "{label}: expected {masked}, got {out}");
+        }
+    }
+
+    /// npm CLI tokens (`npm_` + 36 alphanumerics) are masked; a short
+    /// `npm_` name (`npm_package_name=`) stays readable (#1445 round 5).
+    #[test]
+    fn redacts_npm_tokens_keeps_short_npm_names() {
+        let out = redact_secrets("saved npm_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8 ok");
+        assert_eq!(out, "saved [REDACTED] ok");
+        let kept = "npm_package_name=maestro";
+        assert_eq!(redact_secrets(kept), kept);
     }
 }
