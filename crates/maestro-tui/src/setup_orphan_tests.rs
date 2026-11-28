@@ -177,6 +177,40 @@ fn orphan_symlink_dir_gets_no_marker() {
     assert_eq!(toast(&app, now).as_deref(), Some(ONE), "not recorded");
 }
 
+/// The real error toast at 80x24 in ASCII icon mode (`[X] error  `).
+fn ascii_toast(message: &str) -> String {
+    use crate::tui::ds::toast::{Severity, ToastView, draw_for_mode};
+    use ratatui::{Terminal, backend::TestBackend};
+    let view = ToastView {
+        severity: Severity::Error,
+        message,
+        undo_left: None,
+    };
+    let theme = crate::tui::theme::Theme::dark();
+    let mut t = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    t.draw(|f| draw_for_mode(f, f.area(), &view, &theme, false))
+        .expect("draw");
+    format!("{}", t.backend())
+}
+
+/// ASCII icon mode leaves 57 cells: a 57-cell line names the dir and is
+/// drawn whole; at 58 cells the toast drops the last char, so that name
+/// (and any name that is not plain ASCII) gets the count form.
+#[test]
+fn one_dir_line_fits_the_ascii_icon_toast_at_the_boundary() {
+    let prefix = "untracked dir kept: .maestro/worktrees/";
+    let fits = "a".repeat(57 - prefix.len());
+    let line = one_dir_line(&fits).expect("57 cells fit");
+    assert_eq!(line.len(), 57);
+    assert!(ascii_toast(&line).contains(&line), "{}", ascii_toast(&line));
+
+    let over = format!("{prefix}{fits}b");
+    assert!(!ascii_toast(&over).contains(&over), "58 cells are cut");
+    assert_eq!(one_dir_line(&format!("{fits}b")), None, "so: count form");
+    assert_eq!(one_dir_line("dé"), None, "not plain ASCII");
+    assert_eq!(one_dir_line("日本"), None, "wide chars");
+}
+
 #[test]
 fn remove_command_quotes_a_name_the_shell_would_split() {
     assert_eq!(

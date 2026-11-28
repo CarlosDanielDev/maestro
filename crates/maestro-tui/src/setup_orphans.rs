@@ -77,9 +77,27 @@ struct Notice {
     dirs: Vec<PathBuf>,
 }
 
-/// Message cells of a toast at 80 columns: the toast is at most 72 wide,
-/// 68 inside its border and padding, less `<icon> error  ` (9), less 1.
-pub(crate) const TOAST_CELLS: usize = 58;
+/// Message cells of an error toast at 80 columns, in either icon mode: its
+/// row is 68 cells (72 wide, less border and padding), less the
+/// `<icon> error  ` prefix of the wider icon (`[X]` in ASCII mode: 57).
+fn toast_cells() -> usize {
+    use crate::tui::icons::{IconId, get_for_mode};
+    use unicode_width::UnicodeWidthStr;
+    let icon = [true, false]
+        .map(|nerd| get_for_mode(IconId::XCircle, nerd).width())
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+    68usize.saturating_sub(icon + " error  ".len())
+}
+
+/// The toast line that names one dir, when it is plain ASCII (so chars are
+/// cells) and fits the toast in either icon mode; else `None`.
+pub(crate) fn one_dir_line(name: &str) -> Option<String> {
+    let line = format!("untracked dir kept: .maestro/worktrees/{name}");
+    let plain = name.chars().all(|c| c.is_ascii_graphic());
+    (plain && line.len() <= toast_cells()).then_some(line)
+}
 
 /// `None` when there is nothing new to say.
 fn orphan_notice(repo_root: &Path) -> Option<Notice> {
@@ -101,12 +119,9 @@ fn orphan_notice(repo_root: &Path) -> Option<Notice> {
     let n = new.len();
     let s = if n == 1 { "" } else { "s" };
     // One dir is named when the whole line fits; else the count form.
-    let named = format!("untracked dir kept: .maestro/worktrees/{}", new[0].name);
-    let message = if n == 1 && named.chars().count() <= TOAST_CELLS {
-        named
-    } else {
-        format!("{n} untracked dir{s} kept · check: ls .maestro/worktrees")
-    };
+    let named = (n == 1).then(|| one_dir_line(&new[0].name)).flatten();
+    let message = named
+        .unwrap_or_else(|| format!("{n} untracked dir{s} kept · check: ls .maestro/worktrees"));
     let mut lines = vec![format!(
         "kept {n} dir{s} git does not track in .maestro/worktrees/; to remove, run from the repo root:"
     )];
