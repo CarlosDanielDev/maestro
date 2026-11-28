@@ -50,7 +50,10 @@ fn orphan_notice_shown_once_and_again_after_recreate() {
     let (_tmp, repo, leftover) = repo_with_leftover();
 
     assert_eq!(orphan_notices(&repo), [LINE], "first launch");
-    assert!(orphan_notices(&repo).is_empty(), "the shown record stops it");
+    assert!(
+        orphan_notices(&repo).is_empty(),
+        "the shown record stops it"
+    );
 
     std::fs::remove_dir_all(&leftover).expect("removed by hand");
     std::fs::create_dir(&leftover).expect("recreated, same name");

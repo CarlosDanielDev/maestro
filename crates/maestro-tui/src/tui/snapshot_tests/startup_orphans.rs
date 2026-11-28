@@ -37,7 +37,10 @@ async fn startup_orphan_line_shows_on_landing_after_the_quit_notice() {
         "the ⌃Q notice comes first"
     );
     let out = text(&mut app, 80, 24);
-    assert!(out.contains(LINE), "path + remove command on Landing:\n{out}");
+    assert!(
+        out.contains(LINE),
+        "path + remove command on Landing:\n{out}"
+    );
     assert!(leftover.exists());
 
     let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
