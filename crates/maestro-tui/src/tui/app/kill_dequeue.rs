@@ -26,7 +26,12 @@ impl App {
         let session = self.pool.get_session(session_id);
         let label = session.map_or_else(|| "The session".to_string(), session_label);
         let path = session.and_then(|s| s.worktree_path.clone());
+        let status = session.map(|s| s.status.label().to_lowercase());
         let Some(outcome) = self.pool.dequeue_as_shown(session_id, shown) else {
+            // Its status changed after the dialog opened: say why it stays.
+            let status = status.unwrap_or_default();
+            let text = format!("{label} is {status}: it cannot be killed, it stays in the queue");
+            self.push_toast(Toast::new(Severity::Info, text), std::time::Instant::now());
             return Some(false);
         };
         let path = path.map_or_else(|| "its worktree".to_string(), |p| p.display().to_string());

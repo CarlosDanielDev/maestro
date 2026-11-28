@@ -825,6 +825,9 @@ async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uu
         return KeyAction::Consumed;
     }
     app.screen_state.kill_confirm = None;
+    if outcome != ConfirmOutcome::Confirmed {
+        app.screen_state.kill_teardown_shown = None;
+    }
     if outcome == ConfirmOutcome::Confirmed {
         app.kill_selected_session(session_id).await;
     }
