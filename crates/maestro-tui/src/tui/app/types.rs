@@ -286,6 +286,8 @@ pub struct ScreenState {
     pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
     /// The open kill dialog and the session it kills (#1261).
     pub kill_confirm: Option<(uuid::Uuid, crate::tui::ds::confirm::TypedConfirm)>,
+    /// #1556: whether the open kill dialog said a queued child's worktree goes.
+    pub kill_teardown_shown: Option<(uuid::Uuid, bool)>,
     /// Where the session Output view sits; it follows the tail until the
     /// user scrolls up (#1240, #1288).
     pub output_scroll: crate::tui::screens::session::output::OutputScroll,

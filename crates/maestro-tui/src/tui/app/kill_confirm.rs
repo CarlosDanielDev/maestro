@@ -16,6 +16,9 @@ use crate::tui::ds::toast::{Severity, Toast};
 use crate::work::git_within::{GIT_COUNT_TIMEOUT, output_within};
 use crate::work::unique_commits::unique_commit_count;
 
+#[path = "kill_dequeue.rs"]
+mod dequeue;
+
 #[cfg(test)]
 #[path = "kill_confirm_tests.rs"]
 mod tests;
@@ -59,6 +62,8 @@ impl App {
         let unpushed = self.unpushed_commits(session_id);
         let confirm = self.kill_confirm_with(session_id, uncommitted, unpushed);
         self.screen_state.kill_confirm = Some((session_id, confirm));
+        let shown = self.pool.dequeue_tears_down(session_id);
+        self.screen_state.kill_teardown_shown = Some((session_id, shown));
         self.navigate_to(super::TuiMode::ConfirmKill(session_id));
     }
 
@@ -146,15 +151,17 @@ impl App {
             return vec![("skips".into(), text)];
         }
         // #1514: the run loop's Stop › Kill reads these rows too.
+        let mut rows = Vec::new();
         match self.place_of(session_id) {
             Some(Place::Queued) => {
-                return vec![
-                    (
-                        "gone".into(),
-                        "its place in the queue: it never starts".into(),
-                    ),
-                    ("kept".into(), "every file: no worktree is touched".into()),
-                ];
+                let place = "its place in the queue: it never starts";
+                rows.push(("gone".into(), place.into()));
+                // #1556: a worktree handed by a finished retry parent goes.
+                if !self.pool.dequeue_tears_down(session_id) {
+                    let kept = "every file: no worktree is touched";
+                    rows.push(("kept".into(), kept.into()));
+                    return rows;
+                }
             }
             Some(Place::Kept) => {
                 let text = "it is a saved record, not running: Kill leaves it as it is";
@@ -163,21 +170,23 @@ impl App {
             _ => {}
         }
         let managed = self.pool.get_active(session_id);
-        // #1500: a session waiting for its PR has no turn to lose.
-        let no_turn = self.waits_for_pr(session_id);
+        // #1500: a session waiting for its PR has no turn to lose, nor
+        // has a queued one (#1556).
+        let no_turn = !rows.is_empty() || self.waits_for_pr(session_id);
         if self.torn_down_worktree(session_id).is_none() {
             let lost = if no_turn {
                 "nothing: no agent runs"
             } else {
                 "the turn in progress"
             };
-            return vec![("lost".into(), lost.into())];
+            rows.push(("lost".into(), lost.into()));
+            return rows;
         }
         let branch = match managed.and_then(|m| m.branch_name.as_deref()) {
             Some(branch) => format!("branch {branch}"),
             None => "its branch".to_string(),
         };
-        let mut rows = match unpushed {
+        rows.extend(match unpushed {
             Some(0) => vec![("gone".into(), format!("the worktree and {branch}"))],
             Some(n) => {
                 let s = if n == 1 { "" } else { "s" };
@@ -194,7 +203,7 @@ impl App {
                     ("kept".into(), kept),
                 ]
             }
-        };
+        });
         let turn = if no_turn {
             ""
         } else {
@@ -233,8 +242,8 @@ impl App {
     /// the branch unless this is `Some(0)`. Runs git: call it once.
     pub(crate) fn unpushed_commits(&self, session_id: uuid::Uuid) -> Option<usize> {
         let worktree = self.torn_down_worktree(session_id)?;
-        let managed = self.pool.get_active(session_id)?;
-        let branch = format!("maestro/{}", session_slug(&managed.session));
+        let session = self.pool.get_session(session_id)?;
+        let branch = format!("maestro/{}", session_slug(session));
         unique_commit_count(worktree, &branch)
     }
 
@@ -242,10 +251,17 @@ impl App {
     /// `wipe_worktree` acts on `.maestro/worktrees/<session_slug>` only. A
     /// session in cwd (`None`, or `.` for an interaction whose worktree
     /// failed: the main checkout) loses no worktree and no files to Kill.
+    /// #1556: a queued retry child loses the worktree its parent handed it.
     fn torn_down_worktree(&self, session_id: uuid::Uuid) -> Option<&Path> {
-        let managed = self.pool.get_active(session_id)?;
-        let path = managed.worktree_path.as_deref()?;
-        let slug = session_slug(&managed.session);
+        let (session, path) = match self.pool.get_active(session_id) {
+            Some(managed) => (&managed.session, managed.worktree_path.as_deref()?),
+            None if self.pool.dequeue_tears_down(session_id) => {
+                let session = self.pool.get_session(session_id)?;
+                (session, session.worktree_path.as_deref()?)
+            }
+            None => return None,
+        };
+        let slug = session_slug(session);
         path.ends_with(Path::new(".maestro").join("worktrees").join(slug))
             .then_some(path)
     }
