@@ -83,6 +83,22 @@ fn startup_scan_error_is_reported() {
     assert!(x.exists(), "a failed scan removes nothing");
 }
 
+/// A symlinked dir is shown on every launch and never gets a marker: the
+/// marker would land outside the worktree root.
+#[cfg(unix)]
+#[test]
+fn orphan_symlink_dir_gets_no_marker() {
+    let (tmp, repo, leftover) = repo_with_leftover();
+    std::fs::remove_dir_all(&leftover).expect("drop the plain dir");
+    let target = tmp.path().join("elsewhere");
+    std::fs::create_dir(&target).expect("mkdir target");
+    std::os::unix::fs::symlink(&target, &leftover).expect("symlink");
+
+    assert_eq!(orphan_notices(&repo), [LINE]);
+    assert_eq!(orphan_notices(&repo), [LINE], "shown again, not recorded");
+    assert!(!target.join(SHOWN_MARKER).exists(), "nothing written there");
+}
+
 #[test]
 fn orphan_line_quotes_a_name_the_shell_would_split() {
     assert_eq!(
