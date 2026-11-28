@@ -29,16 +29,10 @@ pub(crate) fn worktree(repo: &Path, name: &str) -> PathBuf {
     repo.join(".maestro").join("worktrees").join(name)
 }
 
-const ONE: &str = "kept 1 untracked dir · ⌃L shows how to remove";
+const ONE: &str = "Error untracked dir kept: .maestro/worktrees/leftover";
 
 fn toast(app: &App, now: Instant) -> Option<String> {
     (app.toasts.visible(now)).map(|v| format!("{:?} {}", v.severity, v.message))
-}
-
-fn logged(app: &App) -> Vec<String> {
-    (app.activity_log.entries().iter())
-        .map(|e| e.message.clone())
-        .collect()
 }
 
 /// One launch: a fresh App, the startup report, no stderr.
@@ -55,6 +49,12 @@ fn esc(app: &mut App, now: Instant) {
     assert!(app.toast_esc(now), "a toast to dismiss");
 }
 
+fn marked(repo: &Path, names: &[&str]) -> Vec<bool> {
+    (names.iter())
+        .map(|n| worktree(repo, n).join(SHOWN_MARKER).exists())
+        .collect()
+}
+
 #[test]
 fn startup_orphan_untracked_dir_is_reported_not_deleted() {
     let (_tmp, repo) = repo_with(&["leftover"]);
@@ -66,53 +66,63 @@ fn startup_orphan_untracked_dir_is_reported_not_deleted() {
 
     let dir = worktree(&repo, "leftover");
     assert!(dir.join("file").exists(), "the dir and its file stay");
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
-    let command = "rm -rf .maestro/worktrees/leftover";
-    assert!(
-        logged(&app).iter().any(|m| m == command),
-        "{:?}",
-        logged(&app)
-    );
+    assert_eq!(toast(&app, now).as_deref(), Some(ONE));
     let stderr = String::from_utf8(stderr).expect("utf-8");
     assert!(
-        stderr.ends_with(&format!("\nwarning: {command}\n")),
-        "--once prints the command: {stderr}"
+        stderr.ends_with("\nwarning: rm -rf .maestro/worktrees/leftover\n"),
+        "--once prints the exact command: {stderr}"
     );
     assert!(dir.join(SHOWN_MARKER).exists(), "printed counts as shown");
 }
 
-/// Six dirs give ONE toast; every remove line is in the log.
+/// Many dirs, or one long name: ONE toast in the count form that says
+/// where to look; every exact command goes to the log (and stderr).
 #[test]
-fn startup_orphans_are_one_notice() {
-    let names = ["a1", "a2", "a3", "a4", "a5", "session-1a2b3c4d"];
+fn startup_orphans_are_one_notice_with_every_command_logged() {
+    let long = "unified-1563-1564-fix-core-startup-orphan-cleanup-never-re-1a2b";
+    let names: Vec<String> = (1..=12).map(|i| format!("{long}-{i}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     let (_tmp, repo) = repo_with(&names);
-    let (app, now) = launch(&repo);
+    let mut app = crate::tui::make_test_app("orphan-1563");
+    let mut stderr = Vec::new();
+    let now = Instant::now();
+
+    report_startup_orphans(&mut app, &repo, now, Some(&mut stderr));
 
     assert_eq!(
         toast(&app, now).as_deref(),
-        Some("Error kept 6 untracked dirs · ⌃L shows how to remove")
+        Some("Error 12 untracked dirs kept · check: ls .maestro/worktrees")
     );
-    for name in names {
-        let command = format!("rm -rf .maestro/worktrees/{name}");
-        assert!(logged(&app).contains(&command), "{command}");
+    let stderr = String::from_utf8(stderr).expect("utf-8");
+    for name in &names {
+        let command = format!("warning: rm -rf .maestro/worktrees/{name}\n");
+        assert!(stderr.contains(&command), "{command}");
     }
+
+    let (_tmp, repo) = repo_with(&[long]);
+    let (app, now) = launch(&repo);
+    assert_eq!(
+        toast(&app, now).as_deref(),
+        Some("Error 1 untracked dir kept · check: ls .maestro/worktrees"),
+        "a name too long to fit gets the count form"
+    );
 }
 
 #[test]
 fn orphan_notice_shown_once_and_again_after_recreate() {
-    let (_tmp, repo) = repo_with(&["leftover"]);
+    let names = ["leftover", "other"];
+    let (_tmp, repo) = repo_with(&names);
+    let two = "Error 2 untracked dirs kept · check: ls .maestro/worktrees";
     let (app, now) = launch(&repo);
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
+    assert_eq!(toast(&app, now).as_deref(), Some(two));
     drop(app); // quit without dismissing it: not seen
+    assert_eq!(marked(&repo, &names), [false, false], "nothing recorded");
 
     let (mut app, now) = launch(&repo);
-    assert_eq!(
-        toast(&app, now),
-        Some(format!("Error {ONE}")),
-        "shown again"
-    );
+    assert_eq!(toast(&app, now).as_deref(), Some(two), "shown again");
     esc(&mut app, now);
     assert!(toast(&app, now).is_none(), "Esc dismissed it");
+    assert_eq!(marked(&repo, &names), [true, true], "Esc records all");
 
     let (app, now) = launch(&repo);
     assert!(toast(&app, now).is_none(), "the shown record stops it");
@@ -121,7 +131,7 @@ fn orphan_notice_shown_once_and_again_after_recreate() {
     std::fs::remove_dir_all(&dir).expect("removed by hand");
     std::fs::create_dir(&dir).expect("recreated, same name");
     let (app, now) = launch(&repo);
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")), "a new dir");
+    assert_eq!(toast(&app, now).as_deref(), Some(ONE), "a new dir");
 }
 
 /// Not a git repo: `git worktree list` fails (#1559). The error is shown
@@ -139,10 +149,9 @@ fn startup_scan_error_is_reported() {
 
     assert_eq!(
         toast(&app, now).as_deref(),
-        Some("Error orphan worktree scan failed · ⌃L shows why")
+        Some("Error orphan worktree scan failed · see maestro.log")
     );
     let why = "orphan worktree scan failed: git worktree list failed";
-    assert!(logged(&app).iter().any(|m| m.starts_with(why)));
     let stderr = String::from_utf8(stderr).expect("utf-8");
     assert!(stderr.starts_with(&format!("warning: {why}")), "{stderr}");
     assert!(x.exists(), "a failed scan removes nothing");
@@ -161,53 +170,17 @@ fn orphan_symlink_dir_gets_no_marker() {
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
 
     let (mut app, now) = launch(&repo);
-    assert_eq!(toast(&app, now), Some(format!("Error {ONE}")));
+    assert_eq!(toast(&app, now).as_deref(), Some(ONE));
     esc(&mut app, now);
     assert!(!target.join(SHOWN_MARKER).exists(), "nothing written there");
     let (app, now) = launch(&repo);
-    assert_eq!(
-        toast(&app, now),
-        Some(format!("Error {ONE}")),
-        "not recorded"
-    );
+    assert_eq!(toast(&app, now).as_deref(), Some(ONE), "not recorded");
 }
 
 #[test]
 fn remove_command_quotes_a_name_the_shell_would_split() {
     assert_eq!(
         remove_command("it's mine"),
-        [r"rm -rf '.maestro/worktrees/it'\''s mine'"]
+        r"rm -rf '.maestro/worktrees/it'\''s mine'"
     );
-}
-
-/// A long name is cut into rows that each fit the 80-column drawer with
-/// their `\`; joined they are the one exact command.
-#[test]
-fn remove_command_of_a_long_name_fits_rows_and_joins_exactly() {
-    let name = "unified-1563-1564-fix-core-startup-orphan-cleanup-never-re-1a2b";
-    let pieces = remove_command(name);
-    assert!(pieces.len() > 1, "{pieces:?}");
-    assert!(pieces.iter().all(|p| p.chars().count() < LOG_ROW_CELLS));
-    let command = format!("rm -rf .maestro/worktrees/{name}");
-    assert_eq!(pieces.concat(), command);
-}
-
-/// `sh` reads the drawer rows (each but the last ends with `\`) as ONE
-/// argument: the exact path, for plain and quoted names alike.
-#[cfg(unix)]
-#[test]
-fn remove_command_rows_are_one_shell_word() {
-    let long = "unified-1563-1564-fix-core-startup-orphan-cleanup-never-re-1a2b";
-    for name in [long.to_string(), format!("{long} it's mine")] {
-        let pieces = remove_command(&name);
-        assert!(pieces.iter().all(|p| p.chars().count() < LOG_ROW_CELLS));
-        let rows = pieces.join("\\\n");
-        let word = rows.strip_prefix("rm -rf ").expect("command");
-        let out = std::process::Command::new("sh")
-            .args(["-c", &format!("printf '%s|' {word}")])
-            .output()
-            .expect("sh");
-        let got = String::from_utf8(out.stdout).expect("utf-8");
-        assert_eq!(got, format!(".maestro/worktrees/{name}|"), "{rows}");
-    }
 }

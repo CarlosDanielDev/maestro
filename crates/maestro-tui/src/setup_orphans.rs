@@ -14,51 +14,38 @@ use crate::tui::screens::sanitize_for_terminal;
 /// to an old record.
 pub(crate) const SHOWN_MARKER: &str = ".maestro-orphan-shown";
 
-/// The startup notice on screen: its toast text and the dirs it names.
-/// Their shown record is written only when the user dismisses it.
+/// The startup notice on screen: its toast text and the dirs it is
+/// about. Their shown record is written only when the user dismisses it.
 pub(crate) struct StartupOrphans {
     message: String,
     dirs: Vec<PathBuf>,
 }
 
 /// Report the untracked dirs not shown before, or the scan error: one
-/// sticky toast on the first frame that points to `⌃L`, where the activity
-/// log has the full remove line for each dir. Also logged to maestro.log,
-/// and written to `stderr` when given (`--once`: printed counts as shown).
+/// sticky toast on the first frame that says where to look. The full list
+/// and the exact remove commands go to maestro.log, and to `stderr` when
+/// given (`--once`: printed counts as shown). 80x24 has no room for one
+/// command per dir on screen, and the log drawer does not scroll.
 pub(crate) fn report_startup_orphans(
     app: &mut App,
     repo_root: &Path,
     now: std::time::Instant,
     mut stderr: Option<&mut dyn Write>,
 ) {
-    use crate::tui::activity_log::LogLevel;
     use crate::tui::ds::toast::{Severity, Toast};
-    let Some(notice) = orphan_notice(repo_root) else {
-        return;
-    };
-    let Notice {
+    let Some(Notice {
         message,
         lines,
         dirs,
-    } = notice;
+    }) = orphan_notice(repo_root)
+    else {
+        return;
+    };
     for line in lines {
-        let full = sanitize_for_terminal(&line.join(""));
-        tracing::warn!("{full}");
+        let line = sanitize_for_terminal(&line);
+        tracing::warn!("{line}");
         if let Some(w) = stderr.as_deref_mut() {
-            let _ = writeln!(w, "warning: {full}");
-        }
-        // Each piece fits one 80-column drawer row; a shell `\` at the end
-        // joins it to the next, so nothing is cut with `…`.
-        let last = line.len() - 1;
-        for (i, piece) in line.iter().enumerate() {
-            let piece = sanitize_for_terminal(piece);
-            let row = if i < last {
-                format!("{piece}\\")
-            } else {
-                piece
-            };
-            app.activity_log
-                .push_simple("cleanup".into(), row, LogLevel::Info);
+            let _ = writeln!(w, "warning: {line}");
         }
     }
     if stderr.is_some() {
@@ -84,15 +71,15 @@ impl App {
 struct Notice {
     /// The toast text.
     message: String,
-    /// Each line as the pieces of its drawer rows; joined, the full line.
-    lines: Vec<Vec<String>>,
+    /// The maestro.log (and `--once` stderr) lines.
+    lines: Vec<String>,
     /// The dirs to record once the notice was seen.
     dirs: Vec<PathBuf>,
 }
 
-/// Message cells of an activity-log row in the 80-column log drawer: 78
-/// inside the border, less `HH:MM:SS [cleanup] ` (19), less 1 spare.
-pub(crate) const LOG_ROW_CELLS: usize = 58;
+/// Message cells of a toast at 80 columns: the toast is at most 72 wide,
+/// 68 inside its border and padding, less `<icon> error  ` (9), less 1.
+pub(crate) const TOAST_CELLS: usize = 58;
 
 /// `None` when there is nothing new to say.
 fn orphan_notice(repo_root: &Path) -> Option<Notice> {
@@ -101,8 +88,8 @@ fn orphan_notice(repo_root: &Path) -> Option<Notice> {
         Ok(orphans) => orphans,
         Err(e) => {
             return Some(Notice {
-                message: "orphan worktree scan failed · ⌃L shows why".into(),
-                lines: vec![vec![format!("orphan worktree scan failed: {e:#}")]],
+                message: "orphan worktree scan failed · see maestro.log".into(),
+                lines: vec![format!("orphan worktree scan failed: {e:#}")],
                 dirs: Vec::new(),
             });
         }
@@ -113,12 +100,19 @@ fn orphan_notice(repo_root: &Path) -> Option<Notice> {
     }
     let n = new.len();
     let s = if n == 1 { "" } else { "s" };
-    let mut lines = vec![vec![format!(
-        "kept {n} dir{s} git does not track; remove with:"
-    )]];
+    // One dir is named when the whole line fits; else the count form.
+    let named = format!("untracked dir kept: .maestro/worktrees/{}", new[0].name);
+    let message = if n == 1 && named.chars().count() <= TOAST_CELLS {
+        named
+    } else {
+        format!("{n} untracked dir{s} kept · check: ls .maestro/worktrees")
+    };
+    let mut lines = vec![format!(
+        "kept {n} dir{s} git does not track in .maestro/worktrees/; to remove, run from the repo root:"
+    )];
     lines.extend(new.iter().map(|o| remove_command(&o.name)));
     Some(Notice {
-        message: format!("kept {n} untracked dir{s} · ⌃L shows how to remove"),
+        message,
         lines,
         dirs: new.into_iter().map(|o| o.path).collect(),
     })
@@ -151,28 +145,10 @@ fn mark_shown(dirs: &[PathBuf]) {
     }
 }
 
-/// The remove line for `.maestro/worktrees/<name>`, run from the repo
-/// root, as pieces of at most [`LOG_ROW_CELLS`] - 1 chars (room for the
-/// `\` that joins a piece to the next). The path is cut between pieces,
-/// and each piece is quoted on its own when the shell would split it, so
-/// the joined pieces (or the rows with their `\`) are one exact command.
-pub(crate) fn remove_command(name: &str) -> Vec<String> {
-    let mut pieces = Vec::new();
-    let mut head = String::from("rm -rf ");
-    let mut part = String::new();
-    for c in format!(".maestro/worktrees/{name}").chars() {
-        let grown = format!("{part}{c}");
-        let cells = head.chars().count() + shell_word(&grown).chars().count();
-        if cells >= LOG_ROW_CELLS && !part.is_empty() {
-            pieces.push(format!("{head}{}", shell_word(&part)));
-            head.clear();
-            part = c.to_string();
-        } else {
-            part = grown;
-        }
-    }
-    pieces.push(format!("{head}{}", shell_word(&part)));
-    pieces
+/// The exact remove command for `.maestro/worktrees/<name>`, run from
+/// the repo root.
+pub(crate) fn remove_command(name: &str) -> String {
+    format!("rm -rf {}", shell_word(&format!(".maestro/worktrees/{name}")))
 }
 
 /// `s` as one shell word: as is when every char is plain, else
