@@ -21,9 +21,11 @@ use std::sync::OnceLock;
 /// `KEY=value` lines whose key names look secret keep the key name and
 /// lose the value. A name qualifies when one of KEY(S), TOKEN(S),
 /// SECRET(S), PASSWORD(S), PASSWD(S), CREDENTIAL(S) or AUTH(S) appears
-/// at an underscore boundary, ends the name, or is followed only by
-/// digits (case-insensitive, so `GITHUB_TOKEN=` and `db_password=` both
-/// match, while `AUTHOR=`, `KEYBOARD=` and `TOKENIZER=` stay readable).
+/// at an underscore boundary (or after an uppercase run, so
+/// concatenated names like `APIKEY=` match), ends the name, or is
+/// followed only by digits (case-insensitive, so `GITHUB_TOKEN=` and
+/// `db_password=` both match, while `AUTHOR=`, `KEYBOARD=`,
+/// `TOKENIZER=`, `monkey=` and `hockey=` stay readable).
 /// The value may be bare, single- or double-quoted; a quoted value
 /// masks through its closing quote (escaped quotes included) or
 /// through end of line when the quote never closes.
@@ -32,7 +34,7 @@ pub fn redact_secrets(s: &str) -> String {
     static TOKEN: OnceLock<regex::Regex> = OnceLock::new();
     let named_value = NAMED_VALUE.get_or_init(|| {
         regex::Regex::new(
-            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.)*(?:'|(?m:$))|\S+)"#,
+            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?_|[A-Z][A-Z0-9]*)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.?)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.?)*(?:'|(?m:$))|\S+)"#,
         )
         .unwrap()
     });
@@ -202,10 +204,12 @@ short a1b2c3d, 12 of 384 checks passed
         }
     }
 
-    /// Look-alikes of the new shapes must stay readable (#1445 round 2):
-    /// short `sk-` words, bare `bearer` in prose, names that merely
-    /// contain a secret keyword without an underscore boundary, and
-    /// lowercase words starting with `asia`.
+    /// Look-alikes of the new shapes must stay readable (#1445 rounds
+    /// 2–3): short `sk-` words, bare `bearer` in prose, names that
+    /// merely end in a secret keyword without an underscore boundary
+    /// before it, and lowercase words starting with `asia` (the AWS
+    /// branch is case-insensitive and needs 16 key characters after
+    /// the prefix, so a 19-char word stays readable).
     #[test]
     fn redact_secrets_keeps_lookalikes() {
         let lookalikes = "\
@@ -215,7 +219,10 @@ AUTHOR=carlos
 CARGO_PKG_AUTHORS=Carlos Daniel <carlos@example.com>
 KEYBOARD=us
 TOKENIZER=qwen
+monkey=1
+hockey=on
 asianfoodmarket street food
+asianstreetfoodfair saturday
 ";
         assert_eq!(redact_secrets(lookalikes), lookalikes);
     }
@@ -248,6 +255,55 @@ asianfoodmarket street food
                 "unterminated quote",
                 "SECRET='two open words",
                 "SECRET=[REDACTED]",
+            ),
+        ];
+        for (label, input, masked) in cases {
+            let out = redact_secrets(input);
+            assert_eq!(out, masked, "{label}: expected {masked}, got {out}");
+        }
+    }
+
+    /// A quoted value with a space whose line ends in a lone backslash
+    /// (shell line-continuation style) must still mask through end of
+    /// line — the escape part must consume a trailing backslash instead
+    /// of failing the whole quoted branch and falling back to `\S+`
+    /// (#1445 round 3).
+    #[test]
+    fn redacts_unclosed_quote_with_trailing_backslash() {
+        let cases = [
+            (
+                "double-quoted trailing backslash",
+                "SECRET_KEY=\"two words\\",
+                "SECRET_KEY=[REDACTED]",
+            ),
+            (
+                "single-quoted trailing backslash",
+                "SECRET='two words\\",
+                "SECRET=[REDACTED]",
+            ),
+        ];
+        for (label, input, masked) in cases {
+            let out = redact_secrets(input);
+            assert_eq!(out, masked, "{label}: expected {masked}, got {out}");
+        }
+    }
+
+    /// Uppercase concatenated names (`APIKEY=`, `MYTOKEN=`,
+    /// `DBPASSWORD=`) are secret-looking too: the prefix may be an
+    /// uppercase run even without an underscore (#1445 round 3).
+    #[test]
+    fn redacts_uppercase_concatenated_names() {
+        let cases = [
+            (
+                "concatenated api key",
+                "APIKEY=hunter2",
+                "APIKEY=[REDACTED]",
+            ),
+            ("concatenated token", "MYTOKEN=abc", "MYTOKEN=[REDACTED]"),
+            (
+                "concatenated db password",
+                "DBPASSWORD=x",
+                "DBPASSWORD=[REDACTED]",
             ),
         ];
         for (label, input, masked) in cases {
