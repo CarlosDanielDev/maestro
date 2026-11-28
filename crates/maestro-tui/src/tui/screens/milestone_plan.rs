@@ -2,7 +2,7 @@
 //! fetched issues, the START count, and each issue's readiness chip. The
 //! planner itself is `work::run_plan`; nothing here orders issues.
 
-use crate::orchestration::dag::{IssueMeta, IssueState};
+use crate::orchestration::dag::{IssueMeta, IssueState, blocked_by_section};
 use crate::provider::RepoProvider;
 use crate::provider::types::{Issue, MaestroLabel};
 use crate::work::conflicts::files_to_modify_from_body;
@@ -39,33 +39,15 @@ pub fn is_other_repo(by: u64) -> bool {
     by >= OTHER_REPO_MIN
 }
 
-/// A `##` heading line, as `dag::parse_blocked_by` finds one (`^##\s+`):
-/// the words after it, split on any whitespace (spaces, tabs, NBSP).
-fn heading_words(line: &str) -> Option<Vec<&str>> {
-    let rest = line.strip_prefix("##")?;
-    rest.starts_with(char::is_whitespace)
-        .then(|| rest.split_whitespace().collect())
-}
-
-/// True for the `## Blocked By` header, matched like
-/// `dag::parse_blocked_by` (`(?im)^##\s+Blocked\s+By\s*$`).
-fn is_blocked_by_header(line: &str) -> bool {
-    heading_words(line).is_some_and(|w| {
-        w.len() == 2 && w[0].eq_ignore_ascii_case("blocked") && w[1].eq_ignore_ascii_case("by")
-    })
-}
-
 /// The `## Blocked By` refs of `body`: this repository's numbers, and the
-/// refs that name another repository (`owner/repo#5`). The section and
-/// "None" are read as `dag::parse_blocked_by` reads them; only the
-/// cross-repository split is new.
+/// refs that name another repository (`owner/repo#5`). The header, the
+/// section and "None" are found by `dag::blocked_by_section`, exactly as
+/// `dag::parse_blocked_by` finds them; only the cross-repository split is
+/// new.
 pub(crate) fn blocked_by_refs(body: &str) -> (Vec<u64>, Vec<String>) {
-    let mut lines = body.lines().skip_while(|l| !is_blocked_by_header(l));
-    if lines.next().is_none() {
+    let Some(section) = blocked_by_section(body) else {
         return (Vec::new(), Vec::new());
-    }
-    let section: Vec<&str> = lines.take_while(|l| heading_words(l).is_none()).collect();
-    let section = section.join("\n");
+    };
     if section.to_lowercase().contains("none") {
         return (Vec::new(), Vec::new());
     }

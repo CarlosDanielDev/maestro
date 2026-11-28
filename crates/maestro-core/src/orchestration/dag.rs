@@ -8,6 +8,21 @@ use anyhow::{Result, anyhow};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
+/// The text between the `## Blocked By` header and the next `## ` heading
+/// line, or `None` when the header is missing. `parse_blocked_by` reads its
+/// issue refs from here; callers that also need `owner/repo#5` refs read the
+/// section directly, so every Blocked-By reader agrees on where it ends.
+pub fn blocked_by_section(body: &str) -> Option<&str> {
+    let header_re = Regex::new(r"(?im)^##\s+Blocked\s+By\s*$").unwrap();
+    let header = header_re.find(body)?;
+    let rest = &body[header.end()..];
+    let next_header_re = Regex::new(r"(?m)^##\s+").unwrap();
+    Some(match next_header_re.find(rest) {
+        Some(m) => &rest[..m.start()],
+        None => rest,
+    })
+}
+
 /// Parse the `## Blocked By` section of an issue body.
 ///
 /// Handles:
@@ -16,16 +31,8 @@ use std::collections::{HashMap, HashSet};
 /// - malformed sections (returns whatever numeric tokens exist, else empty)
 /// - missing section → empty vec
 pub fn parse_blocked_by(body: &str) -> Vec<IssueNumber> {
-    let header_re = Regex::new(r"(?im)^##\s+Blocked\s+By\s*$").unwrap();
-    let Some(header) = header_re.find(body) else {
+    let Some(section) = blocked_by_section(body) else {
         return Vec::new();
-    };
-
-    let rest = &body[header.end()..];
-    let next_header_re = Regex::new(r"(?m)^##\s+").unwrap();
-    let section = match next_header_re.find(rest) {
-        Some(m) => &rest[..m.start()],
-        None => rest,
     };
 
     if section.to_lowercase().contains("none") {
