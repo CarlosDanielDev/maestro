@@ -203,7 +203,7 @@ fn delete_kept(repo: &Path) -> String {
             Some(&unique_commit_count),
             &is_branch_missing,
         )
-            .expect("delete_branch must succeed");
+        .expect("delete_branch must succeed");
     });
     String::from_utf8(captured.0.lock().expect("log buffer lock").clone()).expect("utf-8 log")
 }
@@ -341,10 +341,11 @@ fn is_branch_missing_times_out_to_present() {
     make_fifo(&fifo);
     let stuck = stuck_git(repo.path(), &fifo);
     let started = std::time::Instant::now();
-    let missing =
-        crate::work::git_within::within_or_fail(std::time::Duration::from_secs(5), &fifo, move || {
-            branch_missing_within(stuck, "maestro/x", std::time::Duration::from_millis(50))
-        });
+    let missing = crate::work::git_within::within_or_fail(
+        std::time::Duration::from_secs(5),
+        &fifo,
+        move || branch_missing_within(stuck, "maestro/x", std::time::Duration::from_millis(50)),
+    );
     assert!(!missing, "a timed-out check must answer present");
     assert!(
         started.elapsed() < std::time::Duration::from_secs(5),
