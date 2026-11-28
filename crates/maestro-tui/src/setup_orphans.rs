@@ -148,7 +148,10 @@ fn mark_shown(dirs: &[PathBuf]) {
 /// The exact remove command for `.maestro/worktrees/<name>`, run from
 /// the repo root.
 pub(crate) fn remove_command(name: &str) -> String {
-    format!("rm -rf {}", shell_word(&format!(".maestro/worktrees/{name}")))
+    format!(
+        "rm -rf {}",
+        shell_word(&format!(".maestro/worktrees/{name}"))
+    )
 }
 
 /// `s` as one shell word: as is when every char is plain, else
