@@ -21,11 +21,14 @@ use std::sync::OnceLock;
 /// `KEY=value` lines whose key names look secret keep the key name and
 /// lose the value. A name qualifies when one of KEY(S), TOKEN(S),
 /// SECRET(S), PASSWORD(S), PASSWD(S), CREDENTIAL(S) or AUTH(S) appears
-/// at an underscore boundary (or after an uppercase run, so
-/// concatenated names like `APIKEY=` match), ends the name, or is
-/// followed only by digits (case-insensitive, so `GITHUB_TOKEN=` and
-/// `db_password=` both match, while `AUTHOR=`, `KEYBOARD=`,
-/// `TOKENIZER=`, `monkey=` and `hockey=` stay readable).
+/// with any name characters before it (no underscore required, so
+/// `APIKEY=`, `apikey=` and `dbpassword=` all match), and is followed
+/// only by a `_`-run, digits, or the `=` (case-insensitive, so
+/// `GITHUB_TOKEN=`, `db_password=` and lowercase `apikey=` all match,
+/// while `AUTHOR=`, `KEYBOARD=` and `TOKENIZER=` stay readable). The
+/// boundary is intentionally loose: `monkey=` and `hockey=` lose their
+/// values too — accepted over-masking; a leak beats a false positive
+/// (#1445 round 4).
 /// The value may be bare, single- or double-quoted; a quoted value
 /// masks through its closing quote (escaped quotes included) or
 /// through end of line when the quote never closes.
@@ -34,7 +37,7 @@ pub fn redact_secrets(s: &str) -> String {
     static TOKEN: OnceLock<regex::Regex> = OnceLock::new();
     let named_value = NAMED_VALUE.get_or_init(|| {
         regex::Regex::new(
-            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?_|[A-Z][A-Z0-9]*)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.?)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.?)*(?:'|(?m:$))|\S+)"#,
+            r#"\b((?:[A-Za-z][A-Za-z0-9_]*?)?(?i:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWDS?|CREDENTIALS?|AUTHS?)(?:_[A-Za-z0-9_]*|[0-9]+)?)=(?:"(?:[^"\\\n]|\\.?)*(?:"|(?m:$))|'(?:[^'\\\n]|\\.?)*(?:'|(?m:$))|\S+)"#,
         )
         .unwrap()
     });
@@ -160,8 +163,8 @@ short a1b2c3d, 12 of 384 checks passed
         assert_eq!(redact_secrets(cargo), cargo);
     }
 
-    /// Quoted values with spaces, and lowercase `.env`-style names, must
-    /// be fully masked (#1445 round 2).
+    /// Quoted values with spaces, and lowercase names — underscored or
+    /// concatenated — must be fully masked (#1445 rounds 2 and 4).
     #[test]
     fn redacts_quoted_values_and_lowercase_names() {
         let cases = [
@@ -195,6 +198,24 @@ short a1b2c3d, 12 of 384 checks passed
                 "two words",
                 "db_password=[REDACTED]",
             ),
+            (
+                "lowercase concatenated api key",
+                "apikey=abc123def",
+                "abc123def",
+                "apikey=[REDACTED]",
+            ),
+            (
+                "lowercase concatenated token",
+                "authtoken=xyz",
+                "xyz",
+                "authtoken=[REDACTED]",
+            ),
+            (
+                "lowercase concatenated password",
+                "dbpassword=hunter2",
+                "hunter2",
+                "dbpassword=[REDACTED]",
+            ),
         ];
         for (label, input, _secret, masked) in cases {
             let out = redact_secrets(input);
@@ -205,11 +226,13 @@ short a1b2c3d, 12 of 384 checks passed
     }
 
     /// Look-alikes of the new shapes must stay readable (#1445 rounds
-    /// 2–3): short `sk-` words, bare `bearer` in prose, names that
-    /// merely end in a secret keyword without an underscore boundary
-    /// before it, and lowercase words starting with `asia` (the AWS
-    /// branch is case-insensitive and needs 16 key characters after
-    /// the prefix, so a 19-char word stays readable).
+    /// 2–4): short `sk-` words, bare `bearer` in prose, names whose
+    /// keyword is followed by bare letters before the `=`, and
+    /// lowercase words starting with `asia` (the AWS branch is
+    /// case-insensitive and needs 16 key characters after the prefix,
+    /// so a 19-char word stays readable). `monkey=`/`hockey=` are NOT
+    /// here: their values are masked too — accepted over-masking
+    /// (#1445 round 4, safe side).
     #[test]
     fn redact_secrets_keeps_lookalikes() {
         let lookalikes = "\
@@ -219,8 +242,6 @@ AUTHOR=carlos
 CARGO_PKG_AUTHORS=Carlos Daniel <carlos@example.com>
 KEYBOARD=us
 TOKENIZER=qwen
-monkey=1
-hockey=on
 asianfoodmarket street food
 asianstreetfoodfair saturday
 ";
