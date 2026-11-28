@@ -20,7 +20,10 @@ fn for_issue(issue: u64) -> Session {
 fn walk(pool: &mut SessionPool, id: Uuid, steps: &[(SessionStatus, TransitionReason)]) {
     let managed = pool.get_active_mut(id).expect("active");
     for (to, why) in steps {
-        managed.session.transition_to(*to, *why).expect("transition");
+        managed
+            .session
+            .transition_to(*to, *why)
+            .expect("transition");
     }
 }
 

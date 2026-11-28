@@ -85,7 +85,10 @@ async fn kill_on_queued_retry_child_says_its_handed_worktree_goes() {
     std::fs::write(worktree.join("work.txt"), "uncommitted").unwrap();
     retrying(&mut app, parent);
     let child = queue_child(&mut app, 1556);
-    assert!(app.pool.finalize(parent), "the parent hands its worktree over");
+    assert!(
+        app.pool.finalize(parent),
+        "the parent hands its worktree over"
+    );
 
     let out = open_dialog(&mut app, child).await;
     assert!(
@@ -111,7 +114,10 @@ async fn kill_on_queued_retry_child_says_its_handed_worktree_goes() {
     // What the dialog said is what happened.
     assert!(!worktree.exists(), "the worktree is deleted");
     let branch = ["rev-parse", "--verify", "-q", "maestro/issue-1556"];
-    assert!(!git(repo.path(), &branch), "the branch, with nothing of its own, is deleted");
+    assert!(
+        !git(repo.path(), &branch),
+        "the branch, with nothing of its own, is deleted"
+    );
 }
 
 #[tokio::test]
@@ -139,5 +145,8 @@ async fn kill_on_queued_child_of_running_parent_says_no_worktree_is_touched() {
     let status = app.pool.get_session(child).map(|s| s.status);
     assert_eq!(status, Some(SessionStatus::Killed));
     assert!(worktree.exists(), "the parent's worktree stays");
-    assert!(app.pool.get_active(parent).is_some(), "the parent still runs");
+    assert!(
+        app.pool.get_active(parent).is_some(),
+        "the parent still runs"
+    );
 }

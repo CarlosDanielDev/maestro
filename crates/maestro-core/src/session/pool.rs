@@ -848,8 +848,8 @@ impl SessionPool {
     /// is a queued retry child holding the worktree its finished parent
     /// handed it, and no other active or queued session shares the slug.
     pub fn dequeue_tears_down(&self, session_id: Uuid) -> bool {
-        let Some(child) = (self.queue.iter())
-            .find(|s| s.id == session_id && self.handed.contains(&s.id))
+        let Some(child) =
+            (self.queue.iter()).find(|s| s.id == session_id && self.handed.contains(&s.id))
         else {
             return false;
         };
