@@ -1,51 +1,65 @@
-//! #1563: the untracked-dir line on the first screen of a default launch,
-//! in the real launch order: `startup_cleanup` just before `tui::run`,
-//! then the run loop's ⌃Q notice, then frames on Landing at 80x24.
+//! #1563: the untracked-dir notice in the real launch order of `maestro`:
+//! `startup_cleanup` just before `tui::run`, then the run loop's
+//! `announce_quit_key`, then the FIRST frame on Landing at 80x24.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::confirm_exit::text;
 use super::log_drawer::log_app;
-use crate::setup::orphan_tests::repo_with_leftover;
+use crate::setup::orphans::{SHOWN_MARKER, remove_command};
+use crate::setup::orphans::tests::{repo_with, worktree};
 use crate::setup::report_startup_orphans;
 use crate::tui::app::TuiMode;
 use crate::tui::input_handler::{announce_quit_key, handle_key};
 
-const LINE: &str = "untracked dir kept · rm -rf .maestro/worktrees/leftover";
+/// A `session_slug` name, and a 63-char one (a branch-sized name).
+const NAMES: [&str; 2] = [
+    "session-1a2b3c4d",
+    "unified-1563-1564-fix-core-startup-orphan-cleanup-never-re-1a2b",
+];
+const NOTICE: &str = "kept 2 untracked dirs · ⌃L shows how to remove";
 
 #[tokio::test]
-async fn startup_orphan_line_shows_on_landing_after_the_quit_notice() {
-    let (_tmp, repo, leftover) = repo_with_leftover();
+async fn startup_orphan_notice_on_the_first_frame_and_full_commands_on_ctrl_l() {
+    let (_tmp, repo) = repo_with(&NAMES);
     let mut app = log_app(TuiMode::Landing);
     app.screen_state.quit_hints.ctrl_q_shown = false;
     // What `tui::run` sets for the `maestro` boot path.
     app.screen_state.landing_screen = Some(crate::tui::screens::LandingScreen::new());
-    // The launch happened 4s ago: past the 3s ⌃Q info toast, so `ui::draw`
-    // (wall clock) draws the frame the user sees once it has gone.
-    let launch = Instant::now()
-        .checked_sub(Duration::from_secs(4))
-        .expect("clock past 4s");
+    let now = Instant::now();
 
-    report_startup_orphans(&mut app, &repo, launch, None);
-    announce_quit_key(&mut app, launch);
+    report_startup_orphans(&mut app, &repo, now, None);
+    announce_quit_key(&mut app, now);
 
-    let first = (app.toasts.visible(launch)).map(|v| v.message.to_string());
-    assert!(
-        first.is_some_and(|m| m.starts_with("⌃Q quits now")),
-        "the ⌃Q notice comes first"
-    );
-    let out = text(&mut app, 80, 24);
-    assert!(
-        out.contains(LINE),
-        "path + remove command on Landing:\n{out}"
-    );
-    assert!(leftover.exists());
+    let first = text(&mut app, 80, 24);
+    assert!(first.contains(NOTICE), "first frame:\n{first}");
+    // The ⌃Q toast was dropped for it; the footer still pins ⌃Q quit.
+    let footer = first.lines().last().unwrap_or_default();
+    assert!(footer.contains("⌃Q quit"), "footer: {footer}");
+
+    let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+    let _ = handle_key(&mut app, ctrl_l).await;
+    let drawer = text(&mut app, 80, 24);
+    assert!(!drawer.contains('…'), "nothing cut:\n{drawer}");
+    for name in NAMES {
+        let pieces = remove_command(name);
+        assert_eq!(pieces.concat(), format!("rm -rf .maestro/worktrees/{name}"));
+        for (i, piece) in pieces.iter().enumerate() {
+            let row = if i + 1 < pieces.len() { format!("{piece}\\") } else { piece.clone() };
+            assert!(drawer.contains(&row), "{row:?} in the drawer:\n{drawer}");
+        }
+    }
+    let marker = worktree(&repo, NAMES[0]).join(SHOWN_MARKER);
+    assert!(!marker.exists(), "seen in the log is not dismissed yet");
 
     let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let _ = handle_key(&mut app, esc).await;
-    assert_eq!(app.tui_mode, TuiMode::Landing, "Esc only dismissed it");
+    let _ = handle_key(&mut app, esc).await; // closes the drawer
+    let _ = handle_key(&mut app, esc).await; // dismisses the notice
+    assert_eq!(app.tui_mode, TuiMode::Landing, "Esc only closed overlays");
     let out = text(&mut app, 80, 24);
-    assert!(!out.contains(LINE), "Esc dismisses the line:\n{out}");
+    assert!(!out.contains(NOTICE), "dismissed:\n{out}");
+    assert!(marker.exists(), "dismissed = shown, recorded");
+    assert!(worktree(&repo, NAMES[1]).join("file").exists(), "kept");
 }

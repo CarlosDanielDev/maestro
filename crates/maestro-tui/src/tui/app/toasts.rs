@@ -38,6 +38,7 @@ impl App {
         // #1292: a dismissed conflict toast's keys go with it.
         if let (true, Some(message)) = (dismissed, shown) {
             self.forget_conflict_prompt(&message);
+            self.ack_startup_orphans(&message);
         }
         dismissed
     }
